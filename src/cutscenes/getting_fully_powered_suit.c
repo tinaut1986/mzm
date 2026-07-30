@@ -152,9 +152,9 @@ static u8 GettingFullyPoweredSuitAnimation(void)
     for (i = OAM_UP_SPARKLES_START; i < OAM_UP_SPARKLES_END; i++)
         GettingFullyPoweredSuitUpdateSparkleGoingUp(&CUTSCENE_DATA.oam[i], i);
 
-    #ifdef DEBUG
+#ifdef DEBUG
     CutsceneCheckSkipStage(2);
-    #endif // DEBUG
+#endif // DEBUG
 
     return FALSE;
 }
@@ -336,11 +336,11 @@ static u8 GettingFullyPoweredSuitInit(void)
 {
     s32 i;
 
-    #if defined(REGION_EU) || defined(BUGFIX)
+#if defined(REGION_EU) || defined(BUGFIX)
     CutsceneFadeScreenToWhite();
-    #else // !(REGION_EU || BUGFIX)
+#else // !(REGION_EU || BUGFIX)
     CutsceneFadeScreenToBlack();
-    #endif // REGION_EU || BUGFIX
+#endif // REGION_EU || BUGFIX
 
     // Load palette, in both background and object
     DmaTransfer(3, sGettingFullyPoweredSuitPal, PALRAM_BASE, 11 * PAL_ROW_SIZE, 16);

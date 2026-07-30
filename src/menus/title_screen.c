@@ -651,9 +651,9 @@ void TitleScreenTransferGroundGraphics(void)
     s32 var_1;
     u8* src;
 
-    #ifdef BUGFIX
+#ifdef BUGFIX
     src = NULL;
-    #endif // BUGFIX
+#endif // BUGFIX
 
     var_0 = -1;
     var_1 = -1;
@@ -948,10 +948,10 @@ u32 TitleScreenProcessBottomSparkle(struct TitleScreenOamTiming* pTiming, struct
  */
 u32 TitleScreenCheckPlayEffects(void)
 {
-    #ifdef REGION_EU
+#ifdef REGION_EU
     u32 tmp1;
     u32 tmp2;
-    #endif // REGION_EU
+#endif // REGION_EU
 
     TITLE_SCREEN_DATA.demoTimer++;
     if (TITLE_SCREEN_DATA.demoTimer > 60 * 17)
@@ -986,16 +986,16 @@ u32 TitleScreenCheckPlayEffects(void)
     }
     else if (gChangedInput & (KEY_A | KEY_START))
     {
-        #ifdef REGION_EU
+#ifdef REGION_EU
         tmp1 = TITLE_SCREEN_DATA.oamTimings[2].menuOption != TITLE_SCREEN_MENU_OPTION_START_GAME ? 3 : 1;
         tmp2 = tmp1;
         return tmp2;
-        #else // !REGION
+#else // !REGION
         return 1;
-        #endif // REGION_EU
+#endif // REGION_EU
     }
 
-    #ifdef REGION_EU
+#ifdef REGION_EU
     if (gChangedInput & (KEY_UP | KEY_DOWN))
     {
         tmp2 = FALSE;
@@ -1018,9 +1018,9 @@ u32 TitleScreenCheckPlayEffects(void)
             TITLE_SCREEN_DATA.demoTimer = 0;
         }
     }
-    #endif // REGION_EU
+#endif // REGION_EU
 
-    #ifdef DEBUG
+#ifdef DEBUG
     if (gChangedInput & KEY_L)
         return 2;
 
@@ -1034,7 +1034,7 @@ u32 TitleScreenCheckPlayEffects(void)
 
     if (gChangedInput & KEY_SELECT)
         BitFill(3, 0, VRAM_BASE + 0xF800, 0x800, 16);
-    #endif // DEBUG
+#endif // DEBUG
 
     return 0;
 }
@@ -1082,25 +1082,25 @@ u32 TitleScreenHandler(void)
                     UpdateMusicPriority(4);
                     gSubGameMode1 = 3;
                 }
-                #ifdef DEBUG
-                #ifdef REGION_EU
+#ifdef DEBUG
+#ifdef REGION_EU
                 else if (gSubGameMode2 == 4)
-                #else // !REGION_EU
+#else // !REGION_EU
                 else if (gSubGameMode2 == 3)
-                #endif // REGION_EU
+#endif // REGION_EU
                 {
                     gSubGameMode1 = 5;
                 }
-                #endif // DEBUG
+#endif // DEBUG
                 else
                 {
-                    #ifdef REGION_EU
+#ifdef REGION_EU
                     if (gSubGameMode2 == 3)
                     {
                         SoundPlay(SOUND_ACCEPT_CONFIRM_MENU);
                     }
                     else
-                    #endif // REGION_EU
+#endif // REGION_EU
                     {
                         SoundPlay(SOUND_TITLE_SCREEN_PRESSING_START);
                     }
@@ -1137,11 +1137,11 @@ u32 TitleScreenHandler(void)
             break;
 
         case 5:
-            #ifdef DEBUG
+#ifdef DEBUG
             unk_767a4();
             if (TitleScreenFadingOut(2, 0))
                 leaving = TRUE;
-            #endif // DEBUG
+#endif // DEBUG
             break;
     }
 
@@ -1253,11 +1253,11 @@ void TitleScreenInit(void)
 {
     CallbackSetVblank(TitleScreenVBlank_Empty);
 
-    #ifdef REGION_EU
+#ifdef REGION_EU
     BitFill(3, 0, &gNonGameplayRam, sizeof(gNonGameplayRam), 32);
-    #else // !REGION_EU
+#else // !REGION_EU
     DMA3_FILL_32(0, &gNonGameplayRam, sizeof(gNonGameplayRam))
-    #endif // REGION_EU
+#endif // REGION_EU
 
     TITLE_SCREEN_DATA.bldcnt = BLDCNT_SCREEN_FIRST_TARGET | BLDCNT_BRIGHTNESS_DECREASE_EFFECT;
 
@@ -1274,11 +1274,11 @@ void TitleScreenInit(void)
     
     gOamXOffset_NonGameplay = gOamYOffset_NonGameplay = 0;
 
-    #ifdef REGION_EU
+#ifdef REGION_EU
     BitFill(3, 0, &gSamusPhysics, sizeof(gSamusPhysics), 32);
-    #else // !REGION_EU
+#else // !REGION_EU
     DMA3_FILL_32(0, &gSamusPhysics, sizeof(gSamusPhysics));
-    #endif // REGION_EU
+#endif // REGION_EU
 
     gBootDebugActive = FALSE;
     gDebugMode = FALSE;
@@ -1290,32 +1290,32 @@ void TitleScreenInit(void)
 
     SET_BACKDROP_COLOR(COLOR_BLACK);
 
-    #ifdef REGION_EU
+#ifdef REGION_EU
     DmaTransfer(3, &sTitleScreenUnselectedMenuPal, PALRAM_BASE + 0x1E0, sizeof(sTitleScreenUnselectedMenuPal), 16);
     TITLE_SCREEN_DATA.oamTimings[2].menuOption = TITLE_SCREEN_MENU_OPTION_START_GAME;
-    #endif // REGION_EU
+#endif // REGION_EU
 
     TitleScreenLoadPageData(&sTitleScreenPageData[0]);
     TitleScreenLoadPageData(&sTitleScreenPageData[1]);
 
     // JP uses the registered trademark symbol, while non-JP uses the trademark symbol.
     // Debug allows any language, so it checks the language to decide which to use.
-    #if defined(DEBUG) || !defined(REGION_JP)
-    #if defined(DEBUG)
+#if defined(DEBUG) || !defined(REGION_JP)
+#if defined(DEBUG)
     if (gLanguage >= LANGUAGE_ENGLISH)
-    #endif // DEBUG
+#endif // DEBUG
     {
         TitleScreenSetCopyrightSymbol(TITLE_SCREEN_COPYRIGHT_SYMBOL_TRADEMARK);
     }
-    #endif // DEBUG || !REGION_JP
-    #if defined(DEBUG) || defined(REGION_JP)
-    #if defined(DEBUG)
+#endif // DEBUG || !REGION_JP
+#if defined(DEBUG) || defined(REGION_JP)
+#if defined(DEBUG)
     else
-    #endif // DEBUG
+#endif // DEBUG
     {
         TitleScreenSetCopyrightSymbol(TITLE_SCREEN_COPYRIGHT_SYMBOL_REGISTERED_TRADEMARK);
     }
-    #endif // DEBUG || REGION_JP
+#endif // DEBUG || REGION_JP
 
     CallLZ77UncompVram(sTitleScreenTitleGfx, VRAM_BASE + 0xC000);
     CallLZ77UncompVram(sTitleScreenSpaceBackgroundGfx, VRAM_BASE + 0x4000);
@@ -1326,20 +1326,20 @@ void TitleScreenInit(void)
 
     CallLZ77UncompVram(sTitleScreenSparklesGfx, VRAM_OBJ);
 
-    #ifdef REGION_EU
+#ifdef REGION_EU
     CallLZ77UncompVram(sTitleScreenMenuGfxPointers[(gLanguage - LANGUAGE_ENGLISH) * 2], VRAM_BASE + 0xE800);
     CallLZ77UncompVram(sTitleScreenMenuGfxPointers[(gLanguage - LANGUAGE_ENGLISH) * 2 + 1], VRAM_BASE + 0xEC00);
     TitleScreenSetMenuPalette(TITLE_SCREEN_DATA.oamTimings[2].menuOption);
-    #endif // REGION_EU
+#endif // REGION_EU
 
     // Undefined
     TitleScreenSetBGCNTPageData(&sTitleScreenPageData[0]);
     TitleScreenSetBGCNTPageData(&sTitleScreenPageData[1]);
 
-    #ifdef DEBUG
+#ifdef DEBUG
     if (sRomInfoStringPointers[0][0] != '\0')
         TitleScreenDrawDebugText();
-    #endif // DEBUG
+#endif // DEBUG
 
     gSubGameMode3 = 0;
     gBg0HOFS_NonGameplay = gBg0VOFS_NonGameplay = 0;
@@ -1576,9 +1576,9 @@ void TitleScreenDrawDebugText(void)
     u8 string[5];
     
     DmaTransfer(3, sCharactersGfx, VRAM_BASE + 0xF800, 0x800, 16);
-    #ifndef REGION_EU
+#ifndef REGION_EU
     DmaTransfer(3, sGameOverMenuPal + 1 * PAL_ROW_SIZE, PALRAM_BASE + 15 * PAL_ROW_SIZE, 1 * PAL_ROW_SIZE, 16);
-    #endif // !REGION_EU
+#endif // !REGION_EU
     TitleScreenDrawString(sRomInfoStringPointers[0], VRAM_BASE + sTitleScreenPageData[0].tiletablePage * 0x800, STRING_PAL_ROW);
 
     for (i = 0; i < 4; i++)

@@ -238,9 +238,9 @@ static u8 EnterTourianAnimation(void)
     CUTSCENE_DATA.oam[8].actions |= movement;
     EnterTourianUpdatePirate(&CUTSCENE_DATA.oam[8]);
 
-    #ifdef DEBUG
+#ifdef DEBUG
     CutsceneCheckSkipStage(1);
-    #endif // DEBUG
+#endif // DEBUG
 
     return FALSE;
 }

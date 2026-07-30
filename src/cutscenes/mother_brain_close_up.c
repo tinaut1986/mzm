@@ -136,9 +136,9 @@ static u8 MotherBrainCloseUpLookingAtSamus(void)
 
     MotherBrainCloseUpUpdateElevatorReflection(&CUTSCENE_DATA.oam[OAM_SLOT_ELEVATOR_ANIMATION]);
 
-    #ifdef DEBUG
+#ifdef DEBUG
     CutsceneCheckSkipStage(1);
-    #endif // DEBUG
+#endif // DEBUG
 
     return FALSE;
 }
@@ -301,9 +301,9 @@ static u8 MotherBrainCloseUpEyeOpening(void)
     if (MOD_AND(gFrameCounter8Bit, 8) == 0)
         gWrittenToBldalpha_H ^= 1;
 
-    #ifdef DEBUG
+#ifdef DEBUG
     CutsceneCheckSkipStage(1);
-    #endif // DEBUG
+#endif // DEBUG
 
     return FALSE;
 }
@@ -361,9 +361,9 @@ static u8 MotherBrainCloseUpTankView(void)
             break;
     }
 
-    #ifdef DEBUG
+#ifdef DEBUG
     CutsceneCheckSkipStage(1);
-    #endif // DEBUG
+#endif // DEBUG
 
     return FALSE;
 }

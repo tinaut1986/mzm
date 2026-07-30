@@ -38,7 +38,7 @@ static const u32* sEraseSramTextGfxPointers[LANGUAGE_COUNT][2] = {
         sEraseSramMenuQuestionEnglishGfx,
         sEraseSramMenuConfirmEnglishGfx
     },
-    #if defined(REGION_EU) || defined(REGION_US_BETA)
+#if defined(REGION_EU) || defined(REGION_US_BETA)
     [LANGUAGE_GERMAN] = {
         sEraseSramMenuQuestionGermanGfx,
         sEraseSramMenuConfirmGermanGfx
@@ -55,7 +55,7 @@ static const u32* sEraseSramTextGfxPointers[LANGUAGE_COUNT][2] = {
         sEraseSramMenuQuestionSpanishGfx,
         sEraseSramMenuConfirmSpanishGfx
     }
-    #else // !(REGION_EU || REGION_US_BETA)
+#else // !(REGION_EU || REGION_US_BETA)
     [LANGUAGE_GERMAN] = {
         sEraseSramMenuQuestionEnglishGfx,
         sEraseSramMenuConfirmEnglishGfx
@@ -72,7 +72,7 @@ static const u32* sEraseSramTextGfxPointers[LANGUAGE_COUNT][2] = {
         sEraseSramMenuQuestionEnglishGfx,
         sEraseSramMenuConfirmEnglishGfx
     }
-    #endif // REGION_EU || REGION_US_BETA
+#endif // REGION_EU || REGION_US_BETA
 };
 
 /**
@@ -372,26 +372,26 @@ static void EraseSramInit(void)
     ERASE_SRAM_DATA.language = gLanguage;
     // This code sets the language to the region's default if the language is invalid for that region.
     // Debug allows any language, US allows any European language, and JP allows Japanese or hiragana.
-    #if defined(DEBUG)
+#if defined(DEBUG)
     if (ERASE_SRAM_DATA.language >= LANGUAGE_COUNT)
-    #elif defined(REGION_JP)
+#elif defined(REGION_JP)
     if (ERASE_SRAM_DATA.language > LANGUAGE_HIRAGANA)
-    #else // !(DEBUG || REGION_JP)
+#else // !(DEBUG || REGION_JP)
     if (INVALID_EU_LANGUAGE(ERASE_SRAM_DATA.language))
-    #endif
+#endif
     {
         ERASE_SRAM_DATA.language = LANGUAGE_DEFAULT;
     }
 
     while (READ_16(REG_VCOUNT) >= 21 && READ_16(REG_VCOUNT) <= SCREEN_SIZE_Y);
 
-    #ifdef REGION_EU
+#ifdef REGION_EU
     DmaTransfer(3, sEraseSramMenuBackgroundPal, PALRAM_BASE, 13 * PAL_ROW_SIZE, 16);
     DmaTransfer(3, sEraseSramMenuObjectsPal, PALRAM_OBJ, sizeof(sEraseSramMenuObjectsPal), 16);
-    #else // !REGION_EU
+#else // !REGION_EU
     DMA3_COPY_16(sEraseSramMenuBackgroundPal, PALRAM_BASE, (13 * PAL_ROW_SIZE) / sizeof(u16));
     DMA3_COPY_16(sEraseSramMenuObjectsPal, PALRAM_OBJ, sizeof(sEraseSramMenuObjectsPal) / sizeof(u16));
-    #endif // REGION_EU
+#endif // REGION_EU
     
     SET_BACKDROP_COLOR(COLOR_BLACK);
 

@@ -39,9 +39,9 @@ u32 InGameHandler(void)
 {
     u32 changing;
 
-    #ifdef DEBUG
+#ifdef DEBUG
     gDebugVCount_InGameStart = READ_16(REG_VCOUNT);
-    #endif // DEBUG
+#endif // DEBUG
 
     SetVBlankCodeInGame();
     changing = FALSE;
@@ -49,9 +49,9 @@ u32 InGameHandler(void)
     switch (gSubGameMode1)
     {
         case 0:
-            #ifdef DEBUG
+#ifdef DEBUG
             gDebugVCount_AudioMax = 0;
-            #endif // DEBUG
+#endif // DEBUG
 
             if (gSubGameMode3 == 0)
                 DemoResetInputAndDuration();
@@ -64,20 +64,20 @@ u32 InGameHandler(void)
             break;
 
         case SUB_GAME_MODE_DOOR_TRANSITION:
-            #ifndef REGION_EU
+#ifndef REGION_EU
             IoWriteRegisters();
-            #endif // !REGION_EU
+#endif // !REGION_EU
             if (ColorFadingFinishDoorTransition()) // Undefined
                 gSubGameMode1++;
             break;
 
         case SUB_GAME_MODE_PLAYING:
             DemoHandler();
-            #ifndef REGION_EU
+#ifndef REGION_EU
             IoWriteRegisters();
-            #endif // !REGION_EU
+#endif // !REGION_EU
 
-            #ifdef DEBUG
+#ifdef DEBUG
             // Check for no-clip input
             if (gDebugMode && gChangedInput & KEY_START &&
                 (gButtonInput & (KEY_L | KEY_B)) == (KEY_L | KEY_B) && !gPreventMovementTimer)
@@ -85,7 +85,7 @@ u32 InGameHandler(void)
                 gSubGameMode1 = SUB_GAME_MODE_NO_CLIP;
             }
             else
-            #endif // DEBUG
+#endif // DEBUG
             {
                 if ((gChangedInput & gButtonAssignments.pause || gPauseScreenFlag != PAUSE_SCREEN_NONE) && ProcessPauseButtonPress())
                     gSubGameMode1++;
@@ -114,9 +114,9 @@ u32 InGameHandler(void)
             break;
 
         case SUB_GAME_MODE_LOADING_ROOM:
-            #ifndef REGION_EU
+#ifndef REGION_EU
             IoWriteRegistersDuringTransition();
-            #endif // !REGION_EU
+#endif // !REGION_EU
             if (ColorFadingProcess())
             {
                 gSubGameMode1 = 0;
@@ -126,9 +126,9 @@ u32 InGameHandler(void)
             break;
 
         case SUB_GAME_MODE_DYING:
-            #ifndef REGION_EU
+#ifndef REGION_EU
             IoWriteRegisters();
-            #endif // !REGION_EU
+#endif // !REGION_EU
             SamusUpdate();
             RoomUpdateGfxInfo();
             break;
@@ -182,7 +182,7 @@ u32 InGameHandler(void)
             SamusCallCheckLowHealth();
     }
 
-    #ifdef DEBUG
+#ifdef DEBUG
     if (gDebugMode == 1)
     {
         if (gDebugVCount_VBlankEnd < SCREEN_SIZE_Y)
@@ -212,7 +212,7 @@ u32 InGameHandler(void)
         gOamData[0x7F].split.tileNum = 0x78;
         gOamData[0x7F].split.paletteNum = 4;
     }
-    #endif // DEBUG
+#endif // DEBUG
 
     return changing;
 }
@@ -357,9 +357,9 @@ void VBlankCodeInGameLoad(void)
     WRITE_16(REG_BG3HOFS, gBackgroundPositions.bg[gWhichBgPositionIsWrittenToBG3OFS].x);
     WRITE_16(REG_BG3VOFS, gBackgroundPositions.bg[gWhichBgPositionIsWrittenToBG3OFS].y);
 
-    #ifdef DEBUG
+#ifdef DEBUG
     gDebugVCount_VBlankEnd = READ_16(REG_VCOUNT);
-    #endif // DEBUG
+#endif // DEBUG
 }
 
 /**
@@ -434,9 +434,9 @@ void VBlankCodeInGame(void)
     WRITE_16(REG_BG3HOFS, gBackgroundPositions.bg[3].x);
     WRITE_16(REG_BG3VOFS, gBackgroundPositions.bg[3].y);
 
-    #ifdef DEBUG
+#ifdef DEBUG
     gDebugVCount_VBlankEnd = READ_16(REG_VCOUNT);
-    #endif // DEBUG
+#endif // DEBUG
 }
 
 /**
@@ -475,9 +475,9 @@ void InitAndLoadGenerics(void)
     if (gPauseScreenFlag != PAUSE_SCREEN_NONE || gCurrentCutscene != 0)
         DmaTransfer(3, EWRAM_BASE + 0x1E000, VRAM_OBJ, 0x4000, 16);
 
-    #ifndef DEBUG
+#ifndef DEBUG
     gDebugMode = FALSE;
-    #endif // !DEBUG
+#endif // !DEBUG
     DMA3_COPY_16(sCommonSpritesPal, PALRAM_BASE + 0x240, sizeof(sCommonSpritesPal) / 2);
     SamusInit();
 
@@ -529,14 +529,14 @@ void InitAndLoadGenerics(void)
     } while ((u16)(READ_16(REG_VCOUNT) - 21) < 140); // READ_16(REG_VCOUNT) <= SCREEN_SIZE_Y
 
 
-    #ifdef REGION_EU_BETA
+#ifdef REGION_EU_BETA
     do {
         gIsLoadingFile = FALSE;
         gPauseScreenFlag = PAUSE_SCREEN_NONE;
         gCurrentCutscene = 0;
         gTourianEscapeCutsceneStage = 0;
     } while(0);
-    #endif // REGION_EU_BETA
+#endif // REGION_EU_BETA
 
     gIsLoadingFile = FALSE;
     gPauseScreenFlag = PAUSE_SCREEN_NONE;

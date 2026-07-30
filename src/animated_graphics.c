@@ -85,46 +85,46 @@ void AnimatedGraphicsTransfer(void)
 
     if (gAnimatedGraphicsToUpdate & 1 << 12)
     {
-        #ifdef REGION_EU
+#ifdef REGION_EU
         DmaTransfer(3, ANIMATED_GFX_EWRAM_POS(12), ANIMATED_GFX_VRAM_POS(12), ANIMATED_GFX_SIZE, 16);
         DmaTransfer(3, ANIMATED_GFX_EWRAM_POS(12), ANIMATED_GFX_VRAM_END_POS(3), ANIMATED_GFX_SIZE, 16);
-        #else // !REGION_EU
+#else // !REGION_EU
         DMA3_COPY_16(ANIMATED_GFX_EWRAM_POS(12), ANIMATED_GFX_VRAM_POS(12), ANIMATED_GFX_SIZE_16_BITS);
         DMA3_COPY_16(ANIMATED_GFX_EWRAM_POS(12), ANIMATED_GFX_VRAM_END_POS(3), ANIMATED_GFX_SIZE_16_BITS);
-        #endif // REGION_EU
+#endif // REGION_EU
     }
 
     if (gAnimatedGraphicsToUpdate & 1 << 13)
     {
-        #ifdef REGION_EU
+#ifdef REGION_EU
         DmaTransfer(3, ANIMATED_GFX_EWRAM_POS(13), ANIMATED_GFX_VRAM_POS(13), ANIMATED_GFX_SIZE, 16);
         DmaTransfer(3, ANIMATED_GFX_EWRAM_POS(13), ANIMATED_GFX_VRAM_END_POS(2), ANIMATED_GFX_SIZE, 16);
-        #else // !REGION_EU
+#else // !REGION_EU
         DMA3_COPY_16(ANIMATED_GFX_EWRAM_POS(13), ANIMATED_GFX_VRAM_POS(13), ANIMATED_GFX_SIZE_16_BITS);
         DMA3_COPY_16(ANIMATED_GFX_EWRAM_POS(13), ANIMATED_GFX_VRAM_END_POS(2), ANIMATED_GFX_SIZE_16_BITS);
-        #endif // REGION_EU
+#endif // REGION_EU
     }
 
     if (gAnimatedGraphicsToUpdate & 1 << 14)
     {
-        #ifdef REGION_EU
+#ifdef REGION_EU
         DmaTransfer(3, ANIMATED_GFX_EWRAM_POS(14), ANIMATED_GFX_VRAM_POS(14), ANIMATED_GFX_SIZE, 16);
         DmaTransfer(3, ANIMATED_GFX_EWRAM_POS(14), ANIMATED_GFX_VRAM_END_POS(1), ANIMATED_GFX_SIZE, 16);
-        #else // !REGION_EU
+#else // !REGION_EU
         DMA3_COPY_16(ANIMATED_GFX_EWRAM_POS(14), ANIMATED_GFX_VRAM_POS(14), ANIMATED_GFX_SIZE_16_BITS);
         DMA3_COPY_16(ANIMATED_GFX_EWRAM_POS(14), ANIMATED_GFX_VRAM_END_POS(1), ANIMATED_GFX_SIZE_16_BITS);
-        #endif // REGION_EU
+#endif // REGION_EU
     }
 
     if (gAnimatedGraphicsToUpdate & 1 << 15)
     {
-        #ifdef REGION_EU
+#ifdef REGION_EU
         DmaTransfer(3, ANIMATED_GFX_EWRAM_POS(15), ANIMATED_GFX_VRAM_POS(15), ANIMATED_GFX_SIZE, 16);
         DmaTransfer(3, ANIMATED_GFX_EWRAM_POS(15), ANIMATED_GFX_VRAM_END_POS(0), ANIMATED_GFX_SIZE, 16);
-        #else // !REGION_EU
+#else // !REGION_EU
         DMA3_COPY_16(ANIMATED_GFX_EWRAM_POS(15), ANIMATED_GFX_VRAM_POS(15), ANIMATED_GFX_SIZE_16_BITS);
         DMA3_COPY_16(ANIMATED_GFX_EWRAM_POS(15), ANIMATED_GFX_VRAM_END_POS(0), ANIMATED_GFX_SIZE_16_BITS);
-        #endif // REGION_EU
+#endif // REGION_EU
     }
 
     gAnimatedGraphicsToUpdate = 0;
@@ -311,11 +311,11 @@ void AnimatedGraphicsLoad(void)
     }
 
     // Some backup?
-    #ifdef REGION_EU
+#ifdef REGION_EU
     DmaTransfer(3, ANIMATED_GFX_VRAM_POS(12), ANIMATED_GFX_VRAM_END_POS(4 - 1), ANIMATED_GFX_SIZE * 4, 16);
-    #else // !REGION_EU
+#else // !REGION_EU
     DMA3_COPY_16(ANIMATED_GFX_VRAM_POS(12), ANIMATED_GFX_VRAM_END_POS(4 - 1), ANIMATED_GFX_SIZE * 4 / 2);
-    #endif // REGION_EU
+#endif // REGION_EU
 }
 
 /**

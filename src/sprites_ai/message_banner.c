@@ -266,11 +266,11 @@ static void MessageBannerStatic(void)
     if (message != MESSAGE_SAVE_PROMPT &&
         (gButtonInput & (KEY_A | KEY_B | KEY_ALL_DIRECTIONS) || gDemoState != DEMO_STATE_NONE))
     {
-        #ifdef BUGFIX
+#ifdef BUGFIX
         // If the banner is for a new item, only remove the banner if no power bomb is active
         if (!gCurrentSprite.MESSAGE_BANNER_NEW_ITEM ||
             (!gCurrentPowerBomb.animationState && !gCurrentPowerBomb.powerBombPlaced))
-        #endif // BUGFIX
+#endif // BUGFIX
         {
             gCurrentSprite.pose = MESSAGE_BANNER_POSE_REMOVAL_INIT;
         }

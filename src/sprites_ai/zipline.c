@@ -113,9 +113,9 @@ static u8 ZiplineMoving(void)
             if (samusGrabbing)
             {
                 gSamusData.xPosition += velocity;
-                #ifdef REGION_EU
+#ifdef REGION_EU
                 gSamusPhysics.horizontalMovingDirection = HDMOVING_RIGHT;
-                #endif // REGION_EU
+#endif // REGION_EU
             }
         }
         else
@@ -124,9 +124,9 @@ static u8 ZiplineMoving(void)
             if (samusGrabbing)
             {
                 gSamusData.xPosition -= velocity;
-                #ifdef REGION_EU
+#ifdef REGION_EU
                 gSamusPhysics.horizontalMovingDirection = HDMOVING_LEFT;
-                #endif // REGION_EU
+#endif // REGION_EU
             }
         }
     }

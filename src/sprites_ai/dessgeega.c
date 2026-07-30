@@ -81,9 +81,9 @@ static void DessgeegaInit(void)
     }
 
     gCurrentSprite.work0 = 0;
-    #ifdef BUGFIX
+#ifdef BUGFIX
     gCurrentSprite.work1 = MOD_AND(gSpriteRng, 4);
-    #endif // BUGFIX
+#endif // BUGFIX
 
     // Set hitbox and draw distances based on direction
     if (gCurrentSprite.status & SPRITE_STATUS_Y_FLIP)
@@ -679,9 +679,9 @@ static void DessgeegaDeath(void)
     else
     {
         // BUG: There's no check for the sprite ID, so the event set and door unlock is done for every "ground" dessgeega
-        #ifdef BUGFIX
+#ifdef BUGFIX
         if (gCurrentSprite.spriteId == PSPRITE_DESSGEEGA_AFTER_LONG_BEAM)
-        #endif // BUGFIX
+#endif // BUGFIX
         {
             // Set event
             SET_EVENT(EVENT_LONG_BEAM_DESSGEEGA_KILLED);

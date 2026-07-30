@@ -699,9 +699,9 @@ HatchOpeningAction BgClipCheckOpeningHatch(u16 xPosition, u16 yPosition)
     s32 i;
     HatchOpeningAction action;
 
-    #ifdef BUGFIX
+#ifdef BUGFIX
     action = HATCH_OPENING_ACTION_NOT_OPENING;
-    #endif // BUGFIX
+#endif // BUGFIX
 
     for (i = 0; i < MAX_AMOUNT_OF_HATCHES; i++)
     {

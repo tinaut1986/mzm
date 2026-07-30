@@ -941,9 +941,9 @@ static void ChozoStatuePartArmCheckGrabSamusRefill(void)
     {
         if (gSamusData.pose == SPOSE_MORPH_BALL)
         {
-            #ifdef BUGFIX
+#ifdef BUGFIX
             if (gPreventMovementTimer == 0)
-            #endif // BUGFIX
+#endif // BUGFIX
             {
                 // Set grabbed
                 SamusSetPose(SPOSE_GRABBED_BY_CHOZO_STATUE);

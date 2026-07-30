@@ -85,9 +85,9 @@ static u8 MechaRidleySeesSamusEyeOpen(void)
             }
     }
 
-    #ifdef DEBUG
+#ifdef DEBUG
     CutsceneCheckSkipStage(1);
-    #endif // DEBUG
+#endif // DEBUG
 
     return FALSE;
 }

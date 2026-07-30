@@ -205,9 +205,9 @@ static u8 RidleyInSpaceShipLeaving(void)
     // Update mother ship
     RidleyInSpaceUpdateShipLeaving(&CUTSCENE_DATA.oam[RIDLEY_IN_SPACE_MOTHER_SHIP_SLOT]);
 
-    #ifdef DEBUG
+#ifdef DEBUG
     CutsceneCheckSkipStage(1);
-    #endif // DEBUG
+#endif // DEBUG
 
     return FALSE;
 }
@@ -365,9 +365,9 @@ static u8 RidleyInSpaceRidleySuspicious(void)
             break;
     }
 
-    #ifdef DEBUG
+#ifdef DEBUG
     CutsceneCheckSkipStage(1);
-    #endif // DEBUG
+#endif // DEBUG
 
     return FALSE;
 }
@@ -460,9 +460,9 @@ static u8 RidleyInSpaceRedAlert(void)
 
     RidleyInSpaceUpdateAlertPalette(&CUTSCENE_DATA.paletteData[0]);
 
-    #ifdef DEBUG
+#ifdef DEBUG
     CutsceneCheckSkipStage(1);
-    #endif // DEBUG
+#endif // DEBUG
 
     return FALSE;
 }
@@ -590,9 +590,9 @@ static u8 RidleyInSpaceViewOfShip(void)
     if (MOD_AND(gFrameCounter8Bit, 8) == 0)
         *CutsceneGetBgVerticalPointer(sRidleyInSpacePageData[0].bg) -= ONE_SUB_PIXEL;
 
-    #ifdef DEBUG
+#ifdef DEBUG
     CutsceneCheckSkipStage(1);
-    #endif // DEBUG
+#endif // DEBUG
 
     return FALSE;
 }

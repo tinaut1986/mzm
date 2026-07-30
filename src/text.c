@@ -19,17 +19,17 @@ static const u16** sDescriptionTextPointers[LANGUAGE_COUNT] = {
     [LANGUAGE_JAPANESE] = sJapaneseTextPointers_Description,
     [LANGUAGE_HIRAGANA] = sHiraganaTextPointers_Description,
     [LANGUAGE_ENGLISH] = sEnglishTextPointers_Description,
-    #if defined(REGION_EU) || defined(REGION_US_BETA)
+#if defined(REGION_EU) || defined(REGION_US_BETA)
     [LANGUAGE_GERMAN] = sGermanTextPointers_Description,
     [LANGUAGE_FRENCH] = sFrenchTextPointers_Description,
     [LANGUAGE_ITALIAN] = sItalianTextPointers_Description,
     [LANGUAGE_SPANISH] = sSpanishTextPointers_Description
-    #else // !(REGION_EU || REGION_US_BETA)
+#else // !(REGION_EU || REGION_US_BETA)
     [LANGUAGE_GERMAN] = sEnglishTextPointers_Description,
     [LANGUAGE_FRENCH] = sEnglishTextPointers_Description,
     [LANGUAGE_ITALIAN] = sEnglishTextPointers_Description,
     [LANGUAGE_SPANISH] = sEnglishTextPointers_Description
-    #endif // REGION_EU || REGION_US_BETA
+#endif // REGION_EU || REGION_US_BETA
 };
 
 static u32 sArray_7602f0[9] = {
@@ -273,7 +273,7 @@ void TextDrawCharacter(u16 charId, u32* dst, u16 indent, u8 color)
         else
             srcGfx = gCurrentCharacterGfx;
 
-        #ifdef REGION_EU
+#ifdef REGION_EU
         palette = indent;
         palette &= 7;
         // If next char position is within same line, and next char position is
@@ -281,9 +281,9 @@ void TextDrawCharacter(u16 charId, u32* dst, u16 indent, u8 color)
         // increment char width
         if (indent + width < 224 && (indent + width) % 8 == 0 && width % 8 != 0)
             width++;
-        #else // !REGION_EU
+#else // !REGION_EU
         palette = indent & 7;
-        #endif // REGION_EU
+#endif // REGION_EU
 
         if (palette != 0)
         {
@@ -551,7 +551,7 @@ void TextDrawMessageCharacter(u16 charId, u32* dst, u16 indent, u8 color)
         else
             srcGfx = gCurrentCharacterGfx;
 
-        #ifdef REGION_EU
+#ifdef REGION_EU
         palette = indent;
         palette &= 7;
         // If next char position is within same line, and next char position is
@@ -559,9 +559,9 @@ void TextDrawMessageCharacter(u16 charId, u32* dst, u16 indent, u8 color)
         // increment char width
         if (indent + width < 224 && (indent + width) % 8 == 0 && width % 8 != 0)
             width++;
-        #else // !REGION_EU
+#else // !REGION_EU
         palette = indent & 7;
-        #endif // REGION_EU
+#endif // REGION_EU
 
         if (palette != 0)
         {
@@ -758,13 +758,13 @@ void TextDrawLocation(u8 locationText, u8 gfxSlot)
     TextDrawLocationTextCharacters(1, &pText);
 
     
-    #ifdef REGION_EU
+#ifdef REGION_EU
     DmaTransfer(3, EWRAM_BASE, VRAM_BASE + 0x14000 + gfxSlot * 0x800, 0xE0 * sizeof(u32), 32);
     DmaTransfer(3, EWRAM_BASE + 0x400, VRAM_BASE + 0x14400 + gfxSlot * 0x800, 0xE0 * sizeof(u32), 32);
-    #else // !REGION_EU
+#else // !REGION_EU
     DMA3_COPY_32(EWRAM_BASE, VRAM_BASE + 0x14000 + gfxSlot * 0x800, 0xE0);
     DMA3_COPY_32(EWRAM_BASE + 0x400, VRAM_BASE + 0x14400 + gfxSlot * 0x800, 0xE0);
-    #endif // REGION_EU
+#endif // REGION_EU
 }
 
 /**
@@ -1002,9 +1002,9 @@ u8 TextProcessStory(void)
             break;
 
         case 2:
-            #ifdef BUGFIX
+#ifdef BUGFIX
             dst = NULL;
-            #endif // BUGFIX
+#endif // BUGFIX
 
             i = 6;
             if (gCurrentMessage.gfxSlot != 0)

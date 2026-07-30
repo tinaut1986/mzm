@@ -31,14 +31,14 @@ u32 SoftResetHandler(void)
     {
         case 0:
             SoftResetInit();
-            #ifdef REGION_EU
+#ifdef REGION_EU
             if (LANGUAGE_SELECT_DATA.loadLanguageSelect)
                 gSubGameMode1 = 3;
             else
                 gSubGameMode1++;
-            #else // !REGION_EU
+#else // !REGION_EU
             gSubGameMode1++;
-            #endif // REGION_EU
+#endif // REGION_EU
             break;
 
         case 1:
@@ -54,7 +54,7 @@ u32 SoftResetHandler(void)
         case 2:
             return TRUE;
 
-        #ifdef REGION_EU
+#ifdef REGION_EU
 
         case 3:
             if (gWrittenToBldy_NonGameplay - 2 <= 0)
@@ -111,7 +111,7 @@ u32 SoftResetHandler(void)
                 gSubGameMode1 = 2;
             break;
 
-        #endif // REGION_EU
+#endif // REGION_EU
     }
 
     return FALSE;
@@ -272,36 +272,36 @@ void SoftResetInit(void)
 
     CallbackSetVblank(SoftResetVBlank_Empty);
 
-    #ifdef REGION_EU
+#ifdef REGION_EU
     BitFill(3, 0, &gNonGameplayRam, sizeof(gNonGameplayRam), 32);
-    #else // !REGION_EU
+#else // !REGION_EU
     DMA3_FILL_32(0, &gNonGameplayRam, sizeof(gNonGameplayRam));
-    #endif
+#endif
 
-    #ifdef REGION_EU
+#ifdef REGION_EU
     if (gSubGameMode1 == 0)
         WRITE_16(REG_BLDCNT, LANGUAGE_SELECT_DATA.bldcnt = BLDCNT_SCREEN_FIRST_TARGET | BLDCNT_BRIGHTNESS_INCREASE_EFFECT);
     else
         WRITE_16(REG_BLDCNT, LANGUAGE_SELECT_DATA.bldcnt = UCHAR_MAX);
-    #else // !REGION_EU
+#else // !REGION_EU
     WRITE_16(REG_BLDCNT, CUTSCENE_DATA.bldcnt = BLDCNT_SCREEN_FIRST_TARGET | BLDCNT_BRIGHTNESS_INCREASE_EFFECT);
-    #endif
+#endif
     
     WRITE_16(REG_BLDY, gWrittenToBldy_NonGameplay = BLDY_MAX_VALUE);
-    #ifdef REGION_EU
+#ifdef REGION_EU
     WRITE_16(REG_DISPCNT, LANGUAGE_SELECT_DATA.dispcnt = 0);
-    #else // !REGION_EU
+#else // !REGION_EU
     WRITE_16(REG_DISPCNT, CUTSCENE_DATA.dispcnt = 0);
-    #endif // REGION_EU
+#endif // REGION_EU
 
     gNextOamSlot = 0;
     ClearGfxRam();
     ResetFreeOam();
 
     gOamXOffset_NonGameplay = gOamYOffset_NonGameplay = 0;
-    #ifndef REGION_EU
+#ifndef REGION_EU
     SET_BACKDROP_COLOR(COLOR_BLACK);
-    #endif // !REGION_EU
+#endif // !REGION_EU
     gSubGameMode3 = 0;
 
     gBg0HOFS_NonGameplay = gBg0VOFS_NonGameplay = 0;
@@ -318,7 +318,7 @@ void SoftResetInit(void)
     WRITE_16(REG_BG3HOFS, 0);
     WRITE_16(REG_BG3VOFS, 0);
     
-    #ifdef REGION_EU
+#ifdef REGION_EU
     LANGUAGE_SELECT_DATA.selectedLanguage = gLanguage;
 
     if (INVALID_EU_LANGUAGE(LANGUAGE_SELECT_DATA.selectedLanguage))
@@ -356,9 +356,9 @@ void SoftResetInit(void)
     }
 
     WRITE_16(REG_DISPCNT, LANGUAGE_SELECT_DATA.dispcnt);
-    #else // !REGION_EU
+#else // !REGION_EU
     WRITE_16(REG_DISPCNT, CUTSCENE_DATA.dispcnt = 0);
-    #endif // REGION_EU
+#endif // REGION_EU
 
     CallbackSetVblank(SoftResetVBlank);
 }
@@ -371,9 +371,9 @@ void SoftResetVBlank(void)
 {
     WRITE_16(REG_BLDY, gWrittenToBldy_NonGameplay);
 
-    #ifdef REGION_EU
+#ifdef REGION_EU
     WRITE_16(REG_BLDCNT, LANGUAGE_SELECT_DATA.bldcnt);
-    #endif // REGION_EU
+#endif // REGION_EU
 }
 
 /**

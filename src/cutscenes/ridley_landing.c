@@ -87,9 +87,9 @@ static u8 RidleyLandingRidleyFlying(void)
 
     RidleyLandingUpdateRidley(&CUTSCENE_DATA.oam[1]);
 
-    #ifdef DEBUG
+#ifdef DEBUG
     CutsceneCheckSkipStage(1);
-    #endif // DEBUG
+#endif // DEBUG
 
     return FALSE;
 }
@@ -196,11 +196,11 @@ static u8 RidleyLandingShipLanding(void)
 
             if (!(CUTSCENE_DATA.dispcnt & sRidleyLandingPageData[2].bg))
             {
-                #ifdef BUGFIX
+#ifdef BUGFIX
                 if (movement >= 2848 - FixedMultiplication(sRidleyLandingScrollingInfo[1].length, Q_8_8(2.f / 3)))
-                #else // !BUGFIX
+#else // !BUGFIX
                 if (movement >= 2848 - sRidleyLandingScrollingInfo[1].length / 1.5)
-                #endif // BUGFIX
+#endif // BUGFIX
                 {
                     CUTSCENE_DATA.dispcnt |= sRidleyLandingPageData[2].bg;
                     CutsceneStartBackgroundScrolling(sRidleyLandingScrollingInfo[1], sRidleyLandingPageData[2].bg);
@@ -305,9 +305,9 @@ static u8 RidleyLandingShipLanding(void)
         movement = FALSE;
     CUTSCENE_DATA.oam[8].notDrawn = movement;
 
-    #ifdef DEBUG
+#ifdef DEBUG
     CutsceneCheckSkipStage(1);
-    #endif // DEBUG
+#endif // DEBUG
 
     return FALSE;
 }
@@ -391,9 +391,9 @@ static u8 RidleyLandingShipInSpace(void)
 
     if (CUTSCENE_DATA.timeInfo.subStage >= 3)
     {
-        #ifdef DEBUG
+#ifdef DEBUG
         CutsceneCheckSkipStage(1);
-        #endif // DEBUG
+#endif // DEBUG
         return FALSE;
     }
 
@@ -403,9 +403,9 @@ static u8 RidleyLandingShipInSpace(void)
     if (MOD_AND(gFrameCounter8Bit, 2) != 0)
     {
         CUTSCENE_DATA.oam[0].xPosition++;
-        #ifdef DEBUG
+#ifdef DEBUG
         CutsceneCheckSkipStage(1);
-        #endif // DEBUG
+#endif // DEBUG
         return FALSE;
     }
 
@@ -415,9 +415,9 @@ static u8 RidleyLandingShipInSpace(void)
     if (MOD_AND(gFrameCounter8Bit, 16) == 0)
         gCurrentOamScaling -= Q_8_8(.035f);
 
-    #ifdef DEBUG
+#ifdef DEBUG
     CutsceneCheckSkipStage(1);
-    #endif // DEBUG
+#endif // DEBUG
 
     return FALSE;
 }

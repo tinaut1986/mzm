@@ -1161,9 +1161,9 @@ static void MechaRidleyRetractingAfterFireballAttack(void)
  */
 static void MechaRidleyDyingInit(void)
 {
-    #ifdef BUGFIX
+#ifdef BUGFIX
     struct SpriteData* pSprite;
-    #endif // BUGFIX
+#endif // BUGFIX
 
     // Set dying standing low
     gSubSpriteData1.pMultiOam = sMechaRidleyMultiSpriteData_DyingStandingLow;
@@ -1182,7 +1182,7 @@ static void MechaRidleyDyingInit(void)
     SoundPlay(SOUND_MECHA_RIDLEY_DEATH_EXPLOSIONS);
     FadeMusic(CONVERT_SECONDS(1.f));
 
-    #ifdef BUGFIX
+#ifdef BUGFIX
     // Destroy any remaining missiles or fireballs
     for (pSprite = gSpriteData; pSprite < gSpriteData + MAX_AMOUNT_OF_SPRITES; pSprite++)
     {
@@ -1195,7 +1195,7 @@ static void MechaRidleyDyingInit(void)
         if (pSprite->spriteId == SSPRITE_MECHA_RIDLEY_MISSILE || pSprite->spriteId == SSPRITE_MECHA_RIDLEY_FIREBALL)
             pSprite->pose = 0x44;
     }
-    #endif // BUGFIX
+#endif // BUGFIX
 }
 
 /**
@@ -2693,9 +2693,9 @@ void MechaRidley(void)
     }
 
     gCurrentSprite.work3++;
-    #ifndef REGION_US_BETA
+#ifndef REGION_US_BETA
     if (gCurrentSprite.pose == MECHA_RIDLEY_POSE_IDLE || gCurrentSprite.pose == MECHA_RIDLEY_POSE_CURLED_UP)
-    #endif // !REGION_US_BETA
+#endif // !REGION_US_BETA
     {
         APPLY_DELTA_TIME_INC(gSubSpriteData1.work2); // Missile attack timer
     }

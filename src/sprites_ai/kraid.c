@@ -2429,13 +2429,13 @@ static void KraidNailMovement(void)
 
     velocity *= acceleration;
 
-    #ifdef REGION_US_BETA
+#ifdef REGION_US_BETA
     spawnY = gCurrentSprite.work3 * BLOCK_SIZE + HALF_BLOCK_SIZE;
     spawnX = gCurrentSprite.work2 * BLOCK_SIZE + HALF_BLOCK_SIZE;
-    #else // !REGION_US_BETA
+#else // !REGION_US_BETA
     spawnY = gCurrentSprite.work3 * BLOCK_SIZE;
     spawnX = gCurrentSprite.work2 * BLOCK_SIZE;
-    #endif // REGION_US_BETA
+#endif // REGION_US_BETA
 
     if (gCurrentSprite.status & SPRITE_STATUS_FACING_DOWN)
         distanceYUp = gCurrentSprite.yPositionSpawn - spawnY;
@@ -3045,13 +3045,13 @@ void KraidNail(void)
             gCurrentSprite.scaling = Q_8_8(1.f);
             gCurrentSprite.work1 = 0;
 
-            #ifdef REGION_US_BETA
+#ifdef REGION_US_BETA
             gCurrentSprite.work3 = SUB_PIXEL_TO_BLOCK_(gCurrentSprite.yPosition - HALF_BLOCK_SIZE);
             gCurrentSprite.work2 = SUB_PIXEL_TO_BLOCK_(gCurrentSprite.xPosition - HALF_BLOCK_SIZE);
-            #else // !REGION_US_BETA
+#else // !REGION_US_BETA
             gCurrentSprite.work3 = SUB_PIXEL_TO_BLOCK(gCurrentSprite.yPosition);
             gCurrentSprite.work2 = SUB_PIXEL_TO_BLOCK(gCurrentSprite.xPosition);
-            #endif // REGION_US_BETA
+#endif // REGION_US_BETA
 
             if (gCurrentSprite.roomSlot != 0)
             {
@@ -3066,7 +3066,7 @@ void KraidNail(void)
 
             dstX = gSamusData.xPosition;
 
-            #ifdef REGION_US_BETA
+#ifdef REGION_US_BETA
             if (dstY < gCurrentSprite.yPosition)
             {
                 if (gCurrentSprite.yPosition - dstY < HALF_BLOCK_SIZE)
@@ -3079,12 +3079,12 @@ void KraidNail(void)
                     dstY = gSamusData.yPosition + HALF_BLOCK_SIZE;
                 gCurrentSprite.status |= SPRITE_STATUS_FACING_DOWN;
             }
-            #else // !REGION_US_BETA
+#else // !REGION_US_BETA
             if (dstY < BLOCK_TO_SUB_PIXEL(gCurrentSprite.work3))
                 gCurrentSprite.status &= ~SPRITE_STATUS_FACING_DOWN;
             else
                 gCurrentSprite.status |= SPRITE_STATUS_FACING_DOWN;
-            #endif // REGION_US_BETA
+#endif // REGION_US_BETA
 
             if (dstX < gCurrentSprite.xPosition)
                 dstX = gSamusData.xPosition + BLOCK_SIZE;

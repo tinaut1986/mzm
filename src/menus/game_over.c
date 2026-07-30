@@ -60,14 +60,14 @@ u32 GameOverHandler(void)
                 return TRUE;
             }
 
-            #ifdef DEBUG
+#ifdef DEBUG
             if (gDebugMode && gSectionInfo.sectionIndex < BOOT_DEBUG_SECTION_SAVE_A)
             {
                 GameOverInit_Debug();
                 gSubGameMode1 = 9;
             }
             else
-            #endif // DEBUG
+#endif // DEBUG
             {
                 GameOverInit();
                 GAME_OVER_DATA.timer = 0;
@@ -139,11 +139,11 @@ u32 GameOverHandler(void)
         case 7:
             if (GAME_OVER_DATA.optionSelected == 1)
             {
-                #ifdef DEBUG
+#ifdef DEBUG
                 gSubGameMode2 = !gDebugMode ? 1 : 16;
-                #else // !DEBUG
+#else // !DEBUG
                 gSubGameMode2 = 1;
-                #endif
+#endif
                 ended = TRUE;
                 break;
             }
@@ -153,13 +153,13 @@ u32 GameOverHandler(void)
             break;
 
         case 8:
-            #ifdef DEBUG
+#ifdef DEBUG
             if (gDebugMode)
             {
                 unk_75c04(3);
             }
             else
-            #endif // DEBUG
+#endif // DEBUG
             {
                 unk_75c04(0);
                 gLanguage = gGameCompletion.language;
@@ -264,17 +264,17 @@ static const u32* sGameOverTextPromptGfxPointers[LANGUAGE_COUNT] = {
     [LANGUAGE_JAPANESE] = sGameOverTextPromptEnglishGfx,
     [LANGUAGE_HIRAGANA] = sGameOverTextPromptHiraganaGfx,
     [LANGUAGE_ENGLISH] = sGameOverTextPromptEnglishGfx,
-    #if defined(REGION_EU) || defined(REGION_US_BETA)
+#if defined(REGION_EU) || defined(REGION_US_BETA)
     [LANGUAGE_GERMAN] = sGameOverTextPromptGermanGfx,
     [LANGUAGE_FRENCH] = sGameOverTextPromptFrenchGfx,
     [LANGUAGE_ITALIAN] = sGameOverTextPromptItalianGfx,
     [LANGUAGE_SPANISH] = sGameOverTextPromptSpanishGfx
-    #else // !(REGION_EU || REGION_US_BETA)
+#else // !(REGION_EU || REGION_US_BETA)
     [LANGUAGE_GERMAN] = sGameOverTextPromptEnglishGfx,
     [LANGUAGE_FRENCH] = sGameOverTextPromptEnglishGfx,
     [LANGUAGE_ITALIAN] = sGameOverTextPromptEnglishGfx,
     [LANGUAGE_SPANISH] = sGameOverTextPromptEnglishGfx
-    #endif // REGION_EU || REGION_US_BETA
+#endif // REGION_EU || REGION_US_BETA
 };
 
 /**
@@ -285,11 +285,11 @@ static void GameOverInit(void)
 {
     CallbackSetVblank(GameOverVBlank_Empty);
 
-    #ifdef REGION_EU
+#ifdef REGION_EU
     BitFill(3, 0, &gNonGameplayRam, sizeof(gNonGameplayRam), 32);
-    #else // !REGION_EU
+#else // !REGION_EU
     DMA3_FILL_32(0, &gNonGameplayRam, sizeof(gNonGameplayRam));
-    #endif // REGION_EU
+#endif // REGION_EU
 
     WRITE_16(REG_BLDCNT, GAME_OVER_DATA.bldcnt = BLDCNT_SCREEN_FIRST_TARGET | BLDCNT_BRIGHTNESS_INCREASE_EFFECT);
 
@@ -307,11 +307,11 @@ static void GameOverInit(void)
 
     DmaTransfer(3, sGameOverMenuPal, PALRAM_BASE, sizeof(sGameOverMenuPal), 16);
     SET_BACKDROP_COLOR(COLOR_BLACK);
-    #ifdef REGION_EU
+#ifdef REGION_EU
     DmaTransfer(3, sFileSelectIconsPal, PALRAM_OBJ, sizeof(sFileSelectIconsPal), 16);
-    #else // !REGION_EU
+#else // !REGION_EU
     DMA3_COPY_16(sFileSelectIconsPal, PALRAM_OBJ, ARRAY_SIZE(sFileSelectIconsPal));
-    #endif // REGION_EU
+#endif // REGION_EU
 
     LZ77UncompVram(sGameOverBackgroundTileTable, VRAM_BASE + 0x1800);
     LZ77UncompVram(sGameOverTextTileTable, VRAM_BASE + 0x800);
@@ -357,11 +357,11 @@ static void GameOverInit_Debug(void)
 {
     CallbackSetVblank(GameOverVBlank_Empty);
 
-    #ifdef REGION_EU
+#ifdef REGION_EU
     BitFill(3, 0, &gNonGameplayRam, sizeof(gNonGameplayRam), 32);
-    #else // !REGION_EU
+#else // !REGION_EU
     DMA3_FILL_32(0, &gNonGameplayRam, sizeof(gNonGameplayRam));
-    #endif
+#endif
 
     WRITE_16(REG_BLDCNT, GAME_OVER_DATA.bldcnt = BLDCNT_SCREEN_FIRST_TARGET | BLDCNT_BRIGHTNESS_INCREASE_EFFECT);
 

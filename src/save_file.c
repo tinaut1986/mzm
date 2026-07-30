@@ -81,15 +81,15 @@ void SramRead_All(void)
     SramRead_MostRecentSaveFile();
     SramRead_TimeAttack();
 
-    #ifdef REGION_EU
+#ifdef REGION_EU
     SramRead_Language();
-    #else // !REGION_EU
+#else // !REGION_EU
     if (SramRead_Language())
     {
         gLanguage = LANGUAGE_DEFAULT;
         SramWrite_Language();
     }
-    #endif // REGION_EU
+#endif // REGION_EU
 }
 
 /**
@@ -408,10 +408,10 @@ u32 SramProcessEndingSave(void)
     u32 ended;
     u32 bit;
 
-    #ifdef DEBUG
+#ifdef DEBUG
     if (gDebugMode)
         return TRUE;
-    #endif
+#endif
 
     ended = FALSE;
 
@@ -1458,11 +1458,11 @@ void SramWrite_Language(void)
     i = gLanguage;
     if ((u32)i >= LANGUAGE_COUNT)
     {
-        #ifdef REGION_EU
+#ifdef REGION_EU
         i = 0;
-        #else
+#else
         i = LANGUAGE_DEFAULT;
-        #endif // REGION_EU
+#endif // REGION_EU
     }
 
     pSave->value = i;
@@ -2035,9 +2035,9 @@ void unk_757c8(u8 file)
  */
 void unk_7584c(u8 param_1)
 {
-    #ifdef DEBUG
+#ifdef DEBUG
     u8 temp;
-    #endif // DEBUG
+#endif // DEBUG
 
     gButtonAssignments = sDefaultButtonAssignments;
     gMaxInGameTimerFlag = FALSE;
@@ -2060,18 +2060,18 @@ void unk_7584c(u8 param_1)
             gLastDoorUsed = 0;
             gMaxInGameTimerFlag = TRUE;
             gSkipDoorTransition = FALSE;
-            #ifdef DEBUG
+#ifdef DEBUG
             if (gDemoState != DEMO_STATE_NONE)
-            #endif // DEBUG
+#endif // DEBUG
             {
                 gDebugMode = FALSE;            
             }
 
-            #if defined(REGION_EU)
+#if defined(REGION_EU)
             if (INVALID_EU_LANGUAGE(gLanguage))
-            #elif defined(REGION_JP)
+#elif defined(REGION_JP)
             if (gLanguage > LANGUAGE_HIRAGANA)
-            #endif
+#endif
             {
                 gLanguage = LANGUAGE_DEFAULT;
             }
@@ -2080,7 +2080,7 @@ void unk_7584c(u8 param_1)
             break;
 
         case 2:
-            #ifdef DEBUG
+#ifdef DEBUG
             gSectionInfo = sSectionInfo;
             Sram_InitSaveFile();
             // Written this way to produce matching ASM
@@ -2098,7 +2098,7 @@ void unk_7584c(u8 param_1)
             gCurrentRoom = 0;
             gLastDoorUsed = 1;
             SramRead_Language();
-            #endif // DEBUG
+#endif // DEBUG
             break;
 
         case 3:

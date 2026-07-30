@@ -59,11 +59,11 @@ static u8 BeforeRuinsTestSamusCloseUp(void)
             CutsceneReset();
 
             // TODO: Fix enum instead of using ifdef here
-            #ifdef REGION_EU
+#ifdef REGION_EU
             CutsceneStartBackgroundFading(11);
-            #else // !REGION_EU
+#else // !REGION_EU
             CutsceneStartBackgroundFading(10);
-            #endif // REGION_EU
+#endif // REGION_EU
             CUTSCENE_DATA.dispcnt = sBeforeRuinsTestPageData[5].bg | sBeforeRuinsTestPageData[8].bg |sBeforeRuinsTestPageData[6].bg;
             
             CUTSCENE_DATA.timeInfo.timer = 0;
@@ -146,9 +146,9 @@ static u8 BeforeRuinsTestSamusCloseUp(void)
             break;
     }
 
-    #ifdef DEBUG
+#ifdef DEBUG
     CutsceneCheckSkipStage(1);
-    #endif // DEBUG
+#endif // DEBUG
 
     return FALSE;
 }
@@ -255,9 +255,9 @@ static u8 BeforeRuinsTestWallAndGreyVoice(void)
 
     *CutsceneGetBgVerticalPointer(sBeforeRuinsTestPageData[3].bg) = *CutsceneGetBgVerticalPointer(sBeforeRuinsTestPageData[2].bg);
 
-    #ifdef DEBUG
+#ifdef DEBUG
     CutsceneCheckSkipStage(1);
-    #endif // DEBUG
+#endif // DEBUG
 
     return FALSE;
 }
@@ -376,9 +376,9 @@ static u8 BeforeRuinsTestChozoWallSides(void)
             break;
     }
 
-    #ifdef DEBUG
+#ifdef DEBUG
     CutsceneCheckSkipStage(1);
-    #endif // DEBUG
+#endif // DEBUG
 
     return FALSE;
 }

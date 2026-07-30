@@ -22,10 +22,10 @@ void agbmain(void)
     while (TRUE)
     {
         gVblankActive = FALSE;
-        #ifdef REGION_EU
+#ifdef REGION_EU
         if (gMainGameMode == GM_INGAME || gMainGameMode == GM_DEMO)
             InGameIoWriteRegisters();
-        #endif // REGION_EU
+#endif // REGION_EU
         UpdateAudio();
 
         if (gResetGame)
@@ -48,14 +48,14 @@ void agbmain(void)
                 break;
 
             case GM_INTRO:
-                #ifdef DEBUG
+#ifdef DEBUG
                 if (gChangedInput & KEY_R)
                 {
                     gSubGameMode1 = 0;
                     gMainGameMode = GM_DEBUG_MENU;
                 }
                 else
-                #endif // DEBUG
+#endif // DEBUG
                 if (IntroHandler())
                 {
                     gMainGameMode = GM_TITLE;
@@ -64,7 +64,7 @@ void agbmain(void)
                 break;
 
             case GM_TITLE:
-                #ifdef DEBUG
+#ifdef DEBUG
                 if (gChangedInput & KEY_R)
                 {
                     gSubGameMode1 = 0;
@@ -73,12 +73,12 @@ void agbmain(void)
                     gMainGameMode = GM_DEBUG_MENU;
                 }
                 else
-                #endif // DEBUG
+#endif // DEBUG
                 if (TitleScreenHandler())
                 {
-                    #ifdef REGION_EU
+#ifdef REGION_EU
                     gSubGameMode1 = 0;
-                    #endif // REGION_EU
+#endif // REGION_EU
                     if (gSubGameMode2 == 1)
                     {
                         gMainGameMode = GM_FILE_SELECT;
@@ -88,25 +88,25 @@ void agbmain(void)
                         DemoStart();
                         gMainGameMode = GM_DEMO;
                     }
-                    #ifdef REGION_EU
+#ifdef REGION_EU
                     else if (gSubGameMode2 == 3)
                     {
                         gMainGameMode = GM_SOFT_RESET;
                         gSubGameMode1 = sLanguageSelectGameModeSub1Values[1];
                     }
-                    #endif // REGION_EU
+#endif // REGION_EU
                     else
                     {
-                        #ifdef DEBUG
+#ifdef DEBUG
                         gMainGameMode = GM_DEBUG_MENU;
-                        #else // !DEBUG
+#else // !DEBUG
                         gMainGameMode = GM_INTRO;
-                        #endif // DEBUG
+#endif // DEBUG
                     }
 
-                    #ifndef REGION_EU
+#ifndef REGION_EU
                     gSubGameMode1 = 0;
-                    #endif // !REGION_EU
+#endif // !REGION_EU
                     gPauseScreenFlag = 0;
                     gSubGameMode2 = 0;
                 }
@@ -147,11 +147,11 @@ void agbmain(void)
                         }
                         else
                         {
-                            #ifdef DEBUG
+#ifdef DEBUG
                             gMainGameMode = GM_DEBUG_MENU;
-                            #else // !DEBUG
+#else // !DEBUG
                             gMainGameMode = GM_TITLE;
-                            #endif // DEBUG
+#endif // DEBUG
                             gSubGameMode1 = 0;
                         }
                     }
@@ -216,10 +216,10 @@ void agbmain(void)
                 {
                     gSubGameMode1 = 0;
                     gMainGameMode = GM_INTRO;
-                    #ifdef DEBUG
+#ifdef DEBUG
                     if (gBootDebugActive || gDebugMode)
                         gMainGameMode = GM_DEBUG_MENU;
-                    #endif // DEBUG
+#endif // DEBUG
                 }
                 break;
 
@@ -228,10 +228,10 @@ void agbmain(void)
                 {
                     gSubGameMode1 = 0;
                     gMainGameMode = gSubGameMode2;
-                    #ifdef DEBUG
+#ifdef DEBUG
                     if (gBootDebugActive)
                         gMainGameMode = GM_DEBUG_MENU;
-                    #endif // DEBUG
+#endif // DEBUG
                 }
                 break;
 
@@ -247,10 +247,10 @@ void agbmain(void)
                     else
                     {
                         gMainGameMode = GM_INGAME;
-                        #ifdef DEBUG
+#ifdef DEBUG
                         if (gBootDebugActive)
                             gMainGameMode = gBootDebugActive;
-                        #endif // DEBUG
+#endif // DEBUG
                     }
                 }
                 break;
@@ -308,10 +308,10 @@ void agbmain(void)
                     else
                     {
                         gMainGameMode = GM_SOFT_RESET;
-                        #ifdef DEBUG
+#ifdef DEBUG
                         if (gDebugMode)
                             gMainGameMode = GM_DEBUG_MENU;
-                        #endif // DEBUG
+#endif // DEBUG
                     }
 
                     gSubGameMode1 = 0;
@@ -320,7 +320,7 @@ void agbmain(void)
                 break;
 
             case GM_DEBUG_MENU:
-                #ifdef DEBUG
+#ifdef DEBUG
                 if (BootDebugHandler())
                 {
                     gSubGameMode1 = 0;
@@ -331,14 +331,14 @@ void agbmain(void)
                             gMainGameMode = GM_INGAME;
                             break;
                         case 2:
-                            #ifdef REGION_EU
+#ifdef REGION_EU
                             if (INVALID_EU_LANGUAGE(gLanguage))
                             {
                                 gMainGameMode = GM_SOFT_RESET;
                                 gSubGameMode1 = sLanguageSelectGameModeSub1Values[2];
                             }
                             else
-                            #endif // REGION_EU
+#endif // REGION_EU
                             {
                                 gMainGameMode = GM_INTRO;
                             }
@@ -369,9 +369,9 @@ void agbmain(void)
                             break;
                     }
                 }
-                #else // !DEBUG
+#else // !DEBUG
                 while (TRUE);
-                #endif // DEBUG
+#endif // DEBUG
                 break;
         }
         

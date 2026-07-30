@@ -171,11 +171,11 @@ const struct CutsceneInfo sCutsceneData[CUTSCENE_COUNT] = {
         .skippable = FALSE,
         .storyText = 0,
         .pFunction = GettingFullyPoweredSuitHandler,
-        #ifdef REGION_EU
+#ifdef REGION_EU
         .preBgFading = COLOR_FADING_SLOW_WHITE,
-        #else // !REGION_EU
+#else // !REGION_EU
         .preBgFading = COLOR_FADING_DOOR_TRANSITION,
-        #endif // REGION_EU
+#endif // REGION_EU
         .fadingTimer = 0,
         .bgFading = COLOR_FADING_CANCEL,
         .event = EVENT_NONE

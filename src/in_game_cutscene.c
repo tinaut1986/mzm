@@ -159,9 +159,9 @@ u32 InGameCutsceneSamusCloseUp(InGameCutsceneScene cutsceneNumber, InGameCutscen
         case 13:
             if (SramProcessIntroSave())
             {
-                #ifndef REGION_EU
+#ifndef REGION_EU
                 SramWrite_Language();
-                #endif // !REGION_EU
+#endif // !REGION_EU
                 result = IGC_RESULT_NEXT_STAGE;
             }
             break;
@@ -319,11 +319,11 @@ u32 InGameCutsceneUpgradingSuit(InGameCutsceneScene cutsceneNumber, InGameCutsce
             // Hide BG0, and backup its tilemap
             gWrittenToDispcnt = gIoRegistersBackup.Dispcnt_NonGameplay & ~DCNT_BG0;
             
-            #ifdef REGION_EU
+#ifdef REGION_EU
             DmaTransfer(3, VRAM_BASE + (1 * BGCNT_VRAM_TILE_SIZE), EWRAM_BASE + 0x1E000, BGCNT_VRAM_TILE_SIZE, 16);
-            #else // !REGION_EU
+#else // !REGION_EU
             DMA3_COPY_16(VRAM_BASE + (1 * BGCNT_VRAM_TILE_SIZE), EWRAM_BASE + 0x1E000, BGCNT_VRAM_TILE_SIZE / 2);
-            #endif // REGION_EU
+#endif // REGION_EU
 
             changeStage = TRUE;
             break;
@@ -508,11 +508,11 @@ u32 InGameCutsceneUpgradingSuit(InGameCutsceneScene cutsceneNumber, InGameCutsce
 
         case 16:
             // Put BG0 in the state it was before the cutscene
-            #ifdef REGION_EU
+#ifdef REGION_EU
             DmaTransfer(3, EWRAM_BASE + 0x1E000, VRAM_BASE + (1 * BGCNT_VRAM_TILE_SIZE), BGCNT_VRAM_TILE_SIZE, 16);
-            #else // !REGION_EU
+#else // !REGION_EU
             DMA3_COPY_16(EWRAM_BASE + 0x1E000, VRAM_BASE + (1 * BGCNT_VRAM_TILE_SIZE), BGCNT_VRAM_TILE_SIZE / 2);
-            #endif // REGION_EU
+#endif // REGION_EU
             WRITE_16(REG_BG0CNT, gIoRegistersBackup.BG0CNT);
 
             changeStage = TRUE;
@@ -562,13 +562,13 @@ u32 InGameCutsceneUpgradingSuit(InGameCutsceneScene cutsceneNumber, InGameCutsce
             gDisablePause = FALSE;
             gDefaultTransparency.unk_0 = FALSE;
 
-            #if defined(REGION_EU) || defined(BUGFIX)
+#if defined(REGION_EU) || defined(BUGFIX)
             result = IGC_RESULT_STOP;
-            #else // !(REGION_EU || BUGFIX)
+#else // !(REGION_EU || BUGFIX)
             // Since this cutscene doesn't return IGC_RESULT_STOP, this function is still called
             // even after the cutscene ends. It's on stage 20, so technically nothing happens.
             result = IGC_RESULT_NEXT_STAGE;
-            #endif // REGION_EU || BUGFIX
+#endif // REGION_EU || BUGFIX
             break;
     }
 

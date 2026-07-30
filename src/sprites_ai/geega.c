@@ -198,9 +198,9 @@ static void GeegaRespawn(void)
         gCurrentSprite.ignoreSamusCollisionTimer = DELTA_TIME;
         gCurrentSprite.freezeTimer = 0;
 
-        #ifdef BUGFIX
+#ifdef BUGFIX
         gCurrentSprite.standingOnSprite = SAMUS_STANDING_ON_SPRITE_OFF;
-        #endif // BUGFIX
+#endif // BUGFIX
     }
 }
 

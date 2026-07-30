@@ -78,9 +78,9 @@ static u8 SamusInBlueShipPoweringUp(void)
     SamusInBlueShipShakeScreen(&CUTSCENE_DATA.graphicsData[0]);
     SamusInBlueShipUpdateControlPanel(&CUTSCENE_DATA.oam[0]);
 
-    #ifdef DEBUG
+#ifdef DEBUG
     CutsceneCheckSkipStage(1);
-    #endif // DEBUG
+#endif // DEBUG
 
     return FALSE;
 }

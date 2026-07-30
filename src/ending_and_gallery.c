@@ -72,7 +72,7 @@ static void EndingImageLoadTextOam(EndingImageTextSet set)
 {
     s32 i;
 
-    #ifdef REGION_EU
+#ifdef REGION_EU
     switch (ENDING_DATA.language)
     {
         case LANGUAGE_GERMAN:
@@ -150,7 +150,7 @@ static void EndingImageLoadTextOam(EndingImageTextSet set)
             }
             break;
     }
-    #else // !REGION_EU
+#else // !REGION_EU
     if (ENDING_DATA.language == LANGUAGE_HIRAGANA)
     {
         if (set == ENDING_IMAGE_OAM_SET_CLEAR_TIME)
@@ -178,7 +178,7 @@ static void EndingImageLoadTextOam(EndingImageTextSet set)
             SETUP_ENDING_TEXT_OAM(sEndingImageOam_Collecting_English, i);
         }
     }
-    #endif // REGION_EU
+#endif // REGION_EU
 }
 
 /**
@@ -190,7 +190,7 @@ static void EndingImageDisplayLinePermanently(EndingImageLine line)
 {
     s32 i;
 
-    #ifdef REGION_EU
+#ifdef REGION_EU
     switch (ENDING_DATA.language)
     {
         case LANGUAGE_GERMAN:
@@ -217,7 +217,7 @@ static void EndingImageDisplayLinePermanently(EndingImageLine line)
             SETUP_ENDING_FULL_LINES_OAM(sEndingImageOam_FullLines_English);
             break;
     }
-    #else // !REGION_EU
+#else // !REGION_EU
     if (ENDING_DATA.language == LANGUAGE_HIRAGANA)
     {
         SETUP_ENDING_FULL_LINES_OAM(sEndingImageOam_FullLines_Hiragana);
@@ -226,7 +226,7 @@ static void EndingImageDisplayLinePermanently(EndingImageLine line)
     {
         SETUP_ENDING_FULL_LINES_OAM(sEndingImageOam_FullLines_English);
     }
-    #endif // REGION_EU
+#endif // REGION_EU
 
     for (i  = 0; i < ENDING_DATA.oamLength - 6; i++)
         ENDING_DATA.oamTypes[i + 6] = ENDING_OAM_TYPE_NONE;
@@ -283,59 +283,59 @@ static void EndingImageLoadIGTAndPercentageGraphics(void)
     if (hoursTens != 0)
     {
         offset = hoursTens * 64;
-        #ifdef REGION_EU
+#ifdef REGION_EU
         DmaTransfer(3, &sEndingImageNumbersGfx_Upper[offset], VRAM_OBJ, 64, 16);
         DmaTransfer(3, &sEndingImageNumbersGfx_Lower[offset], VRAM_OBJ + 0x400, 64, 16);
-        #else // !REGION_EU
+#else // !REGION_EU
         DMA3_COPY_16(&sEndingImageNumbersGfx_Upper[offset], VRAM_OBJ, 64 / 2);
         DMA3_COPY_16(&sEndingImageNumbersGfx_Lower[offset], VRAM_OBJ + 0x400, 64 / 2);
-        #endif // REGION_EU
+#endif // REGION_EU
     }
 
     offset = hoursOnes * 64;
-    #ifdef REGION_EU
+#ifdef REGION_EU
     DmaTransfer(3, &sEndingImageNumbersGfx_Upper[offset], VRAM_OBJ + 0x040, 64, 16);
     DmaTransfer(3, &sEndingImageNumbersGfx_Lower[offset], VRAM_OBJ + 0x440, 64, 16);
-    #else // !REGION_EU
+#else // !REGION_EU
     DMA3_COPY_16(&sEndingImageNumbersGfx_Upper[offset], VRAM_OBJ + 0x040, 64 / 2);
     DMA3_COPY_16(&sEndingImageNumbersGfx_Lower[offset], VRAM_OBJ + 0x440, 64 / 2);
-    #endif // REGION_EU
+#endif // REGION_EU
 
     offset = minutesTens * 64;
-    #ifdef REGION_EU
+#ifdef REGION_EU
     DmaTransfer(3, &sEndingImageNumbersGfx_Upper[offset], VRAM_OBJ + 0x0A0, 64, 16);
     DmaTransfer(3, &sEndingImageNumbersGfx_Lower[offset], VRAM_OBJ + 0x4A0, 64, 16);
-    #else // !REGION_EU
+#else // !REGION_EU
     DMA3_COPY_16(&sEndingImageNumbersGfx_Upper[offset], VRAM_OBJ + 0x0A0, 64 / 2);
     DMA3_COPY_16(&sEndingImageNumbersGfx_Lower[offset], VRAM_OBJ + 0x4A0, 64 / 2);
-    #endif // REGION_EU
+#endif // REGION_EU
 
     offset = minutesOnes * 64;
-    #ifdef REGION_EU
+#ifdef REGION_EU
     DmaTransfer(3, &sEndingImageNumbersGfx_Upper[offset], VRAM_OBJ + 0x0E0, 64, 16);
     DmaTransfer(3, &sEndingImageNumbersGfx_Lower[offset], VRAM_OBJ + 0x4E0, 64, 16);
-    #else // !REGION_EU
+#else // !REGION_EU
     DMA3_COPY_16(&sEndingImageNumbersGfx_Upper[offset], VRAM_OBJ + 0x0E0, 64 / 2);
     DMA3_COPY_16(&sEndingImageNumbersGfx_Lower[offset], VRAM_OBJ + 0x4E0, 64 / 2);
-    #endif // REGION_EU
+#endif // REGION_EU
 
     offset = secondsTens * 64;
-    #ifdef REGION_EU
+#ifdef REGION_EU
     DmaTransfer(3, &sEndingImageNumbersGfx_Upper[offset], VRAM_OBJ + 0x140, 64, 16);
     DmaTransfer(3, &sEndingImageNumbersGfx_Lower[offset], VRAM_OBJ + 0x540, 64, 16);
-    #else // !REGION_EU
+#else // !REGION_EU
     DMA3_COPY_16(&sEndingImageNumbersGfx_Upper[offset], VRAM_OBJ + 0x140, 64 / 2);
     DMA3_COPY_16(&sEndingImageNumbersGfx_Lower[offset], VRAM_OBJ + 0x540, 64 / 2);
-    #endif // REGION_EU
+#endif // REGION_EU
 
     offset = secondsOnes * 64;
-    #ifdef REGION_EU
+#ifdef REGION_EU
     DmaTransfer(3, &sEndingImageNumbersGfx_Upper[offset], VRAM_OBJ + 0x180, 64, 16);
     DmaTransfer(3, &sEndingImageNumbersGfx_Lower[offset], VRAM_OBJ + 0x580, 64, 16);
-    #else // !REGION_EU
+#else // !REGION_EU
     DMA3_COPY_16(&sEndingImageNumbersGfx_Upper[offset], VRAM_OBJ + 0x180, 64 / 2);
     DMA3_COPY_16(&sEndingImageNumbersGfx_Lower[offset], VRAM_OBJ + 0x580, 64 / 2);
-    #endif // REGION_EU
+#endif // REGION_EU
 
     percentageHundreds = 0;
     hoursOnes = 0; // percentageTens
@@ -356,35 +356,35 @@ static void EndingImageLoadIGTAndPercentageGraphics(void)
     if (percentageHundreds != 0)
     {
         offset = percentageHundreds * 64;
-        #ifdef REGION_EU
+#ifdef REGION_EU
         DmaTransfer(3, &sEndingImageNumbersGfx_Upper[offset], VRAM_OBJ + 0x1C0, 64, 16);
         DmaTransfer(3, &sEndingImageNumbersGfx_Lower[offset], VRAM_OBJ + 0x5C0, 64, 16);
-        #else // !REGION_EU
+#else // !REGION_EU
         DMA3_COPY_16(&sEndingImageNumbersGfx_Upper[offset], VRAM_OBJ + 0x1C0, 64 / 2);
         DMA3_COPY_16(&sEndingImageNumbersGfx_Lower[offset], VRAM_OBJ + 0x5C0, 64 / 2);
-        #endif // REGION_EU
+#endif // REGION_EU
     }
     
     if (percentageHundreds != 0 || hoursOnes != 0)
     {
         offset = hoursOnes * 64;
-        #ifdef REGION_EU
+#ifdef REGION_EU
         DmaTransfer(3, &sEndingImageNumbersGfx_Upper[offset], VRAM_OBJ + 0x200, 64, 16);
         DmaTransfer(3, &sEndingImageNumbersGfx_Lower[offset], VRAM_OBJ + 0x600, 64, 16);
-        #else // !REGION_EU
+#else // !REGION_EU
         DMA3_COPY_16(&sEndingImageNumbersGfx_Upper[offset], VRAM_OBJ + 0x200, 64 / 2);
         DMA3_COPY_16(&sEndingImageNumbersGfx_Lower[offset], VRAM_OBJ + 0x600, 64 / 2);
-        #endif // REGION_EU
+#endif // REGION_EU
     }
 
     offset = minutesTens * 64;
-    #ifdef REGION_EU
+#ifdef REGION_EU
     DmaTransfer(3, &sEndingImageNumbersGfx_Upper[offset], VRAM_OBJ + 0x240, 64, 16);
     DmaTransfer(3, &sEndingImageNumbersGfx_Lower[offset], VRAM_OBJ + 0x640, 64, 16);
-    #else // !REGION_EU
+#else // !REGION_EU
     DMA3_COPY_16(&sEndingImageNumbersGfx_Upper[offset], VRAM_OBJ + 0x240, 64 / 2);
     DMA3_COPY_16(&sEndingImageNumbersGfx_Lower[offset], VRAM_OBJ + 0x640, 64 / 2);
-    #endif // REGION_EU
+#endif // REGION_EU
 }
 
 /**
@@ -493,13 +493,13 @@ static void CreditsInit(void)
     LZ77UncompVram(sCreditsChozoWallBottomTileTable, VRAM_BASE + 0xD800);
     LZ77UncompVram(sCreditsCharactersGfx, VRAM_BASE + 0x8000);
 
-    #ifdef REGION_EU
+#ifdef REGION_EU
     DmaTransfer(3, sCreditsChozoWallPal, PALRAM_BASE, sizeof(sCreditsChozoWallPal), 16);
     DmaTransfer(3, sCreditsCharactersPal, PALRAM_BASE + 13 * PAL_ROW_SIZE, sizeof(sCreditsCharactersPal), 16);
-    #else // !REGION_EU
+#else // !REGION_EU
     DMA3_COPY_16(sCreditsChozoWallPal, PALRAM_BASE, ARRAY_SIZE(sCreditsChozoWallPal));
     DMA3_COPY_16(sCreditsCharactersPal, PALRAM_BASE + 13 * PAL_ROW_SIZE, ARRAY_SIZE(sCreditsCharactersPal));
-    #endif // REGION_EU
+#endif // REGION_EU
 
     WRITE_16(REG_BG0CNT, CREATE_BGCNT(2, 30, BGCNT_HIGH_PRIORITY, BGCNT_SIZE_256x256));
     WRITE_16(REG_BG1CNT, CREATE_BGCNT(2, 31, BGCNT_HIGH_MID_PRIORITY, BGCNT_SIZE_256x256));
@@ -709,7 +709,7 @@ static u8 CreditsDisplayLine(u32 line)
                     ENDING_DATA.creditLineTilemap_1[tilemapOffset] = tile + 0x9A;
                     ENDING_DATA.creditLineTilemap_2[tilemapOffset] = tile + 0xBA;
                 }
-                #ifdef REGION_EU
+#ifdef REGION_EU
                 else if (pCredits->text[i] == 0x23) // ó
                 {
                     ENDING_DATA.creditLineTilemap_1[tilemapOffset] = tile + 0x9B;
@@ -724,7 +724,7 @@ static u8 CreditsDisplayLine(u32 line)
                 {
                     ENDING_DATA.creditLineTilemap_2[tilemapOffset] = tile + 0x7E;
                 }
-                #endif // REGION_EU
+#endif // REGION_EU
 
                 i++;
                 tilemapOffset++;
@@ -837,13 +837,13 @@ static u8 CreditsDisplay(void)
         ENDING_DATA.unk_8++;
     }
 
-    #ifdef REGION_EU
+#ifdef REGION_EU
     ENDING_DATA.unk_E += 9;
     gBg0YPosition += 9;
-    #else // !REGION_EU
+#else // !REGION_EU
     ENDING_DATA.unk_E += 7;
     gBg0YPosition += 7;
-    #endif // REGION_EU
+#endif // REGION_EU
 
     return FALSE;
 }
@@ -905,11 +905,11 @@ static u8 CreditsChozoWallZoom(void)
     {
         case 0:
             LZ77UncompVram(sCreditsChozoWallBottomZoomedGfx, VRAM_BASE);
-            #ifdef REGION_EU
+#ifdef REGION_EU
             DmaTransfer(3, sCreditsChozoWallPal, PALRAM_BASE, sizeof(sCreditsChozoWallPal), 16);
-            #else // !REGION_EU
+#else // !REGION_EU
             DMA3_COPY_16(sCreditsChozoWallPal, PALRAM_BASE, ARRAY_SIZE(sCreditsChozoWallPal));
-            #endif // REGION_EU
+#endif // REGION_EU
             gBg0YPosition = 0;
             gWrittenToBldalpha_L = 0;
             gWrittenToBldalpha_H = 16;
@@ -1023,11 +1023,11 @@ static void EndScreenInit(void)
     BitFill(3, 0, VRAM_BASE + 0xD800, 0x800, 32);
     BitFill(3, 0, VRAM_BASE + 0xE800, 0x800, 32);
 
-    #ifdef REGION_EU
+#ifdef REGION_EU
     DmaTransfer(3, sEndingPosingPal, PALRAM_BASE, sizeof(sEndingPosingPal), 16);
-    #else // !REGION_EU
+#else // !REGION_EU
     DMA3_COPY_16(sEndingPosingPal, PALRAM_BASE, ARRAY_SIZE(sEndingPosingPal));
-    #endif // REGION_EU
+#endif // REGION_EU
 
     WRITE_16(REG_BG0CNT, CREATE_BGCNT(2, 30, BGCNT_HIGH_PRIORITY, BGCNT_SIZE_256x256));
     WRITE_16(REG_BG1CNT, CREATE_BGCNT(0, 26, BGCNT_HIGH_MID_PRIORITY, BGCNT_SIZE_512x256));
@@ -1036,11 +1036,11 @@ static void EndScreenInit(void)
     
     gNextOamSlot = 0;
     ResetFreeOam();
-    #ifdef REGION_EU
+#ifdef REGION_EU
     DmaTransfer(3, gOamData, OAM_BASE, OAM_SIZE, 32);
-    #else // !REGION_EU
+#else // !REGION_EU
     DMA3_COPY_32(gOamData, OAM_BASE, OAM_SIZE / sizeof(u32));
-    #endif // REGION_EU
+#endif // REGION_EU
 
     gBg0XPosition = 0;
     gBg0YPosition = 0;
@@ -1222,13 +1222,13 @@ static u8 EndScreenSamusPosing(void)
                 ENDING_DATA.oamTypes[1] = 16;
                 break;
             }
-            #ifdef REGION_EU
+#ifdef REGION_EU
             DmaTransfer(3, sEndingWhitePalPointers[(u8)temp / 4],
                 PALRAM_BASE, sizeof(sEndingPosingPal_White1), 16);
-            #else // !REGION_EU
+#else // !REGION_EU
             DMA3_COPY_16(sEndingWhitePalPointers[(u8)temp / 4],
                 PALRAM_BASE, ARRAY_SIZE(sEndingPosingPal_White1));
-            #endif // REGION_EU
+#endif // REGION_EU
             break;
 
         case 4:
@@ -1358,11 +1358,11 @@ static u8 EndScreenSamusPosing(void)
             break;
 
         case 19:
-            #ifdef REGION_EU
+#ifdef REGION_EU
             DmaTransfer(3, sEndingPosingPal, PALRAM_BASE, 5 * PAL_ROW_SIZE, 16);
-            #else // !REGION_EU
+#else // !REGION_EU
             DMA3_COPY_16(sEndingPosingPal, PALRAM_BASE, 0x50);
-            #endif // REGION_EU
+#endif // REGION_EU
             ENDING_DATA.oamTypes[1]++;
             break;
 
@@ -1423,21 +1423,21 @@ static void EndingImageInit(void)
     LZ77UncompVram(sEndingImagesTopTileTablePointers[endingNbr], VRAM_BASE + 0xE000);
     LZ77UncompVram(sEndingImagesHalfTileTablePointers[endingNbr], VRAM_BASE + 0xF800);
     BitFill(3, 0x4FF04FF, VRAM_BASE + 0xE800, 0x800, 0x20);
-    #ifdef REGION_EU
+#ifdef REGION_EU
     DmaTransfer(3, sEndingImagesPalPointers[endingNbr], PALRAM_BASE, PAL_SIZE, 16);
-    #else // !REGION_EU
+#else // !REGION_EU
     DMA3_COPY_16(sEndingImagesPalPointers[endingNbr], PALRAM_BASE, 0x100);
-    #endif // REGION_EU
+#endif // REGION_EU
 
     ENDING_DATA.completionPercentage = energyNbr + missilesNbr + superMissilesNbr + powerBombNbr + abilityCount;
 
-    #ifndef REGION_EU
+#ifndef REGION_EU
     LZ77UncompVram(sEndingImageNumbersMiscEnglishGfx, VRAM_OBJ);
-    #endif // !REGION_EU
+#endif // !REGION_EU
 
     ENDING_DATA.language = gLanguage;
 
-    #ifdef REGION_EU
+#ifdef REGION_EU
     switch (ENDING_DATA.language)
     {
         case LANGUAGE_GERMAN:
@@ -1470,7 +1470,7 @@ static void EndingImageInit(void)
             LZ77UncompVram(sEndingImageTextEnglishGfx, VRAM_BASE + 0x11000);
             break;
     }
-    #else // !REGION_EU
+#else // !REGION_EU
     if (gLanguage > LANGUAGE_ENGLISH)
         ENDING_DATA.language = LANGUAGE_ENGLISH;
 
@@ -1478,13 +1478,13 @@ static void EndingImageInit(void)
         LZ77UncompVram(sEndingImageTextHiraganaGfx, VRAM_BASE + 0x11000);
     else
         LZ77UncompVram(sEndingImageTextEnglishGfx, VRAM_BASE + 0x11000);
-    #endif // REGION_EU
+#endif // REGION_EU
 
-    #ifdef REGION_EU
+#ifdef REGION_EU
     DmaTransfer(3, sEndingImageTextPal, PALRAM_OBJ, sizeof(sEndingImageTextPal), 16);
-    #else // !REGION_EU
+#else // !REGION_EU
     DMA3_COPY_16(sEndingImageTextPal, PALRAM_OBJ, ARRAY_SIZE(sEndingImageTextPal));
-    #endif // REGION_EU
+#endif // REGION_EU
 
     EndingImageLoadIGTAndPercentageGraphics();
     WRITE_16(REG_BG0CNT, CREATE_BGCNT(0, 28, BGCNT_HIGH_PRIORITY, BGCNT_SIZE_256x512));
@@ -1593,11 +1593,11 @@ static void EndingImageDisplayText(void)
             
         palette = sEndingImageNewRecordPalettes[ENDING_DATA.newRecordPaletteTimer / 6];
 
-        #ifdef REGION_EU
+#ifdef REGION_EU
         src = sEndingImageOamPointers_NewRecord[ENDING_DATA.language];
-        #else // !REGION_EU
+#else // !REGION_EU
         src = sEndingImageOam_NewRecordEnglish;
-        #endif // REGION_EU
+#endif // REGION_EU
 
         part = *src++;
         nextSlot += MOD_AND(part, 0x100);
@@ -1754,11 +1754,11 @@ static void UnlockedOptionsInit(void)
     BitFill(3, -1, VRAM_BASE + 0x7FE0, 0x20, 32);
     BitFill(3, 0xF3FFF3FF, VRAM_BASE + 0x8800, 0x800, 32);
 
-    #ifdef REGION_EU
+#ifdef REGION_EU
     DmaTransfer(3, sUnlockedOptionsPal, PALRAM_BASE + 15 * PAL_ROW_SIZE, sizeof(sUnlockedOptionsPal), 16);
-    #else // !REGION_EU
+#else // !REGION_EU
     DMA3_COPY_16(sUnlockedOptionsPal, PALRAM_BASE + 15 * PAL_ROW_SIZE, ARRAY_SIZE(sUnlockedOptionsPal));
-    #endif // REGION_EU
+#endif // REGION_EU
 
     WRITE_16(REG_BG0CNT, CREATE_BGCNT(0, 16, BGCNT_HIGH_PRIORITY, BGCNT_SIZE_256x256));
     WRITE_16(REG_BG1CNT, CREATE_BGCNT(0, 17, BGCNT_HIGH_MID_PRIORITY, BGCNT_SIZE_256x256));
@@ -1923,7 +1923,7 @@ u32 CreditsHandler(void)
             break;
 
         case 2:
-            #if defined(DEBUG) && !defined(REGION_US_BETA)
+#if defined(DEBUG) && !defined(REGION_US_BETA)
             // This is a debug feature that lets you skip the credits by pressing L.
             // It's part of the EU beta ROM but not the US beta ROM
             if (gChangedInput & KEY_L)
@@ -1932,7 +1932,7 @@ u32 CreditsHandler(void)
                 gSubGameMode1++;
                 break;
             }
-            #endif // DEBUG && !REGION_US_BETA
+#endif // DEBUG && !REGION_US_BETA
             stageResult = sCreditsFunctionPointers[ENDING_DATA.stage]();
             if (stageResult)
             {
@@ -2108,11 +2108,11 @@ static void GalleryInit(void)
 
     BitFill(3, 0x4FF04FF, VRAM_BASE + 0xE800, 0x800, 32);
 
-    #ifdef REGION_EU
+#ifdef REGION_EU
     DmaTransfer(3, sEndingImagesPalPointers[endingNbr], PALRAM_BASE, PAL_SIZE, 16);
-    #else // !REGION_EU
+#else // !REGION_EU
     DMA3_COPY_16(sEndingImagesPalPointers[endingNbr], PALRAM_BASE, COLORS_IN_PAL);
-    #endif // REGION_EU
+#endif // REGION_EU
 
     WRITE_16(REG_BG0CNT, CREATE_BGCNT(0, 28, BGCNT_HIGH_PRIORITY, BGCNT_SIZE_256x512));
     WRITE_16(REG_BG1CNT, CREATE_BGCNT(2, 30, BGCNT_HIGH_MID_PRIORITY, BGCNT_SIZE_256x512));

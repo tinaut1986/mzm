@@ -28,9 +28,9 @@ struct InGameData {
 };
 
 union NonGameplayRam {
-    #ifdef REGION_EU
+#ifdef REGION_EU
     struct LanguageSelectData languageSelect;
-    #endif // REGION_EU
+#endif // REGION_EU
     struct IntroData intro;
     struct TitleScreenData titleScreen;
     struct FileSelectData fileSelect;

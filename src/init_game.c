@@ -26,10 +26,10 @@ void InitializeGame(void)
     CallbackSetVblank(SoftResetVBlankCallback);
     SramRead_All();
     InitializeAudio();
-    #ifdef BUGFIX
+#ifdef BUGFIX
     SramRead_SoundMode();
     FileSelectApplyStereo();
-    #endif // BUGFIX
+#endif // BUGFIX
 
     WRITE_16(REG_IE, IF_VBLANK | IF_DMA2 | IF_GAMEPAK);
     WRITE_16(REG_DISPSTAT, DSTAT_IF_VBLANK);
@@ -55,12 +55,12 @@ void InitializeGame(void)
     }
     else
     {
-        #ifdef DEBUG
+#ifdef DEBUG
         BootDebugReadSram();
         gMainGameMode = gDebugMode ? GM_DEBUG_MENU : GM_SOFT_RESET;
-        #else // !DEBUG
+#else // !DEBUG
         gMainGameMode = GM_SOFT_RESET;
-        #endif // DEBUG
+#endif // DEBUG
     }
 
     gButtonInput = KEY_NONE;
@@ -68,9 +68,9 @@ void InitializeGame(void)
     gChangedInput = KEY_NONE;
 
     gDisableSoftReset = FALSE;
-    #ifndef BUGFIX
+#ifndef BUGFIX
     gStereoFlag = FALSE;
-    #endif // !BUGFIX
+#endif // !BUGFIX
 
     WRITE_16(REG_IF, USHORT_MAX);
     WRITE_16(REG_IME, TRUE);

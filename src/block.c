@@ -779,12 +779,12 @@ boolu32 BlockSamusApplyScrewSpeedboosterDamageToEnvironment(u16 xPosition, u16 y
                 BlockApplyCcaa(blockY, blockX, clipdata);
             }
         }
-        #ifdef BUGFIX
+#ifdef BUGFIX
         else
         {
             result = FALSE;
         }
-        #endif // BUGFIX
+#endif // BUGFIX
     }
     else
     {

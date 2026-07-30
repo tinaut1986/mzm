@@ -67,51 +67,51 @@ static const u32* sMapScreenUnknownItemsNamesGfxPointers[LANGUAGE_COUNT] = {
     [LANGUAGE_JAPANESE] = sMapScreenUnknownItemsNamesJapaneseGfx,
     [LANGUAGE_HIRAGANA] = sMapScreenUnknownItemsNamesHiraganaGfx,
     [LANGUAGE_ENGLISH] = sMapScreenUnknownItemsNamesEnglishGfx,
-    #if defined(REGION_EU) || defined(REGION_US_BETA)
+#if defined(REGION_EU) || defined(REGION_US_BETA)
     [LANGUAGE_GERMAN] = sMapScreenUnknownItemsNamesGermanGfx,
     [LANGUAGE_FRENCH] = sMapScreenUnknownItemsNamesFrenchGfx,
     [LANGUAGE_ITALIAN] = sMapScreenUnknownItemsNamesItalianGfx,
     [LANGUAGE_SPANISH] = sMapScreenUnknownItemsNamesSpanishGfx
-    #else // !(REGION_EU || REGION_US_BETA)
+#else // !(REGION_EU || REGION_US_BETA)
     [LANGUAGE_GERMAN] = sMapScreenUnknownItemsNamesEnglishGfx,
     [LANGUAGE_FRENCH] = sMapScreenUnknownItemsNamesEnglishGfx,
     [LANGUAGE_ITALIAN] = sMapScreenUnknownItemsNamesEnglishGfx,
     [LANGUAGE_SPANISH] = sMapScreenUnknownItemsNamesEnglishGfx
-    #endif // REGION_EU || REGION_US_BETA
+#endif // REGION_EU || REGION_US_BETA
 };
 
 static const u32* sMapScreenEquipmentNamesGfxPointers[LANGUAGE_COUNT] = {
     [LANGUAGE_JAPANESE] = sEquipmentNamesJapaneseGfx,
     [LANGUAGE_HIRAGANA] = sEquipmentNamesHiraganaGfx,
     [LANGUAGE_ENGLISH] = sEquipmentNamesEnglishGfx,
-    #if defined(REGION_EU) || defined(REGION_US_BETA)
+#if defined(REGION_EU) || defined(REGION_US_BETA)
     [LANGUAGE_GERMAN] = sEquipmentNamesGermanGfx,
     [LANGUAGE_FRENCH] = sEquipmentNamesFrenchGfx,
     [LANGUAGE_ITALIAN] = sEquipmentNamesItalianGfx,
     [LANGUAGE_SPANISH] = sEquipmentNamesSpanishGfx
-    #else // !(REGION_EU || REGION_US_BETA)
+#else // !(REGION_EU || REGION_US_BETA)
     [LANGUAGE_GERMAN] = sEquipmentNamesEnglishGfx,
     [LANGUAGE_FRENCH] = sEquipmentNamesEnglishGfx,
     [LANGUAGE_ITALIAN] = sEquipmentNamesEnglishGfx,
     [LANGUAGE_SPANISH] = sEquipmentNamesEnglishGfx
-    #endif // REGION_EU || REGION_US_BETA
+#endif // REGION_EU || REGION_US_BETA
 };
 
 static const u32* sMapScreenMenuNamesGfxPointers[LANGUAGE_COUNT] = {
     [LANGUAGE_JAPANESE] = sMenuNamesJapaneseGfx,
     [LANGUAGE_HIRAGANA] = sMenuNamesHiraganaGfx,
     [LANGUAGE_ENGLISH] = sMenuNamesEnglishGfx,
-    #if defined(REGION_EU) || defined(REGION_US_BETA)
+#if defined(REGION_EU) || defined(REGION_US_BETA)
     [LANGUAGE_GERMAN] = sMenuNamesGermanGfx,
     [LANGUAGE_FRENCH] = sMenuNamesFrenchGfx,
     [LANGUAGE_ITALIAN] = sMenuNamesItalianGfx,
     [LANGUAGE_SPANISH] = sMenuNamesSpanishGfx
-    #else // !(REGION_EU || REGION_US_BETA)
+#else // !(REGION_EU || REGION_US_BETA)
     [LANGUAGE_GERMAN] = sMenuNamesEnglishGfx,
     [LANGUAGE_FRENCH] = sMenuNamesEnglishGfx,
     [LANGUAGE_ITALIAN] = sMenuNamesEnglishGfx,
     [LANGUAGE_SPANISH] = sMenuNamesEnglishGfx
-    #endif // REGION_EU || REGION_US_BETA
+#endif // REGION_EU || REGION_US_BETA
 };
 
 static u16 sPauseScreenCompletionInfoOamData[6][5] = {
@@ -547,9 +547,9 @@ void PauseScreenDrawCompletionInfo(u8 dontDraw)
 
     cantDraw = FALSE;
 
-    #ifdef DEBUG
+#ifdef DEBUG
     if (!gDebugMode)
-    #endif // DEBUG
+#endif // DEBUG
     {
         // Draw if already completed game
         if (!gGameCompletion.completedGame)
@@ -1046,16 +1046,16 @@ void PauseScreenLoadAreaNamesAndIcons(void)
         PAUSE_SCREEN_DATA.bossIconOam[0].priority = 3;
     }
 
-    #ifdef DEBUG
+#ifdef DEBUG
     if (PAUSE_SCREEN_DATA.stateInfo.state == PAUSE_SCREEN_STATE_STATUS_SCREEN)
     {
         if (PAUSE_SCREEN_DATA.typeFlags & PAUSE_SCREEN_TYPE_DEBUG)
             PauseDebugInitCursor();
     }
     else
-    #else // !DEBUG
+#else // !DEBUG
     if (PAUSE_SCREEN_DATA.stateInfo.state != PAUSE_SCREEN_STATE_STATUS_SCREEN)
-    #endif // DEBUG
+#endif // DEBUG
     {
         PAUSE_SCREEN_DATA.miscOam[0].oamId = 0;
         PAUSE_SCREEN_DATA.miscOam[0].yPosition = 0;
@@ -1120,9 +1120,9 @@ void PauseScreenLoadAreaNamesAndIcons(void)
         PAUSE_SCREEN_DATA.borderArrowsOam[sMapScreenArrowsData[i][0]].priority = 3;
     }
 
-    #ifdef DEBUG
+#ifdef DEBUG
     PAUSE_SCREEN_DATA.minimapRoomInfoOam[0] = sMenuOamDataMinimapRoomInfo;
-    #endif
+#endif
 }
 
 /**
@@ -1133,10 +1133,10 @@ void PauseScreenProcessOam(void)
 {
     gNextOamSlot = 0;
 
-    #ifdef DEBUG
+#ifdef DEBUG
     if (PAUSE_SCREEN_DATA.stateInfo.state == 0 && PAUSE_SCREEN_DATA.currentArea == gCurrentArea)
         ProcessMenuOam(ARRAY_SIZE(PAUSE_SCREEN_DATA.minimapRoomInfoOam), PAUSE_SCREEN_DATA.minimapRoomInfoOam, sPauseScreenMiscOam);
-    #endif // DEBUG
+#endif // DEBUG
 
     // Always process area name oam
     ProcessMenuOam(ARRAY_SIZE(PAUSE_SCREEN_DATA.overlayOam), PAUSE_SCREEN_DATA.overlayOam, sPauseScreenOverlayOam);
@@ -2098,10 +2098,10 @@ u32 PauseScreenHandler(void)
         case 4:
             gSubGameModeStage = 0;
             gSubGameMode2 = 4;
-            #ifdef DEBUG
+#ifdef DEBUG
             if ((gPauseScreenFlag == PAUSE_SCREEN_SUITLESS_ITEMS || gPauseScreenFlag == PAUSE_SCREEN_FULLY_POWERED_SUIT_ITEMS) && gBootDebugActive)
                 gSubGameMode2 = 10;
-            #endif // DEBUG
+#endif // DEBUG
             leaving = TRUE;
             break;
 
@@ -2224,7 +2224,7 @@ void PauseScreenInit(void)
     PAUSE_SCREEN_DATA.mapY = gMinimapY;
     PAUSE_SCREEN_DATA.typeFlags = 0;
 
-    #ifdef DEBUG
+#ifdef DEBUG
     if (gDebugMode && gPauseScreenFlag == PAUSE_SCREEN_PAUSE_OR_CUTSCENE)
     {
         if ((gButtonInput & (KEY_L | KEY_SELECT)) == (KEY_L | KEY_SELECT))
@@ -2232,7 +2232,7 @@ void PauseScreenInit(void)
         else if (!(gButtonInput & KEY_SELECT))
             PAUSE_SCREEN_DATA.typeFlags = PAUSE_SCREEN_TYPE_DEBUG;
     }
-    #endif // DEBUG
+#endif // DEBUG
 
     switch (gPauseScreenFlag)
     {
@@ -2276,12 +2276,12 @@ void PauseScreenInit(void)
     sBgPalramPointer[0] = 0;
 
     DmaTransfer(3, sMinimapTilesGfx, VRAM_BASE + 0x8000, 0x3000, 16);
-    #ifdef REGION_JP
+#ifdef REGION_JP
     if (gLanguage == LANGUAGE_HIRAGANA)
         DmaTransfer(3, VRAM_BASE + 0xAC20, VRAM_BASE + 0xA820, 0x3E0, 32);
-    #else // !REGION_JP
+#else // !REGION_JP
     DmaTransfer(3, VRAM_BASE + 0xA820, VRAM_BASE + 0xAC20, 0x3E0, 32);
-    #endif // REGION_JP
+#endif // REGION_JP
 
     CallLZ77UncompVram(sTankIconsGfx, VRAM_BASE + 0x13000);
     CallLZ77UncompVram(sMapScreenAreaNamesGfxPointers[gLanguage], VRAM_BASE + 0x10800);
@@ -2291,13 +2291,13 @@ void PauseScreenInit(void)
     if (PAUSE_SCREEN_DATA.typeFlags & PAUSE_SCREEN_TYPE_CHOZO_STATUE_HINT)
     {
         CallLZ77UncompVram(sChozoHintBackgroundGfx, VRAM_BASE);
-        #ifdef REGION_JP
+#ifdef REGION_JP
         if (gLanguage == LANGUAGE_HIRAGANA)
         {
             CallLZ77UncompVram(sMinimapTilesAreaNamesHiraganaGfx, VRAM_BASE + 0xA800);
         }
         else
-        #endif // REGION_JP
+#endif // REGION_JP
         {
             CallLZ77UncompVram(sMinimapTilesAreaNamesEnglishGfx, VRAM_BASE + 0xA800);
         }
@@ -2397,9 +2397,9 @@ void PauseScreenInit(void)
     PauseScreenGetAllMinimapData(UCHAR_MAX);
     if (PAUSE_SCREEN_DATA.typeFlags & PAUSE_SCREEN_TYPE_DEBUG)
     {
-        #ifdef DEBUG
+#ifdef DEBUG
         PauseDebugDrawEventList();
-        #endif // DEBUG
+#endif // DEBUG
     }
     StatusScreenDraw();
     ChozoStatueHintDeterminePath(FALSE);
@@ -2429,9 +2429,9 @@ void PauseScreenInit(void)
         gBg1VOFS_NonGameplay = QUARTER_BLOCK_SIZE;
     }
 
-    #ifdef DEBUG
+#ifdef DEBUG
     MinimapDrawRoomInfo();
-    #endif // DEBUG
+#endif // DEBUG
 
     gWrittenToBldy_NonGameplay = gWrittenToBldalpha_H = 0;
     gWrittenToBldalpha_L = 16;
@@ -2752,11 +2752,11 @@ u32 PauseScreenCallStateHandler(void)
     u32 leaving;
 
     leaving = FALSE;
-    #ifdef REGION_EU
+#ifdef REGION_EU
     CheckForMaintainedInput(MAINTAINED_INPUT_SPEED_FAST);
-    #else // !REGION_EU
+#else // !REGION_EU
     CheckForMaintainedInput();
-    #endif // REGION_EU
+#endif // REGION_EU
 
     APPLY_DELTA_TIME_INC(PAUSE_SCREEN_DATA.stateInfo.timer);
 
@@ -2784,11 +2784,11 @@ u32 PauseScreenCallStateHandler(void)
                 if (!PAUSE_SCREEN_DATA.debugOnEventList)
                     PauseScreenMoveDebugCursor(TRUE);
 
-                #ifdef DEBUG
+#ifdef DEBUG
                 leaving = PauseDebugHandler();
-                #else // !DEBUG
+#else // !DEBUG
                 leaving = FALSE;
-                #endif
+#endif
             }
             else
             {
@@ -2922,9 +2922,9 @@ u32 PauseScreenCallStateHandler(void)
                     PAUSE_SCREEN_DATA.stateInfo.state = PAUSE_SCREEN_STATE_EASY_SLEEP;
                     PAUSE_SCREEN_DATA.stateInfo.stage = 0;
                     PAUSE_SCREEN_DATA.stateInfo.timer = 0;
-                    #ifdef DEBUG
+#ifdef DEBUG
                     PAUSE_SCREEN_DATA.minimapRoomInfoOam[0].notDrawn ^= TRUE;
-                    #endif // DEBUG
+#endif // DEBUG
                 }
             }
             break;
@@ -3257,7 +3257,7 @@ s32 PauseScreenStatusScreenInit(void)
         case 1:
             // Update top overlay
             PauseScreenUpdateTopVisorOverlay(OVERLAY_OAM_ID_R_PROMPT_PRESSED);
-            #ifdef DEBUG
+#ifdef DEBUG
             if (PAUSE_SCREEN_DATA.typeFlags & PAUSE_SCREEN_TYPE_DEBUG)
             {
                 if (gButtonInput & KEY_SELECT)
@@ -3279,7 +3279,7 @@ s32 PauseScreenStatusScreenInit(void)
                 }
             }
             else
-            #endif // DEBUG
+#endif // DEBUG
             {
                 stage = UCHAR_MAX + 1;
             }
@@ -3347,9 +3347,9 @@ s32 PauseScreenStatusScreenInit(void)
             PAUSE_SCREEN_DATA.bg2cnt = PAUSE_SCREEN_DATA.unk_78;
             PAUSE_SCREEN_DATA.dispcnt &= ~DCNT_BG1;
             PAUSE_SCREEN_DATA.overlayOam[0].exists = FALSE;
-            #ifdef DEBUG
+#ifdef DEBUG
             PauseDebugInitCursor();
-            #endif // DEBUG
+#endif // DEBUG
             stage = -1;
     }
 
@@ -3390,7 +3390,7 @@ s32 PauseScreenQuitStatusScreen(void)
             SoundPlay(SOUND_LEAVING_STATUS_SCREEN);
             PAUSE_SCREEN_DATA.miscOam[0].oamId = 0;
             PauseScreenUpdateTopVisorOverlay(0);
-            #ifdef DEBUG
+#ifdef DEBUG
             if (PAUSE_SCREEN_DATA.typeFlags & PAUSE_SCREEN_TYPE_DEBUG)
             {
                 stage = 5;
@@ -3404,9 +3404,9 @@ s32 PauseScreenQuitStatusScreen(void)
                     PAUSE_SCREEN_DATA.typeFlags ^= PAUSE_SCREEN_TYPE_UNKNOWN_40;
                 }
             }
-            #else // !DEBUG
+#else // !DEBUG
             stage = UCHAR_MAX + 1;
-            #endif // DEBUG
+#endif // DEBUG
             break;
 
         case 1:
@@ -3531,17 +3531,17 @@ s32 PauseScreenEasySleepInit(void)
 
         case 6:
             // Format easy sleep tilemap
-            #ifdef REGION_EU
+#ifdef REGION_EU
             DmaTransfer(3, &PAUSE_SCREEN_EWRAM.unk_6000[0], &PAUSE_SCREEN_EWRAM.easySleepTextFormatted_1[0x1C0], 0x40 * sizeof(u16), 16);
             DmaTransfer(3, &PAUSE_SCREEN_EWRAM.unk_6000[0x200], &PAUSE_SCREEN_EWRAM.easySleepTextFormatted_1[0x3C0], 0x40 * sizeof(u16), 16);
             DmaTransfer(3, &PAUSE_SCREEN_EWRAM.unk_6000[0xE0], &PAUSE_SCREEN_EWRAM.easySleepTextFormatted_2[0x1C0],  0x40 * sizeof(u16), 16);
             DmaTransfer(3, &PAUSE_SCREEN_EWRAM.unk_6000[0x2E0], &PAUSE_SCREEN_EWRAM.easySleepTextFormatted_2[0x3C0], 0x40 * sizeof(u16), 16);
-            #else // !REGION_EU
+#else // !REGION_EU
             DMA3_COPY_16(&PAUSE_SCREEN_EWRAM.unk_6000[0], &PAUSE_SCREEN_EWRAM.easySleepTextFormatted_1[0x1C0], 0x40);
             DMA3_COPY_16(&PAUSE_SCREEN_EWRAM.unk_6000[0x200], &PAUSE_SCREEN_EWRAM.easySleepTextFormatted_1[0x3C0], 0x40);
             DMA3_COPY_16(&PAUSE_SCREEN_EWRAM.unk_6000[0xE0], &PAUSE_SCREEN_EWRAM.easySleepTextFormatted_2[0x1C0], 0x40);
             DMA3_COPY_16(&PAUSE_SCREEN_EWRAM.unk_6000[0x2E0], &PAUSE_SCREEN_EWRAM.easySleepTextFormatted_2[0x3C0], 0x40);
-            #endif // REGION_EU
+#endif // REGION_EU
             break;
 
         case 7:
@@ -3697,11 +3697,11 @@ void CheckForMaintainedInput(void)
     }
 
     // Check delay threshold
-    #ifdef REGION_EU
+#ifdef REGION_EU
     if (gMaintainedInputData.delay >= sMaintainedInputDelaysPointers[speed][gMaintainedInputData.set])
-    #else // !REGION_EU
+#else // !REGION_EU
     if (gMaintainedInputData.delay >= sMaintainedInputDelays_Fast[gMaintainedInputData.set])
-    #endif // REGION_EU
+#endif // REGION_EU
     {
         // Apply to changed input
         gChangedInput |= gButtonInput & KEY_ALL_DIRECTIONS;
@@ -3710,11 +3710,11 @@ void CheckForMaintainedInput(void)
         gMaintainedInputData.delay = 0;
 
         // Update set
-        #ifdef REGION_EU
+#ifdef REGION_EU
         if (gMaintainedInputData.set < sMaintainedInputDelaysLastSet[speed])
-        #else // !REGION_EU
+#else // !REGION_EU
         if (gMaintainedInputData.set < ARRAY_SIZE(sMaintainedInputDelays_Fast) - 1)
-        #endif // REGION_EU
+#endif // REGION_EU
         {
             gMaintainedInputData.set++;
         }

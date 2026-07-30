@@ -662,17 +662,17 @@ void BootDebugSetupMenu(void)
     LZ77UncompVram(sBootDebugObjGfx, VRAM_OBJ);
     LZ77UncompVram(sBootDebugBgGfx, VRAM_BASE);
 
-    #ifdef REGION_EU
+#ifdef REGION_EU
     DmaTransfer(3, sMinimapTilesGfx, BGCNT_TO_VRAM_CHAR_BASE(1), 0x3000, 16);
     DmaTransfer(3, sMinimapTilesPal, PALRAM_BASE, 5 * PAL_ROW_SIZE, 16);
     DmaTransfer(3, sBootDebugBgPal, PALRAM_BASE + 8 * PAL_ROW_SIZE, 8 * PAL_ROW_SIZE, 16);
     DmaTransfer(3, sBootDebugObjPal, PALRAM_OBJ, 3 * PAL_ROW_SIZE, 16);
-    #else // !REGION_EU
+#else // !REGION_EU
     DMA3_COPY_16(sMinimapTilesGfx, BGCNT_TO_VRAM_CHAR_BASE(1), 0x3000 / sizeof(u16));
     DMA3_COPY_16(sMinimapTilesPal, PALRAM_BASE, 5 * PAL_ROW);
     DMA3_COPY_16(sBootDebugBgPal, PALRAM_BASE + 8 * PAL_ROW_SIZE, 8 * PAL_ROW);
     DMA3_COPY_16(sBootDebugObjPal, PALRAM_OBJ, 3 * PAL_ROW);
-    #endif // REGION_EU
+#endif // REGION_EU
 
     BitFill(3, 0xD040, BGCNT_TO_VRAM_TILE_BASE(30), BGCNT_VRAM_TILE_SIZE * 2, 16);
     BitFill(3, 0x8040, BGCNT_TO_VRAM_TILE_BASE(28), BGCNT_VRAM_TILE_SIZE * 2, 16);
@@ -742,11 +742,11 @@ s32 BootDebugHandleInput(void)
     subMenuResult = TRUE;
     tempResult = 0;
 
-    #ifdef REGION_EU
+#ifdef REGION_EU
     CheckForMaintainedInput(MAINTAINED_INPUT_SPEED_FAST);
-    #else // !REGION_EU
+#else // !REGION_EU
     CheckForMaintainedInput();
-    #endif // REGION_EU
+#endif // REGION_EU
 
     if (BOOT_DEBUG_DATA.menuDepth == BOOT_DEBUG_MENU_MAIN && gChangedInput & KEY_R)
     {
@@ -1450,9 +1450,9 @@ void BootDebugModeHandler(void)
 {
     s32 updateTextAndEvents;
 
-    #ifdef BUGFIX
+#ifdef BUGFIX
     updateTextAndEvents = FALSE;
-    #endif // BUGFIX
+#endif // BUGFIX
     
     if (BOOT_DEBUG_DATA.menuDepth == BOOT_DEBUG_MENU_SUB)
     {
@@ -1886,9 +1886,9 @@ void BootDebugSoundHandler(void)
     s32 updateText;
     s32 value;
     
-    #ifdef BUGFIX
+#ifdef BUGFIX
     updateText = FALSE;
-    #endif // BUGFIX
+#endif // BUGFIX
 
     if (BOOT_DEBUG_DATA.menuDepth == BOOT_DEBUG_MENU_SUB)
     {

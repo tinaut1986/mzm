@@ -93,9 +93,9 @@ static u8 RidleySpawnRidleyFlyingIn(void)
 
     RidleySpawnUpdateRidley(&CUTSCENE_DATA.oam[0]);
 
-    #ifdef DEBUG
+#ifdef DEBUG
     CutsceneCheckSkipStage(1);
-    #endif // DEBUG
+#endif // DEBUG
 
     return FALSE;
 }
@@ -197,9 +197,9 @@ static u8 RidleySpawnHelmetReflection(void)
             MACRO_CUTSCENE_NEXT_STAGE();
     }
 
-    #ifdef DEBUG
+#ifdef DEBUG
     CutsceneCheckSkipStage(1);
-    #endif // DEBUG
+#endif // DEBUG
 
     return FALSE;
 }
@@ -245,9 +245,9 @@ static u8 RidleySpawnSamusLookingUp(void)
             break;
     }
 
-    #ifdef DEBUG
+#ifdef DEBUG
     CutsceneCheckSkipStage(0);
-    #endif // DEBUG
+#endif // DEBUG
 
     return FALSE;
 }

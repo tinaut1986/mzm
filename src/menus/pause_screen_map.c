@@ -316,12 +316,12 @@ void PauseScreenInitMapDownload(void)
                 *ptr_2 = 0xC0;
         }
     
-        #ifdef REGION_EU
+#ifdef REGION_EU
         DmaTransfer(3, gDecompressedMinimapVisitedTiles, VRAM_BASE + 0xE000,
             sizeof(gDecompressedMinimapVisitedTiles), 16);
-        #else // !REGION_EU
+#else // !REGION_EU
         DMA3_COPY_16(gDecompressedMinimapVisitedTiles, VRAM_BASE + 0xE000, sizeof(gDecompressedMinimapVisitedTiles) / 2);
-        #endif // REGION_EU
+#endif // REGION_EU
     }
 }
 
@@ -597,12 +597,12 @@ u32 PauseScreenMapDownload(void)
 
         case 3:
             // Fully transfer everything
-            #ifdef REGION_EU
+#ifdef REGION_EU
             DmaTransfer(3, gDecompressedMinimapVisitedTiles, VRAM_BASE + 0xE000,
                 sizeof(gDecompressedMinimapVisitedTiles), 16);
-            #else // !REGION_EU
+#else // !REGION_EU
             DMA3_COPY_16(gDecompressedMinimapVisitedTiles, VRAM_BASE + 0xE000, ARRAY_SIZE(gDecompressedMinimapVisitedTiles));
-            #endif // REGION_EU
+#endif // REGION_EU
 
             PAUSE_SCREEN_DATA.downloadStage++;
             PAUSE_SCREEN_DATA.downloadTimer = 0;

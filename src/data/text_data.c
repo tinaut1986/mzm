@@ -1057,51 +1057,51 @@ const u16** sLocationTextPointers[LANGUAGE_COUNT] = {
     [LANGUAGE_JAPANESE] = sJapaneseTextPointers_Location,
     [LANGUAGE_HIRAGANA] = sHiraganaTextPointers_Location,
     [LANGUAGE_ENGLISH] = sEnglishTextPointers_Location,
-    #ifdef REGION_EU
+#ifdef REGION_EU
     [LANGUAGE_GERMAN] = sGermanTextPointers_Location,
     [LANGUAGE_FRENCH] = sFrenchTextPointers_Location,
     [LANGUAGE_ITALIAN] = sItalianTextPointers_Location,
     [LANGUAGE_SPANISH] = sSpanishTextPointers_Location
-    #else // !REGION_EU
+#else // !REGION_EU
     [LANGUAGE_GERMAN] = sEnglishTextPointers_Location,
     [LANGUAGE_FRENCH] = sEnglishTextPointers_Location,
     [LANGUAGE_ITALIAN] = sEnglishTextPointers_Location,
     [LANGUAGE_SPANISH] = sEnglishTextPointers_Location
-    #endif // REGION_EU
+#endif // REGION_EU
 };
 
 const u16** sMessageTextPointers[LANGUAGE_COUNT] = {
     [LANGUAGE_JAPANESE] = sJapaneseTextPointers_Message,
     [LANGUAGE_HIRAGANA] = sHiraganaTextPointers_Message,
     [LANGUAGE_ENGLISH] = sEnglishTextPointers_Message,
-    #ifdef REGION_EU
+#ifdef REGION_EU
     [LANGUAGE_GERMAN] = sGermanTextPointers_Message,
     [LANGUAGE_FRENCH] = sFrenchTextPointers_Message,
     [LANGUAGE_ITALIAN] = sItalianTextPointers_Message,
     [LANGUAGE_SPANISH] = sSpanishTextPointers_Message
-    #else // !REGION_EU
+#else // !REGION_EU
     [LANGUAGE_GERMAN] = sEnglishTextPointers_Message,
     [LANGUAGE_FRENCH] = sEnglishTextPointers_Message,
     [LANGUAGE_ITALIAN] = sEnglishTextPointers_Message,
     [LANGUAGE_SPANISH] = sEnglishTextPointers_Message
-    #endif // REGION_EU
+#endif // REGION_EU
 };
 
 const u16** sFileScreenTextPointers[LANGUAGE_COUNT] = {
     [LANGUAGE_JAPANESE] = sJapaneseTextPointers_FileScreen,
     [LANGUAGE_HIRAGANA] = sHiraganaTextPointers_FileScreen,
     [LANGUAGE_ENGLISH] = sEnglishTextPointers_FileScreen,
-    #ifdef REGION_EU
+#ifdef REGION_EU
     [LANGUAGE_GERMAN] = sGermanTextPointers_FileScreen,
     [LANGUAGE_FRENCH] = sFrenchTextPointers_FileScreen,
     [LANGUAGE_ITALIAN] = sItalianTextPointers_FileScreen,
     [LANGUAGE_SPANISH] = sSpanishTextPointers_FileScreen
-    #else // !REGION_EU
+#else // !REGION_EU
     [LANGUAGE_GERMAN] = sEnglishTextPointers_FileScreen,
     [LANGUAGE_FRENCH] = sEnglishTextPointers_FileScreen,
     [LANGUAGE_ITALIAN] = sEnglishTextPointers_FileScreen,
     [LANGUAGE_SPANISH] = sEnglishTextPointers_FileScreen
-    #endif // REGION_EU
+#endif // REGION_EU
 };
 
 static const u16 sAlign_0 = 0; // File alignment

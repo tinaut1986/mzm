@@ -79,12 +79,12 @@ void CheckPlayLoadingJingle(void)
                 InsertMusicAndQueueCurrent(MUSIC_LOADING_JINGLE, TRUE);
             }
         }
-        #ifdef DEBUG
+#ifdef DEBUG
         else if (gDebugMode && gCurrentRoomEntry.musicTrack != 0)
         {
             unk_42bc(gMusicTrackInfo.currentRoomTrack);
         }
-        #endif // DEBUG
+#endif // DEBUG
     }
 }
 

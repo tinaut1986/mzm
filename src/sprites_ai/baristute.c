@@ -278,7 +278,7 @@ static void BaristuteIdle(void)
     if (!SpriteUtilHasCurrentAnimationNearlyEnded())
         return;
 
-    #ifdef REGION_US_BETA
+#ifdef REGION_US_BETA
     // This is the same code as below, but without the collision check
     if (gCurrentSprite.spriteId == PSPRITE_BARISTUTE_KRAID_UPPER)
     {
@@ -298,7 +298,7 @@ static void BaristuteIdle(void)
         else
             gCurrentSprite.pose = BARISTUTE_POSE_JUMP_WARNING_INIT;
     }
-    #endif // REGION_US_BETA
+#endif // REGION_US_BETA
 
     // Face samus
     SpriteUtilMakeSpriteFaceSamusDirection();
@@ -307,7 +307,7 @@ static void BaristuteIdle(void)
     else
         gCurrentSprite.status &= ~SPRITE_STATUS_X_FLIP;
 
-    #ifndef REGION_US_BETA
+#ifndef REGION_US_BETA
     // Check should walk or jump, get the collision in front of the baristute
     if ((gCurrentSprite.status & SPRITE_STATUS_FACING_RIGHT
         ? SpriteUtilGetCollisionAtPosition(yPosition - QUARTER_BLOCK_SIZE, xPosition + gCurrentSprite.hitboxRight + QUARTER_BLOCK_SIZE)
@@ -332,7 +332,7 @@ static void BaristuteIdle(void)
                 gCurrentSprite.pose = BARISTUTE_POSE_JUMP_WARNING_INIT;
         }
     }
-    #endif // !REGION_US_BETA
+#endif // !REGION_US_BETA
 }
 
 /**

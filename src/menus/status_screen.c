@@ -1403,10 +1403,10 @@ void PauseDebugEquipTank(u8 tankOrEquip)
             gEquipment.maxPowerBombs = sNumberOfTanksPerArea[MAX_AMOUNT_OF_AREAS - 1].powerBomb *
                 sTankIncreaseAmount[gDifficulty].powerBomb + sStartingHealthAmmo.powerBomb;
 
-            #ifndef BUGFIX
+#ifndef BUGFIX
             gEquipment.suitMisc |= SMF_MORPH_BALL | SMF_POWER_GRIP;
             gEquipment.beamBombs |= BBF_BOMBS;
-            #endif // !BUGFIX
+#endif // !BUGFIX
 
             change = 1;
         }
@@ -1438,11 +1438,11 @@ void PauseDebugEquipTank(u8 tankOrEquip)
         }
     }
 
-    #ifdef BUGFIX
+#ifdef BUGFIX
     if (change == 2)
-    #else // !BUGFIX
+#else // !BUGFIX
     if (change != 0)
-    #endif // !BUGFIX
+#endif // !BUGFIX
     {
         UpdateSuitType(gEquipment.suitType);
         PauseDebugActivateAbilities();
@@ -1455,14 +1455,14 @@ void PauseDebugEquipTank(u8 tankOrEquip)
         gEquipment.currentSuperMissiles = gEquipment.maxSuperMissiles;
         gEquipment.currentPowerBombs = gEquipment.maxPowerBombs;
 
-        #ifdef BUGFIX
+#ifdef BUGFIX
         PauseDebugDrawAffectedGroups((1 << PAUSE_DEBUG_GROUP_CURRENT_ENERGY) | (1 << PAUSE_DEBUG_GROUP_CURRENT_MISSILES) |
             (1 << PAUSE_DEBUG_GROUP_CURRENT_SUPER_MISSILES) | (1 << PAUSE_DEBUG_GROUP_CURRENT_POWER_BOMBS));
-        #else // !BUGFIX
+#else // !BUGFIX
         PauseDebugDrawAffectedGroups((1 << PAUSE_DEBUG_GROUP_BOMB) | (1 << PAUSE_DEBUG_GROUP_MISC) |
             (1 << PAUSE_DEBUG_GROUP_CURRENT_ENERGY) | (1 << PAUSE_DEBUG_GROUP_CURRENT_MISSILES) |
             (1 << PAUSE_DEBUG_GROUP_CURRENT_SUPER_MISSILES) | (1 << PAUSE_DEBUG_GROUP_CURRENT_POWER_BOMBS));
-        #endif // BUGFIX
+#endif // BUGFIX
     }
     else if (change == 2) // Equip
     {
@@ -1871,10 +1871,10 @@ StatusSlots StatusScreenGetSlotForNewItem(u8 param_1, u8 item)
     else if (sStatusScreenItemsAcquisitionData[item].unk_0 != 3)
         return sStatusScreenItemsAcquisitionData[item].statusSlot;
 
-    #ifdef BUGFIX
+#ifdef BUGFIX
     pActivation = NULL;
     pStatusActivation = NULL;
-    #endif // BUGFIX
+#endif // BUGFIX
 
     flag = 0;
     slot = sStatusScreenItemsAcquisitionData[item].statusSlot;
@@ -2173,9 +2173,9 @@ void StatusScreenSetBeamsVisibility(u16* pTilemap)
 
         if (gEquipment.beamBombs & sStatusScreenFlagsOrderPointers[ABILITY_GROUP_BEAMS][i])
         {
-            #ifdef BUGFIX
+#ifdef BUGFIX
             ptr = NULL;
-            #endif // BUGFIX
+#endif // BUGFIX
 
             pVisibility[row] = sStatusScreenFlagsOrderPointers[ABILITY_GROUP_BEAMS][i];
 
@@ -2262,9 +2262,9 @@ void StatusScreenSetSuitsVisibility(u16* pTilemap)
 
         if (gEquipment.suitMisc & sStatusScreenFlagsOrderPointers[ABILITY_GROUP_SUITS][i])
         {
-            #ifdef BUGFIX
+#ifdef BUGFIX
             ptr = NULL;
-            #endif // BUGFIX
+#endif // BUGFIX
 
             pVisibility[row] = sStatusScreenFlagsOrderPointers[ABILITY_GROUP_SUITS][i];
 
@@ -3528,9 +3528,9 @@ u32 StatusScreenToggleItem(u8 statusSlot, ItemToggleAction action)
     u8 isActivated;
     u8 subActivated;
 
-    #ifdef BUGFIX
+#ifdef BUGFIX
     pActivation = NULL;
-    #endif // BUGFIX
+#endif // BUGFIX
 
     flag = 0;
     switch (sStatusScreenItemsData[statusSlot].group)

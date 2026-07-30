@@ -95,9 +95,9 @@ static void RinkaRespawn(void)
     gCurrentSprite.ignoreSamusCollisionTimer = DELTA_TIME;
     gCurrentSprite.freezeTimer = 0;
 
-    #ifdef BUGFIX
+#ifdef BUGFIX
     gCurrentSprite.standingOnSprite = SAMUS_STANDING_ON_SPRITE_OFF;
-    #endif // BUGFIX
+#endif // BUGFIX
 
     // Set spawn delay
     if (gCurrentSprite.status & SPRITE_STATUS_MOSAIC)
@@ -425,9 +425,9 @@ static void RinkaMotherBrainRespawn(void)
     gCurrentSprite.status |= SPRITE_STATUS_NOT_DRAWN | SPRITE_STATUS_IGNORE_PROJECTILES;
     gCurrentSprite.ignoreSamusCollisionTimer = DELTA_TIME;
 
-    #ifdef BUGFIX
+#ifdef BUGFIX
     gCurrentSprite.standingOnSprite = SAMUS_STANDING_ON_SPRITE_OFF;
-    #endif // BUGFIX
+#endif // BUGFIX
 }
 
 /**

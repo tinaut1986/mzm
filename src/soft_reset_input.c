@@ -43,9 +43,9 @@ void SoftResetCheck(void)
  */
 void SoftReset(void)
 {
-    #ifdef REGION_EU
+#ifdef REGION_EU
     s32 tmp;
-    #endif // REGION_EU
+#endif // REGION_EU
 
     HazeTransferAndDeactivate();
     RestartSound();
@@ -66,20 +66,20 @@ void SoftReset(void)
     CallbackSetVblank(SoftResetVBlankCallback);
     SramRead_All();
     InitializeAudio();
-    #ifdef BUGFIX
+#ifdef BUGFIX
     SramRead_SoundMode();
     FileSelectApplyStereo();
-    #endif // BUGFIX
+#endif // BUGFIX
 
     WRITE_16(REG_IE, IF_VBLANK | IF_DMA2 | IF_GAMEPAK);
     WRITE_16(REG_DISPSTAT, DSTAT_IF_VBLANK);
 
-    #ifdef DEBUG
+#ifdef DEBUG
     BootDebugReadSram();
     gMainGameMode = gDebugMode ? GM_DEBUG_MENU : GM_INTRO;
-    #else // !DEBUG
+#else // !DEBUG
     gMainGameMode = GM_INTRO;
-    #endif // DEBUG
+#endif // DEBUG
 
     gSubGameMode1 = 0;
     gSubGameMode2 = 0;
@@ -88,10 +88,10 @@ void SoftReset(void)
     gStereoFlag = FALSE;
 #endif // !BUGFIX
 
-    #ifdef REGION_EU
-    #ifdef DEBUG
+#ifdef REGION_EU
+#ifdef DEBUG
     if (gMainGameMode == GM_INTRO)
-    #endif // DEBUG
+#endif // DEBUG
     {
         if (INVALID_EU_LANGUAGE(gLanguage))
         {
@@ -99,7 +99,7 @@ void SoftReset(void)
             gSubGameMode1 = sLanguageSelectGameModeSub1Values[1];
         }
     }
-    #endif // REGION_EU
+#endif // REGION_EU
 
     gButtonInput = KEY_NONE;
     gPreviousButtonInput = KEY_NONE;
@@ -107,11 +107,11 @@ void SoftReset(void)
 
     WRITE_16(REG_IF, USHORT_MAX);
     // TODO: Find a better way to get a match here
-    #if defined(REGION_EU) && !defined(REGION_EU_BETA)
+#if defined(REGION_EU) && !defined(REGION_EU_BETA)
     // Written this way to produce matching ASM
     tmp = TRUE;
     WRITE_16(REG_IME, tmp);
-    #else // !REGION_EU || REGION_EU_BETA
+#else // !REGION_EU || REGION_EU_BETA
     WRITE_16(REG_IME, TRUE);
-    #endif // REGION_EU && !REGION_EU_BETA
+#endif // REGION_EU && !REGION_EU_BETA
 }

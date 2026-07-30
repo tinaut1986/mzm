@@ -148,7 +148,7 @@ ClipdataType ClipdataConvertToCollision(struct CollisionData* pCollision)
 
     result = CLIPDATA_TYPE_AIR;
 
-    #ifdef BUGFIX
+#ifdef BUGFIX
 
     // This function is copied to RAM, presumably for performance reasons, because it is often
     // called many times per frame and code runs faster in RAM. However, the switch statement gets
@@ -280,7 +280,7 @@ ClipdataType ClipdataConvertToCollision(struct CollisionData* pCollision)
         result = pCollision->clipdataType;
     }
 
-    #else // !BUGFIX
+#else // !BUGFIX
     
     switch (pCollision->clipdataType)
     {
@@ -406,7 +406,7 @@ ClipdataType ClipdataConvertToCollision(struct CollisionData* pCollision)
             break;
     }
 
-    #endif // BUGFIX
+#endif // BUGFIX
 
     return result;
 }

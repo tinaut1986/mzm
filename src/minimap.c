@@ -299,11 +299,11 @@ void MinimapCheckOnTransition(void)
         gAreaBeforeTransition = gCurrentArea;
         PauseScreenGetMinimapData(gAreaBeforeTransition, gDecompressedMinimapData);
 
-        #ifdef REGION_EU
+#ifdef REGION_EU
         DmaTransfer(3, gDecompressedMinimapData, gDecompressedMinimapVisitedTiles, sizeof(gDecompressedMinimapData), 16);
-        #else // !REGION_EU
+#else // !REGION_EU
         DMA3_COPY_16(gDecompressedMinimapData, gDecompressedMinimapVisitedTiles, sizeof(gDecompressedMinimapData) / 2);
-        #endif // REGION_EU
+#endif // REGION_EU
 
         MinimapCheckSetAreaNameAsExplored(TRUE);
         MinimapSetDownloadedTiles(gAreaBeforeTransition, gDecompressedMinimapVisitedTiles);
@@ -395,10 +395,10 @@ void MinimapDraw(void)
     u32 flip;
     u16* src;
     u16* tmp;
-    #ifndef BUGFIX
+#ifndef BUGFIX
     u16 tmp1;
     u16 tmp2;
-    #endif // !BUGFIX
+#endif // !BUGFIX
 
     if (gUpdateMinimapFlag == MINIMAP_UPDATE_FLAG_NONE)
         return;
@@ -439,10 +439,10 @@ void MinimapDraw(void)
         tmp = &src[yPosition * MINIMAP_SIZE + xPosition];
 
         do {
-        #ifndef BUGFIX
+#ifndef BUGFIX
         // BUG: uses uninitalized variables
         tmp1 = tmp2 & 0xC00;
-        #endif // !BUGFIX
+#endif // !BUGFIX
         flip = (*tmp & 0xC00) >> 0xA;
         } while(0);
 
@@ -454,10 +454,10 @@ void MinimapDraw(void)
         tile = *tmp & 0x3ff;
         } while(0);
         
-        #ifndef REGION_EU
+#ifndef REGION_EU
         if (gLanguage == LANGUAGE_HIRAGANA && tile > MINIMAP_TILE_BACKGROUND)
             tile += 0x20;
-        #endif // !REGION_EU
+#endif // !REGION_EU
 
         tile <<= 5;
         sMinimapTilesCopyGfxFunctionPointers[flip](dst, &tile, palette);

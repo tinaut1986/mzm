@@ -11,9 +11,9 @@
 
 struct TitleScreenOamTiming {
     u8 stage;
-    #ifdef REGION_EU
+#ifdef REGION_EU
     u8 menuOption;
-    #endif // REGION_EU
+#endif // REGION_EU
     u16 timer;
 };
 

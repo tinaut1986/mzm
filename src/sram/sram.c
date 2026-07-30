@@ -78,9 +78,9 @@ u8* SramWriteChecked(u8* src, u8* dest, u32 size)
     u8* diff;
     u8 i;
 
-    #ifdef BUGFIX
+#ifdef BUGFIX
     diff = NULL;
-    #endif // BUGFIX
+#endif // BUGFIX
 
     for (i = 0; i < 3; ++i)
     {

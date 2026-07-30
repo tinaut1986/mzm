@@ -31,10 +31,10 @@ static const u8* sPlayerNumbersStringPointers[4] = {
 u8 FusionGalleryConnectProcess(void)
 {
     u8 probeCount;
-    #ifdef DEBUG
+#ifdef DEBUG
     u8 i;
     const u8* string;
-    #endif // DEBUG
+#endif // DEBUG
     
     gIoTransferInfo.result = TRANSFER_RESULT_NONE;
 
@@ -59,7 +59,7 @@ u8 FusionGalleryConnectProcess(void)
             break;
 
         case CONNECT_STAGE_MULTIBOOT_INIT:
-            #ifdef DEBUG
+#ifdef DEBUG
             string = sCableLinkDebugString_Blank;
             for (i = 1; i <= 3; i++)
             {
@@ -69,7 +69,7 @@ u8 FusionGalleryConnectProcess(void)
             CableLinkDrawErrorStr(string, VRAM_BASE + 0xE1C0, 0xC);
             CableLinkDrawErrorStr(string, VRAM_BASE + 0xE200, 0xC);
             CableLinkDrawErrorStr(string, VRAM_BASE + 0xE240, 0xC);
-            #endif // DEBUG
+#endif // DEBUG
 
             CallbackSetSerialCommunication(TransferExchangeData);
             CallbackSetTimer3(TransferReloadTransfer);
@@ -86,7 +86,7 @@ u8 FusionGalleryConnectProcess(void)
         case CONNECT_STAGE_MULTIBOOT_PROCESS:
             APPLY_DELTA_TIME_INC(gIoTransferInfo.timer);
 
-            #ifdef DEBUG
+#ifdef DEBUG
             for (i = 1; i <= 3; i++)
             {
                 if ((gMultiBootParamData.responseBit >> i & 1) == 0)
@@ -155,7 +155,7 @@ u8 FusionGalleryConnectProcess(void)
             }
 
             CableLinkDrawErrorStr(string, VRAM_BASE + 0xE1C0, 0xC);
-            #endif // DEBUG
+#endif // DEBUG
 
             if (gMultiBootParamData.clientBit & (2 | 4 | 8))
             {
@@ -167,7 +167,7 @@ u8 FusionGalleryConnectProcess(void)
                     gIoTransferInfo.timer = 0;
             }
 
-            #ifdef DEBUG
+#ifdef DEBUG
             if (gBootDebugActive)
                 i = gChangedInput & KEY_A;
             else
@@ -175,18 +175,18 @@ u8 FusionGalleryConnectProcess(void)
             // Written this way to produce matching ASM
             i++; i--;
             if (i)
-            #endif // DEBUG
+#endif // DEBUG
             {
                 if (gMultiBootParamData.probeCount == MULTIBOOT_REQ_PREP_REC && gMultiBootParamData.clientBit)
                 {
                     MultiBootStartParent(&gMultiBootParamData, gDataSentPointer + MULTIBOOT_HEADER_SIZE, gDataSentSize - MULTIBOOT_HEADER_SIZE, 4, 1);
-                    #ifdef DEBUG
+#ifdef DEBUG
                     if (gIoTransferInfo.timer & 1)
                         string = sCableLinkDebugString_PressA1;
                     else
                         string = sCableLinkDebugString_PressA2;
                     CableLinkDrawErrorStr(string, VRAM_BASE + 0xE3C0, 0xC);
-                    #endif
+#endif
                 }
             }
 
@@ -210,10 +210,10 @@ u8 FusionGalleryConnectProcess(void)
             break;
 
         case CONNECT_STAGE_TRANSFER_SEND_TRANSFER_ROM:
-            #ifdef DEBUG
+#ifdef DEBUG
             string = sCableLinkDebugString_Sending1;
             CableLinkDrawErrorStr(string, VRAM_BASE + 0xE200, 0xC);
-            #endif // DEBUG
+#endif // DEBUG
 
             if (TransferProcessSend(sTransferRom_After - sTransferRom, (const u32*)sTransferRom) == 0)
             {
@@ -226,7 +226,7 @@ u8 FusionGalleryConnectProcess(void)
             break;
 
         case CONNECT_STAGE_TRANSFER_COMPLETE:
-            #ifdef DEBUG
+#ifdef DEBUG
             switch (gMultibootUnk_3005880)
             {
                 case 0:
@@ -241,7 +241,7 @@ u8 FusionGalleryConnectProcess(void)
             }
 
             CableLinkDrawErrorStr(string, VRAM_BASE + 0xE240, 0xC);
-            #endif // DEBUG
+#endif // DEBUG
 
             // Always 0?
             switch (gMultibootUnk_3005880)
@@ -270,10 +270,10 @@ u8 FusionGalleryConnectProcess(void)
 
         case CONNECT_STAGE_MULTIBOOT_TIMED_OUT:
             gIoTransferInfo.result = TRANSFER_RESULT_TIMED_OUT;
-            #ifdef DEBUG
+#ifdef DEBUG
             string = sCableLinkDebugString_TimeOut;
             CableLinkDrawErrorStr(string, VRAM_BASE + 0xE3C0, 9);
-            #endif // DEBUG
+#endif // DEBUG
             gIoTransferInfo.connectStage = CONNECT_STAGE_RESTORE_AUDIO;
             break;
 
@@ -287,9 +287,9 @@ u8 FusionGalleryConnectProcess(void)
 
         case CONNECT_STAGE_RESTORE_AUDIO:
             InitializeAudio();
-            #ifndef REGION_US_BETA
+#ifndef REGION_US_BETA
             FileSelectApplyStereo();
-            #endif // !REGION_US_BETA
+#endif // !REGION_US_BETA
             PlayMusic(gIoTransferInfo.musicTrack, gIoTransferInfo.musicPriority);
             gIoTransferInfo.connectStage = CONNECT_STAGE_FINISH;
             break;

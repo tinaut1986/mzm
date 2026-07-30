@@ -48,12 +48,12 @@ const struct Door* sAreaDoorsPointers[AREA_ENTRY_COUNT] = {
     [AREA_TOURIAN] = sTourianDoors,
     [AREA_CRATERIA] = sCrateriaDoors,
     [AREA_CHOZODIA] = sChozodiaDoors,
-    #ifdef DEBUG
+#ifdef DEBUG
     [AREA_TEST] = sTestDoors,
     [AREA_TEST_1] = sTest123Doors,
     [AREA_TEST_2] = sTest123Doors,
     [AREA_TEST_3] = sTest123Doors
-    #endif // DEBUG
+#endif // DEBUG
 };
 
 const struct RoomEntryRom* sAreaRoomEntryPointers[AREA_ENTRY_COUNT] = {
@@ -64,12 +64,12 @@ const struct RoomEntryRom* sAreaRoomEntryPointers[AREA_ENTRY_COUNT] = {
     [AREA_TOURIAN] = sTourianRoomEntries,
     [AREA_CRATERIA] = sCrateriaRoomEntries,
     [AREA_CHOZODIA] = sChozodiaRoomEntries,
-    #ifdef DEBUG
+#ifdef DEBUG
     [AREA_TEST] = sTestRoomEntries,
     [AREA_TEST_1] = sTest1RoomEntries,
     [AREA_TEST_2] = sTest2RoomEntries,
     [AREA_TEST_3] = sTest3RoomEntries
-    #endif // DEBUG
+#endif // DEBUG
 };
 
 /**
@@ -452,10 +452,10 @@ void RoomReset(void)
 
         if (!gIsLoadingFile)
         {
-            #ifdef DEBUG
+#ifdef DEBUG
             if (gDebugMode)
                 gEquipment.downloadedMapStatus = gSectionInfo.downloadedMaps;
-            #endif // DEBUG
+#endif // DEBUG
             if (gCurrentDemo.loading)
                 unk_60cbc(FALSE);
         }
@@ -990,11 +990,11 @@ void RoomUpdateHatchFlashingAnimation(void)
             if (gHatchFlashingAnimation.row2 >= 6)
                 gHatchFlashingAnimation.row2 = 0;
 
-            #ifdef REGION_EU
+#ifdef REGION_EU
             DmaTransfer(3, &pPalette[gHatchFlashingAnimation.row2 * PAL_ROW + 6], PALRAM_BASE + 2 * PAL_ROW_SIZE + 6 * sizeof(u16), 2 * sizeof(u16), 16);
-            #else // !REGION_EU
+#else // !REGION_EU
             DMA3_COPY_16(&pPalette[gHatchFlashingAnimation.row2 * PAL_ROW + 6], PALRAM_BASE + 2 * PAL_ROW_SIZE + 6 * sizeof(u16), 2);
-            #endif // REGION_EU
+#endif // REGION_EU
         }
     }
 }
@@ -1026,7 +1026,7 @@ void RoomUpdate(void)
         }
     }
 
-    #ifdef DEBUG
+#ifdef DEBUG
     if (gSubGameMode1 == SUB_GAME_MODE_PLAYING || gSubGameMode1 == SUB_GAME_MODE_NO_CLIP)
     {
         BgClipCheckTouchingSpecialClipdata();
@@ -1040,7 +1040,7 @@ void RoomUpdate(void)
         ConnectionCheckUnlockDoors();
         ConnectionUpdateHatches();
     }
-    #else // !DEBUG
+#else // !DEBUG
     if (gSubGameMode1 == SUB_GAME_MODE_PLAYING)
     {
         BgClipCheckTouchingSpecialClipdata();
@@ -1055,7 +1055,7 @@ void RoomUpdate(void)
             ConnectionUpdateHatches();
         }
     }
-    #endif // DEBUG
+#endif // DEBUG
 
     if (HazeProcess())
     {

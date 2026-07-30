@@ -62,11 +62,11 @@ static void FusionGalleryInit(void)
     LZ77UncompVram(sFusionGalleryData[image].pBottomTileTable, VRAM_BASE + 0xF800);
 
     BitFill(3, 0x4FF04FF, VRAM_BASE + 0xE800, 0x800, 32);
-    #ifdef REGION_EU
+#ifdef REGION_EU
     DmaTransfer(3, sFusionGalleryData[image].pPalette, PALRAM_BASE, PAL_SIZE, 16);
-    #else // !REGION_EU
+#else // !REGION_EU
     DMA3_COPY_16(sFusionGalleryData[image].pPalette, PALRAM_BASE, 16 * PAL_ROW);
-    #endif // REGION_EU
+#endif // REGION_EU
 
     WRITE_16(REG_BG0CNT, CREATE_BGCNT(0, 28, BGCNT_HIGH_PRIORITY, BGCNT_SIZE_256x512));
     WRITE_16(REG_BG1CNT, CREATE_BGCNT(2, 30, BGCNT_HIGH_MID_PRIORITY, BGCNT_SIZE_256x512));

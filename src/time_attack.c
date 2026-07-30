@@ -280,12 +280,12 @@ u8 TimeAttackCheckSaveFileValidity(void)
         // Check beat every boss in order
         for (j = i + 1; j < MAX_AMOUNT_OF_IGT_AT_BOSSES - 1; j++)
         {
-            #ifdef BUGFIX
+#ifdef BUGFIX
             if (convertedIgt[i] > convertedIgt[j] ||
                 (convertedIgt[i] == convertedIgt[j] && convertedIgt[i] != (99 << 24) + (59 << 16) + (59 << 8) + 63))
-            #else // !BUGFIX
+#else // !BUGFIX
             if (convertedIgt[i] >= convertedIgt[j])
-            #endif // BUGFIX
+#endif // BUGFIX
             {
                 return FALSE;
             }
@@ -820,11 +820,11 @@ u8 TimeAttackCheckSetNewRecord(void)
     // Check current IGT is faster than previous 100% record
     if (completionPercentage >= 100 && convertedIgt < converted100RecordIgt)
     {
-        #ifdef REGION_US_BETA
+#ifdef REGION_US_BETA
         records += 2;
-        #else // !REGION_US_BETA
+#else // !REGION_US_BETA
         records |= 2;
-        #endif // REGION_US_BETA
+#endif // REGION_US_BETA
     }
 
     // No records set, abort
@@ -880,11 +880,11 @@ u8 TimeAttackCheckSetNewRecord(void)
     }
 
     // Update 100% record
-    #ifdef REGION_US_BETA
+#ifdef REGION_US_BETA
     if (records & 0x20)
-    #else // !REGION_US_BETA
+#else // !REGION_US_BETA
     if (records & 2)
-    #endif // REGION_US_BETA
+#endif // REGION_US_BETA
     {
         for (i = 0; i < sizeof(gTimeAttackRecord.password100); i++)
             gTimeAttackRecord.password100[i] = pTimeAttack->password[i];

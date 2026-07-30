@@ -757,13 +757,13 @@ u8 ColorFadingProcess_ChozodiaEscape(void)
             break;
 
         default:
-            #ifdef DEBUG
+#ifdef DEBUG
             if (gDebugMode)
             {
                 gDisableSoftReset = FALSE;
                 gCompletedGameFlagCopy = 0x80;
             }
-            #endif // DEBUG
+#endif // DEBUG
             gSubGameMode1 = 0;
             gMainGameMode = GM_CHOZODIA_ESCAPE;
             break;

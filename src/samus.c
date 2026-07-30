@@ -1152,9 +1152,9 @@ void SamusCheckSetEnvironmentalEffect(struct SamusData* pData, u32 defaultOffset
     u16 previousY;
     struct SamusPhysics* pPhysics;
 
-    #ifdef BUGFIX
+#ifdef BUGFIX
     effect = ENV_EFFECT_NONE;
-    #endif // BUGFIX
+#endif // BUGFIX
 
     pPhysics = &gSamusPhysics;
     found = FALSE;
@@ -2653,9 +2653,9 @@ void SamusUpdatePhysics(struct SamusData* pData)
             // In liquid, check has gravity to see if slowed
             if (!(pEquipment->suitMiscActivation & SMF_GRAVITY_SUIT))
                 slowed++;
-            #ifndef BUGFIX
+#ifndef BUGFIX
             break;
-            #endif
+#endif
 
         default:
             // Check grabbed by metroid
@@ -2810,9 +2810,9 @@ void SamusUpdateHitboxMovingDirection(void)
     pPhysics->touchingTopBlock = FALSE;
     pPhysics->unk_5A = 0;
 
-    #ifdef REGION_EU
+#ifdef REGION_EU
     if (pPhysics->standingStatus != STANDING_NOT_IN_CONTROL)
-    #endif // REGION_EU
+#endif // REGION_EU
     {
         pPhysics->horizontalMovingDirection = HDMOVING_NONE;
         pPhysics->verticalMovingDirection = VDMOVING_NONE;
@@ -4241,14 +4241,14 @@ SamusPose SamusCrouching(struct SamusData* pData)
     }
     else if (collision == SAMUS_COLLISION_DETECTION_RIGHT_MOST)
     {
-        #ifdef BUGFIX
+#ifdef BUGFIX
         xPosition = (pData->xPosition & BLOCK_POSITION_FLAG) -
             sSamusBlockHitboxData[SAMUS_HITBOX_TYPE_STANDING][SAMUS_BLOCK_HITBOX_RIGHT] + SUB_PIXEL_POSITION_FLAG;
-        #else // !BUGFIX
+#else // !BUGFIX
         // BUG: Should use SAMUS_BLOCK_HITBOX_RIGHT, not SAMUS_BLOCK_HITBOX_LEFT
         xPosition = (pData->xPosition & BLOCK_POSITION_FLAG) -
             sSamusBlockHitboxData[SAMUS_HITBOX_TYPE_STANDING][SAMUS_BLOCK_HITBOX_LEFT] + SUB_PIXEL_POSITION_FLAG;
-        #endif // BUGFIX
+#endif // BUGFIX
     }
 
     // Check can jump
@@ -4365,14 +4365,14 @@ SamusPose SamusTurningAroundAndCrouching(struct SamusData* pData)
     }
     else if (collision == SAMUS_COLLISION_DETECTION_RIGHT_MOST)
     {    
-        #ifdef BUGFIX
+#ifdef BUGFIX
         xPosition = (pData->xPosition & BLOCK_POSITION_FLAG) -
             sSamusBlockHitboxData[SAMUS_HITBOX_TYPE_STANDING][SAMUS_BLOCK_HITBOX_RIGHT] + SUB_PIXEL_POSITION_FLAG;
-        #else // !BUGFIX
+#else // !BUGFIX
         // BUG: Should use SAMUS_BLOCK_HITBOX_RIGHT, not SAMUS_BLOCK_HITBOX_LEFT
         xPosition = (pData->xPosition & BLOCK_POSITION_FLAG) -
             sSamusBlockHitboxData[SAMUS_HITBOX_TYPE_STANDING][SAMUS_BLOCK_HITBOX_LEFT] + SUB_PIXEL_POSITION_FLAG;
-        #endif // BUGFIX
+#endif // BUGFIX
     }
 
     // Check can jump
@@ -5898,9 +5898,9 @@ SamusPose SamusShinesparking(struct SamusData* pData)
     s32 xOffset;
     u8 stop;
 
-    #ifdef BUGFIX
+#ifdef BUGFIX
     stop = FALSE;
-    #endif // BUGFIX
+#endif // BUGFIX
 
     hittingSideBlock = FALSE;
 
@@ -6618,13 +6618,13 @@ SamusPose SamusTurningFromFacingTheBackgroundGfx(struct SamusData* pData)
 {
     if (SamusUpdateAnimation(pData, FALSE) == SAMUS_ANIM_STATE_ENDED)
     {
-        #ifndef BUGFIX
+#ifndef BUGFIX
         // It's unclear what the purpose of this code is. If the opposite direction is held when Samus
         // finishes turning, she will run in the current direction for one frame then turn toward the held
         // direction. This can cause a bug after the Ruins Test fight (see docs/bugs_and_glitches.md).
         if (gButtonInput & OPPOSITE_DIRECTION(pData->direction))
             return SPOSE_RUNNING;
-        #endif // !BUGFIX
+#endif // !BUGFIX
 
         if (pData->lastWallTouchedMidAir != 0)
             return SPOSE_FACING_THE_BACKGROUND_SUITLESS;
@@ -6670,9 +6670,9 @@ SamusPose SamusExecutePoseHandler(struct SamusData* pData)
     pEquipment = &gEquipment;
     pHazard = &gSamusHazardDamage;
 
-    #if defined(REGION_EU) || defined(BUGFIX)
+#if defined(REGION_EU) || defined(BUGFIX)
     if (gSubGameMode1 != 0)
-    #endif // REGION_EU || BUGFIX
+#endif // REGION_EU || BUGFIX
     {
         // Update hazard damage
         if (SamusTakeHazardDamage(pData, pEquipment, pHazard))
@@ -6700,9 +6700,9 @@ SamusPose SamusExecutePoseHandler(struct SamusData* pData)
     // Update weapon highlight
     if (pEquipment->suitType != SUIT_SUITLESS)
     {
-        #if defined(REGION_EU) || defined(BUGFIX)
+#if defined(REGION_EU) || defined(BUGFIX)
         if (pData->pose != SPOSE_DYING)
-        #endif // REGION_EU || BUGFIX
+#endif // REGION_EU || BUGFIX
         {
             SamusSetHighlightedWeapon(pData, pWeapon, pEquipment);
         }
@@ -7445,9 +7445,9 @@ void SamusUpdateGraphicsOam(struct SamusData* pData, u8 direction)
 
     pPhysics->unk_36 = 1 * SAMUS_GFX_PART_SIZE;
 
-    #ifdef BUGFIX
+#ifdef BUGFIX
     pEffectAnim = NULL;
-    #endif // BUGFIX
+#endif // BUGFIX
 
     // Fetch current effect graphics and OAM based on the current pose and the effect flag
     switch (pose)

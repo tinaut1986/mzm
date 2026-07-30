@@ -22,11 +22,11 @@ MAKE_ENUM(u8, Area) {
 
     AREA_COUNT,
 
-    #ifdef DEBUG
+#ifdef DEBUG
     AREA_ENTRY_COUNT = AREA_COUNT,
-    #else // !DEBUG
+#else // !DEBUG
     AREA_ENTRY_COUNT = AREA_NORMAL_COUNT,
-    #endif // DEBUG
+#endif // DEBUG
 };
 
 #define AREA_NONE UCHAR_MAX

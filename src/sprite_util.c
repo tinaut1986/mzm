@@ -3147,12 +3147,12 @@ PrimarySprite SpriteUtilDetermineEnemyDrop(void)
     rng = (gFrameCounter8Bit + gFrameCounter16Bit + rng);
     rng = rng % SPRITE_DROP_MAX_PROB;
 
-    #ifndef REGION_US_BETA
+#ifndef REGION_US_BETA
     // Without this check, a value of 0 would always result in dropping nothing.
     // Alternatively, the probability comparisons below could be changed to >=
     if (rng == 0)
         rng = 1;
-    #endif // !REGION_US_BETA
+#endif // !REGION_US_BETA
 
     spriteId = gCurrentSprite.spriteId;
 

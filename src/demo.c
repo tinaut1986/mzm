@@ -185,13 +185,13 @@ void DemoEnd(void)
     if (gDemoState == DEMO_STATE_RECORDING_DEBUG)
     {
         // Debug, forward demo input and duration to SRAM, and save it flash
-        #ifdef REGION_EU
+#ifdef REGION_EU
         DmaTransfer(3, gDemoInputData, gSramDemoInputData, sizeof(gSramDemoInputData), 16);
         DmaTransfer(3, gDemoInputDuration, gSramDemoInputDuration, sizeof(gSramDemoInputDuration), 16);
-        #else // !REGION_EU
+#else // !REGION_EU
         DMA3_COPY_16(gDemoInputData, gSramDemoInputData, sizeof(gSramDemoInputData) / 2);
         DMA3_COPY_16(gDemoInputDuration, gSramDemoInputDuration, sizeof(gSramDemoInputDuration) / 2);
-        #endif // REGION_EU
+#endif // REGION_EU
     
         DoSramOperation(SRAM_OPERATION_SAVE_RECORDED_DEMO);
 
@@ -208,11 +208,11 @@ void DemoEnd(void)
     if (gCurrentDemo.noDemoShuffle)
     {
         gDemoState = DEMO_STATE_NONE;
-        #ifdef DEBUG
+#ifdef DEBUG
         gSubGameMode2 = 16;
-        #else // !DEBUG
+#else // !DEBUG
         gSubGameMode2 = 2;
-        #endif // DEBUG
+#endif // DEBUG
     }
     else if (gCurrentDemo.endedWithInput)
     {

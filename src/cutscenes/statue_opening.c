@@ -75,7 +75,7 @@ static u8 StatueOpeningOpening(void)
         case 4:
             if (CUTSCENE_DATA.timeInfo.timer > CONVERT_SECONDS(.5f))
             {
-                #ifdef DEBUG
+#ifdef DEBUG
                 if (gBootDebugActive)
                 {
                     UpdateCutsceneOamDataId(&CUTSCENE_DATA.oam[0], STATUE_OPENING_OAM_ID_KRAID_ACTIVATING);
@@ -85,7 +85,7 @@ static u8 StatueOpeningOpening(void)
                     CUTSCENE_DATA.timeInfo.timer = 0;
                 }
                 else
-                #endif // DEBUG
+#endif // DEBUG
                 {
                     // Set opening animation for appropriate statue
                     if (gCurrentArea == AREA_KRAID)
@@ -118,9 +118,9 @@ static u8 StatueOpeningOpening(void)
     *CutsceneGetBgVerticalPointer(sStatueOpeningPageData[1].bg) = *CutsceneGetBgVerticalPointer(sStatueOpeningPageData[0].bg);
     *CutsceneGetBgVerticalPointer(sStatueOpeningPageData[2].bg) = *CutsceneGetBgVerticalPointer(sStatueOpeningPageData[0].bg) / 2;
 
-    #ifdef DEBUG
+#ifdef DEBUG
     CutsceneCheckSkipStage(1);
-    #endif
+#endif
 
     return FALSE;
 }
