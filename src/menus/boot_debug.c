@@ -1110,7 +1110,6 @@ s32 BootDebugSectionHandler(void)
  * 
  * @param roomOrDoor Value updated (-1 = loading, 0 = room, 1 = door)
  */
-#ifdef NON_MATCHING
 void BootDebugSectionMapRoomOrDoorUpdated(u8 roomOrDoor)
 {
     s32 doorCount;
@@ -1167,22 +1166,26 @@ void BootDebugSectionMapRoomOrDoorUpdated(u8 roomOrDoor)
 
                     elevator++;
                     if (elevator >= ELEVATOR_ROUTE_COUNT)
-                    {
-                        // No elevator to this room
-                        gLastDoorUsed = doorId;
-                        break; // FIXME: asm jumps to return
-                    }
+                        goto no_elevator;
                 }
 
-                // FIXME: first condition jumps to if statement above
-                if (elevator >= ELEVATOR_ROUTE_COUNT || (pDoor->type & 0xF) >= DOOR_TYPE_OPEN_HATCH)
-                {
-                    // No elevator to this room, or the door is a hatch
-                    gLastDoorUsed = doorId;
-                    break;
-                }
+                if (elevator >= ELEVATOR_ROUTE_COUNT)
+                    goto no_elevator;
+
+                if ((pDoor->type & 0xF) < DOOR_TYPE_OPEN_HATCH)
+                    goto next_door;
+
+                // The door is a hatch
+                gLastDoorUsed = doorId;
+                break;
+
+no_elevator:
+                // No elevator to this room
+                gLastDoorUsed = doorId;
+                break;
             }
 
+next_door:
             pDoor++;
             doorId++;
         }
@@ -1195,171 +1198,6 @@ void BootDebugSectionMapRoomOrDoorUpdated(u8 roomOrDoor)
         gCurrentRoom = pDoor->sourceRoom;
     }
 }
-#else // !NON_MATCHING
-NAKED_FUNCTION
-void BootDebugSectionMapRoomOrDoorUpdated(u8 roomOrDoor)
-{
-    asm(" \n\
-    push    {r4-r7,r14} \n\
-    mov     r7,r10 \n\
-    mov     r6,r9 \n\
-    mov     r5,r8 \n\
-    push    {r5-r7} \n\
-    lsl     r0,r0,#0x18 \n\
-    lsr     r7,r0,#0x18 \n\
-    ldr     r1,=sAreaDoorsPointers \n\
-    ldr     r2,=gSectionInfo \n\
-    ldrb    r0,[r2] \n\
-    lsl     r0,r0,#2 \n\
-    add     r0,r0,r1 \n\
-    ldr     r4,[r0] \n\
-    mov     r5,#0 \n\
-    mov     r3,#0 \n\
-    ldrb    r0,[r4] \n\
-    mov     r9,r1 \n\
-    ldr     r1,=gCurrentRoom \n\
-    mov     r10,r1 \n\
-    ldr     r1,=gLastDoorUsed \n\
-    mov     r8,r1 \n\
-    cmp     r0,#0 \n\
-    beq     lbl_080795f4 \n\
-lbl_080795e2: \n\
-    ldrb    r0,[r4,#1] \n\
-    cmp     r3,r0 \n\
-    bgt     lbl_080795ea \n\
-    mov     r3,r0 \n\
-lbl_080795ea: \n\
-    add     r5,#1 \n\
-    add     r4,#0xC \n\
-    ldrb    r0,[r4] \n\
-    cmp     r0,#0 \n\
-    bne     lbl_080795e2 \n\
-lbl_080795f4: \n\
-    mov     r6,r10 \n\
-    ldrb    r0,[r6] \n\
-    cmp     r0,r3 \n\
-    ble     lbl_08079604 \n\
-    strb    r3,[r6] \n\
-    ldr     r1,=gPauseScreenFlag \n\
-    mov     r0,#0 \n\
-    strb    r0,[r1] \n\
-lbl_08079604: \n\
-    mov     r3,r8 \n\
-    ldrb    r0,[r3] \n\
-    sub     r1,r5,#1 \n\
-    cmp     r0,r1 \n\
-    ble     lbl_08079616 \n\
-    strb    r1,[r3] \n\
-    ldr     r1,=gPauseScreenFlag \n\
-    mov     r0,#0 \n\
-    strb    r0,[r1] \n\
-lbl_08079616: \n\
-    cmp     r7,#0 \n\
-    bne     lbl_080796c6 \n\
-    ldrb    r0,[r2] \n\
-    lsl     r0,r0,#2 \n\
-    add     r0,r9 \n\
-    ldr     r4,[r0] \n\
-    mov     r7,#0 \n\
-    ldrb    r0,[r4] \n\
-    cmp     r0,#0 \n\
-    beq     lbl_080796e0 \n\
-    mov     r12,r6 \n\
-    ldrb    r5,[r6] \n\
-    mov     r10,r5 \n\
-    mov     r8,r2 \n\
-    mov     r9,r3 \n\
-lbl_08079634: \n\
-    ldrb    r3,[r4,#1] \n\
-    cmp     r3,r10 \n\
-    bne     lbl_080796ba \n\
-    mov     r2,#1 \n\
-    ldr     r0,=sElevatorRoomPairs \n\
-    ldrb    r1,[r0,#8] \n\
-    mov     r6,r0 \n\
-    mov     r0,r8 \n\
-    ldrb    r0,[r0] \n\
-    cmp     r1,r0 \n\
-    bne     lbl_08079652 \n\
-    ldr     r1,=sElevatorRoomPairs+0x8 \n\
-    ldrb    r0,[r1,#1] \n\
-    cmp     r0,r3 \n\
-    beq     lbl_08079684 \n\
-lbl_08079652: \n\
-    lsl     r0,r2,#3 \n\
-    add     r1,r0,r6 \n\
-    ldrb    r0,[r1,#4] \n\
-    mov     r5,r8 \n\
-    ldrb    r3,[r5] \n\
-    cmp     r0,r3 \n\
-    bne     lbl_0807966a \n\
-    ldrb    r0,[r1,#5] \n\
-    mov     r1,r12 \n\
-    ldrb    r1,[r1] \n\
-    cmp     r0,r1 \n\
-    beq     lbl_08079684 \n\
-lbl_0807966a: \n\
-    add     r2,#1 \n\
-    cmp     r2,#8 \n\
-    bgt     lbl_080796b4 \n\
-    lsl     r0,r2,#3 \n\
-    add     r1,r0,r6 \n\
-    ldrb    r0,[r1] \n\
-    cmp     r0,r3 \n\
-    bne     lbl_08079652 \n\
-    ldrb    r0,[r1,#1] \n\
-    mov     r3,r12 \n\
-    ldrb    r3,[r3] \n\
-    cmp     r0,r3 \n\
-    bne     lbl_08079652 \n\
-lbl_08079684: \n\
-    cmp     r2,#8 \n\
-    bgt     lbl_080796b4 \n\
-    ldrb    r1,[r4] \n\
-    mov     r0,#0xF \n\
-    and     r0,r1 \n\
-    cmp     r0,#2 \n\
-    bls     lbl_080796ba \n\
-    mov     r5,r9 \n\
-    strb    r7,[r5] \n\
-    b       lbl_080796e0 \n\
-    .pool \n\
-lbl_080796b4: \n\
-    mov     r0,r9 \n\
-    strb    r7,[r0] \n\
-    b       lbl_080796e0 \n\
-lbl_080796ba: \n\
-    add     r4,#0xC \n\
-    add     r7,#1 \n\
-    ldrb    r0,[r4] \n\
-    cmp     r0,#0 \n\
-    bne     lbl_08079634 \n\
-    b       lbl_080796e0 \n\
-lbl_080796c6: \n\
-    ldrb    r0,[r2] \n\
-    lsl     r0,r0,#2 \n\
-    add     r0,r9 \n\
-    ldr     r4,[r0] \n\
-    mov     r3,r8 \n\
-    ldrb    r1,[r3] \n\
-    lsl     r0,r1,#1 \n\
-    add     r0,r0,r1 \n\
-    lsl     r0,r0,#2 \n\
-    add     r4,r4,r0 \n\
-    ldrb    r0,[r4,#1] \n\
-    mov     r5,r10 \n\
-    strb    r0,[r5] \n\
-lbl_080796e0: \n\
-    pop     {r3-r5} \n\
-    mov     r8,r3 \n\
-    mov     r9,r4 \n\
-    mov     r10,r5 \n\
-    pop     {r4-r7} \n\
-    pop     {r0} \n\
-    bx      r0 \n\
-    ");
-}
-#endif // NON_MATCHING
 
 /**
  * @brief Draws the room and door IDs for the interactive area map
