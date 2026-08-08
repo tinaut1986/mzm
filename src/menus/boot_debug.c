@@ -1145,16 +1145,13 @@ void BootDebugSectionMapRoomOrDoorUpdated(u8 roomOrDoor)
     if (roomOrDoor == 0) // Room
     {
         // Find a door that's in the current room
-        pDoor = sAreaDoorsPointers[gSectionInfo.sectionIndex];
-        doorId = 0;
-        while (pDoor->type != 0)
+        for (pDoor = sAreaDoorsPointers[gSectionInfo.sectionIndex], doorId = 0; pDoor->type != 0; pDoor++, doorId++)
         {
             if (pDoor->sourceRoom == gCurrentRoom)
             {
                 // We don't want to spawn Samus next to an elevator transition, so
                 // skip this door if it's an elevator to the current room
-                elevator = 1;
-                while (TRUE)
+                for (elevator = 1; elevator < ELEVATOR_ROUTE_COUNT; elevator++)
                 {
                     if (sElevatorRoomPairs[elevator].area1 == gSectionInfo.sectionIndex &&
                         sElevatorRoomPairs[elevator].room1 == gCurrentRoom)
@@ -1163,31 +1160,21 @@ void BootDebugSectionMapRoomOrDoorUpdated(u8 roomOrDoor)
                     if (sElevatorRoomPairs[elevator].area2 == gSectionInfo.sectionIndex &&
                         sElevatorRoomPairs[elevator].room2 == gCurrentRoom)
                         break;
-
-                    elevator++;
-                    if (elevator >= ELEVATOR_ROUTE_COUNT)
-                        goto no_elevator;
                 }
 
-                if (elevator >= ELEVATOR_ROUTE_COUNT)
-                    goto no_elevator;
-
-                if ((pDoor->type & 0xF) < DOOR_TYPE_OPEN_HATCH)
-                    goto next_door;
-
-                // The door is a hatch
-                gLastDoorUsed = doorId;
-                break;
-
-no_elevator:
-                // No elevator to this room
-                gLastDoorUsed = doorId;
+                if (elevator < ELEVATOR_ROUTE_COUNT)
+                {
+                    if ((pDoor->type & 0xF) < DOOR_TYPE_OPEN_HATCH)
+                        continue;
+    
+                    gLastDoorUsed = doorId;
+                }
+                else
+                {
+                    gLastDoorUsed = doorId;
+                }
                 break;
             }
-
-next_door:
-            pDoor++;
-            doorId++;
         }
     }
     else // Door
