@@ -2,9 +2,9 @@
 #include "port_rom.h"
 #include "generated/cable_link_data_rom.h"
 
-const u8*p_sTransferData_8754bd0;
-const u8*p_sTransferRom;
-const u8*p_sTransferRom_After;
+__attribute__((weak)) const u8*p_sTransferData_8754bd0;
+__attribute__((weak)) const u8*p_sTransferRom;
+__attribute__((weak)) const u8*p_sTransferRom_After;
 
 void PortGen_cable_link_data_Init(void) {
     switch (gRomRegion) {

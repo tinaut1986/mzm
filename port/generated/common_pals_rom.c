@@ -2,12 +2,12 @@
 #include "port_rom.h"
 #include "generated/common_pals_rom.h"
 
-const u16(*p_sCommonTilesPal)[1*16];
-const u16(*p_sDoorTransitionPal)[15*16];
-const u16(*p_sCommonTilesMotherShipPal)[1*16];
-const u16(*p_sDoorTransitionMotherShipPal)[15*16];
-const u16(*p_sHatchFlashingMotherShipPal)[16*16];
-const u16(*p_sHatchFlashingPal)[16*16];
+__attribute__((weak)) const u16(*p_sCommonTilesPal)[1*16];
+__attribute__((weak)) const u16(*p_sDoorTransitionPal)[15*16];
+__attribute__((weak)) const u16(*p_sCommonTilesMotherShipPal)[1*16];
+__attribute__((weak)) const u16(*p_sDoorTransitionMotherShipPal)[15*16];
+__attribute__((weak)) const u16(*p_sHatchFlashingMotherShipPal)[16*16];
+__attribute__((weak)) const u16(*p_sHatchFlashingPal)[16*16];
 
 void PortGen_common_pals_Init(void) {
     switch (gRomRegion) {

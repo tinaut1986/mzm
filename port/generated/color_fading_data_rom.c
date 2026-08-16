@@ -2,9 +2,9 @@
 #include "port_rom.h"
 #include "generated/color_fading_data_rom.h"
 
-const u8(*p_sDoorTransitionTilemap)[184];
-const struct ColorFadingData(*p_sColorFadingData)[COLOR_FADING_COUNT];
-const struct ColorFadingColorInfo(*p_sColorFadingColorInfo)[5];
+__attribute__((weak)) const u8(*p_sDoorTransitionTilemap)[184];
+__attribute__((weak)) const struct ColorFadingData(*p_sColorFadingData)[COLOR_FADING_COUNT];
+__attribute__((weak)) const struct ColorFadingColorInfo(*p_sColorFadingColorInfo)[5];
 
 void PortGen_color_fading_data_Init(void) {
     switch (gRomRegion) {

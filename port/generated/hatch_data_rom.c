@@ -2,16 +2,16 @@
 #include "port_rom.h"
 #include "generated/hatch_data_rom.h"
 
-const HatchType(*p_sHatchTypeTable)[HATCH_COUNT];
-const struct HatchLockEvent(*p_sHatchLockEventsBrinstar)[1];
-const struct HatchLockEvent(*p_sHatchLockEventsKraid)[1];
-const struct HatchLockEvent(*p_sHatchLockEventsCrateria)[2];
-const struct HatchLockEvent(*p_sHatchLockEventsChozodia)[15];
-const u8(*p_sEventBasedConnections)[41][EVENT_BASED_CONNECTION_FIELD_COUNT];
-const u8(*p_sAreaConnections)[AREA_CONNECTION_FIELD_COUNT];
-const u8(*p_sHatchesAnimationDurationCounter)[6];
-const u16(*p_sHatchesTilemapValues)[HATCH_COUNT];
-const u16(*p_sNumberOfHatchLockEventsPerArea)[MAX_AMOUNT_OF_AREAS];
+__attribute__((weak)) const HatchType(*p_sHatchTypeTable)[HATCH_COUNT];
+__attribute__((weak)) const struct HatchLockEvent(*p_sHatchLockEventsBrinstar)[1];
+__attribute__((weak)) const struct HatchLockEvent(*p_sHatchLockEventsKraid)[1];
+__attribute__((weak)) const struct HatchLockEvent(*p_sHatchLockEventsCrateria)[2];
+__attribute__((weak)) const struct HatchLockEvent(*p_sHatchLockEventsChozodia)[15];
+__attribute__((weak)) const u8(*p_sEventBasedConnections)[41][EVENT_BASED_CONNECTION_FIELD_COUNT];
+__attribute__((weak)) const u8(*p_sAreaConnections)[AREA_CONNECTION_FIELD_COUNT];
+__attribute__((weak)) const u8(*p_sHatchesAnimationDurationCounter)[6];
+__attribute__((weak)) const u16(*p_sHatchesTilemapValues)[HATCH_COUNT];
+__attribute__((weak)) const u16(*p_sNumberOfHatchLockEventsPerArea)[MAX_AMOUNT_OF_AREAS];
 
 void PortGen_hatch_data_Init(void) {
     switch (gRomRegion) {

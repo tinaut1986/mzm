@@ -2,24 +2,24 @@
 #include "port_rom.h"
 #include "generated/demo_data_rom.h"
 
-const struct SaveDemo*p_sDemo0_Ram;
-const struct SaveDemo*p_sDemo1_Ram;
-const struct SaveDemo*p_sDemo2_Ram;
-const struct SaveDemo*p_sDemo3_Ram;
-const struct SaveDemo*p_sDemo4_Ram;
-const struct SaveDemo*p_sDemo5_Ram;
-const struct SaveDemo*p_sDemo6_Ram;
-const struct SaveDemo*p_sDemo7_Ram;
-const struct SaveDemo*p_sDemo8_Ram;
-const struct SaveDemo*p_sDemo9_Ram;
-const struct SaveDemo*p_sDemo10_Ram;
-const struct SaveDemo*p_sDemo11_Ram;
-const struct SaveDemo*p_sDemo12_Ram;
-const struct SaveDemo*p_sDemo13_Ram;
-const struct SaveDemo*p_sDemo14_Ram;
-const struct SaveDemo*p_sDemo15_Ram;
-const struct DemoEntry(*p_sDemoEntries)[MAX_AMOUNT_OF_DEMOS];
-const u8(*p_sDemoNumbers)[MAX_AMOUNT_OF_DEMOS];
+__attribute__((weak)) const struct SaveDemo*p_sDemo0_Ram;
+__attribute__((weak)) const struct SaveDemo*p_sDemo1_Ram;
+__attribute__((weak)) const struct SaveDemo*p_sDemo2_Ram;
+__attribute__((weak)) const struct SaveDemo*p_sDemo3_Ram;
+__attribute__((weak)) const struct SaveDemo*p_sDemo4_Ram;
+__attribute__((weak)) const struct SaveDemo*p_sDemo5_Ram;
+__attribute__((weak)) const struct SaveDemo*p_sDemo6_Ram;
+__attribute__((weak)) const struct SaveDemo*p_sDemo7_Ram;
+__attribute__((weak)) const struct SaveDemo*p_sDemo8_Ram;
+__attribute__((weak)) const struct SaveDemo*p_sDemo9_Ram;
+__attribute__((weak)) const struct SaveDemo*p_sDemo10_Ram;
+__attribute__((weak)) const struct SaveDemo*p_sDemo11_Ram;
+__attribute__((weak)) const struct SaveDemo*p_sDemo12_Ram;
+__attribute__((weak)) const struct SaveDemo*p_sDemo13_Ram;
+__attribute__((weak)) const struct SaveDemo*p_sDemo14_Ram;
+__attribute__((weak)) const struct SaveDemo*p_sDemo15_Ram;
+__attribute__((weak)) const struct DemoEntry(*p_sDemoEntries)[MAX_AMOUNT_OF_DEMOS];
+__attribute__((weak)) const u8(*p_sDemoNumbers)[MAX_AMOUNT_OF_DEMOS];
 
 void PortGen_demo_data_Init(void) {
     switch (gRomRegion) {

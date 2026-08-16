@@ -2,13 +2,13 @@
 #include "port_rom.h"
 #include "generated/haze_data_rom.h"
 
-const u8(*p_sHaze_345ff8)[132];
-const s8(*p_sHaze_Bg3_StrongEffect)[48];
-const s16* const(*p_sHaze_PowerBomb_WindowValuesPointers)[161];
-const s8(*p_sHaze_Bg3Bg2Bg1)[9][32];
-const s8(*p_sHaze_Bg3_WeakOutside)[16];
-const s8(*p_sHaze_Bg_WeakOutside)[32];
-const struct HazeLoop*p_sHazeLoop_Empty;
+__attribute__((weak)) const u8(*p_sHaze_345ff8)[132];
+__attribute__((weak)) const s8(*p_sHaze_Bg3_StrongEffect)[48];
+__attribute__((weak)) const s16* const(*p_sHaze_PowerBomb_WindowValuesPointers)[161];
+__attribute__((weak)) const s8(*p_sHaze_Bg3Bg2Bg1)[9][32];
+__attribute__((weak)) const s8(*p_sHaze_Bg3_WeakOutside)[16];
+__attribute__((weak)) const s8(*p_sHaze_Bg_WeakOutside)[32];
+__attribute__((weak)) const struct HazeLoop*p_sHazeLoop_Empty;
 
 void PortGen_haze_data_Init(void) {
     switch (gRomRegion) {

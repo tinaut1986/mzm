@@ -261,7 +261,7 @@ void Port_PPU_3DS_WriteQuickDump(void) {
         const double loadIntervalTicks = sPerfIntervalLastTicks
                                              ? (double)sPerfIntervalLastTicks
                                              : (double)Platform3DS_TicksPerSecond() / 60.0;
-        fprintf(info, "Metroid Zero Mission 3DS v" TMC_PORT_VERSION " quick dump\n");
+        fprintf(info, "Metroid Zero Mission 3DS v" MZM_PORT_VERSION " quick dump\n");
         fprintf(info, "\n[System]\n");
         fprintf(info, "Model: %s\n", Platform3DS_IsNew3DS() ? "New Nintendo 3DS" : "Old Nintendo 3DS");
         fprintf(info, "CPU profile requested: %s\n", runtimeStats.speedupRequested ? "804 MHz + L2" : "268 MHz");

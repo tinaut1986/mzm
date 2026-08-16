@@ -2,12 +2,12 @@
 #include "port_rom.h"
 #include "generated/default_background_data_rom.h"
 
-const u32(*p_sTileset_0_Bg_Gfx)[949];
-const u8(*p_sTest_Bg3)[896];
-const u8(*p_sBackground_Empty)[52];
-const u8(*p_sDoorTransitionTilemap)[184];
-const u8(*p_sBg3_Empty)[256];
-const u8(*p_sTest_Bg0_0)[504];
+__attribute__((weak)) const u32(*p_sTileset_0_Bg_Gfx)[949];
+__attribute__((weak)) const u8(*p_sTest_Bg3)[896];
+__attribute__((weak)) const u8(*p_sBackground_Empty)[52];
+__attribute__((weak)) const u8(*p_sDoorTransitionTilemap)[184];
+__attribute__((weak)) const u8(*p_sBg3_Empty)[256];
+__attribute__((weak)) const u8(*p_sTest_Bg0_0)[504];
 
 void PortGen_default_background_data_Init(void) {
     switch (gRomRegion) {

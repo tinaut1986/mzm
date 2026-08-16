@@ -2,24 +2,24 @@
 #include "port_rom.h"
 #include "generated/save_file_data_rom.h"
 
-const u8(*p_sMetZeroSramCheck_Text)[SRAM_TEXT_SIZE];
-const u8(*p_sZERO_MISSION_010_Text)[SRAM_TEXT_SIZE];
-const u8(*p_sPlanetZebes_Text)[SRAM_TEXT_SIZE];
-const u8(*p_sSamusAran_Text)[SRAM_TEXT_SIZE];
-const u8(*p_sJpnVer_Text)[20];
-const u8(*p_sEurVer_Text)[20];
-const u8(*p_sUsaVer_Text)[20];
-const struct FileScreenOptionsUnlocked*p_sFileScreenOptionsUnlocked_Empty;
-const u8(*p_sMostRecentFileSave_Text)[2][SRAM_TEXT_SIZE];
-const u8(*p_sSoundModeSave_Text)[2][SRAM_TEXT_SIZE];
-const u8(*p_sLanguageSave_Text)[2][SRAM_TEXT_SIZE];
-const u8(*p_sTimeAttackSave_Text)[2][SRAM_TEXT_SIZE];
-const u8(*p_sATRUNED_Text)[8];
-const struct ButtonAssignments*p_sDefaultButtonAssignments;
-const struct InGameTimer*p_sInGameTimer_Empty;
-const struct InGameTimer*p_sBestCompletionTime_Empty;
-const u8(*p_sUnk_411520)[4];
-const struct SectionInfo*p_sSectionInfo;
+__attribute__((weak)) const u8(*p_sMetZeroSramCheck_Text)[SRAM_TEXT_SIZE];
+__attribute__((weak)) const u8(*p_sZERO_MISSION_010_Text)[SRAM_TEXT_SIZE];
+__attribute__((weak)) const u8(*p_sPlanetZebes_Text)[SRAM_TEXT_SIZE];
+__attribute__((weak)) const u8(*p_sSamusAran_Text)[SRAM_TEXT_SIZE];
+__attribute__((weak)) const u8(*p_sJpnVer_Text)[20];
+__attribute__((weak)) const u8(*p_sEurVer_Text)[20];
+__attribute__((weak)) const u8(*p_sUsaVer_Text)[20];
+__attribute__((weak)) const struct FileScreenOptionsUnlocked*p_sFileScreenOptionsUnlocked_Empty;
+__attribute__((weak)) const u8(*p_sMostRecentFileSave_Text)[2][SRAM_TEXT_SIZE];
+__attribute__((weak)) const u8(*p_sSoundModeSave_Text)[2][SRAM_TEXT_SIZE];
+__attribute__((weak)) const u8(*p_sLanguageSave_Text)[2][SRAM_TEXT_SIZE];
+__attribute__((weak)) const u8(*p_sTimeAttackSave_Text)[2][SRAM_TEXT_SIZE];
+__attribute__((weak)) const u8(*p_sATRUNED_Text)[8];
+__attribute__((weak)) const struct ButtonAssignments*p_sDefaultButtonAssignments;
+__attribute__((weak)) const struct InGameTimer*p_sInGameTimer_Empty;
+__attribute__((weak)) const struct InGameTimer*p_sBestCompletionTime_Empty;
+__attribute__((weak)) const u8(*p_sUnk_411520)[4];
+__attribute__((weak)) const struct SectionInfo*p_sSectionInfo;
 
 void PortGen_save_file_data_Init(void) {
     switch (gRomRegion) {

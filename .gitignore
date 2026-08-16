@@ -24,3 +24,6 @@ tools/agbcc
 .vscode
 
 err.log
+
+# 3DS port build artifacts
+platform/3ds/build/

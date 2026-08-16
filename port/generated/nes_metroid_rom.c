@@ -2,9 +2,9 @@
 #include "port_rom.h"
 #include "generated/nes_metroid_rom.h"
 
-const NesEmuFunc_T*p_sNesEmuBootLoader;
-const u8(*p_sNesMetroidData_Text)[18];
-const u8*p_sNesMetroidData;
+__attribute__((weak)) const NesEmuFunc_T*p_sNesEmuBootLoader;
+__attribute__((weak)) const u8(*p_sNesMetroidData_Text)[18];
+__attribute__((weak)) const u8*p_sNesMetroidData;
 
 void PortGen_nes_metroid_Init(void) {
     switch (gRomRegion) {

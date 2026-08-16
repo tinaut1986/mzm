@@ -2,11 +2,11 @@
 #include "port_rom.h"
 #include "generated/clipdata_types_tilemap_rom.h"
 
-const ClipBehavior(*p_sClipdataBehaviorTypes_Tilemap)[CLIPDATA_TILEMAP_COUNT];
-const u8(*p_sClipdataCollisionTypes_Tilemap)[CLIPDATA_TILEMAP_COUNT];
-const u16(*p_sCommonTilemap)[832];
-const u8(*p_sClipdataCollisionTypes_Test)[CLIPDATA_TEST_COUNT];
-const ClipBehavior(*p_sClipdataBehaviorTypes_Test)[CLIPDATA_TEST_COUNT];
+__attribute__((weak)) const ClipBehavior(*p_sClipdataBehaviorTypes_Tilemap)[CLIPDATA_TILEMAP_COUNT];
+__attribute__((weak)) const u8(*p_sClipdataCollisionTypes_Tilemap)[CLIPDATA_TILEMAP_COUNT];
+__attribute__((weak)) const u16(*p_sCommonTilemap)[832];
+__attribute__((weak)) const u8(*p_sClipdataCollisionTypes_Test)[CLIPDATA_TEST_COUNT];
+__attribute__((weak)) const ClipBehavior(*p_sClipdataBehaviorTypes_Test)[CLIPDATA_TEST_COUNT];
 
 void PortGen_clipdata_types_tilemap_Init(void) {
     switch (gRomRegion) {

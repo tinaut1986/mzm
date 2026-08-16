@@ -2,7 +2,7 @@
 #include "port_rom.h"
 #include "generated/fusion_gallery_data_rom.h"
 
-const struct FusionGalleryImageEntry(*p_sFusionGalleryData)[NUMBER_OF_FUSION_GALLERY_IMAGES];
+__attribute__((weak)) const struct FusionGalleryImageEntry(*p_sFusionGalleryData)[NUMBER_OF_FUSION_GALLERY_IMAGES];
 
 void PortGen_fusion_gallery_data_Init(void) {
     switch (gRomRegion) {

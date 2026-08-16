@@ -2,9 +2,9 @@
 #include "port_rom.h"
 #include "generated/generic_data_rom.h"
 
-const s16(*p_sSineTable)[2*PI+PI_2];
-const u8(*p_sRandomNumberTable)[256];
-const Func_T(*p_sIntrTable)[13];
+__attribute__((weak)) const s16(*p_sSineTable)[2*PI+PI_2];
+__attribute__((weak)) const u8(*p_sRandomNumberTable)[256];
+__attribute__((weak)) const Func_T(*p_sIntrTable)[13];
 
 void PortGen_generic_data_Init(void) {
     switch (gRomRegion) {

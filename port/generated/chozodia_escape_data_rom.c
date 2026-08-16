@@ -2,42 +2,42 @@
 #include "port_rom.h"
 #include "generated/chozodia_escape_data_rom.h"
 
-const u16(*p_sChozodiaEscapeShipHeatingUpPal)[8*16];
-const u16(*p_sChozodiaEscapeGroundHeatingUpPal)[8*16];
-const u16(*p_sChozodiaEscapeShipExplodingPal)[9*16];
-const u16(*p_sChozodiaEscapeMissionAccomplishedPal)[16*16];
-const u16(*p_sChozodiaEscapeSamusInBlueShipPal)[1*16];
-const u16(*p_sChozodiaEscapeOam_ShipExterior_Frame0)[OAM_DATA_SIZE(10)];
-const u16(*p_sChozodiaEscapeOam_BlueShipAngledDown_Frame0)[OAM_DATA_SIZE(2)];
-const u16(*p_sChozodiaEscapeOam_BlueShipAngledUp_Frame0)[OAM_DATA_SIZE(3)];
-const u16(*p_sChozodiaEscapeOam_MotherShipDoorClosed_Frame0)[OAM_DATA_SIZE(6)];
-const struct FrameData(*p_sChozodiaEscapeOam_MotherShipDoorOpening)[9];
-const u16(*p_sChozodiaEscapeOam_BlueShipFarAway_Frame0)[OAM_DATA_SIZE(1)];
-const u16(*p_sChozodiaEscapeOam_BlueShipVeryClose_Frame0)[OAM_DATA_SIZE(4)];
-const u16(*p_sChozodiaEscapeOam_MissionAccomplishedEnglish_Frame0)[OAM_DATA_SIZE(20)];
-const u16(*p_sChozodiaEscapeOam_MissionAccomplishedHiragana_Frame0)[OAM_DATA_SIZE(9)];
+__attribute__((weak)) const u16(*p_sChozodiaEscapeShipHeatingUpPal)[8*16];
+__attribute__((weak)) const u16(*p_sChozodiaEscapeGroundHeatingUpPal)[8*16];
+__attribute__((weak)) const u16(*p_sChozodiaEscapeShipExplodingPal)[9*16];
+__attribute__((weak)) const u16(*p_sChozodiaEscapeMissionAccomplishedPal)[16*16];
+__attribute__((weak)) const u16(*p_sChozodiaEscapeSamusInBlueShipPal)[1*16];
+__attribute__((weak)) const u16(*p_sChozodiaEscapeOam_ShipExterior_Frame0)[OAM_DATA_SIZE(10)];
+__attribute__((weak)) const u16(*p_sChozodiaEscapeOam_BlueShipAngledDown_Frame0)[OAM_DATA_SIZE(2)];
+__attribute__((weak)) const u16(*p_sChozodiaEscapeOam_BlueShipAngledUp_Frame0)[OAM_DATA_SIZE(3)];
+__attribute__((weak)) const u16(*p_sChozodiaEscapeOam_MotherShipDoorClosed_Frame0)[OAM_DATA_SIZE(6)];
+__attribute__((weak)) const struct FrameData(*p_sChozodiaEscapeOam_MotherShipDoorOpening)[9];
+__attribute__((weak)) const u16(*p_sChozodiaEscapeOam_BlueShipFarAway_Frame0)[OAM_DATA_SIZE(1)];
+__attribute__((weak)) const u16(*p_sChozodiaEscapeOam_BlueShipVeryClose_Frame0)[OAM_DATA_SIZE(4)];
+__attribute__((weak)) const u16(*p_sChozodiaEscapeOam_MissionAccomplishedEnglish_Frame0)[OAM_DATA_SIZE(20)];
+__attribute__((weak)) const u16(*p_sChozodiaEscapeOam_MissionAccomplishedHiragana_Frame0)[OAM_DATA_SIZE(9)];
 #if (defined(REGION_EU))
-const u16(*p_sChozodiaEscapeOam_MissionAccomplishedGerman_Frame0)[OAM_DATA_SIZE(21)];
-const u16(*p_sChozodiaEscapeOam_MissionAccomplishedFrench_Frame0)[OAM_DATA_SIZE(15)];
-const u16(*p_sChozodiaEscapeOam_MissionAccomplishedItalian_Frame0)[OAM_DATA_SIZE(17)];
-const u16(*p_sChozodiaEscapeOam_MissionAccomplishedSpanish_Frame0)[OAM_DATA_SIZE(16)];
+__attribute__((weak)) const u16(*p_sChozodiaEscapeOam_MissionAccomplishedGerman_Frame0)[OAM_DATA_SIZE(21)];
+__attribute__((weak)) const u16(*p_sChozodiaEscapeOam_MissionAccomplishedFrench_Frame0)[OAM_DATA_SIZE(15)];
+__attribute__((weak)) const u16(*p_sChozodiaEscapeOam_MissionAccomplishedItalian_Frame0)[OAM_DATA_SIZE(17)];
+__attribute__((weak)) const u16(*p_sChozodiaEscapeOam_MissionAccomplishedSpanish_Frame0)[OAM_DATA_SIZE(16)];
 #endif
-const u8(*p_sChozodiaEscapeHeatingUpPalOffsets)[8];
-const struct FrameData* const(*p_sChozodiaEscape_5ca0c4)[5];
-const u16(*p_sChozodiaEscape_5ca0d8)[8][2];
-const u16(*p_sChozodiaEscape_5ca0f8)[8][2];
+__attribute__((weak)) const u8(*p_sChozodiaEscapeHeatingUpPalOffsets)[8];
+__attribute__((weak)) const struct FrameData* const(*p_sChozodiaEscape_5ca0c4)[5];
+__attribute__((weak)) const u16(*p_sChozodiaEscape_5ca0d8)[8][2];
+__attribute__((weak)) const u16(*p_sChozodiaEscape_5ca0f8)[8][2];
 #if (defined(REGION_EU))
-const u16 * const(*p_sChozodiaEscapeOamPointers_MissionAccomplished)[LANGUAGE_COUNT];
+__attribute__((weak)) const u16 * const(*p_sChozodiaEscapeOamPointers_MissionAccomplished)[LANGUAGE_COUNT];
 #endif
-const u32(*p_sChozodiaEscapeCraterBackgroundGfx)[5227];
-const u32(*p_sChozodiaEscapeCraterBackgroundTileTable)[418];
-const u32(*p_sChozodiaEscapeBlueShipVeryCloseGfx)[1079];
-const u32(*p_sChozodiaEscapeZebesBackgroundTileTable)[176];
-const u32(*p_sChozodiaEscapeZebesAndSkyGfx)[4574];
-const u32(*p_sChozodiaEscapeZebesSkyTileTable)[418];
-const u32(*p_sChozodiaEscapeSamusInBlueShipGfx)[2699];
-const u32(*p_sChozodiaEscapeSamusInBlueShipTileTable)[368];
-const u32*p_sChozodiaEscapeMissionAccomplishedLettersGfx;
+__attribute__((weak)) const u32(*p_sChozodiaEscapeCraterBackgroundGfx)[5227];
+__attribute__((weak)) const u32(*p_sChozodiaEscapeCraterBackgroundTileTable)[418];
+__attribute__((weak)) const u32(*p_sChozodiaEscapeBlueShipVeryCloseGfx)[1079];
+__attribute__((weak)) const u32(*p_sChozodiaEscapeZebesBackgroundTileTable)[176];
+__attribute__((weak)) const u32(*p_sChozodiaEscapeZebesAndSkyGfx)[4574];
+__attribute__((weak)) const u32(*p_sChozodiaEscapeZebesSkyTileTable)[418];
+__attribute__((weak)) const u32(*p_sChozodiaEscapeSamusInBlueShipGfx)[2699];
+__attribute__((weak)) const u32(*p_sChozodiaEscapeSamusInBlueShipTileTable)[368];
+__attribute__((weak)) const u32*p_sChozodiaEscapeMissionAccomplishedLettersGfx;
 
 void PortGen_chozodia_escape_data_Init(void) {
     switch (gRomRegion) {

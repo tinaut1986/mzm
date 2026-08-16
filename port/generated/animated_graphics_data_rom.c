@@ -2,18 +2,18 @@
 #include "port_rom.h"
 #include "generated/animated_graphics_data_rom.h"
 
-const struct AnimatedGraphicsData(*p_sAnimatedGraphicsEntries)[ANIMATED_GFX_ID_COUNT];
-const u8(*p_sAnimatedTilesetEntries)[8][48];
-const struct AnimatedPaletteTiming*p_sAnimatedPaletteTiming_Empty;
-const struct AnimatedPaletteData(*p_sAnimatedPaletteEntries)[ANIMATED_PALETTE_ID_COUNT];
-const struct BackgroundEffectColorData(*p_sBackgroundEffectColorData)[BACKGROUND_EFFECT_COUNT];
-const u16(*p_sBackgroundEffectBehavior_Lightning)[34][BACKGROUND_EFFECT_BEHAVIOR_FIELD_COUNT];
-const u16(*p_sBackgroundEffectBehavior_QuickFlash)[12][BACKGROUND_EFFECT_BEHAVIOR_FIELD_COUNT];
-const u16(*p_sBackgroundEffectBehavior_SlightYellow)[21][BACKGROUND_EFFECT_BEHAVIOR_FIELD_COUNT];
-const u16(*p_sBackgroundEffectBehavior_HeavyYellow)[20][BACKGROUND_EFFECT_BEHAVIOR_FIELD_COUNT];
-const u16(*p_sBackgroundEffectBehavior_ExitZebes)[30][BACKGROUND_EFFECT_BEHAVIOR_FIELD_COUNT];
-const u16(*p_sBackgroundEffectBehavior_IntroText)[30][BACKGROUND_EFFECT_BEHAVIOR_FIELD_COUNT];
-const u16(*p_sBackgroundEffectBehavior_AllBlackWhite)[39][BACKGROUND_EFFECT_BEHAVIOR_FIELD_COUNT];
+__attribute__((weak)) const struct AnimatedGraphicsData(*p_sAnimatedGraphicsEntries)[ANIMATED_GFX_ID_COUNT];
+__attribute__((weak)) const u8(*p_sAnimatedTilesetEntries)[8][48];
+__attribute__((weak)) const struct AnimatedPaletteTiming*p_sAnimatedPaletteTiming_Empty;
+__attribute__((weak)) const struct AnimatedPaletteData(*p_sAnimatedPaletteEntries)[ANIMATED_PALETTE_ID_COUNT];
+__attribute__((weak)) const struct BackgroundEffectColorData(*p_sBackgroundEffectColorData)[BACKGROUND_EFFECT_COUNT];
+__attribute__((weak)) const u16(*p_sBackgroundEffectBehavior_Lightning)[34][BACKGROUND_EFFECT_BEHAVIOR_FIELD_COUNT];
+__attribute__((weak)) const u16(*p_sBackgroundEffectBehavior_QuickFlash)[12][BACKGROUND_EFFECT_BEHAVIOR_FIELD_COUNT];
+__attribute__((weak)) const u16(*p_sBackgroundEffectBehavior_SlightYellow)[21][BACKGROUND_EFFECT_BEHAVIOR_FIELD_COUNT];
+__attribute__((weak)) const u16(*p_sBackgroundEffectBehavior_HeavyYellow)[20][BACKGROUND_EFFECT_BEHAVIOR_FIELD_COUNT];
+__attribute__((weak)) const u16(*p_sBackgroundEffectBehavior_ExitZebes)[30][BACKGROUND_EFFECT_BEHAVIOR_FIELD_COUNT];
+__attribute__((weak)) const u16(*p_sBackgroundEffectBehavior_IntroText)[30][BACKGROUND_EFFECT_BEHAVIOR_FIELD_COUNT];
+__attribute__((weak)) const u16(*p_sBackgroundEffectBehavior_AllBlackWhite)[39][BACKGROUND_EFFECT_BEHAVIOR_FIELD_COUNT];
 
 void PortGen_animated_graphics_data_Init(void) {
     switch (gRomRegion) {

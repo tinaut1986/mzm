@@ -2,10 +2,10 @@
 #include "port_rom.h"
 #include "generated/clipdata_types_rom.h"
 
-const u8(*p_sClipdataCollisionTypes)[CLIPDATA_COUNT];
-const u16(*p_sClipdataBehaviorTypes)[CLIPDATA_COUNT];
-const u8(*p_sCommonTilesGfx)[4096];
-const u8(*p_sCommonTilesMothershipGfx)[4096];
+__attribute__((weak)) const u8(*p_sClipdataCollisionTypes)[CLIPDATA_COUNT];
+__attribute__((weak)) const u16(*p_sClipdataBehaviorTypes)[CLIPDATA_COUNT];
+__attribute__((weak)) const u8(*p_sCommonTilesGfx)[4096];
+__attribute__((weak)) const u8(*p_sCommonTilesMothershipGfx)[4096];
 
 void PortGen_clipdata_types_Init(void) {
     switch (gRomRegion) {

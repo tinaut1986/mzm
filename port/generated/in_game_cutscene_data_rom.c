@@ -2,7 +2,7 @@
 #include "port_rom.h"
 #include "generated/in_game_cutscene_data_rom.h"
 
-const struct InGameCutsceneData(*p_sInGameCutsceneData)[IGC_COUNT];
+__attribute__((weak)) const struct InGameCutsceneData(*p_sInGameCutsceneData)[IGC_COUNT];
 
 void PortGen_in_game_cutscene_data_Init(void) {
     switch (gRomRegion) {

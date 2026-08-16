@@ -2,23 +2,23 @@
 #include "port_rom.h"
 #include "generated/empty_datatypes_rom.h"
 
-const struct HatchData*p_sHatchData_Empty;
-const struct Coordinates*p_sCoordsX_Empty;
-const struct LockScreen*p_sLockScreen_Empty;
-const struct BackgroundEffect*p_sBackgroundEffect_Empty;
-const struct BrokenBlock*p_sBrokenBlock_Empty;
-const struct BombChain*p_sBombChain_Empty;
-const struct PowerBomb*p_sPowerBomb_Empty;
-const struct ScreenShake*p_sScreenShake_Empty;
-const struct BG0Movement*p_sBg0Movement_Empty;
-const struct BG3Movement*p_sBg3Movement_Empty;
-const struct Unused_3005504*p_sUnusedStruct_3005504_Empty;
-const struct WaterMovement*p_sWaterMovement_Empty;
-const struct TransparencyRelated*p_sTransparencyRelated_Empty;
-const struct LastElevatorUsed*p_sLastElevatorUsed_Empty;
-const struct BldalphaData*p_sBldalphaData_Empty;
-const struct BldyData*p_sBldyData_Empty;
-const struct DefaultTransparency*p_sDefaultTransparency_Empty;
+__attribute__((weak)) const struct HatchData*p_sHatchData_Empty;
+__attribute__((weak)) const struct Coordinates*p_sCoordsX_Empty;
+__attribute__((weak)) const struct LockScreen*p_sLockScreen_Empty;
+__attribute__((weak)) const struct BackgroundEffect*p_sBackgroundEffect_Empty;
+__attribute__((weak)) const struct BrokenBlock*p_sBrokenBlock_Empty;
+__attribute__((weak)) const struct BombChain*p_sBombChain_Empty;
+__attribute__((weak)) const struct PowerBomb*p_sPowerBomb_Empty;
+__attribute__((weak)) const struct ScreenShake*p_sScreenShake_Empty;
+__attribute__((weak)) const struct BG0Movement*p_sBg0Movement_Empty;
+__attribute__((weak)) const struct BG3Movement*p_sBg3Movement_Empty;
+__attribute__((weak)) const struct Unused_3005504*p_sUnusedStruct_3005504_Empty;
+__attribute__((weak)) const struct WaterMovement*p_sWaterMovement_Empty;
+__attribute__((weak)) const struct TransparencyRelated*p_sTransparencyRelated_Empty;
+__attribute__((weak)) const struct LastElevatorUsed*p_sLastElevatorUsed_Empty;
+__attribute__((weak)) const struct BldalphaData*p_sBldalphaData_Empty;
+__attribute__((weak)) const struct BldyData*p_sBldyData_Empty;
+__attribute__((weak)) const struct DefaultTransparency*p_sDefaultTransparency_Empty;
 
 void PortGen_empty_datatypes_Init(void) {
     switch (gRomRegion) {

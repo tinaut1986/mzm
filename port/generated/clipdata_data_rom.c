@@ -2,13 +2,13 @@
 #include "port_rom.h"
 #include "generated/clipdata_data_rom.h"
 
-const u16(*p_sMovementClipdataValues)[16];
-const u16(*p_sHazardsDefinitions)[EFFECT_HAZARD_COUNT][2];
-const u16(*p_sHazardClipdataValues)[4];
-const GroundEffect(*p_sGroundEffectsClipdataValues)[8];
-const struct ElevatorPair(*p_sElevatorRoomPairs)[ELEVATOR_ROUTE_COUNT];
-const u8(*p_sScroll_Empty)[11];
-const struct CameraScrollVelocityCaps(*p_sScrollVelocityCaps)[SCROLL_VELOCITY_CAP_COUNT];
+__attribute__((weak)) const u16(*p_sMovementClipdataValues)[16];
+__attribute__((weak)) const u16(*p_sHazardsDefinitions)[EFFECT_HAZARD_COUNT][2];
+__attribute__((weak)) const u16(*p_sHazardClipdataValues)[4];
+__attribute__((weak)) const GroundEffect(*p_sGroundEffectsClipdataValues)[8];
+__attribute__((weak)) const struct ElevatorPair(*p_sElevatorRoomPairs)[ELEVATOR_ROUTE_COUNT];
+__attribute__((weak)) const u8(*p_sScroll_Empty)[11];
+__attribute__((weak)) const struct CameraScrollVelocityCaps(*p_sScrollVelocityCaps)[SCROLL_VELOCITY_CAP_COUNT];
 
 void PortGen_clipdata_data_Init(void) {
     switch (gRomRegion) {

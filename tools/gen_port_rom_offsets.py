@@ -120,8 +120,21 @@ class Symbol:
 
     def definition(self):
         """Definition for the generated .c: same type, no `extern`, so this
-        is the one place the pointer variable actually gets storage."""
-        return f"{self.pointer_var(f'p_{self.name}')};"
+        is the one place the pointer variable actually gets storage.
+
+        `weak`: mzm has data symbols legitimately `extern`-declared in more
+        than one include/data/*.h (e.g. sDoorTransitionTilemap, in both
+        color_fading_data.h and default_background_data.h) with a single
+        real definition living in exactly one src/data/*.c -- completely
+        valid C, since the other header is just a second extern declaration
+        of the same external symbol. Processing each header independently
+        means we'd otherwise emit two non-weak definitions of the same
+        global (a real "multiple definition" link error, not a generator
+        artifact -- caught by the full-batch link, not per-file checks).
+        Both headers' Init() resolve the exact same symbol name to the
+        exact same per-region .map address regardless of which definition
+        the linker keeps, so merging via `weak` changes nothing at runtime."""
+        return f"__attribute__((weak)) {self.pointer_var(f'p_{self.name}')};"
 
     def define(self):
         kind, _ = self._kind()

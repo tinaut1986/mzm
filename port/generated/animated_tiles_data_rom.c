@@ -2,9 +2,9 @@
 #include "port_rom.h"
 #include "generated/animated_tiles_data_rom.h"
 
-const u8(*p_sAnimatedTilesGfx)[100*128];
-const u8(*p_sAnimatedTankGfx)[4*512];
-const u8(*p_sAnimatedLiquidsGfx)[12*512];
+__attribute__((weak)) const u8(*p_sAnimatedTilesGfx)[100*128];
+__attribute__((weak)) const u8(*p_sAnimatedTankGfx)[4*512];
+__attribute__((weak)) const u8(*p_sAnimatedLiquidsGfx)[12*512];
 
 void PortGen_animated_tiles_data_Init(void) {
     switch (gRomRegion) {

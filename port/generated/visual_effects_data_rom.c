@@ -2,33 +2,33 @@
 #include "port_rom.h"
 #include "generated/visual_effects_data_rom.h"
 
-const struct FrameData(*p_sEnvEffectOam_RunningOnDustyGround)[6];
-const struct FrameData(*p_sEnvEffectOam_LandingOnDustyGround)[8];
-const struct FrameData(*p_sEnvEffectOam_TakingDamageInLava)[9];
-const struct FrameData(*p_sEnvEffectOam_TakingDamageInAcid)[9];
-const struct FrameData(*p_sEnvEffectOam_RunningOnWetGround)[6];
-const struct FrameData(*p_sEnvEffectOam_LandingOnWetGround)[6];
-const struct FrameData(*p_sEnvEffectOam_GoingOutOfWater)[10];
-const struct FrameData(*p_sEnvEffectOam_RunningIntoWater)[7];
-const struct FrameData(*p_sEnvEffectOam_GoingOutOfLava)[10];
-const struct FrameData(*p_sEnvEffectOam_RunningIntoLava)[7];
-const struct FrameData(*p_sEnvEffectOam_GoingOutOfAcid)[11];
-const struct FrameData(*p_sEnvEffectOam_RunningIntoAcid)[7];
-const struct FrameData(*p_sEnvEffectOam_LandingOnBubblyGround)[7];
-const struct FrameData(*p_sEnvEffectOam_BreathingBubbles)[8];
-const struct FrameData(*p_sEnvEffectOam_RunningOnVeryDustyGround)[12];
-const struct FrameData(*p_sEnvEffectOam_LandingOnVeryDustyGround)[18];
-const struct FrameData(*p_sParticleSpriteSplashWaterBigOam)[10];
-const struct FrameData(*p_sParticleSpriteSplashWaterHugeOam)[10];
-const struct FrameData(*p_sParticleSpriteSplashWaterSmallOam)[7];
-const struct FrameData(*p_sParticleSpriteSplashLavaBigOam)[10];
-const struct FrameData(*p_sParticleSpriteSplashLavaHugeOam)[10];
-const struct FrameData(*p_sParticleSpriteSplashLavaSmallOam)[7];
-const struct FrameData(*p_sParticleSpriteSplashAcidBigOam)[10];
-const struct FrameData(*p_sParticleSpriteSplashAcidHugeOam)[10];
-const struct FrameData(*p_sParticleSpriteSplashAcidSmallOam)[7];
-const u8(*p_sEscapeTimerDigitsGfx)[1024*2];
-const u16(*p_sParticleEscapeOam_Frame0)[OAM_DATA_SIZE(8)];
+__attribute__((weak)) const struct FrameData(*p_sEnvEffectOam_RunningOnDustyGround)[6];
+__attribute__((weak)) const struct FrameData(*p_sEnvEffectOam_LandingOnDustyGround)[8];
+__attribute__((weak)) const struct FrameData(*p_sEnvEffectOam_TakingDamageInLava)[9];
+__attribute__((weak)) const struct FrameData(*p_sEnvEffectOam_TakingDamageInAcid)[9];
+__attribute__((weak)) const struct FrameData(*p_sEnvEffectOam_RunningOnWetGround)[6];
+__attribute__((weak)) const struct FrameData(*p_sEnvEffectOam_LandingOnWetGround)[6];
+__attribute__((weak)) const struct FrameData(*p_sEnvEffectOam_GoingOutOfWater)[10];
+__attribute__((weak)) const struct FrameData(*p_sEnvEffectOam_RunningIntoWater)[7];
+__attribute__((weak)) const struct FrameData(*p_sEnvEffectOam_GoingOutOfLava)[10];
+__attribute__((weak)) const struct FrameData(*p_sEnvEffectOam_RunningIntoLava)[7];
+__attribute__((weak)) const struct FrameData(*p_sEnvEffectOam_GoingOutOfAcid)[11];
+__attribute__((weak)) const struct FrameData(*p_sEnvEffectOam_RunningIntoAcid)[7];
+__attribute__((weak)) const struct FrameData(*p_sEnvEffectOam_LandingOnBubblyGround)[7];
+__attribute__((weak)) const struct FrameData(*p_sEnvEffectOam_BreathingBubbles)[8];
+__attribute__((weak)) const struct FrameData(*p_sEnvEffectOam_RunningOnVeryDustyGround)[12];
+__attribute__((weak)) const struct FrameData(*p_sEnvEffectOam_LandingOnVeryDustyGround)[18];
+__attribute__((weak)) const struct FrameData(*p_sParticleSpriteSplashWaterBigOam)[10];
+__attribute__((weak)) const struct FrameData(*p_sParticleSpriteSplashWaterHugeOam)[10];
+__attribute__((weak)) const struct FrameData(*p_sParticleSpriteSplashWaterSmallOam)[7];
+__attribute__((weak)) const struct FrameData(*p_sParticleSpriteSplashLavaBigOam)[10];
+__attribute__((weak)) const struct FrameData(*p_sParticleSpriteSplashLavaHugeOam)[10];
+__attribute__((weak)) const struct FrameData(*p_sParticleSpriteSplashLavaSmallOam)[7];
+__attribute__((weak)) const struct FrameData(*p_sParticleSpriteSplashAcidBigOam)[10];
+__attribute__((weak)) const struct FrameData(*p_sParticleSpriteSplashAcidHugeOam)[10];
+__attribute__((weak)) const struct FrameData(*p_sParticleSpriteSplashAcidSmallOam)[7];
+__attribute__((weak)) const u8(*p_sEscapeTimerDigitsGfx)[1024*2];
+__attribute__((weak)) const u16(*p_sParticleEscapeOam_Frame0)[OAM_DATA_SIZE(8)];
 
 void PortGen_visual_effects_data_Init(void) {
     switch (gRomRegion) {

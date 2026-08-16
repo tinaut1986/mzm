@@ -1,5 +1,3 @@
-#include "gba/io_reg.h"
-#include "port_asset_loader.h"
 #include "port_gba_mem.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -226,30 +224,11 @@ u32 gba_read32(uint32_t addr) {
 
 void* port_resolve_addr(uintptr_t val)
 {
-    /* Native pointers into the loaded ROM are already resolved. On 3DS the
-     * ROM buffer is deliberately allocated outside the numeric GBA window,
-     * which makes this test unambiguous. */
-    if (Port_IsLoadedAssetBytes((const void*)val, 1)) return (void*)val;
-
-    /* GBA-range values are address-mapped through gba_TryMemPtr on
-     * every platform. The previous Windows-only short-circuit used
-     * VirtualQuery to "trust" the raw address if it happened to be a
-     * committed VM page on the host — but on Wine (and native Windows
-     * with the wrong ASLR alignment) a real GBA EWRAM address like
-     * gMapDataBottomSpecial at 0x02006B00 IS a committed page (the
-     * system DLLs map plenty of pages in the low address space) so
-     * the short-circuit returned the GBA address verbatim instead of
-     * remapping to gEwram[]. The pause-menu map screen then read its
-     * tilemap from random host memory — symptom #44 (grey blocks at
-     * top of map + bouncing player marker), Windows-only on the bug
-     * tracker. Linux's path was already correct, so unify on it.
-     *
-     * On 3DS, the application stack reservation can numerically cover GBA
-     * ROM addresses. This resolver is specifically for GBA-address values;
-     * treating every mapped address in that overlap as native made valid ROM
-     * graphics reads point into unrelated process memory. Native ROM-backed
-     * sources bypass this resolver through Port_IsLoadedAssetBytes, while
-     * the script paths recognize their known native pointers directly. */
+    /* GBA-range values (EWRAM/IWRAM/IO/palette/VRAM/OAM/ROM) are
+     * address-mapped through gba_TryMemPtr; anything outside that window is
+     * already a native host pointer (e.g. a local scalar or struct whose
+     * address happens to get passed through the same code path as a real
+     * GBA address) and is returned unchanged. */
     if (val >= 0x02000000u && val < 0x0A000000u) {
         void* p = gba_TryMemPtr((uint32_t)val);
         if (p) {
@@ -271,7 +250,7 @@ void* port_resolve_write_addr(uintptr_t val) {
 }
 
 const void* port_resolve_copy_src(const void* src, u32 size) {
-    if (Port_IsLoadedAssetBytes(src, size)) return src;
+    (void)size;
 #ifdef TMC_3DS
     /* Local scalars and temporary structs can occupy the same numeric range
      * as GBA ROM. This check is intentionally limited to copy sources; raw

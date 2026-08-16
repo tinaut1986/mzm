@@ -2,44 +2,44 @@
 #include "port_rom.h"
 #include "generated/io_transfer_data_rom.h"
 
-const struct IoTransferInfo*p_sIoTransferInfo_Empty;
-const u8(*p_sPlayer4String)[4];
-const u8(*p_sPlayer3String)[4];
-const u8(*p_sPlayer2String)[4];
-const u8(*p_sPlayer1String)[4];
+__attribute__((weak)) const struct IoTransferInfo*p_sIoTransferInfo_Empty;
+__attribute__((weak)) const u8(*p_sPlayer4String)[4];
+__attribute__((weak)) const u8(*p_sPlayer3String)[4];
+__attribute__((weak)) const u8(*p_sPlayer2String)[4];
+__attribute__((weak)) const u8(*p_sPlayer1String)[4];
 #if (defined(DEBUG))
-const u8(*p_sCableLinkDebugString_Blank)[20];
-const u8(*p_sCableLinkDebugString_NotConnected1)[20];
-const u8(*p_sCableLinkDebugString_NotConnected2)[20];
-const u8(*p_sCableLinkDebugString_Checking1)[16];
-const u8(*p_sCableLinkDebugString_Checking2)[16];
-const u8(*p_sCableLinkDebugString_Ready1)[16];
-const u8(*p_sCableLinkDebugString_Ready2)[16];
-const u8(*p_sCableLinkDebugString_PressAButton1)[20];
-const u8(*p_sCableLinkDebugString_PressAButton2)[20];
-const u8(*p_sCableLinkDebugString_NowSending11)[20];
-const u8(*p_sCableLinkDebugString_NowSending12)[20];
-const u8(*p_sCableLinkDebugString_1_Right)[20];
-const u8(*p_sCableLinkDebugString_2_Right)[20];
-const u8(*p_sCableLinkDebugString_BootChecking1)[20];
-const u8(*p_sCableLinkDebugString_BootChecking2)[20];
-const u8(*p_sCableLinkDebugString_NoClientBit1)[20];
-const u8(*p_sCableLinkDebugString_NoClientBit2)[20];
-const u8(*p_sCableLinkDebugString_PressA1)[12];
-const u8(*p_sCableLinkDebugString_PressA2)[12];
-const u8(*p_sCableLinkDebugString_Sending1)[12];
-const u8(*p_sCableLinkDebugString_Success)[12];
-const u8(*p_sCableLinkDebugString_Retry)[12];
-const u8(*p_sCableLinkDebugString_Error)[12];
-const u8(*p_sCableLinkDebugString_TimeOut)[12];
+__attribute__((weak)) const u8(*p_sCableLinkDebugString_Blank)[20];
+__attribute__((weak)) const u8(*p_sCableLinkDebugString_NotConnected1)[20];
+__attribute__((weak)) const u8(*p_sCableLinkDebugString_NotConnected2)[20];
+__attribute__((weak)) const u8(*p_sCableLinkDebugString_Checking1)[16];
+__attribute__((weak)) const u8(*p_sCableLinkDebugString_Checking2)[16];
+__attribute__((weak)) const u8(*p_sCableLinkDebugString_Ready1)[16];
+__attribute__((weak)) const u8(*p_sCableLinkDebugString_Ready2)[16];
+__attribute__((weak)) const u8(*p_sCableLinkDebugString_PressAButton1)[20];
+__attribute__((weak)) const u8(*p_sCableLinkDebugString_PressAButton2)[20];
+__attribute__((weak)) const u8(*p_sCableLinkDebugString_NowSending11)[20];
+__attribute__((weak)) const u8(*p_sCableLinkDebugString_NowSending12)[20];
+__attribute__((weak)) const u8(*p_sCableLinkDebugString_1_Right)[20];
+__attribute__((weak)) const u8(*p_sCableLinkDebugString_2_Right)[20];
+__attribute__((weak)) const u8(*p_sCableLinkDebugString_BootChecking1)[20];
+__attribute__((weak)) const u8(*p_sCableLinkDebugString_BootChecking2)[20];
+__attribute__((weak)) const u8(*p_sCableLinkDebugString_NoClientBit1)[20];
+__attribute__((weak)) const u8(*p_sCableLinkDebugString_NoClientBit2)[20];
+__attribute__((weak)) const u8(*p_sCableLinkDebugString_PressA1)[12];
+__attribute__((weak)) const u8(*p_sCableLinkDebugString_PressA2)[12];
+__attribute__((weak)) const u8(*p_sCableLinkDebugString_Sending1)[12];
+__attribute__((weak)) const u8(*p_sCableLinkDebugString_Success)[12];
+__attribute__((weak)) const u8(*p_sCableLinkDebugString_Retry)[12];
+__attribute__((weak)) const u8(*p_sCableLinkDebugString_Error)[12];
+__attribute__((weak)) const u8(*p_sCableLinkDebugString_TimeOut)[12];
 #endif
-const u8(*p_sErrorString_IdOver)[16];
-const u8(*p_sErrorString_ChecksumError)[20];
-const u8(*p_sErrorString_HardwareError)[20];
-const u8(*p_sErrorString_SendOverflow)[20];
-const u8(*p_sErrorString_ReceiveOverflow)[20];
-const u8(*p_sErrorString_SioInternal)[20];
-const u8(*p_sErrorString_SioStop)[20];
+__attribute__((weak)) const u8(*p_sErrorString_IdOver)[16];
+__attribute__((weak)) const u8(*p_sErrorString_ChecksumError)[20];
+__attribute__((weak)) const u8(*p_sErrorString_HardwareError)[20];
+__attribute__((weak)) const u8(*p_sErrorString_SendOverflow)[20];
+__attribute__((weak)) const u8(*p_sErrorString_ReceiveOverflow)[20];
+__attribute__((weak)) const u8(*p_sErrorString_SioInternal)[20];
+__attribute__((weak)) const u8(*p_sErrorString_SioStop)[20];
 
 void PortGen_io_transfer_data_Init(void) {
     switch (gRomRegion) {

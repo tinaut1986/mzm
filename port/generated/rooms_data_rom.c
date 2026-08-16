@@ -2,28 +2,28 @@
 #include "port_rom.h"
 #include "generated/rooms_data_rom.h"
 
-const u8(*p_sEnemyRoomData_Empty)[3];
-const struct TilesetEntry(*p_sTilesetEntries)[79];
-const struct Door(*p_sBrinstarDoors)[99];
-const struct Door(*p_sKraidDoors)[107];
-const struct Door(*p_sNorfairDoors)[133];
-const struct Door(*p_sRidleyDoors)[77];
-const struct Door(*p_sTourianDoors)[44];
-const struct Door(*p_sCrateriaDoors)[53];
-const struct Door(*p_sChozodiaDoors)[246];
-const struct Door(*p_sTest123Doors)[24];
-const struct Door(*p_sTestDoors)[2];
-const struct RoomEntryRom(*p_sBrinstarRoomEntries)[42];
-const struct RoomEntryRom(*p_sKraidRoomEntries)[42];
-const struct RoomEntryRom(*p_sNorfairRoomEntries)[57];
-const struct RoomEntryRom(*p_sRidleyRoomEntries)[33];
-const struct RoomEntryRom(*p_sTourianRoomEntries)[20];
-const struct RoomEntryRom(*p_sCrateriaRoomEntries)[22];
-const struct RoomEntryRom(*p_sChozodiaRoomEntries)[99];
-const struct RoomEntryRom(*p_sTest1RoomEntries)[5];
-const struct RoomEntryRom(*p_sTest2RoomEntries)[5];
-const struct RoomEntryRom(*p_sTest3RoomEntries)[5];
-const struct RoomEntryRom(*p_sTestRoomEntries)[1];
+__attribute__((weak)) const u8(*p_sEnemyRoomData_Empty)[3];
+__attribute__((weak)) const struct TilesetEntry(*p_sTilesetEntries)[79];
+__attribute__((weak)) const struct Door(*p_sBrinstarDoors)[99];
+__attribute__((weak)) const struct Door(*p_sKraidDoors)[107];
+__attribute__((weak)) const struct Door(*p_sNorfairDoors)[133];
+__attribute__((weak)) const struct Door(*p_sRidleyDoors)[77];
+__attribute__((weak)) const struct Door(*p_sTourianDoors)[44];
+__attribute__((weak)) const struct Door(*p_sCrateriaDoors)[53];
+__attribute__((weak)) const struct Door(*p_sChozodiaDoors)[246];
+__attribute__((weak)) const struct Door(*p_sTest123Doors)[24];
+__attribute__((weak)) const struct Door(*p_sTestDoors)[2];
+__attribute__((weak)) const struct RoomEntryRom(*p_sBrinstarRoomEntries)[42];
+__attribute__((weak)) const struct RoomEntryRom(*p_sKraidRoomEntries)[42];
+__attribute__((weak)) const struct RoomEntryRom(*p_sNorfairRoomEntries)[57];
+__attribute__((weak)) const struct RoomEntryRom(*p_sRidleyRoomEntries)[33];
+__attribute__((weak)) const struct RoomEntryRom(*p_sTourianRoomEntries)[20];
+__attribute__((weak)) const struct RoomEntryRom(*p_sCrateriaRoomEntries)[22];
+__attribute__((weak)) const struct RoomEntryRom(*p_sChozodiaRoomEntries)[99];
+__attribute__((weak)) const struct RoomEntryRom(*p_sTest1RoomEntries)[5];
+__attribute__((weak)) const struct RoomEntryRom(*p_sTest2RoomEntries)[5];
+__attribute__((weak)) const struct RoomEntryRom(*p_sTest3RoomEntries)[5];
+__attribute__((weak)) const struct RoomEntryRom(*p_sTestRoomEntries)[1];
 
 void PortGen_rooms_data_Init(void) {
     switch (gRomRegion) {

@@ -2,13 +2,13 @@
 #include "port_rom.h"
 #include "generated/samus_close_up_data_rom.h"
 
-const u16(*p_sSamusCloseUpPal)[6*16];
-const u32(*p_sSamusCloseUpGfx)[2319];
-const u32(*p_sSamusCloseUpEyesGfx_1)[80];
-const u32(*p_sSamusCloseUpEyesGfx_2)[80];
-const u32(*p_sSamusCloseUpEyesGfx_3)[1376];
-const u32(*p_sSamusCloseUpBackgroundMap)[385];
-const u32(*p_sSamusCloseUpEyesTiletable)[98];
+__attribute__((weak)) const u16(*p_sSamusCloseUpPal)[6*16];
+__attribute__((weak)) const u32(*p_sSamusCloseUpGfx)[2319];
+__attribute__((weak)) const u32(*p_sSamusCloseUpEyesGfx_1)[80];
+__attribute__((weak)) const u32(*p_sSamusCloseUpEyesGfx_2)[80];
+__attribute__((weak)) const u32(*p_sSamusCloseUpEyesGfx_3)[1376];
+__attribute__((weak)) const u32(*p_sSamusCloseUpBackgroundMap)[385];
+__attribute__((weak)) const u32(*p_sSamusCloseUpEyesTiletable)[98];
 
 void PortGen_samus_close_up_data_Init(void) {
     switch (gRomRegion) {

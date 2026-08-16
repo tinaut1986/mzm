@@ -1,9 +1,15 @@
 #include "platform_3ds.h"
 
-#include "port_audio.h"
-#include "port_ppu.h"
 #include "port_rom.h"
-#include "port_runtime_config.h"
+
+/* PPU (screen rendering) and audio init are not wired up yet -- this build
+ * proves the rest of the pipeline (all gameplay logic, generated ROM data
+ * shims, GBA BIOS reimplementation) compiles, links, and reaches agbmain()
+ * on real 3DS hardware. See docs/3ds-port-rom-loading.md and
+ * docs/3ds-port-skeleton-import.md for what's left: bridging port/ppu's
+ * software renderer to citro2d/citro3d (port_ppu_3ds.c, currently still
+ * TMC-coupled), and a real audio backend for mzm's own UpdateMusic/
+ * TrackVariables engine (not M4A). */
 
 #include <ctype.h>
 #include <dirent.h>
@@ -16,7 +22,7 @@
 #define APP_DIR "sdmc:/3ds/Metroid Zero Mission 3DS"
 #define ROM_PATH_SIZE 512
 
-extern void AgbMain(void);
+extern void agbmain(void);
 
 static int PrepareStorage(void) {
     mkdir("sdmc:/3ds", 0777);
@@ -73,7 +79,7 @@ int main(int argc, char** argv) {
     if (!Platform3DS_Init()) return 1;
     Platform3DS_ShowSplash();
 
-    printf("Metroid Zero Mission 3DS v" TMC_PORT_VERSION "\n\n");
+    printf("Metroid Zero Mission 3DS v" MZM_PORT_VERSION "\n\n");
     printf("System: %s\n", Platform3DS_IsNew3DS() ? "New Nintendo 3DS" : "Nintendo 3DS");
     printf("Performance: %s\n",
            Platform3DS_IsNew3DS() ? "New 3DS full presentation"
@@ -94,15 +100,15 @@ int main(int argc, char** argv) {
         if (romResult < 0) {
             snprintf(message, sizeof(message),
                      "None of the .gba files in:\n%s\n"
-                     "is a supported USA (BZME) or Europe (BZMP) ROM.\n\n"
-                     "Expected SHA-1:\nUSA: b4bd50e4131b027c334547b4524e2dbbd4227130\n"
-                     "Europe: cff199b36ff173fb6faf152653d1bccf87c26fb7",
+                     "is a supported USA (BMXE) or Europe (BMXP) ROM.\n\n"
+                     "Expected SHA-1:\nUSA: 5de8536afe1f0078ee6fe1089f890e8c7aa0a6e8\n"
+                     "Europe: 0fd107445a42e6f3a3e5ce8c865f412583179903",
                      APP_DIR);
         } else {
             snprintf(message, sizeof(message),
                      "Copy your clean USA or Europe ROM to:\n%s\n\nAny .gba filename is accepted.\n\n"
-                     "Expected SHA-1:\nUSA: b4bd50e4131b027c334547b4524e2dbbd4227130\n"
-                     "Europe: cff199b36ff173fb6faf152653d1bccf87c26fb7",
+                     "Expected SHA-1:\nUSA: 5de8536afe1f0078ee6fe1089f890e8c7aa0a6e8\n"
+                     "Europe: 0fd107445a42e6f3a3e5ce8c865f412583179903",
                      APP_DIR);
         }
         Platform3DS_ShowFatal(romResult < 0 ? "Unsupported ROM" : "ROM not found", message);
@@ -118,19 +124,18 @@ int main(int argc, char** argv) {
     }
     fclose(rom);
 
-    printf("Loading ROM and tables...\n");
-    Port_Config_Load("tmc3ds.ini");
-    Port_LoadRom(romPath);
-    Port_PPU_Init(NULL);
-    if (!Port_Audio_Init()) {
-        printf("Warning: audio is unavailable.\n");
+    printf("Loading ROM...\n");
+    if (!Port_LoadRom(romPath)) {
+        Platform3DS_ShowFatal("ROM error", "Port_LoadRom failed after the region check passed.");
+        Platform3DS_Shutdown();
+        return 1;
     }
+    printf("Loaded region: %s\n", Port_RomRegionLabel(gRomRegion));
 
-    printf("Starting engine...\n");
+    printf("Starting engine (no video/audio yet)...\n");
     Platform3DS_EnterGameplayDisplay();
-    AgbMain();
+    agbmain();
 
-    Port_PPU_Shutdown();
     Platform3DS_Shutdown();
     return 0;
 }

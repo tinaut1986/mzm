@@ -2,21 +2,21 @@
 #include "port_rom.h"
 #include "generated/block_data_rom.h"
 
-const struct TankList(*p_sNumberOfTanksPerArea)[MAX_AMOUNT_OF_AREAS];
-const struct TankList*p_sStartingHealthAmmo;
-const struct TankList(*p_sTankIncreaseAmount)[DIFF_COUNT];
-const CaaDamageType(*p_sClipdataAffectingActionDamageTypes)[CAA_COUNT];
-const struct BlockBehavior(*p_sBlockBehaviors)[BEHAVIOR_BLOCK_AMOUNT];
-const CaaDamageType(*p_sBlockWeaknesses)[BLOCK_TYPE_COUNT];
-const ClipdataTilemap(*p_sReformingBlocksTilemapValue)[BLOCK_TYPE_COUNT];
-const u8(*p_sBrokenBlocksTimers)[BLOCK_TYPE_COUNT][13];
-const struct BombChainReverseData(*p_sBombChainReverseData)[8];
-const struct TankBehavior(*p_sTankBehaviors)[BEHAVIOR_TANK_AMOUNT];
-const u16(*p_sHatchBehaviors)[HATCH_COUNT][2];
-const u16(*p_sBldalphaValuesForClipdata)[BEHAVIOR_BLDALPHA_AMOUNT];
-const s8(*p_sSubBombChainPositionOffset)[4][4];
-const u8(*p_sBlockTouchOffsets)[4][2];
-const u16(*p_sMotherBrainGlassBreakingBaseTilemapValues)[5];
+__attribute__((weak)) const struct TankList(*p_sNumberOfTanksPerArea)[MAX_AMOUNT_OF_AREAS];
+__attribute__((weak)) const struct TankList*p_sStartingHealthAmmo;
+__attribute__((weak)) const struct TankList(*p_sTankIncreaseAmount)[DIFF_COUNT];
+__attribute__((weak)) const CaaDamageType(*p_sClipdataAffectingActionDamageTypes)[CAA_COUNT];
+__attribute__((weak)) const struct BlockBehavior(*p_sBlockBehaviors)[BEHAVIOR_BLOCK_AMOUNT];
+__attribute__((weak)) const CaaDamageType(*p_sBlockWeaknesses)[BLOCK_TYPE_COUNT];
+__attribute__((weak)) const ClipdataTilemap(*p_sReformingBlocksTilemapValue)[BLOCK_TYPE_COUNT];
+__attribute__((weak)) const u8(*p_sBrokenBlocksTimers)[BLOCK_TYPE_COUNT][13];
+__attribute__((weak)) const struct BombChainReverseData(*p_sBombChainReverseData)[8];
+__attribute__((weak)) const struct TankBehavior(*p_sTankBehaviors)[BEHAVIOR_TANK_AMOUNT];
+__attribute__((weak)) const u16(*p_sHatchBehaviors)[HATCH_COUNT][2];
+__attribute__((weak)) const u16(*p_sBldalphaValuesForClipdata)[BEHAVIOR_BLDALPHA_AMOUNT];
+__attribute__((weak)) const s8(*p_sSubBombChainPositionOffset)[4][4];
+__attribute__((weak)) const u8(*p_sBlockTouchOffsets)[4][2];
+__attribute__((weak)) const u16(*p_sMotherBrainGlassBreakingBaseTilemapValues)[5];
 
 void PortGen_block_data_Init(void) {
     switch (gRomRegion) {

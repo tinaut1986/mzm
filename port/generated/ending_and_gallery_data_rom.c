@@ -2,111 +2,111 @@
 #include "port_rom.h"
 #include "generated/ending_and_gallery_data_rom.h"
 
-const u16(*p_sEndingImageTextPal)[14*16];
-const u16(*p_sEndingImageOam_NewRecordEnglish)[OAM_DATA_SIZE(6)];
+__attribute__((weak)) const u16(*p_sEndingImageTextPal)[14*16];
+__attribute__((weak)) const u16(*p_sEndingImageOam_NewRecordEnglish)[OAM_DATA_SIZE(6)];
 #if (defined(REGION_EU))
-const u16(*p_sEndingImageOam_NewRecordFrench)[OAM_DATA_SIZE(4)];
-const u16(*p_sEndingImageOam_NewRecordItalian)[OAM_DATA_SIZE(6)];
-const u16(*p_sEndingImageOam_NewRecordSpanish)[OAM_DATA_SIZE(6)];
-const u16(*p_sEndingImageOam_NewRecordGerman)[OAM_DATA_SIZE(6)];
+__attribute__((weak)) const u16(*p_sEndingImageOam_NewRecordFrench)[OAM_DATA_SIZE(4)];
+__attribute__((weak)) const u16(*p_sEndingImageOam_NewRecordItalian)[OAM_DATA_SIZE(6)];
+__attribute__((weak)) const u16(*p_sEndingImageOam_NewRecordSpanish)[OAM_DATA_SIZE(6)];
+__attribute__((weak)) const u16(*p_sEndingImageOam_NewRecordGerman)[OAM_DATA_SIZE(6)];
 #endif
-const u16(*p_sCreditsCharactersPal)[3*16];
-const u16(*p_sCreditsChozoWallPal)[15*16];
-const u16(*p_sEndingPosingPal)[13*16];
-const u16(*p_sEndingPosingPal_White1)[5*16];
-const u16(*p_sEndingPosingPal_White2)[5*16];
-const u16(*p_sEndingPosingPal_White3)[5*16];
-const u16(*p_sEndingPosingPal_White4)[5*16];
-const u16(*p_sUnlockedOptionsPal)[1*16];
-const struct EndingImageOam(*p_sEndingImageOam_FullLines_English)[ENDING_IMAGE_LINE_COUNT];
-const struct EndingImageOam(*p_sEndingImageOam_ClearTime_English)[9];
-const struct EndingImageOam(*p_sEndingImageOam_YourRate_English)[11];
-const struct EndingImageOam(*p_sEndingImageOam_Collecting_English)[17];
+__attribute__((weak)) const u16(*p_sCreditsCharactersPal)[3*16];
+__attribute__((weak)) const u16(*p_sCreditsChozoWallPal)[15*16];
+__attribute__((weak)) const u16(*p_sEndingPosingPal)[13*16];
+__attribute__((weak)) const u16(*p_sEndingPosingPal_White1)[5*16];
+__attribute__((weak)) const u16(*p_sEndingPosingPal_White2)[5*16];
+__attribute__((weak)) const u16(*p_sEndingPosingPal_White3)[5*16];
+__attribute__((weak)) const u16(*p_sEndingPosingPal_White4)[5*16];
+__attribute__((weak)) const u16(*p_sUnlockedOptionsPal)[1*16];
+__attribute__((weak)) const struct EndingImageOam(*p_sEndingImageOam_FullLines_English)[ENDING_IMAGE_LINE_COUNT];
+__attribute__((weak)) const struct EndingImageOam(*p_sEndingImageOam_ClearTime_English)[9];
+__attribute__((weak)) const struct EndingImageOam(*p_sEndingImageOam_YourRate_English)[11];
+__attribute__((weak)) const struct EndingImageOam(*p_sEndingImageOam_Collecting_English)[17];
 #if (defined(REGION_EU))
-const struct EndingImageOam(*p_sEndingImageOam_FullLines_German)[ENDING_IMAGE_LINE_COUNT];
-const struct EndingImageOam(*p_sEndingImageOam_ClearTime_German)[13];
-const struct EndingImageOam(*p_sEndingImageOam_Collecting_German)[14];
-const struct EndingImageOam(*p_sEndingImageOam_FullLines_French)[ENDING_IMAGE_LINE_COUNT];
-const struct EndingImageOam(*p_sEndingImageOam_ClearTime_French)[16];
-const struct EndingImageOam(*p_sEndingImageOam_Collecting_French)[20];
-const struct EndingImageOam(*p_sEndingImageOam_FullLines_Italian)[ENDING_IMAGE_LINE_COUNT];
-const struct EndingImageOam(*p_sEndingImageOam_ClearTime_Italian)[18];
-const struct EndingImageOam(*p_sEndingImageOam_YourRate_Italian)[11];
-const struct EndingImageOam(*p_sEndingImageOam_Collecting_Italian)[17];
-const struct EndingImageOam(*p_sEndingImageOam_FullLines_Spanish)[ENDING_IMAGE_LINE_COUNT];
-const struct EndingImageOam(*p_sEndingImageOam_ClearTime_Spanish)[15];
-const struct EndingImageOam(*p_sEndingImageOam_Collecting_Spanish)[19];
+__attribute__((weak)) const struct EndingImageOam(*p_sEndingImageOam_FullLines_German)[ENDING_IMAGE_LINE_COUNT];
+__attribute__((weak)) const struct EndingImageOam(*p_sEndingImageOam_ClearTime_German)[13];
+__attribute__((weak)) const struct EndingImageOam(*p_sEndingImageOam_Collecting_German)[14];
+__attribute__((weak)) const struct EndingImageOam(*p_sEndingImageOam_FullLines_French)[ENDING_IMAGE_LINE_COUNT];
+__attribute__((weak)) const struct EndingImageOam(*p_sEndingImageOam_ClearTime_French)[16];
+__attribute__((weak)) const struct EndingImageOam(*p_sEndingImageOam_Collecting_French)[20];
+__attribute__((weak)) const struct EndingImageOam(*p_sEndingImageOam_FullLines_Italian)[ENDING_IMAGE_LINE_COUNT];
+__attribute__((weak)) const struct EndingImageOam(*p_sEndingImageOam_ClearTime_Italian)[18];
+__attribute__((weak)) const struct EndingImageOam(*p_sEndingImageOam_YourRate_Italian)[11];
+__attribute__((weak)) const struct EndingImageOam(*p_sEndingImageOam_Collecting_Italian)[17];
+__attribute__((weak)) const struct EndingImageOam(*p_sEndingImageOam_FullLines_Spanish)[ENDING_IMAGE_LINE_COUNT];
+__attribute__((weak)) const struct EndingImageOam(*p_sEndingImageOam_ClearTime_Spanish)[15];
+__attribute__((weak)) const struct EndingImageOam(*p_sEndingImageOam_Collecting_Spanish)[19];
 #endif
-const struct EndingImageOam(*p_sEndingImageOam_FullLines_Hiragana)[ENDING_IMAGE_LINE_COUNT];
-const struct EndingImageOam(*p_sEndingImageOam_ClearTime_Hiragana)[6];
-const struct EndingImageOam(*p_sEndingImageOam_Collecting_Hiragana)[11];
-const u32* const(*p_sEndingImagesTopGfxPointers)[ENDING_IMAGE_COUNT];
-const u32* const(*p_sEndingImagesBottomGfxPointers)[ENDING_IMAGE_COUNT];
-const u32* const(*p_sEndingImagesTopTileTablePointers)[ENDING_IMAGE_COUNT];
-const u32* const(*p_sEndingImagesHalfTileTablePointers)[ENDING_IMAGE_COUNT];
-const u16* const(*p_sEndingImagesPalPointers)[ENDING_IMAGE_COUNT];
+__attribute__((weak)) const struct EndingImageOam(*p_sEndingImageOam_FullLines_Hiragana)[ENDING_IMAGE_LINE_COUNT];
+__attribute__((weak)) const struct EndingImageOam(*p_sEndingImageOam_ClearTime_Hiragana)[6];
+__attribute__((weak)) const struct EndingImageOam(*p_sEndingImageOam_Collecting_Hiragana)[11];
+__attribute__((weak)) const u32* const(*p_sEndingImagesTopGfxPointers)[ENDING_IMAGE_COUNT];
+__attribute__((weak)) const u32* const(*p_sEndingImagesBottomGfxPointers)[ENDING_IMAGE_COUNT];
+__attribute__((weak)) const u32* const(*p_sEndingImagesTopTileTablePointers)[ENDING_IMAGE_COUNT];
+__attribute__((weak)) const u32* const(*p_sEndingImagesHalfTileTablePointers)[ENDING_IMAGE_COUNT];
+__attribute__((weak)) const u16* const(*p_sEndingImagesPalPointers)[ENDING_IMAGE_COUNT];
 #if (defined(REGION_EU))
-const struct CreditsEntry(*p_sCredits)[308];
+__attribute__((weak)) const struct CreditsEntry(*p_sCredits)[308];
 #endif
 #if ((defined(REGION_JP)) && !((defined(REGION_EU))))
-const struct CreditsEntry(*p_sCredits)[245];
+__attribute__((weak)) const struct CreditsEntry(*p_sCredits)[245];
 #endif
 #if (!((defined(REGION_EU)) || (defined(REGION_JP))))
-const struct CreditsEntry(*p_sCredits)[240];
+__attribute__((weak)) const struct CreditsEntry(*p_sCredits)[240];
 #endif
-const u16* const(*p_sEndingWhitePalPointers)[4];
-const u8(*p_sEndingImage_54e2dc)[8];
-const u8(*p_sEndingImageNewRecordPalettes)[12];
+__attribute__((weak)) const u16* const(*p_sEndingWhitePalPointers)[4];
+__attribute__((weak)) const u8(*p_sEndingImage_54e2dc)[8];
+__attribute__((weak)) const u8(*p_sEndingImageNewRecordPalettes)[12];
 #if (defined(REGION_EU))
-const u16 * const(*p_sEndingImageOamPointers_NewRecord)[LANGUAGE_COUNT];
+__attribute__((weak)) const u16 * const(*p_sEndingImageOamPointers_NewRecord)[LANGUAGE_COUNT];
 #endif
-const u32*p_sCreditsCharactersGfx;
-const u32(*p_sEndingImageTextEnglishGfx)[803];
-const u32(*p_sEndingImageTextHiraganaGfx)[511];
+__attribute__((weak)) const u32*p_sCreditsCharactersGfx;
+__attribute__((weak)) const u32(*p_sEndingImageTextEnglishGfx)[803];
+__attribute__((weak)) const u32(*p_sEndingImageTextHiraganaGfx)[511];
 #if (defined(REGION_EU))
-const u32(*p_sEndingImageTextFrenchGfx)[759];
-const u32(*p_sEndingImageTextGermanGfx)[726];
-const u32(*p_sEndingImageTextItalianGfx)[883];
-const u32(*p_sEndingImageTextSpanishGfx)[773];
+__attribute__((weak)) const u32(*p_sEndingImageTextFrenchGfx)[759];
+__attribute__((weak)) const u32(*p_sEndingImageTextGermanGfx)[726];
+__attribute__((weak)) const u32(*p_sEndingImageTextItalianGfx)[883];
+__attribute__((weak)) const u32(*p_sEndingImageTextSpanishGfx)[773];
 #endif
-const u8(*p_sEndingImageNumbersGfx_Upper)[10*64];
-const u8(*p_sEndingImageNumbersGfx_Lower)[10*64];
-const u32(*p_sEndingImageNumbersMiscEnglishGfx)[218];
+__attribute__((weak)) const u8(*p_sEndingImageNumbersGfx_Upper)[10*64];
+__attribute__((weak)) const u8(*p_sEndingImageNumbersGfx_Lower)[10*64];
+__attribute__((weak)) const u32(*p_sEndingImageNumbersMiscEnglishGfx)[218];
 #if (defined(REGION_EU))
-const u32(*p_sEndingImageNumbersMiscGermanGfx)[209];
-const u32(*p_sEndingImageNumbersMiscFrenchGfx)[217];
-const u32(*p_sEndingImageNumbersMiscItalianGfx)[208];
-const u32(*p_sEndingImageNumbersMiscSpanishGfx)[225];
+__attribute__((weak)) const u32(*p_sEndingImageNumbersMiscGermanGfx)[209];
+__attribute__((weak)) const u32(*p_sEndingImageNumbersMiscFrenchGfx)[217];
+__attribute__((weak)) const u32(*p_sEndingImageNumbersMiscItalianGfx)[208];
+__attribute__((weak)) const u32(*p_sEndingImageNumbersMiscSpanishGfx)[225];
 #endif
-const u32(*p_sEndingSamusPosingSpaceBackgroundGfx)[2938];
-const u32(*p_sEndingSamusPosingSpaceBackgroundTileTable)[412];
-const u32(*p_sEndingLightGfx)[743];
-const u32(*p_sEndingLightTileTable)[145];
-const u32(*p_sEndingSamusPosingGfx_1)[1481];
-const u32(*p_sEndingSamusPosingTileTable_1)[209];
-const u32(*p_sEndingSamusPosingGfx_2)[1562];
-const u32(*p_sEndingSamusPosingTileTable_2)[230];
-const u32(*p_sEndingSamusPosingGfx_3)[1712];
-const u32(*p_sEndingSamusPosingTileTable_3)[238];
-const u32(*p_sEndingSamusPosingGfx_4)[1692];
-const u32(*p_sEndingSamusPosingTileTable_4)[221];
-const u32(*p_sEndingSamusPosingGfx_5)[1279];
-const u32(*p_sEndingSamusPosingTileTable_5)[181];
-const u32(*p_sEndingSamusPosingSuitlessGfx)[1167];
-const u32(*p_sEndingSamusPosingSuitlessTileTable)[135];
-const u32(*p_sEndingSamusPosingFullSuitGfx)[1557];
-const u32(*p_sEndingSamusPosingFullSuitTileTable)[226];
-const u32(*p_sEndingSamusPosingHelmetOffGfx)[1568];
-const u32(*p_sEndingSamusPosingHelmetOffTileTable)[226];
-const u32(*p_sCreditsChozoWallBackgroundGfx)[7710];
-const u32(*p_sCreditsChozoWallBackgroundTileTable)[551];
-const u32(*p_sCreditsChozoWallBottomGfx)[3909];
-const u32(*p_sCreditsChozoWallBottomTileTable)[307];
-const u32(*p_sCreditsChozoWallBottomZoomedGfx)[5160];
-const u32(*p_sCreditsChozoWallBottomZoomedTileTable)[368];
-const u32(*p_sCreditsChozoDrawingGfx)[4770];
-const u32(*p_sCreditsChozoDrawingTileTable)[368];
-const u32(*p_sUnlockedOptionsTileTable)[127];
+__attribute__((weak)) const u32(*p_sEndingSamusPosingSpaceBackgroundGfx)[2938];
+__attribute__((weak)) const u32(*p_sEndingSamusPosingSpaceBackgroundTileTable)[412];
+__attribute__((weak)) const u32(*p_sEndingLightGfx)[743];
+__attribute__((weak)) const u32(*p_sEndingLightTileTable)[145];
+__attribute__((weak)) const u32(*p_sEndingSamusPosingGfx_1)[1481];
+__attribute__((weak)) const u32(*p_sEndingSamusPosingTileTable_1)[209];
+__attribute__((weak)) const u32(*p_sEndingSamusPosingGfx_2)[1562];
+__attribute__((weak)) const u32(*p_sEndingSamusPosingTileTable_2)[230];
+__attribute__((weak)) const u32(*p_sEndingSamusPosingGfx_3)[1712];
+__attribute__((weak)) const u32(*p_sEndingSamusPosingTileTable_3)[238];
+__attribute__((weak)) const u32(*p_sEndingSamusPosingGfx_4)[1692];
+__attribute__((weak)) const u32(*p_sEndingSamusPosingTileTable_4)[221];
+__attribute__((weak)) const u32(*p_sEndingSamusPosingGfx_5)[1279];
+__attribute__((weak)) const u32(*p_sEndingSamusPosingTileTable_5)[181];
+__attribute__((weak)) const u32(*p_sEndingSamusPosingSuitlessGfx)[1167];
+__attribute__((weak)) const u32(*p_sEndingSamusPosingSuitlessTileTable)[135];
+__attribute__((weak)) const u32(*p_sEndingSamusPosingFullSuitGfx)[1557];
+__attribute__((weak)) const u32(*p_sEndingSamusPosingFullSuitTileTable)[226];
+__attribute__((weak)) const u32(*p_sEndingSamusPosingHelmetOffGfx)[1568];
+__attribute__((weak)) const u32(*p_sEndingSamusPosingHelmetOffTileTable)[226];
+__attribute__((weak)) const u32(*p_sCreditsChozoWallBackgroundGfx)[7710];
+__attribute__((weak)) const u32(*p_sCreditsChozoWallBackgroundTileTable)[551];
+__attribute__((weak)) const u32(*p_sCreditsChozoWallBottomGfx)[3909];
+__attribute__((weak)) const u32(*p_sCreditsChozoWallBottomTileTable)[307];
+__attribute__((weak)) const u32(*p_sCreditsChozoWallBottomZoomedGfx)[5160];
+__attribute__((weak)) const u32(*p_sCreditsChozoWallBottomZoomedTileTable)[368];
+__attribute__((weak)) const u32(*p_sCreditsChozoDrawingGfx)[4770];
+__attribute__((weak)) const u32(*p_sCreditsChozoDrawingTileTable)[368];
+__attribute__((weak)) const u32(*p_sUnlockedOptionsTileTable)[127];
 
 void PortGen_ending_and_gallery_data_Init(void) {
     switch (gRomRegion) {

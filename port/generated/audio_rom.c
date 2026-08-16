@@ -2,21 +2,21 @@
 #include "port_rom.h"
 #include "generated/audio_rom.h"
 
-const u16(*p_sUnk_808cad0)[128];
-const u8(*p_sClockTable)[49];
-const u8(*p_sNoiseTable)[60];
-const u8(*p_sCgb3Vol)[16];
-const u8(*p_sUnk_808cc4d)[19];
-const u32(*p_sNativeSampleRate)[SOUND_MODE_FREQ_COUNT];
-const u32(*p_sMusicPitchData)[SOUND_MODE_FREQ_COUNT];
-const u16(*p_sPcmSamplesPerVBlankTable)[SOUND_MODE_FREQ_COUNT];
-const u8(*p_sArray_808cce2)[512];
-const u8(*p_sArray_808cee2)[10];
-void* const*p_sDma1ControlPointer;
-const u32*p_sDma1ControlValue;
-const MusicFunc_T(*p_sMusicCommandFunctionPointers)[30];
-const struct TrackGroupROMData(*p_sMusicTrackDataRom)[9];
-const struct SoundEntry(*p_sSoundDataEntries)[SOUND_COUNT];
+__attribute__((weak)) const u16(*p_sUnk_808cad0)[128];
+__attribute__((weak)) const u8(*p_sClockTable)[49];
+__attribute__((weak)) const u8(*p_sNoiseTable)[60];
+__attribute__((weak)) const u8(*p_sCgb3Vol)[16];
+__attribute__((weak)) const u8(*p_sUnk_808cc4d)[19];
+__attribute__((weak)) const u32(*p_sNativeSampleRate)[SOUND_MODE_FREQ_COUNT];
+__attribute__((weak)) const u32(*p_sMusicPitchData)[SOUND_MODE_FREQ_COUNT];
+__attribute__((weak)) const u16(*p_sPcmSamplesPerVBlankTable)[SOUND_MODE_FREQ_COUNT];
+__attribute__((weak)) const u8(*p_sArray_808cce2)[512];
+__attribute__((weak)) const u8(*p_sArray_808cee2)[10];
+__attribute__((weak)) void* const*p_sDma1ControlPointer;
+__attribute__((weak)) const u32*p_sDma1ControlValue;
+__attribute__((weak)) const MusicFunc_T(*p_sMusicCommandFunctionPointers)[30];
+__attribute__((weak)) const struct TrackGroupROMData(*p_sMusicTrackDataRom)[9];
+__attribute__((weak)) const struct SoundEntry(*p_sSoundDataEntries)[SOUND_COUNT];
 
 void PortGen_audio_Init(void) {
     switch (gRomRegion) {

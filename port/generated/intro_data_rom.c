@@ -2,42 +2,42 @@
 #include "port_rom.h"
 #include "generated/intro_data_rom.h"
 
-const u16(*p_sIntroEmergencyOrderTextOam)[52];
-const u16(*p_sIntroExterminateAllTextOam)[163];
-const u16(*p_sIntroDefeatTheTextOam)[157];
-const u16(*p_sIntroTextMarkerOam)[10];
-const u16(*p_sIntroShipFlyingTowardsCameraOam_2)[28];
-const u16(*p_sIntroShipFlyingTowardsCameraOam_1)[19];
-const u16(*p_sIntroViewOfZebesShipOam)[13];
-const u16(*p_sIntroViewOfZebesHeatOam_2)[37];
-const u16(*p_sIntroViewOfZebesHeatOam_1)[73];
-const u16(*p_sIntroFuzzOam)[52];
-const u16(*p_sIntroTextAndShipPal)[16*6];
-const u16(*p_sIntroPal_45f9d4)[16*1];
-const u16(*p_sIntroSamusInHerShipPal)[16*5];
-const u16(*p_sIntroViewOfZebesPal)[16*10];
-const u16(*p_sIntroMotherBrainPal)[16*5];
-const u8(*p_sIntroFuzzRandomValues_1)[64];
-const u8(*p_sIntroFuzzRandomValues_2)[64];
-const u8(*p_sTimeAttackPasswordCharacters)[32];
-const u32(*p_sTimeAttackAntiCheatTimes)[4];
-const u8(*p_sSpriteXHalfRadius)[3][4];
-const u8(*p_sSpriteYHalfRadius)[3][4];
-const IntroTextAction(*p_sIntroEmergencyOrderActions)[16];
-const IntroTextAction(*p_sIntroExterminateAllActions)[52];
-const IntroTextAction(*p_sIntroDefeatTheActions)[50];
-const u32(*p_sIntroTextAndShipFlyingInGfx)[1310];
-const u32(*p_sIntroSpaceBackgroundGfx)[3181];
-const u32(*p_sIntroSpaceBackgroundTileTable)[577];
-const u32(*p_sIntroSamusInHerShipGfx)[4800];
-const u32(*p_sIntroSamusInHerShipTileTable)[418];
-const u32(*p_sIntroSamusShipViewOfZebesGfx)[1224];
-const u32(*p_sIntroViewOfZebesGfx)[2986];
-const u32(*p_sIntroViewOfZebesTileTable)[577];
-const u32(*p_sIntroMotherBrainGfx)[5004];
-const u32(*p_sIntroMotherBrainTileTable)[577];
-const u32(*p_sIntroFuzzGfx)[5224];
-const u32(*p_sIntro_47920c)[125];
+__attribute__((weak)) const u16(*p_sIntroEmergencyOrderTextOam)[52];
+__attribute__((weak)) const u16(*p_sIntroExterminateAllTextOam)[163];
+__attribute__((weak)) const u16(*p_sIntroDefeatTheTextOam)[157];
+__attribute__((weak)) const u16(*p_sIntroTextMarkerOam)[10];
+__attribute__((weak)) const u16(*p_sIntroShipFlyingTowardsCameraOam_2)[28];
+__attribute__((weak)) const u16(*p_sIntroShipFlyingTowardsCameraOam_1)[19];
+__attribute__((weak)) const u16(*p_sIntroViewOfZebesShipOam)[13];
+__attribute__((weak)) const u16(*p_sIntroViewOfZebesHeatOam_2)[37];
+__attribute__((weak)) const u16(*p_sIntroViewOfZebesHeatOam_1)[73];
+__attribute__((weak)) const u16(*p_sIntroFuzzOam)[52];
+__attribute__((weak)) const u16(*p_sIntroTextAndShipPal)[16*6];
+__attribute__((weak)) const u16(*p_sIntroPal_45f9d4)[16*1];
+__attribute__((weak)) const u16(*p_sIntroSamusInHerShipPal)[16*5];
+__attribute__((weak)) const u16(*p_sIntroViewOfZebesPal)[16*10];
+__attribute__((weak)) const u16(*p_sIntroMotherBrainPal)[16*5];
+__attribute__((weak)) const u8(*p_sIntroFuzzRandomValues_1)[64];
+__attribute__((weak)) const u8(*p_sIntroFuzzRandomValues_2)[64];
+__attribute__((weak)) const u8(*p_sTimeAttackPasswordCharacters)[32];
+__attribute__((weak)) const u32(*p_sTimeAttackAntiCheatTimes)[4];
+__attribute__((weak)) const u8(*p_sSpriteXHalfRadius)[3][4];
+__attribute__((weak)) const u8(*p_sSpriteYHalfRadius)[3][4];
+__attribute__((weak)) const IntroTextAction(*p_sIntroEmergencyOrderActions)[16];
+__attribute__((weak)) const IntroTextAction(*p_sIntroExterminateAllActions)[52];
+__attribute__((weak)) const IntroTextAction(*p_sIntroDefeatTheActions)[50];
+__attribute__((weak)) const u32(*p_sIntroTextAndShipFlyingInGfx)[1310];
+__attribute__((weak)) const u32(*p_sIntroSpaceBackgroundGfx)[3181];
+__attribute__((weak)) const u32(*p_sIntroSpaceBackgroundTileTable)[577];
+__attribute__((weak)) const u32(*p_sIntroSamusInHerShipGfx)[4800];
+__attribute__((weak)) const u32(*p_sIntroSamusInHerShipTileTable)[418];
+__attribute__((weak)) const u32(*p_sIntroSamusShipViewOfZebesGfx)[1224];
+__attribute__((weak)) const u32(*p_sIntroViewOfZebesGfx)[2986];
+__attribute__((weak)) const u32(*p_sIntroViewOfZebesTileTable)[577];
+__attribute__((weak)) const u32(*p_sIntroMotherBrainGfx)[5004];
+__attribute__((weak)) const u32(*p_sIntroMotherBrainTileTable)[577];
+__attribute__((weak)) const u32(*p_sIntroFuzzGfx)[5224];
+__attribute__((weak)) const u32(*p_sIntro_47920c)[125];
 
 void PortGen_intro_data_Init(void) {
     switch (gRomRegion) {

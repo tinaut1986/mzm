@@ -2,17 +2,17 @@
 #include "port_rom.h"
 #include "generated/sprite_data_rom.h"
 
-const u8(*p_sOamXFlipOffsets)[3][4];
-const u8(*p_sOamYFlipOffsets)[3][4];
-const u8(*p_sSpriteRandomNumberTable)[32];
-const u8(*p_sSpriteRandomNumberTable_2)[24];
-const s16(*p_sSpritesFallingCeilingSpeed)[16];
-const s16(*p_sSpritesFallingSpeed)[16];
-const s16(*p_sSpritesFallingSpeed_Unused)[8];
-const s16(*p_sSpritesFallingSpeed_Unused2)[16];
-const s16(*p_sWorkerRobotSleepingFallingSpeed)[10];
-const u16(*p_sPrimarySpriteStats)[PSPRITE_COUNT][9];
-const u16(*p_sSecondarySpriteStats)[SSPRITE_COUNT][9];
+__attribute__((weak)) const u8(*p_sOamXFlipOffsets)[3][4];
+__attribute__((weak)) const u8(*p_sOamYFlipOffsets)[3][4];
+__attribute__((weak)) const u8(*p_sSpriteRandomNumberTable)[32];
+__attribute__((weak)) const u8(*p_sSpriteRandomNumberTable_2)[24];
+__attribute__((weak)) const s16(*p_sSpritesFallingCeilingSpeed)[16];
+__attribute__((weak)) const s16(*p_sSpritesFallingSpeed)[16];
+__attribute__((weak)) const s16(*p_sSpritesFallingSpeed_Unused)[8];
+__attribute__((weak)) const s16(*p_sSpritesFallingSpeed_Unused2)[16];
+__attribute__((weak)) const s16(*p_sWorkerRobotSleepingFallingSpeed)[10];
+__attribute__((weak)) const u16(*p_sPrimarySpriteStats)[PSPRITE_COUNT][9];
+__attribute__((weak)) const u16(*p_sSecondarySpriteStats)[SSPRITE_COUNT][9];
 
 void PortGen_sprite_data_Init(void) {
     switch (gRomRegion) {
