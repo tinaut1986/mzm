@@ -1,0 +1,108 @@
+#include "port_rom.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+u8* gRomData = NULL;
+u32 gRomSize = 0;
+PortRomRegion gRomRegion = PORT_ROM_REGION_UNKNOWN;
+
+/* Game code at ROM header offset 0xAC. Matches Makefile:10,27,44
+ * (GAME_CODE = BMXE/BMXP/BMXJ for us/eu/jp). China (BMXC) is commented out
+ * upstream (Makefile:52) and not supported here either. */
+#define ROM_HEADER_GAME_CODE_OFFSET 0xAC
+#define ROM_HEADER_GAME_CODE_SIZE 4
+#define ROM_MIN_SIZE (ROM_HEADER_GAME_CODE_OFFSET + ROM_HEADER_GAME_CODE_SIZE)
+
+static PortRomRegion DetectRegion(const u8* data, u32 size) {
+    if (size < ROM_MIN_SIZE) {
+        return PORT_ROM_REGION_UNKNOWN;
+    }
+    const u8* code = data + ROM_HEADER_GAME_CODE_OFFSET;
+    if (memcmp(code, "BMXE", ROM_HEADER_GAME_CODE_SIZE) == 0) {
+        return PORT_ROM_REGION_US;
+    }
+    if (memcmp(code, "BMXP", ROM_HEADER_GAME_CODE_SIZE) == 0) {
+        return PORT_ROM_REGION_EU;
+    }
+    if (memcmp(code, "BMXJ", ROM_HEADER_GAME_CODE_SIZE) == 0) {
+        return PORT_ROM_REGION_JP;
+    }
+    return PORT_ROM_REGION_UNKNOWN;
+}
+
+const char* Port_RomRegionLabel(PortRomRegion region) {
+    switch (region) {
+        case PORT_ROM_REGION_US:
+            return "US";
+        case PORT_ROM_REGION_EU:
+            return "EU";
+        case PORT_ROM_REGION_JP:
+            return "JP";
+        default:
+            return "?";
+    }
+}
+
+int Port_LoadRom(const char* path) {
+    FILE* file = fopen(path, "rb");
+    if (!file) {
+        return 0;
+    }
+
+    if (fseek(file, 0, SEEK_END) != 0) {
+        fclose(file);
+        return 0;
+    }
+    long size = ftell(file);
+    if (size < ROM_MIN_SIZE) {
+        fclose(file);
+        return 0;
+    }
+    rewind(file);
+
+    u8* buffer = (u8*)malloc((size_t)size);
+    if (!buffer) {
+        fclose(file);
+        return 0;
+    }
+
+    size_t readBytes = fread(buffer, 1, (size_t)size, file);
+    fclose(file);
+    if (readBytes != (size_t)size) {
+        free(buffer);
+        return 0;
+    }
+
+    PortRomRegion region = DetectRegion(buffer, (u32)size);
+    if (region == PORT_ROM_REGION_UNKNOWN) {
+        free(buffer);
+        return 0;
+    }
+
+    free(gRomData);
+    gRomData = buffer;
+    gRomSize = (u32)size;
+    gRomRegion = region;
+    return 1;
+}
+
+/*
+ * Minimal access logger: counts distinct ROM addresses seen, so a debug
+ * build can report coverage without the overhead of tracking every caller.
+ * TMC's Port_LogRomAccess also records caller strings for a detailed dump;
+ * left out here until there's a concrete use case (this exists mainly to
+ * satisfy the gba_TryMemPtr() call in port_gba_mem.h).
+ */
+static u32 sRomAccessCount = 0;
+
+void Port_LogRomAccess(u32 gba_addr, const char* caller) {
+    (void)gba_addr;
+    (void)caller;
+    sRomAccessCount++;
+}
+
+void Port_PrintRomAccessSummary(void) {
+    printf("ROM access log: %u reads recorded\n", sRomAccessCount);
+}
