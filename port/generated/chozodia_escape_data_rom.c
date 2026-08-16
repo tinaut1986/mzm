@@ -16,7 +16,7 @@ const u16(*p_sChozodiaEscapeOam_BlueShipFarAway_Frame0)[OAM_DATA_SIZE(1)];
 const u16(*p_sChozodiaEscapeOam_BlueShipVeryClose_Frame0)[OAM_DATA_SIZE(4)];
 const u16(*p_sChozodiaEscapeOam_MissionAccomplishedEnglish_Frame0)[OAM_DATA_SIZE(20)];
 const u16(*p_sChozodiaEscapeOam_MissionAccomplishedHiragana_Frame0)[OAM_DATA_SIZE(9)];
-#ifdef REGION_EU
+#if (defined(REGION_EU))
 const u16(*p_sChozodiaEscapeOam_MissionAccomplishedGerman_Frame0)[OAM_DATA_SIZE(21)];
 const u16(*p_sChozodiaEscapeOam_MissionAccomplishedFrench_Frame0)[OAM_DATA_SIZE(15)];
 const u16(*p_sChozodiaEscapeOam_MissionAccomplishedItalian_Frame0)[OAM_DATA_SIZE(17)];
@@ -26,7 +26,7 @@ const u8(*p_sChozodiaEscapeHeatingUpPalOffsets)[8];
 const struct FrameData* const(*p_sChozodiaEscape_5ca0c4)[5];
 const u16(*p_sChozodiaEscape_5ca0d8)[8][2];
 const u16(*p_sChozodiaEscape_5ca0f8)[8][2];
-#ifdef REGION_EU
+#if (defined(REGION_EU))
 const u16 * const(*p_sChozodiaEscapeOamPointers_MissionAccomplished)[LANGUAGE_COUNT];
 #endif
 const u32(*p_sChozodiaEscapeCraterBackgroundGfx)[5227];
@@ -56,7 +56,7 @@ void PortGen_chozodia_escape_data_Init(void) {
             p_sChozodiaEscapeOam_BlueShipVeryClose_Frame0 = (const u16(*)[OAM_DATA_SIZE(4)])Port_ResolveRomData(0x085dcb00u);
             p_sChozodiaEscapeOam_MissionAccomplishedEnglish_Frame0 = (const u16(*)[OAM_DATA_SIZE(20)])Port_ResolveRomData(0x085dcb1au);
             p_sChozodiaEscapeOam_MissionAccomplishedHiragana_Frame0 = (const u16(*)[OAM_DATA_SIZE(9)])Port_ResolveRomData(0x085dcb94u);
-#ifdef REGION_EU
+#if (defined(REGION_EU))
             p_sChozodiaEscapeOam_MissionAccomplishedGerman_Frame0 = (const u16(*)[OAM_DATA_SIZE(21)])Port_ResolveRomData(0x085dcbccu);
             p_sChozodiaEscapeOam_MissionAccomplishedFrench_Frame0 = (const u16(*)[OAM_DATA_SIZE(15)])Port_ResolveRomData(0x085dcc4cu);
             p_sChozodiaEscapeOam_MissionAccomplishedItalian_Frame0 = (const u16(*)[OAM_DATA_SIZE(17)])Port_ResolveRomData(0x085dcca8u);
@@ -66,7 +66,7 @@ void PortGen_chozodia_escape_data_Init(void) {
             p_sChozodiaEscape_5ca0c4 = (const struct FrameData* const(*)[5])Port_ResolveRomData(0x085dcd7cu);
             p_sChozodiaEscape_5ca0d8 = (const u16(*)[8][2])Port_ResolveRomData(0x085dcd90u);
             p_sChozodiaEscape_5ca0f8 = (const u16(*)[8][2])Port_ResolveRomData(0x085dcdb0u);
-#ifdef REGION_EU
+#if (defined(REGION_EU))
             p_sChozodiaEscapeOamPointers_MissionAccomplished = (const u16 * const(*)[LANGUAGE_COUNT])Port_ResolveRomData(0x085dcdd0u);
 #endif
             p_sChozodiaEscapeCraterBackgroundGfx = (const u32(*)[5227])Port_ResolveRomData(0x085dcdecu);

@@ -39,6 +39,8 @@ DECL_RE = re.compile(
 )
 IFDEF_RE = re.compile(r"^#\s*ifdef\s+(\S+)")
 IFNDEF_RE = re.compile(r"^#\s*ifndef\s+(\S+)")
+IF_RE = re.compile(r"^#\s*if\s+(.+)$")
+ELIF_RE = re.compile(r"^#\s*elif\s+(.+)$")
 ELSE_RE = re.compile(r"^#\s*else\b")
 ENDIF_RE = re.compile(r"^#\s*endif\b")
 
@@ -120,13 +122,50 @@ def _include_guard_name(lines):
 INCLUDE_RE = re.compile(r'^#\s*include\s+"([^"]+)"')
 
 
+class _CondFrame:
+    """One level of #if/#elif/#else/#endif nesting.
+
+    `siblings` accumulates every branch condition seen so far at this level
+    (needed to correctly resolve #elif/#else, which are only taken when all
+    earlier siblings were false -- NOT assumed mutually exclusive, so this
+    stays correct even for #if chains that aren't simple region switches).
+    `resolved` is this frame's own contribution to the combined guard
+    (already accounting for prior siblings); the full guard for a symbol is
+    the AND of every frame's `resolved` on the stack.
+    """
+
+    def __init__(self, cond):
+        self.siblings = [cond]
+        self.resolved = cond
+
+    def elif_(self, cond):
+        prior = " || ".join(f"({c})" for c in self.siblings)
+        self.resolved = f"({cond}) && !({prior})"
+        self.siblings.append(cond)
+
+    def else_(self):
+        prior = " || ".join(f"({c})" for c in self.siblings)
+        self.resolved = f"!({prior})"
+
+
+DEFINE_RE = re.compile(r"^#\s*define\s+(\w+)(\(.*)?\s+\S.*$")
+TYPEDEF_RE = re.compile(r"^typedef\s+.+;\s*$")
+
+
 def parse_header(path):
     symbols = []
     unparsed = []
     includes = []
-    guard_stack = []
+    extras = []  # (guard, raw_line) for #define/typedef the header needs
+    guard_stack = []  # list[_CondFrame]
     lines = Path(path).read_text().splitlines()
     include_guard = _include_guard_name(lines)
+
+    def combined_guard():
+        frames = [f for f in guard_stack if f is not None]
+        if not frames:
+            return None
+        return " && ".join(f"({f.resolved})" for f in frames)
 
     for lineno, raw in enumerate(lines, 1):
         line = raw.strip()
@@ -134,20 +173,40 @@ def parse_header(path):
         if m:
             includes.append(m.group(1))
             continue
+        m = DEFINE_RE.match(line)
+        if m and m.group(1) != include_guard:
+            if m.group(2):
+                pass  # function-like macro (name immediately followed by
+                      # "("): not reproduced, no observed need for one yet.
+            else:
+                extras.append((combined_guard(), raw.strip()))
+            continue
+        if TYPEDEF_RE.match(line):
+            extras.append((combined_guard(), raw.strip()))
+            continue
         m = IFDEF_RE.match(line)
         if m:
-            guard_stack.append(m.group(1))
+            guard_stack.append(_CondFrame(f"defined({m.group(1)})"))
             continue
         m = IFNDEF_RE.match(line)
         if m:
             if m.group(1) == include_guard:
-                continue  # the file's own include guard, not a real condition
-            guard_stack.append("!" + m.group(1))
+                guard_stack.append(None)  # placeholder so #endif still pops correctly
+                continue
+            guard_stack.append(_CondFrame(f"!defined({m.group(1)})"))
+            continue
+        m = IF_RE.match(line)
+        if m:
+            guard_stack.append(_CondFrame(m.group(1).strip()))
+            continue
+        m = ELIF_RE.match(line)
+        if m:
+            if guard_stack and guard_stack[-1] is not None:
+                guard_stack[-1].elif_(m.group(1).strip())
             continue
         if ELSE_RE.match(line):
-            if guard_stack:
-                top = guard_stack[-1]
-                guard_stack[-1] = ("!" + top) if not top.startswith("!") else top[1:]
+            if guard_stack and guard_stack[-1] is not None:
+                guard_stack[-1].else_()
             continue
         if ENDIF_RE.match(line):
             if guard_stack:
@@ -161,10 +220,9 @@ def parse_header(path):
             unparsed.append((lineno, raw))
             continue
 
-        guard = guard_stack[-1] if guard_stack else None
-        symbols.append(Symbol(m.group("type"), m.group("name"), m.group("dims"), guard))
+        symbols.append(Symbol(m.group("type"), m.group("name"), m.group("dims"), combined_guard()))
 
-    return symbols, unparsed, includes
+    return symbols, unparsed, includes, extras
 
 
 def parse_map(path):
@@ -182,7 +240,7 @@ def parse_map(path):
     return addrs
 
 
-def emit(symbols, unparsed, header_path, includes, region_maps, out_c, out_h):
+def emit(symbols, unparsed, header_path, includes, extras, region_maps, out_c, out_h):
     guard_name = "PORT_GEN_" + Path(header_path).stem.upper() + "_ROM_H"
     base = Path(header_path).stem
 
@@ -206,6 +264,20 @@ def emit(symbols, unparsed, header_path, includes, region_maps, out_c, out_h):
         h_lines.append(f'#include "{inc}"')
     h_lines.append("")
 
+    active_guard = None
+    for guard, raw_line in extras:
+        if guard != active_guard:
+            if active_guard is not None:
+                h_lines.append("#endif")
+            if guard is not None:
+                h_lines.append(f"#if {guard}")
+            active_guard = guard
+        h_lines.append(raw_line)
+    if active_guard is not None:
+        h_lines.append("#endif")
+    if extras:
+        h_lines.append("")
+
     regions = sorted(region_maps.keys())
 
     active_guard = None
@@ -214,7 +286,7 @@ def emit(symbols, unparsed, header_path, includes, region_maps, out_c, out_h):
             if active_guard is not None:
                 h_lines.append("#endif")
             if sym.guard is not None:
-                h_lines.append(f"#ifdef {sym.guard}")
+                h_lines.append(f"#if {sym.guard}")
             active_guard = sym.guard
         h_lines.append(sym.extern_decl())
         h_lines.append(sym.define())
@@ -239,7 +311,7 @@ def emit(symbols, unparsed, header_path, includes, region_maps, out_c, out_h):
             if active_guard is not None:
                 c_lines.append("#endif")
             if sym.guard is not None:
-                c_lines.append(f"#ifdef {sym.guard}")
+                c_lines.append(f"#if {sym.guard}")
             active_guard = sym.guard
         c_lines.append(sym.definition())
     if active_guard is not None:
@@ -262,7 +334,7 @@ def emit(symbols, unparsed, header_path, includes, region_maps, out_c, out_h):
                 if active_guard is not None:
                     c_lines.append("#endif")
                 if sym.guard is not None:
-                    c_lines.append(f"#ifdef {sym.guard}")
+                    c_lines.append(f"#if {sym.guard}")
                 active_guard = sym.guard
             c_lines.append(f"            p_{sym.name} = ({sym.cast_type()})Port_ResolveRomData(0x{addr:08x}u);")
         if active_guard is not None:
@@ -307,8 +379,8 @@ def main():
             sys.exit(f"bad --map spec: {spec!r} (expected REGION=path.map)")
         region_maps[region] = parse_map(path)
 
-    symbols, unparsed, includes = parse_header(args.header)
-    emit(symbols, unparsed, args.header, includes, region_maps, args.out, args.out_header)
+    symbols, unparsed, includes, extras = parse_header(args.header)
+    emit(symbols, unparsed, args.header, includes, extras, region_maps, args.out, args.out_header)
 
 
 if __name__ == "__main__":

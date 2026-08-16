@@ -41,7 +41,7 @@ extern const u16(*p_sChozodiaEscapeOam_MissionAccomplishedEnglish_Frame0)[OAM_DA
 #define sChozodiaEscapeOam_MissionAccomplishedEnglish_Frame0 (*p_sChozodiaEscapeOam_MissionAccomplishedEnglish_Frame0)
 extern const u16(*p_sChozodiaEscapeOam_MissionAccomplishedHiragana_Frame0)[OAM_DATA_SIZE(9)];
 #define sChozodiaEscapeOam_MissionAccomplishedHiragana_Frame0 (*p_sChozodiaEscapeOam_MissionAccomplishedHiragana_Frame0)
-#ifdef REGION_EU
+#if (defined(REGION_EU))
 extern const u16(*p_sChozodiaEscapeOam_MissionAccomplishedGerman_Frame0)[OAM_DATA_SIZE(21)];
 #define sChozodiaEscapeOam_MissionAccomplishedGerman_Frame0 (*p_sChozodiaEscapeOam_MissionAccomplishedGerman_Frame0)
 extern const u16(*p_sChozodiaEscapeOam_MissionAccomplishedFrench_Frame0)[OAM_DATA_SIZE(15)];
@@ -59,7 +59,7 @@ extern const u16(*p_sChozodiaEscape_5ca0d8)[8][2];
 #define sChozodiaEscape_5ca0d8 (*p_sChozodiaEscape_5ca0d8)
 extern const u16(*p_sChozodiaEscape_5ca0f8)[8][2];
 #define sChozodiaEscape_5ca0f8 (*p_sChozodiaEscape_5ca0f8)
-#ifdef REGION_EU
+#if (defined(REGION_EU))
 extern const u16 * const(*p_sChozodiaEscapeOamPointers_MissionAccomplished)[LANGUAGE_COUNT];
 #define sChozodiaEscapeOamPointers_MissionAccomplished (*p_sChozodiaEscapeOamPointers_MissionAccomplished)
 #endif
