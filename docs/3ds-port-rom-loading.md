@@ -134,19 +134,66 @@ gcc -I. -Iinclude -Iinclude/data -Iport -Iport/generated \
 /tmp/t mzm_eu_baserom.gba
 ```
 
+## Sombreado de includes: verificado y funcionando
+
+El truco de la sección anterior (generar con el mismo nombre de fichero que
+el original y anteponer su directorio en el `-I`) **está implementado y
+verificado end-to-end**: `port/generated/shadow/data/*.h` reproduce
+exactamente la ruta relativa `data/*.h` que usa `src/*.c` en sus
+`#include`. Con `-Iport/generated/shadow` antes que `-Iinclude`, el
+preprocesador resuelve `#include "data/chozodia_escape_data.h"` hacia
+nuestro generado sin tocar ni una línea de `src/` — confirmado inspeccionando
+la salida de `arm-none-eabi-gcc -E` (`# 1
+"port/generated/shadow/data/chozodia_escape_data.h"`), no solo asumido.
+
+**Verificado a escala real, con el compilador ARM del proyecto (devkitARM
+`arm-none-eabi-gcc`, no gcc de host)**:
+- Los 67 ficheros de `src/*.c` (lógica de juego) compilan (`-c`) con el
+  directorio sombra activo. Los únicos errores restantes son
+  "implicit declaration" de funciones de otros módulos no incluidos en esta
+  prueba aislada (normal al compilar un `.c` suelto sin el resto del
+  proyecto) — cero errores de tipos/símbolos de datos.
+- Los 35 `_rom.c` generados + `port_rom.c` archivados juntos: sin símbolos
+  duplicados.
+
+### Dos bugs reales encontrados solo al probar contra código de gameplay real
+
+Ninguno de los dos apareció en el test end-to-end de un solo símbolo — hicieron
+falta los 67 ficheros reales para sacarlos a la luz:
+
+1. **Globals RAM mutables coladas como "datos"**: `include/data/
+   shortcut_pointers.h` declara variables como
+   `extern union NonGameplayRam* sNonGameplayRamPointer;` — sin `const`,
+   porque son punteros a RAM asignados en tiempo de ejecución, no blobs
+   horneados en la ROM. El generador las trataba igual que cualquier otro
+   símbolo, añadiendo un nivel de indirección de más (`T*` → `T**`), lo que
+   rompía silenciosamente cualquier código que hiciera
+   `sNonGameplayRamPointer->campo` (usado por `CHOZODIA_ESCAPE_DATA` y once
+   macros más). Corregido: `Symbol.is_rom_data()` solo trata como datos ROM
+   los símbolos `const`-calificados; el resto se reproduce tal cual como
+   passthrough verbatim (reutilizando el mecanismo de `#define`/`typedef`).
+2. **Confusión entre "escalar sin dimensiones" y "array sin tamaño
+   decaído a puntero"**: ambos casos dejaban `pointer_dims()` vacío, pero
+   necesitan macros opuestas. `sDemo0_Ram` (`extern const struct SaveDemo
+   sDemo0_Ram;`, sin corchetes en absoluto) necesita desreferenciar
+   (`#define sDemo0_Ram (*p_sDemo0_Ram)`) para que `&sDemo0_Ram` seleccione
+   la dirección del struct, no la del puntero. Un array sin tamaño
+   (`extern const u32 name[];`) decae a puntero plano y NO debe
+   desreferenciarse. El generador confundía ambos, dando lugar a
+   `T**` en vez de `T*` en `src/demo.c` (`&sDemo0_Ram` como inicializador de
+   `sDemoRamDataPointers[]`). Corregido con una clasificación explícita de
+   tres vías (`scalar`/`flat`/`array`) compartida por todo el generador de
+   declaraciones.
+
 ## Lo que falta ahora
 
-1. Generar para los 35 headers reales (solo se ha commiteado el de
-   `chozodia_escape_data.h` como prueba) y añadirlos a un target de build.
-2. Generar `mzm_us.map`/`mzm_jp.map` (requiere baseroms US/JP que aún no
+1. Generar `mzm_us.map`/`mzm_jp.map` (requiere baseroms US/JP que aún no
    tenemos) para completar la tabla multi-región — de momento solo hay
    offsets EU.
-3. Decidir cómo hacer que el código de gameplay (`src/*.c`) use estos
-   headers generados en vez de los originales para el target 3DS, sin tocar
-   línea a línea cada `#include "data/*.h"`. La opción más limpia (usada
-   habitualmente en ports de decomps): generar los ficheros con el **mismo
-   nombre** que el original y anteponer su directorio en el `-I` del
-   compilador para el target 3DS, de forma que sombreen transparentemente a
-   los de `include/data/` sin tocar `src/`. Pendiente de probar.
-4. Los 67 ficheros de `src/*.c` (lógica pura) sí se compilan sin cambios en
-   ambos targets.
+2. Escribir el `CMakeLists.txt`/Makefile real del target 3DS: compilar los
+   67 `src/*.c` + los 35 `port/generated/*_rom.c` con
+   `-Iport/generated/shadow` antepuesto, enlazando con `platform/3ds/` y
+   `port/ppu`.
+3. El motor de audio propio de `mzm` (`UpdateMusic`/`TrackVariables`) sigue
+   sin backend de NDSP — bloqueante para tener sonido, no para ver algo en
+   pantalla.

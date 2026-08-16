@@ -52,34 +52,62 @@ class Symbol:
         self.dims = dims.replace(" ", "")
         self.guard = guard  # e.g. "REGION_EU" or None
 
-    def pointer_dims(self):
-        """Array dims for the *pointer* declaration: `T (*p)DIMS`.
+    def is_rom_data(self):
+        """Only `const`-qualified externs are ROM-resident asset data worth
+        redirecting through Port_ResolveRomData(). A non-const extern (e.g.
+        `extern union NonGameplayRam* sNonGameplayRamPointer;` in
+        shortcut_pointers.h) is a mutable RAM-resident global -- assigned at
+        runtime, not baked into the ROM -- and must be passed through
+        unchanged. Treating it as data would silently double the pointer
+        level (T* becomes T**), which only shows up as a real compile error
+        at every one of its call sites, not here."""
+        return re.search(r"\bconst\b", self.type) is not None
 
-        A single unsized leading dimension (`[]`) can't be part of a
-        pointer-to-array type as an object declaration, so it decays to a
-        flat pointer (dims == ""). An unsized *outer* dim followed by fixed
-        inner dims (`[][2]`) drops just that first empty group -- the
-        pointer still needs the inner dims to index correctly.
+    def _kind(self):
+        """Classify the original declaration's shape, since 'no dims left
+        after decay' is ambiguous between two cases that need opposite
+        macro behavior:
+
+        - 'scalar': no brackets at all (`extern const struct X name;`).
+          p_name is a plain pointer to ONE T; the macro MUST dereference
+          (`(*p_name)`) to get back an lvalue of type T, or `&name` would
+          take the address of the pointer variable instead of the value
+          (this was a real bug: sDemo0_Ram etc, used as `&sDemo0_Ram`,
+          silently became `T**` instead of `T*`).
+        - 'flat': exactly one, fully unsized dimension (`extern const u32
+          name[];`). Decays to a plain `T*`; the macro must NOT dereference,
+          since a flat pointer already indexes like the original array.
+        - 'array': one or more dims survive after dropping a leading unsized
+          outer dim (`[8]`, `[8][2]`, `[][2]`). p_name is `T(*)[dims]`; the
+          macro dereferences to get the array type back.
         """
         groups = re.findall(r"\[[^\]]*\]", self.dims)
-        if groups and groups[0] == "[]":
+        if not groups:
+            return "scalar", ""
+        if groups[0] == "[]":
             groups = groups[1:]
-        return "".join(groups)
+            if not groups:
+                return "flat", ""
+        return "array", "".join(groups)
+
+    def pointer_dims(self):
+        """Array dims for the pointer declaration, "" for scalar/flat."""
+        return self._kind()[1]
 
     def pointer_var(self, name):
         """Full `T (*name)DIMS` / `T *name` declarator for a given variable
         name (self.type already includes any "const" from the original
         declaration -- it's everything between "extern" and the name)."""
-        dims = self.pointer_dims()
-        if dims:
+        kind, dims = self._kind()
+        if kind == "array":
             return f"{self.type}(*{name}){dims}"
         return f"{self.type}*{name}"
 
     def cast_type(self):
         """Same shape as pointer_var() but as an anonymous cast, e.g.
         `T (*)DIMS` / `T *`."""
-        dims = self.pointer_dims()
-        if dims:
+        kind, dims = self._kind()
+        if kind == "array":
             return f"{self.type}(*){dims}"
         return f"{self.type}*"
 
@@ -96,9 +124,10 @@ class Symbol:
         return f"{self.pointer_var(f'p_{self.name}')};"
 
     def define(self):
-        if self.pointer_dims():
-            return f"#define {self.name} (*p_{self.name})"
-        return f"#define {self.name} p_{self.name}"
+        kind, _ = self._kind()
+        if kind == "flat":
+            return f"#define {self.name} p_{self.name}"
+        return f"#define {self.name} (*p_{self.name})"
 
 
 def _include_guard_name(lines):
@@ -220,7 +249,15 @@ def parse_header(path):
             unparsed.append((lineno, raw))
             continue
 
-        symbols.append(Symbol(m.group("type"), m.group("name"), m.group("dims"), combined_guard()))
+        sym = Symbol(m.group("type"), m.group("name"), m.group("dims"), combined_guard())
+        if sym.is_rom_data():
+            symbols.append(sym)
+        else:
+            # Mutable RAM global masquerading as "data" -- pass through
+            # verbatim instead of redirecting through the ROM (see
+            # Symbol.is_rom_data). Reuses the same guard-aware verbatim
+            # mechanism as #define/typedef extras.
+            extras.append((combined_guard(), line))
 
     return symbols, unparsed, includes, extras
 
