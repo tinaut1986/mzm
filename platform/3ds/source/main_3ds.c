@@ -13,7 +13,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#define APP_DIR "sdmc:/3ds/The Minish Cap 3DS"
+#define APP_DIR "sdmc:/3ds/Metroid Zero Mission 3DS"
 #define ROM_PATH_SIZE 512
 
 extern void AgbMain(void);
@@ -39,7 +39,7 @@ static int RomIsSupported(const char* path) {
     FILE* file = fopen(path, "rb");
     if (!file) return 0;
     int ok = fseek(file, 0xAC, SEEK_SET) == 0 && fread(gameCode, 1, sizeof(gameCode), file) == sizeof(gameCode) &&
-             (memcmp(gameCode, "BZME", sizeof(gameCode)) == 0 || memcmp(gameCode, "BZMP", sizeof(gameCode)) == 0);
+             (memcmp(gameCode, "BMXE", sizeof(gameCode)) == 0 || memcmp(gameCode, "BMXP", sizeof(gameCode)) == 0);
     fclose(file);
     return ok;
 }
@@ -73,7 +73,7 @@ int main(int argc, char** argv) {
     if (!Platform3DS_Init()) return 1;
     Platform3DS_ShowSplash();
 
-    printf("The Minish Cap 3DS v" TMC_PORT_VERSION "\n\n");
+    printf("Metroid Zero Mission 3DS v" TMC_PORT_VERSION "\n\n");
     printf("System: %s\n", Platform3DS_IsNew3DS() ? "New Nintendo 3DS" : "Nintendo 3DS");
     printf("Performance: %s\n",
            Platform3DS_IsNew3DS() ? "New 3DS full presentation"

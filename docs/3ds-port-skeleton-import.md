@@ -66,9 +66,44 @@ escribirlo enganchando `UpdateMusic()`/`TrackVariables` de `mzm` en vez de la
 API M4A. Confirmar si `metroidret/mf` (Fusion) comparte este mismo motor de
 audio antes de asumir que el trabajo se puede compartir entre ambos ports.
 
+## Progreso de sustitución (2026-08-16)
+
+- `main_3ds.c`: adaptado — `APP_DIR`, game codes de ROM soportados
+  (`BMXE`/`BMXP` en vez de `BZME`/`BZMP`; confirmados contra `Makefile:10,27`
+  de este repo: US=`BMXE`, EU=`BMXP`, JP=`BMXJ`), hashes SHA-1 esperados
+  (de `mzm_us.sha1`/`mzm_eu.sha1`/`mzm_jp.sha1`), texto de versión.
+- `port_ppu_3ds.c`: solo el string cosmético del volcado de diagnóstico
+  (`quick dump`) — el resto del fichero es lógica de PPU sin tocar todavía.
+
+## Bloqueado: `CMakeLists.txt` necesita más que sustitución de texto
+
+Inspeccionado a fondo. No es una sustitución cosmética — depende de piezas
+que **no existen todavía**:
+
+1. `list(GLOB ...)` sobre `src/playerItem/*.c`, `src/enemy/*.c`,
+   `src/worldEvent/*.c`, etc. — layout de `src/` propio de la decomp de TMC.
+   Hay que mapearlo contra la estructura real de `src/` de `mzm` (distinta).
+2. `libs/agbplay_core` enlazado como motor de audio — no aplica, ver hallazgo
+   de motor de audio propio arriba. Bloqueado hasta decidir el diseño del
+   backend de audio real.
+3. Fuentes de pantalla inferior (`port_second_screen_render.c`,
+   `_worldmap.c`, `_dungeonmap.c`, `_quest.c`, `_theme.c`) — deliberadamente
+   no copiadas (diseño de UI específico de TMC), así que el CMake no puede
+   apuntar a ellas hasta tener el diseño equivalente para Metroid.
+4. Flags `PC_PORT`, `NON_MATCHING`, `USE_HDMA` — específicos del sistema de
+   build de TMC; hay que revisar qué necesita `mzm` realmente (su Makefile
+   usa `REGION`/`DEBUG`, no estos).
+5. `port_rom.c`/`port_linked_stubs.c` — no existen aún para `mzm` (ver
+   sección 4 de `docs/metroid-3ds-port-context.md`, "no hay atajo aquí").
+
+**No reescribir este archivo hasta que existan (1) el layout de fuentes
+mapeado, (2) el diseño de audio, y (3) al menos un `port_rom.c` mínimo.**
+Intentar producir un CMakeLists "completo" ahora daría un build que parece
+terminado pero no compila contra símbolos inexistentes.
+
 ## Siguiente paso
 
-Diseñar el backend de audio 3DS real contra `UpdateMusic()`/`TrackVariables`
-en vez de M4A, y continuar la sustitución fichero a fichero de la tabla de
-arriba (empezando por `main_3ds.c`, que el doc de contexto original señala
-como el más cercano a genérico).
+Con `main_3ds.c` ya adaptado como plantilla de sustitución, el trabajo de
+más impacto ahora es arrancar `port_rom.c`/`port_rom_tables.c` contra los
+símbolos reales de `mzm` — es la pieza de la que depende todo lo demás
+(incluido poder escribir un `CMakeLists.txt` real).
