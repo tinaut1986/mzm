@@ -25,6 +25,8 @@
 #include "data/color_fading_data.h"
 #include "data/cutscenes/cutscenes_data.h"
 #include "data/in_game_cutscene_data.h"
+#include "port/generated/empty_datatypes_rom.h"
+
 
 
 
@@ -301,7 +303,59 @@ void Port_InitConstructorPointers(void)
 
     extern const struct InGameCutsceneData sInGameCutsceneData_Compiled[IGC_COUNT];
     p_sInGameCutsceneData = (const struct InGameCutsceneData(*)[IGC_COUNT])sInGameCutsceneData_Compiled;
+
+    extern const struct HatchData sHatchData_Empty_Compiled;
+    p_sHatchData_Empty = &sHatchData_Empty_Compiled;
+
+    extern const struct Coordinates sCoordsX_Empty_Compiled;
+    p_sCoordsX_Empty = &sCoordsX_Empty_Compiled;
+
+    extern const struct LockScreen sLockScreen_Empty_Compiled;
+    p_sLockScreen_Empty = &sLockScreen_Empty_Compiled;
+
+    extern const struct BackgroundEffect sBackgroundEffect_Empty_Compiled;
+    p_sBackgroundEffect_Empty = &sBackgroundEffect_Empty_Compiled;
+
+    extern const struct BrokenBlock sBrokenBlock_Empty_Compiled;
+    p_sBrokenBlock_Empty = &sBrokenBlock_Empty_Compiled;
+
+    extern const struct BombChain sBombChain_Empty_Compiled;
+    p_sBombChain_Empty = &sBombChain_Empty_Compiled;
+
+    extern const struct PowerBomb sPowerBomb_Empty_Compiled;
+    p_sPowerBomb_Empty = &sPowerBomb_Empty_Compiled;
+
+    extern const struct ScreenShake sScreenShake_Empty_Compiled;
+    p_sScreenShake_Empty = &sScreenShake_Empty_Compiled;
+
+    extern const struct BG0Movement sBg0Movement_Empty_Compiled;
+    p_sBg0Movement_Empty = &sBg0Movement_Empty_Compiled;
+
+    extern const struct BG3Movement sBg3Movement_Empty_Compiled;
+    p_sBg3Movement_Empty = &sBg3Movement_Empty_Compiled;
+
+    extern const struct Unused_3005504 sUnusedStruct_3005504_Empty_Compiled;
+    p_sUnusedStruct_3005504_Empty = &sUnusedStruct_3005504_Empty_Compiled;
+
+    extern const struct WaterMovement sWaterMovement_Empty_Compiled;
+    p_sWaterMovement_Empty = &sWaterMovement_Empty_Compiled;
+
+    extern const struct TransparencyRelated sTransparencyRelated_Empty_Compiled;
+    p_sTransparencyRelated_Empty = &sTransparencyRelated_Empty_Compiled;
+
+    extern const struct LastElevatorUsed sLastElevatorUsed_Empty_Compiled;
+    p_sLastElevatorUsed_Empty = &sLastElevatorUsed_Empty_Compiled;
+
+    extern const struct BldalphaData sBldalphaData_Empty_Compiled;
+    p_sBldalphaData_Empty = &sBldalphaData_Empty_Compiled;
+
+    extern const struct BldyData sBldyData_Empty_Compiled;
+    p_sBldyData_Empty = &sBldyData_Empty_Compiled;
+
+    extern const struct DefaultTransparency sDefaultTransparency_Empty_Compiled;
+    p_sDefaultTransparency_Empty = &sDefaultTransparency_Empty_Compiled;
 }
+
 
 
 

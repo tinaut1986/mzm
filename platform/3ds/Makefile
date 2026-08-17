@@ -44,6 +44,7 @@ SRCS_ROOT := \
 	$(ROOT)/src/data/color_fading_data.c \
 	$(ROOT)/src/data/cutscenes/cutscenes_data.c \
 	$(ROOT)/src/data/in_game_cutscene_data.c \
+	$(ROOT)/src/data/empty_datatypes.c \
 	$(ROOT)/port/port_gba_symbols.c \
 	$(ROOT)/port/port_rom.c \
 	$(ROOT)/port/port_gba_mem.c \
