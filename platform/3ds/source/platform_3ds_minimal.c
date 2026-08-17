@@ -42,11 +42,23 @@ int Platform3DS_Init(void) {
     /* Without this, every busy-wait on REG_VCOUNT (e.g.
      * src/audio_wrappers.c:205-206) spins forever -- see
      * port_gba_timing.c's header comment. Must start before agbmain() runs
-     * (main_3ds.c calls it right after this). Priority 0x18 is well above
-     * the main thread's default 0x30 (lower number = higher priority in
-     * Horizon OS) since this needs to actually get scheduled roughly every
-     * 73us to be useful. */
-    threadCreate(Port_GbaTiming_ThreadMain, NULL, 4096, 0x18, -1, true);
+     * (main_3ds.c calls it right after this).
+     *
+     * Priority: needs to be above the main thread's default 0x30 (lower
+     * number = higher priority in Horizon OS) to actually get scheduled
+     * roughly every 73us -- but NOT above libctru's own internal GSP event
+     * thread (gspEventThreadMain, created by gspInit() at priority 0x1A,
+     * confirmed by disassembling libctru.a's gspgpu.o). That thread is what
+     * processes the VBlank interrupt relay queue and signals the event
+     * gspWaitForEvent() blocks on in port_bios.c's Port_Bios_Halt(). On a
+     * single application core, this thread waking every ~73us at a HIGHER
+     * priority (0x18 < 0x1A) than the GSP thread starves it indefinitely --
+     * this was the exact cause of the port hanging forever at "before
+     * gspWaitForEvent" on real hardware (confirmed via
+     * sdmc:/3ds/mzm-debug.log bisection). 0x20 sits strictly between the
+     * two: still preempts the main thread (0x30), but yields to GSP's
+     * thread (0x1A) whenever it's ready to run. */
+    threadCreate(Port_GbaTiming_ThreadMain, NULL, 4096, 0x20, -1, true);
 
     sRunning = true;
     return 1;

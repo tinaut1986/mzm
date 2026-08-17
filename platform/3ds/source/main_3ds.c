@@ -14,6 +14,7 @@
 
 #include <ctype.h>
 #include <dirent.h>
+#include <stdbool.h>
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
@@ -138,7 +139,17 @@ int main(int argc, char** argv) {
     Port_DebugLog("main: Port_LoadRom done");
     printf("Loaded region: %s\n", Port_RomRegionLabel(gRomRegion));
 
-    printf("Starting engine (no video/audio yet)...\n");
+    printf("Starting video...\n");
+    extern bool Port_PPU_Init(void);
+    Port_DebugLog("main: before Port_PPU_Init");
+    if (!Port_PPU_Init()) {
+        Platform3DS_ShowFatal("Video error", "Port_PPU_Init failed (citro2d/citro3d init).");
+        Platform3DS_Shutdown();
+        return 1;
+    }
+    Port_DebugLog("main: Port_PPU_Init done");
+
+    printf("Starting engine (no audio yet)...\n");
     Platform3DS_EnterGameplayDisplay();
     Port_DebugLog("main: before agbmain()");
     agbmain();

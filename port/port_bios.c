@@ -16,6 +16,7 @@
 #include "types.h"
 
 #include <string.h>
+#include <stdlib.h>
 
 s32 DivarmDiv(s32 num, s32 denom) {
     return denom != 0 ? num / denom : 0;
@@ -184,8 +185,22 @@ extern void CallbackCallVblank(void);
  * moment both are visible in one translation unit. Forward-declare just the
  * one libctru function actually needed instead of pulling in the whole
  * header -- real signature per libctru's gspgpu.h. */
-/* gspWaitForEvent forward declaration (GSPGPU_EVENT_VBlank0 = 0) */
+/* gspWaitForEvent forward declaration (GSPGPU_EVENT_VBlank0 = 0). Currently
+ * unused below -- see the "temporarily" comment at the Port_Bios_Halt call
+ * site -- kept forward-declared for when real GPU presentation work makes
+ * genuine vblank sync necessary again. */
 extern void gspWaitForEvent(int event, bool nextEvent);
+extern void svcSleepThread(long long ns);
+
+/* aptMainLoop forward declaration. Returns false once the user requests the
+ * app close (HOME menu "Close", sleep-then-close, power button, ...). Never
+ * having called this meant the app couldn't respond to HOME at all -- the
+ * only way out was powering off the console. Also pumps APT's internal
+ * event queue, which real hardware needs serviced regularly for good
+ * cooperative behavior with the system (untested whether this is also
+ * needed for gspWaitForEvent to ever unblock -- see the call site). */
+extern bool aptMainLoop(void);
+extern void gfxExit(void);
 
 /* Synchronizes the GBA-side cooperative loop to real 60Hz vblank timing.
  * agbmain()'s frame loop is:
@@ -204,13 +219,41 @@ extern void gspWaitForEvent(int event, bool nextEvent);
 extern void Platform_Linux_VBlank(void);
 #endif
 
+#ifdef TMC_3DS
+extern void Port_DebugLog(const char* msg);
+extern void Port_PPU_PresentFrame(void);
+#endif
+
 void Port_Bios_Halt(void) {
 #if defined(PLATFORM_LINUX)
     Platform_Linux_VBlank();
 #elif defined(TMC_3DS)
-    gspWaitForEvent(0, true);
+    Port_DebugLog("Port_Bios_Halt: before aptMainLoop");
+    if (!aptMainLoop()) {
+        Port_DebugLog("Port_Bios_Halt: aptMainLoop returned false, exiting");
+        gfxExit();
+        exit(0);
+    }
+    /* Temporarily sleep-paced instead of gspWaitForEvent(0, true): the
+     * latter never unblocks on real hardware here (confirmed via
+     * sdmc:/3ds/mzm-debug.log bisection -- neither the GSP-event-thread
+     * priority collision theory (fixed, no change) nor missing
+     * aptMainLoop() pumping (added above, no change) explained it). Since
+     * nothing is actually presented to the GPU yet (port_ppu_3ds.c isn't
+     * adapted -- see docs/3ds-port-skeleton-import.md), real vblank sync
+     * isn't needed yet either; a plain 60Hz sleep unblocks gameplay-logic
+     * testing now and can be swapped back once gfxSwapBuffers()-driven
+     * presentation exists to investigate the gspWaitForEvent hang for real. */
+    Port_DebugLog("Port_Bios_Halt: before sleep");
+    svcSleepThread(16666667LL);
+    Port_DebugLog("Port_Bios_Halt: after sleep");
 #endif
     CallbackCallVblank();
+#if defined(TMC_3DS) && !defined(PLATFORM_LINUX)
+    Port_DebugLog("Port_Bios_Halt: after CallbackCallVblank");
+    Port_PPU_PresentFrame();
+    Port_DebugLog("Port_Bios_Halt: after Port_PPU_PresentFrame");
+#endif
 }
 
 void VBlankIntrWait(void) {
