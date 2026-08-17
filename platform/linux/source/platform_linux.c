@@ -26,6 +26,8 @@ static bool sQuit = false;
 static u16 sCurrentKeys = 0;
 static struct timespec sLastFrameTime;
 static u64 sFrameCount = 0;
+extern bool sTestMode;
+
 
 extern void CallbackCallVblank(void);
 
@@ -158,6 +160,14 @@ u16 Platform_Linux_PollKeys(void) {
         }
     }
 #endif
+    if (sTestMode) {
+        /* In test mode, pulse KEY_A / KEY_START every 40 frames to navigate menus */
+        if ((sFrameCount % 40) < 4) {
+            sCurrentKeys = KEY_A;
+        } else {
+            sCurrentKeys = 0;
+        }
+    }
     /* Update GBA REG_KEY_INPUT in IO memory (active low) */
     u16 reg_val = (~sCurrentKeys) & 0x03FF;
     gba_write16(REG_KEY_INPUT, reg_val);

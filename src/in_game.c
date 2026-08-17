@@ -454,8 +454,13 @@ void VBlankInGame_Empty(void)
  */
 void InitAndLoadGenerics(void)
 {
+#ifdef TMC_3DS
+    extern void Port_DebugLog(const char* msg);
+    Port_DebugLog("InGame: InitAndLoadGenerics start");
+#endif
     WRITE_16(REG_IME, FALSE);
     WRITE_16(REG_DISPSTAT, READ_16(REG_DISPSTAT) & ~DSTAT_IF_HBLANK);
+
     WRITE_16(REG_IE, READ_16(REG_IE) & ~IF_HBLANK);
     WRITE_16(REG_IF, IF_HBLANK);
     WRITE_16(REG_IME, TRUE);

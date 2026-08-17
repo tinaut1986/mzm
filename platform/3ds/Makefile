@@ -82,12 +82,14 @@ DEPS      := $(C_OBJS:.o=.d)
 ARCH    := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
 CFLAGS  := -g -Wall -O2 -mword-relocations -ffunction-sections -fdata-sections \
            -DREGION_EU -DMZM_PORT_VERSION='"0.0-dev"' -D__3DS__ -DTMC_3DS \
+           -DNON_MATCHING=1 \
            -DPORT_NATIVE_AUDIO_STUBS \
            -Wno-implicit-function-declaration -Wno-implicit-int -Wno-builtin-declaration-mismatch \
            -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function \
            -Wno-return-mismatch -Wno-stringop-overflow -Wno-strict-aliasing -Wno-parentheses \
            -Wno-int-conversion -Wno-pointer-to-int-cast -Wno-int-to-pointer-cast \
            $(ARCH)
+
 
 INCLUDES := \
 	-I$(ROOT)/port/generated/shadow \

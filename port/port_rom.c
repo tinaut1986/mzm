@@ -65,7 +65,7 @@ int Port_LoadRom(const char* path) {
     }
     rewind(file);
 
-#ifdef TMC_3DS
+#if defined(__3DS__) || (defined(TMC_3DS) && !defined(PLATFORM_LINUX))
 extern void* linearAlloc(size_t size);
 extern void linearFree(void* mem);
 #define PORT_ROM_ALLOC(sz) linearAlloc(sz)
@@ -74,6 +74,7 @@ extern void linearFree(void* mem);
 #define PORT_ROM_ALLOC(sz) malloc(sz)
 #define PORT_ROM_FREE(p) do { if (p) free(p); } while(0)
 #endif
+
 
     u8* buffer = (u8*)PORT_ROM_ALLOC((size_t)size);
     if (!buffer) {

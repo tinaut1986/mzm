@@ -3,6 +3,7 @@
 #include "data/menus/language_select_data.h"
 
 #include "gba.h"
+#include "port_debug_log.h"
 #include "audio/track_internal.h"
 #include "constants/game_state.h"
 
@@ -71,7 +72,22 @@ void agbmain(void)
         APPLY_DELTA_TIME_INC(gFrameCounter8Bit);
         APPLY_DELTA_TIME_INC(gFrameCounter16Bit);
 
+#ifdef TMC_3DS
+        {
+            static u8 sLastGM = 0xFF;
+            static u8 sLastSub1 = 0xFF;
+            if (gMainGameMode != sLastGM || gSubGameMode1 != sLastSub1) {
+                char dbg[64];
+                __builtin_snprintf(dbg, sizeof(dbg), "ModeChange -> GM: 0x%02X, Sub1: 0x%02X", gMainGameMode, gSubGameMode1);
+                Port_DebugLog(dbg);
+                sLastGM = gMainGameMode;
+                sLastSub1 = gSubGameMode1;
+            }
+        }
+#endif
+
         switch (gMainGameMode)
+
         {
             case GM_SOFT_RESET:
                 if (SoftResetHandler())

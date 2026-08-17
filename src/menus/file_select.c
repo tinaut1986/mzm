@@ -5710,9 +5710,23 @@ static u8 FileSelectProcessFileSelection(void)
     leaving = FALSE;
     FILE_SELECT_DATA.subMenuTimer++;
 
+#ifdef TMC_3DS
+    {
+        static u8 sLastStage = 0xFF;
+        if (FILE_SELECT_DATA.subMenuStage != sLastStage) {
+            char dbg[64];
+            __builtin_snprintf(dbg, sizeof(dbg), "FileSelect subMenuStage: %d", FILE_SELECT_DATA.subMenuStage);
+            extern void Port_DebugLog(const char* msg);
+            Port_DebugLog(dbg);
+            sLastStage = FILE_SELECT_DATA.subMenuStage;
+        }
+    }
+#endif
+
     switch (FILE_SELECT_DATA.subMenuStage)
     {
         case 0: // Initialize file sub menu
+
             gMostRecentSaveFile = FILE_SELECT_DATA.fileSelectCursorPosition;
 
             offset = (FILE_SELECT_DATA.fileSelectCursorPosition + 1) * 3;
@@ -6679,6 +6693,21 @@ static u32 FileSelectUpdateTilemap(TilemapRequest request)
             break;
 
         case TILEMAP_REQUEST_START_GAME:
+#ifdef TMC_3DS
+            {
+                static int sLogLim = 0;
+                if (++sLogLim % 30 == 0) {
+                    char dbg[128];
+                    __builtin_snprintf(dbg, sizeof(dbg), "START_GAME wait: panelEnded=%d, queueDone=%d, msg0=%d, textStage=%d",
+                        FILE_SELECT_DATA.fileScreenOam[FILE_SELECT_OAM_SMALL_PANEL].ended,
+                        FileScreenUpdateMessageInfoIdQueue(1, FILE_SCREEN_MESSAGE_INFO_ID_START_GAME),
+                        FILE_SELECT_DATA.messageInfoIdQueue[0],
+                        FILE_SELECT_DATA.processTextStage);
+                    extern void Port_DebugLog(const char* msg);
+                    Port_DebugLog(dbg);
+                }
+            }
+#endif
             if (FILE_SELECT_DATA.fileScreenOam[FILE_SELECT_OAM_SMALL_PANEL].ended && FileScreenUpdateMessageInfoIdQueue(1, FILE_SCREEN_MESSAGE_INFO_ID_START_GAME))
             {
                 FILE_SELECT_DATA.bldcnt = 0;
@@ -6687,6 +6716,7 @@ static u32 FileSelectUpdateTilemap(TilemapRequest request)
             }
             ended = FALSE;
             break;
+
         
         case TILEMAP_REQUEST_2:
             FILE_SELECT_DATA.fileScreenOam[FILE_SELECT_OAM_MEDIUM_PANEL].xPosition = BLOCK_SIZE * 5;
