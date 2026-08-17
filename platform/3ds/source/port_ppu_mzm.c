@@ -21,6 +21,9 @@
 #include <stdint.h>
 #include <string.h>
 
+#define PORT_VERBOSE_FRAME_LOG
+
+
 /* Must match platform_gpu_3ds.c's TOP_TEXTURE_WIDTH -- the buffer
  * PlatformGpu3DS_TopBuffer() hands back is allocated at that pitch. */
 #define TOP_PITCH 512

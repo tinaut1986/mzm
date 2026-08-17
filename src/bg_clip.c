@@ -57,6 +57,9 @@ void BgClipSetBgBlockValue(u8 bg, u16 value, u16 yPosition, u16 xPosition)
     dst = (u16*)(VRAM_BASE + bg * 0x1000);
     if (xPosition & 0x10)
         dst = (u16*)(VRAM_BASE + 0x800 + bg * 0x1000);
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+    dst = GBA_RESOLVE(dst);
+#endif
 
     dst += MOD_AND(yPosition, 16) * 64 + MOD_AND(xPosition, 16) * 2;
     
@@ -102,6 +105,10 @@ void BgClipSetBg1BlockValue(u16 value, u16 yPosition, u16 xPosition)
     dst = (u16*)(VRAM_BASE + 0x1000);
     if (xPosition & 0x10)
         dst = (u16*)(VRAM_BASE + 0x1800);
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+    dst = GBA_RESOLVE(dst);
+#endif
+
 
     dst += MOD_AND(yPosition, 16) * 64 + MOD_AND(xPosition, 16) * 2;
     
