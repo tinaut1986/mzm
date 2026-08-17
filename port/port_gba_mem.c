@@ -283,9 +283,43 @@ static bool IsWithinRomDataBuffer(uintptr_t val) {
     return gRomData != NULL && val >= (uintptr_t)gRomData && val < (uintptr_t)gRomData + gRomSize;
 }
 
+#ifdef TMC_3DS
+/* True if the numeric value falls in a numeric range this port treats as a
+ * raw GBA address (i.e. it could be a real GBA address to translate, or a
+ * host pointer that merely collides numerically with one). */
+static bool InGbaNumericRange(uintptr_t val) {
+    return (val >= 0x02000000u && val < 0x0A000000u) ||
+           (val >= 0x0E000000u && val < 0x0E010000u);
+}
+
+/* Host stack pointers can land numerically inside GBA ranges (especially the
+ * ROM range 0x08000000..0x08000000+gRomSize, which overlaps the 3DS
+ * main-thread stack). Any value that is both in a GBA numeric range AND an
+ * active stack address is unambiguously a native host pointer, never a raw
+ * GBA address. */
+static bool IsActiveStackPtr(uintptr_t val) {
+    if (!InGbaNumericRange(val))
+        return false;
+    extern int Platform3DS_IsActiveStackAddress(uintptr_t value);
+    return Platform3DS_IsActiveStackAddress(val) != 0;
+}
+#else
+static bool InGbaNumericRange(uintptr_t val) {
+    (void)val;
+    return false;
+}
+static bool IsActiveStackPtr(uintptr_t val) {
+    (void)val;
+    return false;
+}
+#endif
+
 void* port_resolve_addr(uintptr_t val)
 {
     if (IsWithinRomDataBuffer(val)) {
+        return (void*)val;
+    }
+    if (IsActiveStackPtr(val)) {
         return (void*)val;
     }
     /* GBA-range values (EWRAM/IWRAM/IO/palette/VRAM/OAM/ROM/SRAM) are
@@ -293,7 +327,7 @@ void* port_resolve_addr(uintptr_t val)
      * already a native host pointer (e.g. a local scalar or struct whose
      * address happens to get passed through the same code path as a real
      * GBA address) and is returned unchanged. */
-    if ((val >= 0x02000000u && val < 0x0A000000u) || (val >= 0x0E000000u && val < 0x0E010000u)) {
+    if (InGbaNumericRange(val)) {
         void* p = gba_TryMemPtr((uint32_t)val);
         if (p) {
             return p;
@@ -304,6 +338,9 @@ void* port_resolve_addr(uintptr_t val)
 
 void* port_resolve_write_addr(uintptr_t val) {
     if (IsWithinRomDataBuffer(val)) {
+        return (void*)val;
+    }
+    if (IsActiveStackPtr(val)) {
         return (void*)val;
     }
     /* 0x08000000 and above (except 0x0E000000 SRAM) is read-only cartridge
@@ -318,14 +355,8 @@ void* port_resolve_write_addr(uintptr_t val) {
 
 const void* port_resolve_copy_src(const void* src, u32 size) {
     (void)size;
-#ifdef TMC_3DS
-    /* Local scalars and temporary structs can occupy the same numeric range
-     * as GBA ROM. This check is intentionally limited to copy sources; raw
-     * GBA addresses passed to the general resolver must remain GBA addresses. */
-    if ((uintptr_t)src >= 0x08000000u && (uintptr_t)src < 0x0A000000u) {
-        extern int Platform3DS_IsActiveStackAddress(uintptr_t value);
-        if (Platform3DS_IsActiveStackAddress((uintptr_t)src)) return src;
+    if (IsActiveStackPtr((uintptr_t)src)) {
+        return src;
     }
-#endif
     return port_resolve_addr((uintptr_t)src);
 }

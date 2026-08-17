@@ -178,8 +178,17 @@ int Platform3DS_IsNativeAddress(uintptr_t value) {
 }
 
 int Platform3DS_IsActiveStackAddress(uintptr_t value) {
-    (void)value;
-    return 0;
+    uintptr_t currentSp;
+    __asm__ volatile("mov %0, sp" : "=r"(currentSp));
+
+    /* GBA ROM addresses (0x08000000..0x08000000+gRomSize) may numerically
+     * overlap the 3DS main-thread stack reservation, and stack locals passed
+     * straight to the GBA SRAM helpers (SramTestFlash, SramWrite*, etc.)
+     * land right there. Only objects close to the current frame are
+     * unambiguously native stack pointers; keeping this window bounded
+     * preserves normal GBA ROM address mapping. */
+    const uintptr_t window = 64u * 1024u;
+    return value >= currentSp - window && value <= currentSp + window;
 }
 
 bool Platform3DS_SubmitBottomWorker(void) {

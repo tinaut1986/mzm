@@ -509,7 +509,91 @@ partida dibuja bastante texto dinámico).
    - `sChozoStatueTargetPathPointers` se inicializaba estáticamente en el constructor antes de que la ROM estuviera cargada (apuntando a `NULL`).
    - Sustituido por `GetChozoStatueTargetPath(area)` en `src/menus/pause_screen_sub_menus.c` para resolver dinámicamente las rutas y coordenadas en tiempo de ejecución.
 
+## 6i. Bug de guardado: el `.sav` se persiste todo a ceros y la partida no aparece en selección — RESUELTO y confirmado en hardware (2026-08-18)
+
+Síntoma reportado por el usuario: al guardar y volver a la pantalla de selección de partida, la partida no aparece (ni en la misma sesión ni tras reiniciar).
+
+**Evidencia dura de hardware (vía FTP):**
+- `sdmc:/3ds/Metroid Zero Mission 3DS/mzm.sav` se crea y se reescribe a **todo ceros** (65536 bytes, `0x00` en todas las posiciones). El tamaño coincide con `sizeof(gSramMem)` (=`0x10000`), luego `Port_SaveSram()` (en `src/sram/sram.c`) sí escribe el buffer `gSramMem`, pero ese buffer está a ceros cuando se escribe.
+- Instrumentado `SramTestFlash()` (con checkpoint en `Port_DebugLog`): `SramTestFlash: flags=4 corrupt=4`. El flag 4 = la verificación final del test de escritura/lectura falla. **`gSramCorruptFlag` queda a 1** (no nulo).
+- La consecuencia directa está en `unk_fbc()` (`src/sram_misc.c`): su `switch` de escritura a flash está envuelto en `if (!gSramCorruptFlag)`, así que **con el flag de corrupción puesto, TODAS las escrituras de guardado se saltan**. La partida nunca llega a `gSramMem` → `.sav` a ceros → en el siguiente arranque no hay partida. Por eso "guarda" (la animación confirma) pero luego no aparece nada.
+
+**Flujo de `SramTestFlash()` que falla (`src/save_file.c:880`):**
+1. `SramWriteChecked(sMetZeroSramCheck_Text, SRAM_BASE+OFFSET, 16)` → escribe el texto de test en flash (gSramMem), verifica. OK (sin flag 1).
+2. `SramWriteUnchecked(SRAM_BASE+OFFSET, text, 16)` → lee flash a buffer local de pila `text`. OK.
+3. `text[i]++` → texto incrementado.
+4. `SramWriteChecked(text, SRAM_BASE+OFFSET, 16)` → escribe el texto modificado, verifica. Sin flag 2 (su propio `SramCheck` "pasa", comparando contra el MISMO origen corrompido).
+5. `SramWriteUnchecked(SRAM_BASE+OFFSET, text, 16)` → relee flash a `text`.
+6. Verificación final `text[i] == sMetZeroSramCheck_Text[i]+1` → **falla** (flag 4).
+
+**Sospecha principal (clase de bug "doble resolución de direcciones", sección 5.5):** el buffer local de pila `text` tiene una dirección que numéricamente cae en un rango que `port_resolve_copy_src()`/`port_resolve_write_addr()` (`port/port_gba_mem.c`) tratan como "dirección GBA cruda" y la traducen como si fuera EWRAM/IWRAM/etc. En el paso 4, `port_resolve_copy_src(text)` traduce mal el puntero de pila → copia basura a gSramMem → el `SramCheck` interno "pasa" (compara basura vs. el mismo origen mal traducido) → el flag 4 salta al final.
+
+Notas de memoria concretas de hardware:
+- `gRomData=0x14189c00` (heap, FUERA de `0x02..0x0A` y de `0x0E...`; sin colisión de ROM en esta sesión).
+- Los buffers estáticos `gEwram`/`gSramMem`/`gVram`/etc. están en `0x0026xxxx-0x002dxxxx` (del `nm` del ELF 3DS), por debajo de `0x02000000` → no colisionan.
+- `Platform3DS_IsActiveStackAddress()` (`platform/3ds/source/platform_3ds.c:331`) solo detecta pila en el rango `0x08..0x0A` y solo dentro de `±64KB` del `sp` actual — si la pila está en OTRO rango GBA, no se cubre.
+
+**Diagnóstico que se está añadiendo ahora** (para confirmar el rango de pila y el puntero traducido):
+- En `SramTestFlash`: log de `text=%p` (dirección del buffer de pila) y los 16 bytes de `MetZeroSramCheck_Text` en hex.
+- En `SramWrite()`: log de `src=%p->%p dest=%p->%p` (punteros crudos vs. resueltos) para ver exactamente qué puntero se traduce mal.
+
+**Root cause CONFIRMADO con el siguiente log de hardware (2026-08-18):**
+
+```
+SramWrite: src=0x8007b28->0x14191728  dest=0xe007f50->0x268284  size=16
+SramTestFlash: flags=4 corrupt=4 text=0x8007b28 testBytes=2c7b0008118880200840002802d00220
+```
+
+- El buffer local de pila `text` de `SramTestFlash` vive en `0x8007b28` — **dentro del rango ROM GBA** `[0x08000000, 0x08000000+gRomSize)`, que se solapa con la pila del hilo principal de la 3DS.
+- `port_resolve_copy_src(text)` lo traduce MAL como dirección ROM: `0x8007b28 -> 0x14191728` (= `gRomData + 0x7b28`). En el paso 4 de `SramTestFlash` copia basura de la ROM a `gSramMem+0x7f50`, su `SramCheck` interno "pasa" (compara basura vs. el mismo origen mal traducido), y la verificación final (flag 4) salta → `gSramCorruptFlag=4`.
+- El `dest` sí se resuelve bien (`0xe007f50 -> 0x268284` = `gSramMem + 0x7f50`), por lo que solo el ORIGEN de pila es el problema.
+- **Por qué pasaba:** el build 3DS enlaza `platform/3ds/source/platform_3ds_minimal.c`, cuyo `Platform3DS_IsActiveStackAddress()` era un **stub que devolvía `0` siempre** (líneas 180-183). El mecanismo anti-doble-resolución de pila existía en `port_resolve_copy_src` pero se apoyaba en esa función, que en el build mínimo nunca detectaba la pila. (La implementación real solo existe en `platform/3ds/source/platform_3ds.c`, que NO se enlaza en este build.)
+
+**Fix aplicado (2026-08-18):**
+1. `platform/3ds/source/platform_3ds_minimal.c`: `Platform3DS_IsActiveStackAddress()` implementado de verdad (mismo criterio SP ± 64 KB que la versión de `platform_3ds.c`).
+2. `port/port_gba_mem.c`: los resolvers ahora usan la comprobación de pila de forma consistente:
+   - `port_resolve_addr()` y `port_resolve_write_addr()`: si el valor está en un rango GBA numérico Y además es una dirección de pila activa → se devuelve tal cual (host pointer), antes de intentar traducirlo como GBA.
+   - `port_resolve_copy_src()`: mismo chequeo, aplicado a TODOS los rangos GBA ambiguos (antes solo `0x08..0x0A` y solo vía el stub roto).
+   - Añadidos helpers `InGbaNumericRange()`/`IsActiveStackPtr()`.
+
+**Confirmado en hardware (2026-08-18):** el usuario reinstaló el CIA y ahora **el guardado persiste y carga correctamente** (guarda partida, aparece en selección y la retoma). El fix de pila era correcto.
+
+**Efecto secundario positivo confirmado:** las **indicaciones de las estatuas Chozo ahora se ven bien** (bug 4 / sección 6h). Causa raíz compartida: los indicadores Chozo se leían desde datos del guardado (`gSramMem` / `gSram`, items obtenidos y tiles visitadas), que estaban a ceros por la corrupción de SRAM; al arreglar la resolución de `gSramMem` (y su contenido ahora persistente), los marcadores se muestran correctamente. Refuerza que la corrupción de SRAM afectaba a varios subsistemas a la vez.
+
+## 6j. Bug del tanque de misiles no recogible — RESUELTO, y nuevo problema del jefe que no aparece (2026-08-18)
+
+**Bug del tanque de misiles (bug 2) — RESUELTO y confirmado en hardware:**
+
+Síntoma: en una partida nueva, Samus atravesaba el tanque de misiles sin recogerlo (sin banner ni animación). Tras instrumentar `BgClipCheckTouchingTransitionOrTank` (`src/bg_clip.c`), el log de hardware mostró:
+
+```
+TankTouch: behavior=57 idx=5 itemType=0 explored=65536
+```
+
+- `behavior=57`, `idx=5` → el tanque de misiles (`CLIP_BEHAVIOR_MISSILE_TANK`) se **detecta correctamente**.
+- `explored=65536` (≠0) → el gate de exploración (`MinimapCheckIsTileExplored`, línea 511) **pasa**, no era el problema.
+- `itemType=0` (`ITEM_TYPE_NONE`) → **el fallo**: `sTankBehaviors[5].itemType` devolvía 0 en vez de `ITEM_TYPE_MISSILE` (1), por lo que `if (i != ITEM_TYPE_NONE)` (línea 508) saltaba la recolección y Samus pasaba de largo.
+
+**Root cause:** `sTankBehaviors` se lee de la ROM (`Port_ResolveRomData(0x083468d4)`, tabla EU). Al comparar los bytes reales de la ROM EU (`mzm_eu.gba`, cabecera `BMXP`) con el array C del decomp (`src/data/block_data.c:863`):
+- Las entradas de la tabla en la ROM son de **8 bytes**, pero `struct TankBehavior` (`include/structs/block.h`) estaba definido con **6 bytes** (`u8 itemType + u8 underwater + u8 messageId + u16 revealedClipdata`).
+- Con stride de 8 bytes TODAS las 12 entradas coinciden con el array C (campos en los mismos offsets: itemType@0, underwater@1, messageId@2, revealedClipdata@4-5; bytes 6-7 siempre `00`).
+- Como el port indexa la tabla con `sizeof(struct TankBehavior)` (6), todo a partir del índice 1 queda desalineado; en el índice 5 (missile) leía `itemType=0`.
+
+Por qué no se había detectado antes: el decomp de referencia compila el array desde `tools/extractor` (bytes `.inc`), que es auto-consistente y nunca necesita que el struct coincida con la ROM; pero el port nativo lee la tabla de la ROM en runtime, así que `sizeof` DEBE ser 8.
+
+**Fix aplicado:** en `include/structs/block.h`, `struct TankBehavior` ahora tiene un campo final `u16 padding;` (bytes 6-7 de la ROM, siempre 0), haciendo el struct de 8 bytes y alineándolo con la ROM.
+
+**Confirmado en hardware:** tras reinstalar el CIA, el usuario puede recoger los misiles (log `TankTouch: ... itemType=1 ...`) y se dispara correctamente el evento del jefe.
+
+**Nuevo problema relacionado (SIN resolver, en investigación):** justo después de coger los misiles, **el jefe no aparece**. El log muestra: `TankTouch itemType=1` → `ModeChange GM 0x05` (banner/cutscene) → vuelta a `GM 0x04` → `RoomLoad` (transición a la sala del jefe) → **atascado en `GM 0x04` con puro heartbeat**. La puerta se cierra (la lógica del jefe arranca) pero la criatura del **Ruins Test** no spawnea/se ve. Sospecha principal: datos de sprite/GFX/paleta del jefe (`sRuinsTestGfx`/`sRuinsTestPal`/OAM, tabla en `0x082f2a6c`-`0x082f6f68`) mal resueltos de la ROM (misma clase de bug: struct-size mismatch o puntero mal resuelto). En investigación.
+
 ## 7. Pendientes y Siguientes Pasos
+
+**Bugs abiertos pendientes de investigar (reportados por el usuario, aún SIN resolver):**
+- **El jefe (Ruins Test) no aparece tras coger los misiles** (nuevo, 2026-08-18): la puerta se cierra y Samus queda atrapada en la sala del jefe esperando a que aparezca, pero la criatura no spawnea. Ver sección 6j. Sospecha: datos de sprite/GFX/paleta/OAM del Ruins Test mal resueltos de ROM (tablas `0x082f2a6c`-`0x082f6f68`).
+- **Franja vertical "gelatina" desincronizada a la derecha** (bug 3): franja del ancho de la vista previa del minimapa en el borde derecho que se desincroniza al subir/bajar la cámara. Pendiente de investigar (sospecha de scroll de un BG / window).
+
+**Resueltos en esta sesión (2026-08-18):** guardado (6i), indicadores Chozo (6i, efecto secundario), tanque de misiles (6j).
 
 **Siguientes tareas recomendadas:**
 

@@ -28,6 +28,10 @@
 #include "structs/save_file.h"
 #include "structs/visual_effects.h"
 
+#ifdef TMC_3DS
+#include "port_debug_log.h"
+#endif
+
 extern const struct SaveDemo* sDemoRamDataPointers[MAX_AMOUNT_OF_DEMOS];
 
 static struct SaveFileInfo sSaveFileInfo_Empty = {
@@ -917,6 +921,33 @@ void SramTestFlash(void)
 
     if (flags)
         gSramCorruptFlag = flags;
+
+#ifdef TMC_3DS
+    {
+        extern struct Sram* sSramFlashPointer;
+        char msg[200];
+        __builtin_snprintf(msg, sizeof(msg),
+            "SramTestFlash: flags=%u corrupt=%u text=%p testBytes=%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x",
+            flags, (unsigned)gSramCorruptFlag, (void*)text,
+            sSramFlashPointer->MetZeroSramCheck_Text[0],
+            sSramFlashPointer->MetZeroSramCheck_Text[1],
+            sSramFlashPointer->MetZeroSramCheck_Text[2],
+            sSramFlashPointer->MetZeroSramCheck_Text[3],
+            sSramFlashPointer->MetZeroSramCheck_Text[4],
+            sSramFlashPointer->MetZeroSramCheck_Text[5],
+            sSramFlashPointer->MetZeroSramCheck_Text[6],
+            sSramFlashPointer->MetZeroSramCheck_Text[7],
+            sSramFlashPointer->MetZeroSramCheck_Text[8],
+            sSramFlashPointer->MetZeroSramCheck_Text[9],
+            sSramFlashPointer->MetZeroSramCheck_Text[10],
+            sSramFlashPointer->MetZeroSramCheck_Text[11],
+            sSramFlashPointer->MetZeroSramCheck_Text[12],
+            sSramFlashPointer->MetZeroSramCheck_Text[13],
+            sSramFlashPointer->MetZeroSramCheck_Text[14],
+            sSramFlashPointer->MetZeroSramCheck_Text[15]);
+        Port_DebugLog(msg);
+    }
+#endif
 }
 
 /**

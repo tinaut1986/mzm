@@ -61,6 +61,7 @@ struct TankBehavior {
     boolu8 underwater;
     MessageId messageId;
     u16 revealedClipdata;
+    u16 padding;
 };
 
 typedef u32 (*BlockFunc_T)(struct ClipdataBlockData*);

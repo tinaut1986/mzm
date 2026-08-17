@@ -9,6 +9,9 @@ static const char sSramVersion[] = "SRAM_V113";
 #include <string.h>
 #include <stdio.h>
 #include "port_gba_mem.h"
+#ifdef TMC_3DS
+#include "port_debug_log.h"
+#endif
 
 #define SAVE_FILE_PATH "mzm.sav"
 
@@ -29,6 +32,9 @@ void Port_SaveSram(void)
     {
         fwrite(gSramMem, 1, sizeof(gSramMem), f);
         fclose(f);
+#ifdef TMC_3DS
+        Port_DebugLog("Port_SaveSram: wrote mzm.sav");
+#endif
     }
 }
 
@@ -44,6 +50,14 @@ void SramWrite(u8* src, u8* dest, u32 size)
 {
     void* d = port_resolve_write_addr((uintptr_t)dest);
     const void* s = port_resolve_copy_src(src, size);
+#ifdef TMC_3DS
+    {
+        char msg[160];
+        __builtin_snprintf(msg, sizeof(msg), "SramWrite: src=%p->%p dest=%p->%p size=%u",
+            (void*)src, s, (void*)dest, d, (unsigned)size);
+        Port_DebugLog(msg);
+    }
+#endif
     if (d && s) memcpy(d, s, size);
     Port_SaveSram();
 }
