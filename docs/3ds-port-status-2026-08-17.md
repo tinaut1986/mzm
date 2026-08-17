@@ -1,338 +1,350 @@
 # Estado del port a 3DS — resumen y siguientes pasos (2026-08-17)
 
 Documento de continuidad: qué se ha hecho, en qué estado real está el
-proyecto ahora mismo, y por dónde seguir. El trabajo se ha hecho en dos
-frentes en paralelo — esta sesión (Claude Code) y otra sesión con
-"antigravity" — sobre el mismo fork `tinaut1986/mzm`
-(rama `wip/3ds-port-no-audio-ppu`), y este documento cubre ambos.
+proyecto ahora mismo, y por dónde seguir. Reescrito de arriba a abajo al
+final de una sesión larga que avanzó mucho el estado real del port — léelo
+entero antes de tocar código, y no asumas nada del historial de versiones
+anteriores de este mismo fichero (`git log -- docs/3ds-port-status-2026-08-17.md`
+si hace falta arqueología).
 
 ## 0. Punto de partida
 
 Objetivo: portar **Metroid Zero Mission** a Nintendo 3DS, siguiendo el
-mismo patrón que `zelda-tmc-3ds` (port de Minish Cap a 3DS): partir de la
-**decompilación matching** del juego (`metroidret/mzm`, no de ingeniería
-inversa propia) y construir encima una capa de "port" que emule el hardware
-GBA necesario sobre libctru/citro2d/citro3d.
+mismo patrón que `zelda-tmc-3ds` (port de Minish Cap a 3DS, que el usuario
+también tiene localmente en `~/zelda-tmc-3ds` — hay ficheros de este port
+copiados literalmente de ahí, ver sección 4): partir de la **decompilación
+matching** del juego (`metroidret/mzm`, no de ingeniería inversa propia) y
+construir encima una capa de "port" que emule el hardware GBA necesario
+sobre libctru/citro2d/citro3d.
 
-## 1. Decompilación base — verificada
+Fork: `tinaut1986/mzm`, rama `wip/3ds-port-no-audio-ppu`.
 
-- Fork `tinaut1986/mzm` de `metroidret/mzm` (~99.89% decompilado, build
-  matching).
-- Compilación GBA verificada: el `.gba` resultante coincide byte a byte
-  (SHA-1 `0fd107445a42e6f3a3e5ce8c865f412583179903`, versión EU) con la ROM
-  original, usando tu ROM legal como baserom.
-- Auditoría de modos de PPU (`docs/3ds-port-ppu-audit.md`): Zero Mission
-  usa Modo 0 en casi todo el juego y Modo 1 (afín) solo en la secuencia de
-  escape de Tourian. Confirma que el renderizador de `zelda-tmc-3ds` (que
-  solo soporta Modo 0+1) es aplicable sin ampliar.
+## 1. Estado actual en una frase
 
-## 2. Arquitectura de assets: carga de ROM en runtime (sin copyright)
+**El juego arranca en 3DS real, procesa lógica de juego real durante varios
+segundos, y muestra la pantalla de selección de idioma en pantalla — la
+primera vez que se ve contenido real del juego en hardware.** Después
+crashea, en el motor de audio, en un punto que aún no se ha localizado del
+todo. Ver sección 6 para el siguiente paso concreto.
 
-Decisión de arquitectura clave, tomada porque **quieres poder publicar el
-port algún día**: el binario distribuido no debe llevar assets con
-copyright horneados dentro. El usuario final pone su propia ROM en la SD y
-el port la lee en cada arranque, traduciendo direcciones GBA a punteros
-nativos — igual que hace `zelda-tmc-3ds`.
+## 2. Arquitectura del port — lo que ya estaba antes de hoy
 
-Esto es viable de forma más sencilla que en TMC porque `mzm` es un decomp
-matching casi completo: hay una separación limpia entre `src/*.c` (67
-ficheros de lógica pura) y `src/data/*.c` (~476 ficheros, solo datos,
-compilados desde `extracted/*.inc` generados por `tools/extractor.py` a
-partir de tu baserom). El plan: no compilar `src/data/*.c` para 3DS: en su
-lugar, resolver esos símbolos en runtime desde la ROM cargada, usando las
-direcciones GBA exactas que ya conocemos gracias al build matching (el
-`.map` del linker da la dirección exacta de cada símbolo).
+- Decompilación base verificada (~99.89%, build GBA matching byte a byte
+  contra la ROM EU real).
+- Arquitectura de assets sin copyright: el usuario pone su ROM legal en la
+  SD/disco, el port la carga en runtime y traduce direcciones GBA a
+  punteros nativos (`port/port_rom.c`, `tools/gen_port_rom_offsets.py`,
+  headers "sombreados" en `port/generated/shadow/`).
+- BIOS de GBA reimplementada en C limpio (`port/port_bios.c`): `Div`,
+  `Sqrt`, `CpuSet`, `LZ77Uncomp*`, `Multiboot` (stub), etc. Documentado con
+  GBATek, no copiado.
+- Target nativo Linux (`platform/linux/`) además del target 3DS
+  (`platform/3ds/`).
+- `port/ppu/` (`virtuappu.c`, `mode1.c`): renderizador PPU en software,
+  vendido desde el port de Minish Cap — **agnóstico de TMC**, reutilizable
+  tal cual.
+- `platform/3ds/source/platform_gpu_3ds.c`: capa de presentación
+  citro2d/citro3d (subida de textura, doble pantalla), copiada de
+  `zelda-tmc-3ds` — también reutilizable tal cual, sin acoplamiento a TMC.
+- `platform/3ds/source/port_ppu_3ds.c`: el bridge PPU→GPU **original** de
+  TMC, copiado sin adaptar. Profundamente acoplado a subsistemas propios de
+  TMC (pantalla inferior, HDMA, widescreen, save states, HUD de
+  rendimiento). **No se ha tocado ni se usa** — se dejó como referencia y en
+  su lugar se escribió uno nuevo y mínimo, ver sección 4.
 
-### Piezas implementadas
+## 3. El bucle de depuración local (`platform/linux/`) — la pieza que lo cambió todo
 
-- **`port/port_rom.c` / `port/port_rom.h`**: carga de ROM, detección de
-  región vía el game code del header (`BMXE`=US, `BMXP`=EU, `BMXJ`=JP,
-  confirmado contra el `Makefile` de `mzm`), y `Port_ResolveRomData()` para
-  traducir una dirección GBA a puntero nativo. Verificado contra la ROM EU
-  real: los bytes resueltos coinciden con los datos ya extraídos.
+Antes de hoy, cada iteración para depurar un cuelgue en 3DS implicaba:
+compilar, generar CIA, instalarlo por FTP en la consola, abrirlo, esperar,
+y leer un log por FTP — varios minutos por vuelta. Hoy se arregló
+`platform/linux/` para que sea un **repro completo y rápido en local**:
 
-- **`tools/gen_port_rom_offsets.py`**: generador que, por cada
-  `include/data/*.h`, produce un `.h`/`.c` en `port/generated/` con:
-  - un puntero `extern` + macro `#define nombre (*p_nombre)` que redirige
-    cada símbolo de datos a `Port_ResolveRomData(offset)`,
-  - una función `PortGen_<base>_Init()` que resuelve todos los punteros
-    según la región activa, usando offsets sacados del `.map`.
-  - **Cobertura verificada**: los 35 headers de `include/data/` parsean con
-    0 líneas sin reconocer (2153 símbolos). Verificado end-to-end contra
-    datos reales de la ROM, y compilado con el compilador ARM real contra
-    los 178 ficheros de gameplay sin errores de tipos/símbolos.
-  - **Bugs reales encontrados y corregidos durante el desarrollo** (todos
-    solo visibles al probar a escala, no con un símbolo suelto):
-    1. `#if defined()/#elif/#else` no se interpretaban como excluyentes →
-       símbolos duplicados con tamaños distintos (p.ej. `sCredits` por
-       región). Corregido con una pila de condiciones propia.
-    2. Variables RAM mutables sin `const` (p.ej. `sNonGameplayRamPointer`
-       en `shortcut_pointers.h`) se trataban como datos ROM, duplicando el
-       nivel de puntero (`T*` → `T**`). Corregido: solo se redirige lo
-       `const`-calificado; el resto se reproduce tal cual.
-    3. Confusión entre "escalar sin dimensiones" (necesita desreferenciar)
-       y "array sin tamaño" (no debe desreferenciar) — rompía
-       `&sDemo0_Ram` en `src/demo.c`. Corregido con una clasificación
-       explícita de tres vías (`scalar`/`flat`/`array`).
-    4. Símbolos legítimamente declarados `extern` en dos headers distintos
-       con una única definición real (p.ej. `sDoorTransitionTilemap`) —
-       generaban doble definición real → error de enlazado. Corregido
-       marcando la definición como `__attribute__((weak))`.
+- `port/port_debug_log.c` tenía la ruta de log hardcodeada a
+  `sdmc:/3ds/mzm-debug.log` (solo válida en 3DS). Ahora usa
+  `/tmp/mzm-debug.log` bajo `#ifdef PLATFORM_LINUX`.
+- Nada avanzaba `REG_VCOUNT` en Linux (solo existía un hilo para eso en
+  3DS, `port/port_gba_timing.c`, arrancado desde `platform_3ds_minimal.c`).
+  Cualquier busy-wait sobre `REG_VCOUNT` (hay varios en el motor, el más
+  relevante en `src/audio_wrappers.c:205-206`) se quedaba colgado para
+  siempre. Añadido un hilo equivalente con pthreads en
+  `platform/linux/source/platform_linux.c`
+  (`Platform_Linux_StartTimingThread`).
+- Faltaban ficheros en `platform/linux/Makefile` (`port_debug_log.c`,
+  luego `port_constructor_init.c`).
 
-- **Sombreado de includes**: los headers generados se escriben en
-  `port/generated/shadow/data/*.h`, con la **misma ruta relativa** que los
-  originales (`data/*.h`). Anteponiendo ese directorio en el `-I` del
-  compilador, cualquier `#include "data/*.h"` de `src/*.c` se resuelve
-  hacia el generado **sin tocar ni una línea de la decompilación**.
-  Verificado con la salida del preprocesador, no solo asumido.
+Uso: `cd platform/linux && make && ./mzm-linux --rom ../../mzm_eu.gba --test 3000`
+corre 3000 frames (~50s simulados) headless y dice si crashea. Con
+`CFLAGS=... -fsanitize=address` (ver `make test` o construir a mano, mirar
+commits para la línea exacta) da backtraces exactos de cualquier crash de
+memoria, sin necesitar la 3DS para nada.
 
-- **`include/syscalls.h` también se sombrea** (`port/generated/shadow/syscalls.h`):
-  solo cambia la macro `SYSCALL(num)`, ver sección 3.
+**Antes de perseguir un bug en 3DS real, comprueba primero si se reproduce
+en `platform/linux/`.** Es muchísimo más rápido, y varios de los bugs de
+hoy (ver sección 5) se depuraron y verificaron ahí antes de tocar hardware.
 
-## 3. BIOS de GBA reimplementada en C limpio
+Nota: no todos los bugs se reproducen en Linux — el bug de doble resolución
+de direcciones (sección 5.4) y el que queda por resolver (sección 6) son
+específicos de 3DS, porque dependen de dónde `malloc()` decide poner la
+memoria, que difiere entre x86_64 y ARM11.
 
-Hallazgo importante: `SYSCALL(num)` es literalmente `asm("svc " #num)` — una
-llamada real a la BIOS de GBA. En 3DS esa misma instrucción `svc` no falla
-al compilar, pero en hardware real dispara una syscall de Horizon OS
-completamente distinta: **no es un error de compilación, es un
-crash/corrupción silenciosa en la consola**.
+## 4. Renderizado — primera imagen real en pantalla
 
-Investigando el código real: casi todas las funciones "BIOS" (`Div`,
-`Sqrt`, `CpuSet`, `LZ77UncompVram`, etc.) son funciones normales (`bl`), NO
-`swi` directas — solo `asm/syscalls.s` las implementa con `swi`. El único
-uso directo de `SYSCALL()` en todo el código está en 2 sitios
-(`agbmain.c`, `pause_screen_sub_menus.c`), ambos como "esperar al siguiente
-VBlank".
+`platform/3ds/source/port_ppu_mzm.c` (nuevo, ~110 líneas): bridge mínimo
+entre `port/ppu` (renderizador software, reutilizado tal cual) y
+`platform_gpu_3ds.c` (presentación citro2d/citro3d, reutilizado tal cual).
+Deliberadamente **no** es una adaptación de `port_ppu_3ds.c` (ver sección
+2) — sin pantalla inferior real, sin HDMA, sin widescreen, sin HUD de
+rendimiento. Solo lo justo para ver contenido real en pantalla.
 
-**`port/port_bios.c`**: reimplementación limpia (no copiada, algoritmos
-públicos documentados en GBATek) de `DivarmDiv/Mod`, `Sqrt`, `CpuSet`,
-`CpuFastSet`, `LZ77UncompVram/Wram`, `Multiboot` (stub), `SoundBias0/200`
-(stub), `MidiKey2Freq` (aproximación placeholder), y `Port_Bios_Halt()`
-(sustituye el `SYSCALL` real: espera al VBlank real vía `gspWaitForVBlank()`
-+ invoca `CallbackCallVblank()`, el cuerpo real de la ISR de VBlank del
-juego). `asm/syscalls.s` se excluye del build 3DS.
+- `Port_PPU_Init()`: ata `gIoMem`/`gVram`/`gBgPltt`/`gObjPltt`/`gOamMem`
+  (memoria GBA emulada de `port_gba_mem.h`) al renderer vía
+  `virtuappu_mode1_bind_gba_memory()`.
+- `Port_PPU_PresentFrame()`: llamado una vez por frame emulado desde
+  `port/port_bios.c`'s `Port_Bios_Halt()` (justo después de
+  `CallbackCallVblank()`). Lee `DISPCNT` de `gIoMem`, llama
+  `virtuappu_mode1_render_frame()`, sube el resultado a la pantalla
+  superior vía `PlatformGpu3DS_BeginTop()`/`PlatformGpu3DS_EndBottom()`.
+- Overlay de texto "F ###" en pantalla (esquina inferior izquierda,
+  reutilizando el HUD de FPS de `platform_gpu_3ds.c` con la etiqueta
+  cambiada) mostrando el contador de frames presentados — útil para saber
+  cuánto ha avanzado antes de parar la app a mano.
 
-**Verificado con tests unitarios reales** (`port/port_bios_selftest.c`):
-casos literal, back-reference solapada (LZSS) y de longitud mínima del
-LZ77 — los tres pasan.
+Bug encontrado y arreglado en este mismo bloque: `PlatformGpu3DS_EndBottom`
+se llamaba con `changed=false` siempre, así que el buffer negro de la
+pantalla inferior nunca se subía a la textura de la GPU de verdad — se veía
+la basura que hubiera en esa VRAM desde antes (parecía un patrón diagonal
+fijo). Arreglado pasando `changed=true` siempre (no hay contenido real en
+la pantalla inferior todavía, así que no importa el coste).
 
-## 4. Copyright — hallazgo importante, corregido
+## 5. Bugs reales encontrados y arreglados hoy (todos confirmados, no sospechas)
 
-Al revisar de cara a una futura publicación: `platform/3ds/assets/`
-contenía **arte real de Samus** (banner + icono, con tipografía oficial del
-logo "METROID") y, más sorprendente, un `icon.png`/`splash.png` que
-resultaron ser **arte de Link/Zelda** — resto de cuando el proyecto se
-inició copiando la estructura de `zelda-tmc-3ds`, ni siquiera del IP
-correcto.
+Cada uno se diagnosticó con evidencia directa (logs, ASan, volcados de
+crash de Luma3DS parseados a mano) — no por conjetura. Ver mensajes de
+commit para el detalle completo de cada uno.
 
-- **No hay ningún binario `.cia`/`.gba`/`.elf` commiteado en git** (el
-  `.gitignore` los excluye explícitamente) — el código en sí no redistribuye
-  la ROM ni assets extraídos, gracias a la arquitectura de la sección 2.
-- **Corregido**: `banner.png` e `icon-48.png` (los dos realmente usados)
-  sustituidos por arte genérico propio (tipografía simple, sin personajes).
-  `icon.png`, `icon-24.png`, `splash.png` y `romfs/splash.rgb565`
-  eliminados (no se usaban en el build actual, y tenían copyright).
-- `banner.wav` se dejó tal cual: parece generado sintéticamente
-  (metadata `libav`, 1 segundo), no extraído del juego.
+### 5.1 — Dereferencia cruda de `VRAM_BASE`
 
-## 5. El Makefile — dos intentos, mismo destino final
+`src/soft_reset.c`'s `LanguageSelectChangeHighlight` hacía aritmética de
+punteros sobre `VRAM_BASE` (macro con la dirección GBA cruda `0x06000000`)
+y la desreferenciaba directamente, saltándose la traducción de
+`WRITE_16`/`READ_16`. Segfault inmediato. Arreglado resolviendo con
+`gba_MemPtr()` en los dos puntos de uso. **Este patrón (tomar la dirección
+de una macro `_BASE` y desreferenciar directo) puede repetirse en otros
+sitios del motor que aún no se han ejercitado — si aparece un crash nuevo
+con pinta de "dirección inválida" en algo que use `VRAM_BASE`/`EWRAM_BASE`/
+`OAM_BASE`/etc., mirar aquí primero.**
 
-### Intento propio (esta sesión): plantilla clásica de devkitARM
+### 5.2 — Inicialización de punteros a ROM antes de cargar la ROM
 
-Escribí un Makefile siguiendo el patrón recursivo de dos pasadas estándar
-de devkitPro. **Bug encontrado y corregido en el propio mecanismo**: el
-`VPATH` duplicaba el prefijo `$(CURDIR)/` sobre rutas que ya eran
-absolutas, produciendo rutas rotas tipo `/a//b` — corregido.
+~60 funciones `Init_*` en 29 ficheros de `src/` estaban marcadas
+`__attribute__((constructor))`, que el runtime de C ejecuta **antes de
+`main()`** — antes de que `Port_LoadRom()` resuelva los punteros a datos de
+ROM que esas funciones copian. Capturaban NULL para siempre.
 
-Aun así, el build fallaba de forma extrañísima: solo 4 de 227 ficheros se
-compilaban, siempre los mismos, sin importar el orden de `SOURCES`, tamaño
-del build, ni paralelismo. Tras horas de aislar el problema con Makefiles
-mínimos de prueba (que SÍ funcionaban a la misma escala), until: usando
-`make --debug=v`, el log reveló la causa real:
+Arreglado centralizando en `port/port_constructor_init.c`: se quitó el
+atributo constructor de las 62 funciones, y se llaman todas (como símbolos
+`weak`, porque algunas solo existen en ciertas combinaciones de
+región/idioma) desde `Port_InitConstructorPointers()`, invocada una vez
+justo después de `PortGen_All_Init()` dentro de `Port_LoadRom()`.
 
-```
-Prerequisite '.../src/samus.c' is older than target 'samus.o'.
-No need to remake target 'samus.o'; using VPATH name '.../src/samus.o'.
-```
+### 5.3 — El cuelgue de arranque en 3DS real (parcialmente resuelto — workaround, no fix)
 
-**Causa real**: quedaban **654 ficheros `.o` residuales** en `src/` y
-`port/` de cuando compilé la ROM GBA al principio de la sesión (artefactos
-de build, en `.gitignore`, pero físicamente presentes en disco). `VPATH`
-los encontraba, los consideraba "ya actualizados", y no los recompilaba
-para ARM11 — pero el linker (que no entiende `VPATH`) no los encontraba en
-el directorio de build, porque físicamente estaban en `src/`. Solución:
-`find src port -name "*.o" -delete`.
+`gspWaitForEvent(0, true)` en `Port_Bios_Halt()` nunca se desbloqueaba en
+hardware real. Se descartaron dos hipótesis probándolas en la consola:
 
-### Segunda versión (en paralelo, "antigravity"): Makefile propio desde cero
+1. Colisión de prioridad entre el hilo de `REG_VCOUNT` (`port_gba_timing.c`,
+   prioridad 0x18) y el hilo interno de GSP de libctru (`gspEventThreadMain`,
+   confirmado a prioridad 0x1A desanclando `gspgpu.o` de `libctru.a`). Se
+   bajó la prioridad de nuestro hilo a 0x20 (por debajo del de GSP) — sin
+   cambio.
+2. Falta de `aptMainLoop()`. Se añadió — sin cambio en el cuelgue, pero
+   **se mantiene** porque sin ella la app no respondía nunca a HOME (solo
+   se podía salir apagando la consola). Ahora si `aptMainLoop()` devuelve
+   `false`, la app sale limpiamente (`gfxExit(); exit(0);`).
 
-En paralelo, otra sesión reescribió el Makefile completo con reglas
-explícitas (no la plantilla recursiva de devkitARM), evitando el problema
-de `VPATH` de raíz. Añadió también:
+**La causa real de por qué `gspWaitForEvent` no se desbloquea sigue sin
+saberse.** Workaround actual: `Port_Bios_Halt()` en 3DS usa
+`svcSleepThread(16666667LL)` (60Hz por temporizador) en vez de esperar al
+VBlank real. Esto es aceptable ahora porque el renderizado tampoco estaba
+sincronizado a VBlank real todavía, pero **hay que revisitar esto en cuanto
+la sincronía de vídeo/audio importe de verdad** (podría ser la causa de que
+todo vaya lento, ver sección 6 de la versión anterior de este documento — ya
+no aplica tal cual, pero la sospecha de fondo sigue siendo válida).
 
-- Target nativo Linux (`platform/linux/`) — útil para depurar sin
-  necesitar hardware real.
-- `platform/3ds/cia/mzm3ds.rsf` — configuración de `makerom` para generar
-  el `.cia` (sin nada con copyright dentro, solo permisos/metadata
-  estándar de homebrew).
-- Resolución de varios punteros de motor en runtime (`port_gba_symbols.c`,
-  ampliación de `gen_port_rom_offsets.py` para más categorías de datos:
-  sprites, tilesets, cutscenes).
-- Compila directamente 3 ficheros de `src/data/` (`shortcut_pointers.c`,
-  `music_track_data.c`, `audio.c`) — revisado: **no contienen bytes
-  extraídos de la ROM** (`extracted/`), solo punteros a RAM y metadatos de
-  estructura, así que no reintroducen el problema de copyright.
-- Modifica directamente varios ficheros de `src/*.c` (bajo
-  `#ifdef TMC_3DS`, sin afectar al build GBA matching) para añadir tablas
-  de punteros gráficos/paleta necesarias en 3DS que no existían ya como
-  tales en el decomp.
+### 5.4 — Bucle infinito de auto-reset por no leer el mando real
 
-**Este es el Makefile que se usa ahora mismo** (`platform/3ds/Makefile`,
-reescrito). Necesita `makerom`/`bannertool` instalados aparte (no vienen en
-devkitPro oficial) — instalados en `~/tools/bin/`.
+`src/update_input.c`'s `UpdateInput()` lee `REG_KEY_INPUT` (activo en bajo:
+bit=0 = pulsado). **Nada en el build de 3DS escribía nunca ese registro**
+(a diferencia de Linux, que sí lo hacía desde el principio vía
+`Platform_Linux_PollKeys()`). Con el registro parado en 0x0000, el juego
+veía "todos los botones pulsados" permanentemente, incluida la combinación
+de soft-reset (A+B+START+SELECT) — así que `SoftReset()` se
+re-disparaba cada frame desde el arranque (parecía que la máquina de
+estados del boot estaba atascada en `gSubGameMode1=7`, cuando en realidad
+se reiniciaba sin parar).
 
-## 6. Estado actual: compila e instala, pero se cuelga en el arranque real
+Arreglado con `Platform3DS_PollKeysIntoGba()` (nueva, en
+`platform_3ds_minimal.c`), llamada cada frame desde `Port_Bios_Halt()`. Los
+bits de `hidKeysHeld()` de libctru coinciden exactamente en posición con
+los de GBA (bits 0-9: A,B,SELECT,START,RIGHT,LEFT,UP,DOWN,R,L) — no hace
+falta tabla de remapeo, solo máscara + inversión.
 
-El CIA se genera correctamente y se instala en la New 3DS. Al abrirlo:
-llega a imprimir "Starting engine (no video/audio yet)..." (o sea,
-`main_3ds.c` corre entero: init de servicios, carga de ROM, detección de
-región) y luego **se queda completamente colgado — ni siquiera responde al
-botón Start**.
+### 5.5 — Doble resolución de direcciones cuando `gRomData` cae en el rango "GBA"
 
-### Diagnóstico en curso
+El bug más sutil de la sesión. En 3DS, `malloc()` puede devolver (y de
+hecho devuelve — confirmado en hardware, `gRomData=0x0800eb20`) direcciones
+que caen dentro del mismo rango `0x02000000-0x0A000000` que
+`port_resolve_addr()`/`port_resolve_write_addr()` (`port/port_gba_mem.c`)
+tratan como "dirección GBA cruda, hay que traducirla". Cualquier puntero
+YA resuelto hacia dentro de `gRomData` (p.ej. `sLanguageSelectGfx`, que es
+`*p_sLanguageSelectGfx = gRomData + offset`) colisiona numéricamente con esa
+heurística. Al pasarlo de nuevo por el resolutor, se traduce una SEGUNDA
+vez como si fuera una dirección GBA cruda, aterrizando en bytes
+completamente distintos de la ROM.
 
-1. **Primera hipótesis descartada por instrumentación, no por lógica**:
-   sospechaba de `src/audio_wrappers.c:205-206`:
-   ```c
-   while (READ_8(REG_VCOUNT) == (SCREEN_SIZE_Y - 1)) {}
-   while (READ_8(REG_VCOUNT) != (SCREEN_SIZE_Y - 1)) {}
+Esto causaba un crash real: `Lz77Uncomp` (`port_bios.c:139`) leía un
+`decompressedSize` basura de un puntero mal traducido y escribía muy más
+allá del buffer destino, hasta salirse de todo el BSS del programa y
+petar. Confirmado con un volcado de crash de Luma3DS **parseado a mano**
+contra la estructura real de `ExceptionDumpHeader`
+(`k11_extension/include/fatalExceptionHandlers.h` del repo de Luma3DS) — no
+hay que adivinar el formato la próxima vez, está en ese header, campos:
+`magic[2]`, `versionMinor/Major` (u16), `processor/core` (u16), `type`,
+`totalSize`, `registerDumpSize` (=92, 23 words: r0-r12, sp, lr, pc, cpsr +
+3 extra), `codeDumpSize` (=96), luego stack dump y 16 bytes de datos
+adicionales (nombre de proceso + title ID).
+
+No se reproduce en Linux/x86_64 (`malloc()` nunca da direcciones en ese
+rango ahí), así que el bucle de depuración local no lo habría pillado —
+hubo que verificar primero que la ROM de la SD era byte-idéntica a la local
+(lo era, mismo SHA-1) antes de sospechar de la resolución de direcciones en
+vez de un fichero corrupto.
+
+Arreglado en `port_gba_mem.c`: `port_resolve_addr()` y
+`port_resolve_write_addr()` comprueban primero si el valor cae dentro de
+`[gRomData, gRomData+gRomSize)` — si es así, es inequívocamente un puntero
+ya resuelto (ningún código construye una dirección GBA cruda a partir del
+valor de puntero host de `gRomData`), y se devuelve tal cual.
+
+**Confirmado en hardware**: la pantalla de selección de idioma (que usa
+exactamente estos datos) pasó de crashear siempre a renderizarse
+correctamente.
+
+## 6. Siguiente paso concreto: corrupción de `TrackVariables` en el motor de audio
+
+Bug nuevo, sin resolver, encontrado justo al final de la sesión.
+
+**Síntoma**: tras ver la pantalla de selección de idioma unos segundos, la
+app crashea dentro de `UpdateTrack()` (`src/audio.c:750`,
+`var_0 = *pVariables->pRawData;`) leyendo un puntero basura
+(`0xfefefeff`, confirmado con otro volcado de crash parseado igual que en
+5.5).
+
+**Ya descartado**: no es un problema de inicialización. Se añadió un
+checkpoint justo después de `InitializeAudio()` en `src/init_game.c` (ver
+commit `a09da7f6`) que confirma `gTrack0Variables[0].pRawData == 0x0`
+correctamente nada más inicializar. La corrupción a `0xfefefeff` pasa
+**después**, durante el procesamiento normal de la pantalla de selección de
+idioma (antes de que el usuario llegue a pulsar nada útil — las teclas de
+dirección no hacen nada visible ahí, lo cual es esperable).
+
+**Dato curioso sin explorar**: `gTrack0Variables` vive en una sección de
+enlazado personalizada `iwram_data` (macro `IWRAM_DATA` en
+`include/macros.h`, activa porque `MODERN` no está definido en ningún
+Makefile) en vez del `.bss` estándar — confirmado con `readelf -S` que la
+sección existe y es `PROGBITS`/`WA` (con contenido real, no NOBITS). Esto
+en sí no parece ser el bug (el checkpoint de arriba confirma que arranca en
+cero correctamente), pero es una pista de que **este proyecto no define
+`-DMODERN` en ningún Makefile** — si aparecen más rarezas de memoria en
+variables `IWRAM_DATA`/`EWRAM_DATA`, revisar si conviene definir `MODERN` y
+dejar que esas macros sean no-ops, moviendo esas variables al `.bss`
+estándar (más simple, probablemente más seguro en este port).
+
+**Siguiente paso recomendado**: la misma técnica de bisección con
+`Port_DebugLog()` que resolvió todos los bugs de la sección 5 — añadir
+checkpoints que impriman `gTrack0Variables[0].pRawData` en más puntos entre
+"justo después de `InitializeAudio()`" (ya confirmado en 0) y el momento
+del crash, para encontrar exactamente qué función lo pone a
+`0xfefefeff`. Buenos candidatos donde mirar primero (por orden de
+sospecha, sin confirmar ninguno todavía):
+
+1. Cualquier llamada a `InitTrack()`/`QueueSound()` que se dispare durante
+   la animación de selección de idioma (`LanguageSelectUpdateHighlightAnimation`,
+   llamada cada frame desde `case 3`/`case 4` de `SoftResetHandler` en
+   `src/soft_reset.c`) — si alguna reproduce un sonido con una cabecera
+   (`pHeader`) mal resuelta, encaja con el patrón de "dirección de ROM sin
+   traducir" ya visto dos veces hoy (secciones 5.1 y 5.5).
+2. Un desbordamiento de buffer genuino en otra estructura que viva
+   adyacente a `gTrack0Variables` en la sección `iwram_data` — comprobar con
+   `readelf -S`/`nm -n mzm-3ds.elf` qué símbolo está justo antes en memoria
+   y si algo podría estar escribiendo de más ahí.
+3. Revisar si `UpdateAudio()`/`InitializeAudio()` se llaman más de una vez
+   de forma inesperada (p.ej. re-inicializando parcialmente sin limpiar del
+   todo) — el propio `InitializeAudio()` tiene guardas de reentrancia
+   (`gMusicInfo.occupied`) que podrían estar enmascarando una llamada
+   solapada.
+
+## 7. Lo que sigue sin tocar (grande, pendiente, sin cambios respecto a antes)
+
+- **Audio real**: aparte del bug de la sección 6, el motor de audio propio
+  de `mzm` (`UpdateMusic()`/`TrackVariables`, no M4A/Sappy) no está
+  conectado a NDSP. `port_audio_stubs.c` son no-ops.
+- **Sincronía de vídeo real**: revisar `gspWaitForEvent` (sección 5.3) en
+  cuanto el pipeline de audio/vídeo necesite de verdad sincronía a 60Hz
+  real en vez del `svcSleepThread` actual.
+- **Multi-región**: solo hay offsets generados para la ROM EU
+  (`mzm_eu.map`). Faltan baseroms US/JP.
+- **`nes_metroid/`**: modo NES embebido, asm GBA a mano, sin plan de
+  traducción/ejecución todavía.
+- **Limpieza antes de publicar**: quitar toda la instrumentación de debug
+  (`Port_DebugLog` repartido por `agbmain.c`, `init_game.c`,
+  `port_bios.c`, `port_ppu_mzm.c`, `port_rom.c`) una vez el arranque esté
+  sólido — ahora mismo el logging por frame a fichero tiene un coste real
+  de rendimiento (el usuario notó que va lento; parte es esto, parte es el
+  renderer sin optimizar, parte es el `svcSleepThread` en vez de vsync
+  real).
+- **Rendimiento**: no hay perfilado hecho todavía sobre hardware real. Ir
+  quitando el logging de depuración y arreglando la sincronía real de
+  vídeo son los dos candidatos más obvios para mejorar el framerate visible
+  antes de perfilar nada más fino.
+
+## 8. Cómo desplegar y depurar en 3DS real (flujo que se usó toda la sesión)
+
+1. Compilar:
    ```
-   Un busy-wait sobre el registro hardware `VCOUNT` (línea de escaneo
-   actual), que en GBA real avanza solo, 228 líneas por frame. Sin una PPU
-   real actualizándolo, se queda fijo para siempre.
-
-2. **Implementado `port/port_gba_timing.c`**: un hilo de 3DS dedicado
-   (creado desde `platform_3ds_minimal.c`, que sí puede incluir `<3ds.h>`
-   con seguridad) que actualiza `REG_VCOUNT`/`REG_DISPSTAT` a ritmo real de
-   GBA (~73.35 µs por línea, 160 líneas visibles + 68 de vblank). **No es
-   la PPU real** (no dibuja píxeles), solo desbloquea los busy-waits de
-   hardware.
-
-3. **El cuelgue persistió igual**, así que se necesitaba visibilidad real
-   en vez de seguir adivinando. El usuario señaló acertadamente: si antes
-   había *crashes* con volcado (probablemente generado por Luma3DS ante una
-   excepción real de CPU), pero ahora es un *cuelgue* (bucle infinito sin
-   excepción), Luma no genera volcado — hace falta instrumentación propia.
-
-4. **Implementado `port/port_debug_log.c`/`.h`**: logger a fichero
-   (`sdmc:/3ds/mzm-debug.log`), con `fopen`/`fflush`/`fclose` en cada
-   línea para que sobreviva a un cuelgue. Añadidos puntos de control en
-   `main_3ds.c` y (temporalmente, bajo `#ifdef TMC_3DS`, en
-   `src/agbmain.c`) en el bucle principal del juego.
-
-5. **Primera captura de log** (antes de añadir más puntos de control):
+   cd platform/3ds
+   export DEVKITPRO=/opt/devkitpro DEVKITARM=/opt/devkitpro/devkitARM
+   export PATH=$DEVKITARM/bin:$HOME/tools/bin:$PATH
+   make
    ```
-   main: start
-   timing thread: started
-   main: Platform3DS_Init done
-   main: before Port_LoadRom
-   main: Port_LoadRom done
-   main: before agbmain()
-   agbmain: before InitializeGame()
-   agbmain: InitializeGame() done, entering main loop
-   agbmain: loop iteration start
-   timing thread: heartbeat (still running)   [x10, ~15s]
+   (`~/tools/bin` tiene `makerom`/`bannertool`, no vienen con devkitPro
+   oficial.)
+2. Subir el CIA por FTP (FBI corriendo en la consola, puerto 5000 — la IP
+   de la 3DS en la LAN del usuario cambia entre sesiones, se ha visto tanto
+   `192.168.1.133` como `.138`; probar ambas si una falla):
    ```
-   **Conclusiones de este log**:
-   - `InitializeGame()` termina bien.
-   - Entra en el bucle principal, arranca la **primera** iteración... y
-     nunca llega a la segunda (el checkpoint de "loop iteration start"
-     solo aparece una vez, no las 5 veces que el código permite).
-   - El hilo de VCOUNT **está vivo y funcionando** (los heartbeats siguen
-     llegando mientras el hilo principal está colgado) — descarta que el
-     busy-wait de VCOUNT sea la causa actual (el hilo de timing ya lo
-     desbloquearía).
-   - **Conclusión**: el cuelgue está en algún punto DENTRO de la primera
-     iteración del bucle, después de "loop iteration start" pero antes de
-     completarla.
-
-6. **Instrumentación adicional ya desplegada** (commit pendiente de subir
-   a git): puntos de control bisecando la primera iteración —
-   antes/después de `UpdateAudio()`, `UpdateInput()`, `SoftResetCheck()`,
-   el `switch(gMainGameMode)`, y el `Halt` final. CIA recompilado y subido
-   a `sdmc:/cias/mzm-zm.cia`. **Pendiente**: que el usuario lo abra, lo
-   deje colgado unos segundos, y se lea `sdmc:/3ds/mzm-debug.log` de nuevo
-   para ver exactamente cuál es la última línea antes del cuelgue.
-
-### Sospecha principal para la siguiente sesión
-
-`UpdateAudio()` es la sospechosa más probable: el motor de audio real de
-`mzm` (`UpdateMusic`/`TrackVariables`, distinto de M4A/Sappy — ver sección
-7) no está conectado a NDSP todavía, y es exactamente donde vive el
-busy-wait de VCOUNT que investigamos primero. Aunque el hilo de timing ya
-debería desbloquear ESE busy-wait concreto, es muy posible que haya *otro*
-punto de esa misma zona (acceso a hardware de sonido, DMA, u otro
-busy-wait no identificado aún) que sí bloquee.
-
-## 7. Motor de audio — hallazgo pendiente de abordar
-
-`mzm` **no usa M4A/Sappy** (el motor estándar de Nintendo, que sí usa
-`zelda-tmc-3ds`/TMC) — tiene su propio motor propio
-(`UpdateMusic()`/`TrackVariables`/`TrackData` en `src/audio.c`). Los
-ficheros `port_m4a_backend.cpp`/`port_m4a_stubs.c` copiados al principio de
-`zelda-tmc-3ds` **no son reutilizables tal cual** — quedan excluidos del
-build actual. El backend de audio real hay que escribirlo desde cero contra
-el motor propio de Metroid. No bloqueante para ver algo en pantalla, pero
-sí puede estar relacionado con el cuelgue actual si `UpdateAudio()`
-resulta ser el punto exacto.
-
-## 8. Lo que NO se ha tocado todavía (grande, pendiente)
-
-- **Renderizado real (PPU→GPU)**: `port_ppu_3ds.c` de `zelda-tmc-3ds` sigue
-  sin adaptar — está profundamente acoplado a subsistemas propios de TMC
-  (pantalla inferior, HDMA, `gMain`/`gRoomControls` de TMC). Ahora mismo
-  `platform_3ds_minimal.c` no dibuja nada, solo texto de consola.
-- **Audio real**: ver sección 7.
-- **Multi-región**: solo hay offsets EU generados (`mzm_eu.map`). Hacen
-  falta baseroms US/JP para generar `mzm_us.map`/`mzm_jp.map` y completar
-  la tabla.
-- **`nes_metroid/`** (el modo NES Metroid embebido): es ensamblador GBA real
-  a mano, nunca decompilado — fuera de alcance hasta tener un plan para
-  traducir/ejecutar asm GBA real en ARM11.
-
-## 9. Siguientes pasos concretos, en orden
-
-1. **Leer `sdmc:/3ds/mzm-debug.log` tras el último despliegue** (el CIA con
-   los puntos de control bisecando `UpdateAudio()`/`UpdateInput()`/
-   `SoftResetCheck()`/switch/Halt ya está en `sdmc:/cias/mzm-zm.cia`).
-   Identificar la función exacta donde se cuelga.
-2. Una vez identificada la función: mirar qué hace exactamente (otro
-   busy-wait de hardware no cubierto por `port_gba_timing.c`, una llamada
-   bloqueante a un servicio 3DS no inicializado, un acceso a memoria fuera
-   de rango que debería fallar pero en su lugar cuelga, etc.) y corregirla
-   puntualmente.
-3. **Quitar la instrumentación temporal** (`Port_DebugLog` en
-   `src/agbmain.c`, bajo `#ifdef TMC_3DS`) una vez confirmado que el
-   arranque pasa de ese punto — no debe quedarse permanentemente.
-4. Conseguir que el bucle principal corra de forma sostenida (aunque sea
-   sin vídeo/audio) — confirmar que no hay OTRO cuelgue más adelante.
-5. Empezar a conectar salida de vídeo real: diseñar la versión mínima de
-   `port_ppu_3ds.c` para mzm (bridging `port/ppu` software renderer →
-   citro2d/citro3d), sin todo el peso de pantalla inferior/HDMA de TMC.
-6. Diseñar el backend de audio real contra `UpdateMusic`/`TrackVariables`.
-7. Conseguir baseroms US/JP y generar los `.map` que faltan para
-   multi-región.
-8. Antes de cualquier publicación: revisar de nuevo TODOS los assets
-   nuevos que se vayan añadiendo (banner/iconos/splash si se reintroduce)
-   para que sigan sin arte con copyright.
-
-## 10. Dónde está todo
-
-- Fork: `tinaut1986/mzm`, rama `wip/3ds-port-no-audio-ppu` (push pendiente
-  de los últimos commits de instrumentación en el momento de escribir este
-  documento).
-- Máquina de build/pruebas: esta misma (`~/mzm`), con `agbcc`,
-  `binutils-arm-none-eabi`, devkitPro/devkitARM, `makerom`/`bannertool`
-  (`~/tools/bin/`) ya instalados.
-- New 3DS de pruebas: FTP en `192.168.1.138:5000` (FBI), CIA de prueba en
-  `sdmc:/cias/mzm-zm.cia`, log de diagnóstico en
-  `sdmc:/3ds/mzm-debug.log`.
+   curl --ftp-method nocwd -T mzm-3ds.cia ftp://<IP>:5000/cias/mzm-zm.cia
+   ```
+3. Limpiar el log antes de la siguiente prueba (opcional pero recomendado,
+   si no se acumula entre ejecuciones):
+   ```
+   curl "ftp://<IP>:5000/3ds/" -Q "DELE mzm-debug.log"
+   ```
+4. El usuario reinstala manualmente desde FBI (`sdmc:/cias/mzm-zm.cia`) y
+   abre la app — esto no se puede automatizar desde aquí.
+5. Leer el log de diagnóstico:
+   ```
+   curl "ftp://<IP>:5000/3ds/mzm-debug.log"
+   ```
+6. Si crashea con volcado de Luma3DS, están en
+   `sdmc:/luma/dumps/arm11/crash_dump_NNNNNNNN.dmp` (numeración
+   incremental, no se limpian solos — mirar el de número más alto tras cada
+   prueba). Parsear con la estructura de la sección 5.5 (o el script
+   Python ad-hoc usado en la sesión, no guardado como fichero pero
+   reproducible a partir de esa estructura). `arm-none-eabi-addr2line -e
+   mzm-3ds.elf -f -C <pc_o_lr>` resuelve la dirección a función/línea una
+   vez extraída del volcado.
+   `errdisp.txt` en `sdmc:/luma/errdisp.txt` da un resumen rápido (tipo de
+   error, dirección) sin necesidad de parsear el binario, pero **esa
+   "Address" es la dirección de fallo de datos (DFAR), no el PC** — para
+   saber qué código estaba ejecutando hace falta el volcado completo.
