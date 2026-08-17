@@ -21,7 +21,9 @@ struct Door {
     u8 destinationDoor;
     s8 xExit;
     s8 yExit;
+    u8 _pad[3];
 };
+
 
 struct EventBasedConnection {
     Area sourceArea;
