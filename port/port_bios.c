@@ -222,6 +222,7 @@ extern void Platform_Linux_VBlank(void);
 #ifdef TMC_3DS
 extern void Port_DebugLog(const char* msg);
 extern void Port_PPU_PresentFrame(void);
+extern void Platform3DS_PollKeysIntoGba(void);
 #endif
 
 void Port_Bios_Halt(void) {
@@ -234,6 +235,7 @@ void Port_Bios_Halt(void) {
         gfxExit();
         exit(0);
     }
+    Platform3DS_PollKeysIntoGba();
     /* Temporarily sleep-paced instead of gspWaitForEvent(0, true): the
      * latter never unblocks on real hardware here (confirmed via
      * sdmc:/3ds/mzm-debug.log bisection -- neither the GSP-event-thread

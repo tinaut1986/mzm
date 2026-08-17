@@ -104,6 +104,31 @@ uint16_t Platform3DS_ReadKeyInput(void) {
     return (uint16_t)hidKeysHeld();
 }
 
+/* Bridges real 3DS button state into the emulated GBA REG_KEY_INPUT, which
+ * update_input.c's UpdateInput() reads every frame (active-low: 0 bit =
+ * pressed). Nothing called this anywhere before -- REG_KEY_INPUT sat at its
+ * zero-initialized default forever, which UpdateInput() reads as EVERY key
+ * held down simultaneously (~0 & KEY_MASK). That includes the soft-reset
+ * combo (A+B+START+SELECT), so the game perpetually re-triggered SoftReset()
+ * every single frame from boot -- see soft_reset_input.c's SoftResetCheck().
+ * libctru's KEY_A..KEY_L (hid.h) happen to share the exact same bit
+ * positions 0-9 as GBA's KEY_A..KEY_L (gba/keys.h), so masking to the low 10
+ * bits needs no remapping table (unlike the Linux X11 keysym path in
+ * platform_linux.c, which does need one).
+ *
+ * gba_write16 forward-declared instead of #include "port_gba_mem.h": that
+ * header pulls in mzm's types.h, whose u32/s32/... typedefs conflict with
+ * <3ds.h>'s own (already included above) the moment both are visible in one
+ * translation unit -- same reason port_bios.c/port_gba_timing.c avoid it. */
+extern void gba_write16(uint32_t addr, uint16_t v);
+#define MZM_REG_KEY_INPUT 0x04000130u
+#define MZM_KEY_MASK 0x3FFu
+
+void Platform3DS_PollKeysIntoGba(void) {
+    const uint16_t held = Platform3DS_ReadKeyInput() & MZM_KEY_MASK;
+    gba_write16(MZM_REG_KEY_INPUT, (uint16_t)(~held & MZM_KEY_MASK));
+}
+
 uint16_t Platform3DS_ReadKeyDownInput(void) {
     return (uint16_t)hidKeysDown();
 }
