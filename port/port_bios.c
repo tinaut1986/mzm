@@ -202,8 +202,6 @@ extern void gspWaitForEvent(int event, bool nextEvent);
  * differentiate GBA's Halt from Stop. */
 #if defined(PLATFORM_LINUX)
 extern void Platform_Linux_VBlank(void);
-#elif defined(TMC_3DS)
-#include <3ds.h>
 #endif
 
 void Port_Bios_Halt(void) {

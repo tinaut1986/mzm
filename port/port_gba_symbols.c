@@ -43,9 +43,8 @@ void* const sDma1ControlPointer = (void*)0x040000BA;
 const u32 sDma1ControlValue = 0x84000004;
 const void* sIntrTable[13] = {0};
 
+#if defined(PLATFORM_LINUX)
 void IntrMain(void) {}
-
-#if !defined(TMC_3DS) || defined(PLATFORM_LINUX)
 bool Platform3DS_IsActiveStackAddress(uintptr_t addr) {
     (void)addr;
     return false;

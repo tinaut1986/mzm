@@ -50,7 +50,8 @@ SRCS_ROOT := \
 SRCS_ASM := \
 	$(ROOT)/asm/audio_internal.s \
 	$(ROOT)/asm/soundcode.s \
-	$(ROOT)/asm/intr_main.s
+	$(ROOT)/asm/intr_main.s \
+	$(ROOT)/asm/linker_symbols.s
 
 SRCS_3DS := \
 	$(CURDIR)/source/main_3ds.c \
