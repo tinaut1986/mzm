@@ -56,6 +56,13 @@ lbl_08004ba2:
     orrs r2, r3
     ldr r0, [r5, #4]
     str r2, [r4, o_TrackData_flags]
+    @ [PORT] r0 is a raw GBA ROM address (voice/instrument table) baked
+    @ into the sound header data -- same translation issue as pRawData
+    @ below, dereferenced directly later via pTrack->pVoice[...] in
+    @ AudioCommand_Voice (src/audio.c). See port_resolve_addr().
+    push {r3}
+    bl port_resolve_addr
+    pop {r3}
     str r0, [r4, o_TrackData_pVoice]
     str r5, [r4, o_TrackData_pHeader]
     lsls r3, r3, #7
@@ -94,6 +101,17 @@ lbl_08004bec:
     adds r5, #4
 lbl_08004bf4:
     ldr r3, [r5]
+    @ [PORT] r3 is a raw GBA ROM address baked into the sound header data
+    @ (not the pHeader pointer itself, which is already host-resolved) --
+    @ must go through the port's address translation before being stored
+    @ as a real host pointer that UpdateTrack() will dereference directly
+    @ via *pVariables->pRawData. See port_resolve_addr() in port_gba_mem.c
+    @ and docs/3ds-port-status-2026-08-17.md section 6 for the bug this fixes.
+    push {r0, r1, r2}
+    movs r0, r3
+    bl port_resolve_addr
+    movs r3, r0
+    pop {r0, r1, r2}
     strb r0, [r7, o_TrackVariables_unk_0]
     strh r2, [r7, o_TrackVariables_bendRange]
     str r1, [r7, o_TrackVariables_volume]
@@ -743,6 +761,14 @@ lbl_08005050:
     lsls r3, r3, #0x18
     orrs r2, r3
 lbl_0800506a:
+    @ [PORT] r2 is a raw GBA ROM address (loop/goto target) just read out
+    @ of the track's raw data stream -- needs translation before it's
+    @ stored back into pRawData, same issue as InitTrack above.
+    push {r0}
+    movs r0, r2
+    bl port_resolve_addr
+    movs r2, r0
+    pop {r0}
     str r2, [r0, o_TrackVariables_pRawData]
     bx lr
     .align 2, 0
@@ -785,6 +811,14 @@ lbl_08005094:
     orrs r2, r3
     adds r1, #1
 lbl_080050b0:
+    @ [PORT] r2 is a raw GBA ROM address (pattern jump target) just read
+    @ out of the track's raw data stream -- needs translation before it's
+    @ stored back into pRawData, same issue as InitTrack/AudioCommand_Goto.
+    push {r0, r1}
+    movs r0, r2
+    bl port_resolve_addr
+    movs r2, r0
+    pop {r0, r1}
     str r2, [r0, o_TrackVariables_pRawData]
     adds r0, o_TrackVariables_patternStartPointers
     ldr r2, [r0]
