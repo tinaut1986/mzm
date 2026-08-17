@@ -306,7 +306,11 @@ void SpriteDebrisDraw(struct SpriteDebris* pDebris)
 
     prevSlot = gNextOamSlot;
     src = pDebris->pOam[pDebris->currentAnimationFrame].pFrame;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+    src = GBA_RESOLVE(src);
+#endif
     partCount = *src++;
+
 
     if (partCount + prevSlot < OAM_BUFFER_DATA_SIZE)
     {

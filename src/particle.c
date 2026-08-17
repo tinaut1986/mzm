@@ -157,8 +157,11 @@ void ParticleDraw(struct ParticleEffect* pParticle)
     
     prevSlot = gNextOamSlot;
     src = gCurrentParticleEffectOamFramePointer;
-
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+    src = GBA_RESOLVE(src);
+#endif
     partCount = *src++;
+
     
     newSlot = partCount + prevSlot;
 

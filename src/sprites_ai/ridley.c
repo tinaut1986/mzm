@@ -2186,7 +2186,12 @@ static void RidleyPartWingSetPaletteOffset(void)
     u16 part;
     u16 flag;
 
-    part = gCurrentSprite.pOam[gCurrentSprite.currentAnimationFrame].pFrame[3];
+    const u16* pFrame = gCurrentSprite.pOam[gCurrentSprite.currentAnimationFrame].pFrame;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+    pFrame = GBA_RESOLVE(pFrame);
+#endif
+    part = pFrame[3];
+
     // Mask for the palette number in the oam
     flag = 0xF << 12;
     

@@ -2720,7 +2720,7 @@ void StatusScreenUpdateRow(AbilityGroup group, u8 row, u8 isActivated, u8 drawUp
 
     if (drawUpdate)
     {
-        pTilemap = (u16*)(VRAM_BASE + 0xC002) + position;
+        pTilemap = (u16*)GBA_RESOLVE(VRAM_BASE + 0xC002) + position;
 
         for (i = 1; i < size; i++, pTilemap++)
         {
@@ -2760,7 +2760,7 @@ void StatusScreenEnableUnknownItem(AbilityGroup group, u8 row)
     i = (sStatusScreenGroupsPositions[group].top + row) * HALF_BLOCK_SIZE + sStatusScreenGroupsPositions[group].left;
     size = sStatusScreenGroupsPositions[group].right - sStatusScreenGroupsPositions[group].left;
     
-    dst = (u16*)(VRAM_BASE + 0xC002) + i;
+    dst = (u16*)GBA_RESOLVE(VRAM_BASE + 0xC002) + i;
 
     position++;
 
@@ -2768,6 +2768,7 @@ void StatusScreenEnableUnknownItem(AbilityGroup group, u8 row)
     {
         *dst = PAUSE_SCREEN_EWRAM.statusScreenTilemap[position];
     }
+
 }
 
 /**

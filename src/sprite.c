@@ -2027,7 +2027,11 @@ void SpriteDraw(struct SpriteData* pSprite, s32 slot)
 
     prevSlot = gNextOamSlot;
     src = pSprite->pOam[pSprite->currentAnimationFrame].pFrame;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+    src = GBA_RESOLVE(src);
+#endif
     partCount = *src++;
+
 
     if (partCount + prevSlot >= OAM_BUFFER_DATA_SIZE)
         return;
