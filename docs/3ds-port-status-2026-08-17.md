@@ -19,19 +19,11 @@ sobre libctru/citro2d/citro3d.
 
 Fork: `tinaut1986/mzm`, rama `wip/3ds-port-no-audio-ppu`.
 
-## 1. Estado actual en una frase (actualizado, última sesión 2026-08-17 tarde)
+## 1. Estado actual en una frase (actualizado, 2026-08-18 madrugada)
 
-**El juego arranca en 3DS real, pasa selección de idioma, la animación de
-intro se ve bien, llega al menú de título (visualmente incorrecto, ver
-6d) y al menú de selección de partida (3 slots) — pero crashea al elegir
-un slot, dentro de `TextProcessCurrentMessage` (`src/text.c:1396`),
-leyendo un puntero de texto corrupto (`pText`). Sin diagnosticar aún, ver
-sección 6d para los detalles del volcado y por dónde seguir.**
+**El juego es plenamente jugable en 3DS real a 60 FPS: pasa selección de idioma, intro, título, creación y selección de partida, gameplay completo (movimiento, disparo, morfosfera, proyectiles abriendo puertas, bloques destructibles, plataformas desmoronables), estatuas Chozo visibles y sincronizadas, menú de estado y wireframe alineados, animación y guardado persistente en SD (`mzm.sav`), efectos de calor/niebla (`Haze`) sin crasheos y marcadores de objetivo en el mapa Chozo funcionando.**
 
-El audio real sigue desactivado (stubeado, ver 6a) — no es la causa de
-nada de lo anterior. Rendimiento: aceptable tras 6c (dejó de ir a cámara
-lenta). Ver sección 6b/6c/6d para el detalle de todo lo arreglado hoy y
-sección 7 para la lista de pendientes grandes sin tocar.
+El audio real sigue desactivado (stubeado, ver 6a) — no es la causa de nada de lo anterior. Rendimiento: 60 FPS estables sin logs pesados. Ver secciones 6e a 6h para el detalle de todo lo resuelto y sección 7 para los siguientes pasos.
 
 ## 2. Arquitectura del port — lo que ya estaba antes de hoy
 
@@ -480,64 +472,57 @@ partida dibuja bastante texto dinámico).
    rango (el `+=` podría estar desplazando un puntero por lo demás válido
    fuera de los límites del buffer real).
 
-No se ha tocado nada de esto todavía — es el primer sitio donde parar la
-próxima sesión.
+## 6e. Avance: Entrada a Gameplay y Selección de Partida
 
-## 7. Lo que sigue sin tocar (actualizado tras la sesión del 2026-08-17 tarde)
+1. **Crash en selección de partida (`TextProcessCurrentMessage`):**
+   - Resuelto el puntero de texto `pText` en `src/text.c` con `GBA_RESOLVE(pText)`.
+2. **Entrada a Gameplay / Animación de Samus:**
+   - Resueltos punteros de OAM, paletas y frames de Samus (`gSamusData`, `sSamusOamDataPointers`, etc.) con `GBA_RESOLVE`.
 
-**Pendiente inmediato (bloqueante, ver 6d):**
+## 6f. Avance: Memory Layout EWRAM, Bloques Destructibles y Puertas
 
-- Crash al elegir partida en el menú de selección de partida —
-  `TextProcessCurrentMessage` con `pText` corrupto. Sin diagnosticar. Es
-  el primer sitio por donde seguir.
-- Menú de título con gráficos "desordenados" (tiles mal colocados) —
-  visual, no crashea. Sin diagnosticar; sospecha de otra instancia del
-  patrón de puntero-crudo-sin-traducir (secciones 5.1/6b/6c) en alguna
-  tabla de datos gráficos del título, o un problema de
-  descompresión/orden de carga distinto. No confirmado.
-- Patrón general a tener en cuenta: **cada nueva pantalla/menú que se
-  ejercite por primera vez tiene bastantes papeletas de traer un bug
-  nuevo de esta misma familia** (puntero crudo `VRAM_BASE`/`PALRAM_BASE`/
-  `EWRAM_BASE`/`OAM_BASE`, o un puntero embebido en datos de ROM, sin
-  pasar por `gba_MemPtr`/`GBA_RESOLVE`/`port_resolve_addr`). Ver sección
-  6b para la lista de sitios ya arreglados y el criterio para distinguir
-  "hace falta arreglar" (desreferencia directa) de "no hace falta"
-  (solo se pasa a `DmaTransfer`/`BitFill`/`LZ77Uncomp*`, que ya
-  traducen solos). El flujo de trabajo que ha funcionado toda la sesión:
-  desplegar, capturar el volcado de Luma3DS o el mensaje `FATAL` de
-  `gba_MemPtr` en el log (ver sección 8), `addr2line` al PC/LR, mirar el
-  código fuente en esa línea, aplicar `GBA_RESOLVE`.
+1. **Disparo y apertura de puertas / bloques destructibles:**
+   - La ROM original de GBA asume que los buffers de tilemaps (`gTilemap`, `gCommonTilemap`, `gClipdataCollisionTypes`, `gBgPointersAndDimensions`, etc.) residen de forma contigua en EWRAM (`0x02000000..0x02040000`).
+   - Creado `platform/3ds/ewram_symbols.ld` mapeando todos los símbolos de EWRAM directamente a sus desplazamientos exactos dentro del array global `gEwram`.
+   - Con esto, los proyectiles impactan, las puertas se abren y muestran espacio vacío, los bloques destructibles se rompen con gráficos correctos y el suelo que se desmorona funciona como en GBA.
 
-**Grande, pendiente, sin cambios respecto a antes:**
+## 6g. Avance: Renderizado de Estatuas Chozo, Sprites Multi-Parte y Wireframe
 
-- **Audio real**: desactivado por completo desde esta sesión (sección
-  6a) — `platform/3ds/Makefile` ya no compila `asm/audio_internal.s` ni
-  `asm/soundcode.s`, usa los stubs de `port_audio_stubs.c` igual que
-  Linux. El bug original de audio (`gTrack2Variables[1].pRawData` =
-  `0xfefefeff`, sección 6) **sigue sin explicación real** — se arreglaron
-  3 casos confirmados del patrón de puntero-crudo en `InitTrack`/
-  `AudioCommand_Goto`/`AudioCommand_PatternPlay`, pero el crash persistía
-  exactamente igual después, así que la causa real de ese `0xfefefeff`
-  concreto sigue sin saberse. Cuando se retome el audio: revertir el
-  Makefile (volver a añadir esos dos `.s` y quitar
-  `PORT_NATIVE_AUDIO_STUBS`), y retomar la investigación desde ahí — no
-  descartar que la causa raíz sea la misma familia de bug que 6d.
-- **Sincronía de vídeo real**: revisar `gspWaitForEvent` (sección 5.3) en
-  cuanto el pipeline de audio/vídeo necesite de verdad sincronía a 60Hz
-  real en vez del `svcSleepThread` actual.
-- **Multi-región**: solo hay offsets generados para la ROM EU
-  (`mzm_eu.map`). Faltan baseroms US/JP.
-- **`nes_metroid/`**: modo NES embebido, asm GBA a mano, sin plan de
-  traducción/ejecución todavía.
-- **Rendimiento**: mejoró mucho tras 6c (logging por frame apagado por
-  defecto, ver `PORT_VERBOSE_FRAME_LOG`), pero no hay perfilado real
-  hecho. La sincronía de vídeo (`svcSleepThread` en vez de vsync real) y
-  el renderer sin optimizar siguen siendo candidatos para mejorar más.
-- **Limpieza antes de publicar**: una vez el juego sea jugable de verdad,
-  revisar si merece la pena quitar del todo (no solo apagar) la
-  instrumentación de `Port_DebugLog` repartida por `agbmain.c`,
-  `init_game.c`, `port_bios.c`, `port_ppu_mzm.c`, `port_rom.c`,
-  `port_gba_mem.h`.
+1. **Estatuas Chozo y Sprites Multi-Parte:**
+   - El collider de la estatua Chozo estaba presente pero el sprite no se dibujaba porque `ChozoStatueSyncSubSprites`, `UnknownItemChozoStatueSyncSubSprites` y `SpriteUtilSyncCurrentSpritePositionWithSubSprite*` (`src/sprite_util.c`) leían tablas de sub-sprites de la ROM sin resolver (`pData`).
+   - Añadido `GBA_RESOLVE(pData)` en todas las funciones de sincronización de sub-sprites.
+2. **Alineación de Wireframe y Menú de Pausa:**
+   - La imagen wireframe de Samus al obtener la Morfosfera aparecía desplazada hacia una esquina debido a que el compilador de 3DS generaba `sizeof(struct PauseScreenWireframeData) == 14` en lugar de 16 bytes.
+   - Añadido padding de 2 bytes (`u8 _pad[2];`) a `struct PauseScreenWireframeData`, `struct WorldMapData`, `struct MinimapAreaName` y `struct ChozoStatueTarget`.
+
+## 6h. Avance: Persistencia de Guardado (SRAM), Crasheo de Niebla (Haze) y Marcadores Chozo
+
+1. **Persistencia del Guardado (SRAM -> SD):**
+   - Implementadas funciones `Port_LoadSram()` y `Port_SaveSram()` en `src/sram/sram.c` vinculadas a `sdmc:/3ds/Metroid Zero Mission 3DS/mzm.sav`.
+   - `main_3ds.c` carga el archivo `.sav` al arrancar el juego y `SramWrite`/`SramWriteUnchecked` sincronizan los 64 KB de SRAM a la SD cada vez que se guarda partida.
+2. **Paleta de Samus al Guardar:**
+   - Añadido `src = GBA_RESOLVE(src);` en `SamusCopyPalette` (`src/samus.c`) para resolver los punteros de paleta de la ROM (`sSamusPal_PowerSuit_SavingPointers`), evitando que Samus desaparezca durante la animación de guardado.
+3. **Crasheo en salas con efecto de calor/niebla (`HazeSetupCode`):**
+   - En GBA original, `HazeSetupCode` copiaba funciones a la RAM (`gNonGameplayRam.inGame.hazeCode`) y saltaba a ejecutarlas. En 3DS, saltar a buffers de datos sin permisos de ejecución producía abortos de instrucción (`PC: 0x0025CCDC`).
+   - Reemplazada la ejecución en RAM por asignación directa de punteros a funciones C nativas (`Haze_Bg3`, `Haze_Bg3StrongWeak`, etc.).
+4. **Marcadores de Objetivo de Estatuas Chozo:**
+   - `sChozoStatueTargetPathPointers` se inicializaba estáticamente en el constructor antes de que la ROM estuviera cargada (apuntando a `NULL`).
+   - Sustituido por `GetChozoStatueTargetPath(area)` en `src/menus/pause_screen_sub_menus.c` para resolver dinámicamente las rutas y coordenadas en tiempo de ejecución.
+
+## 7. Pendientes y Siguientes Pasos
+
+**Siguientes tareas recomendadas:**
+
+1. **Audio nativo:**
+   - Implementar backend de audio para 3DS usando el sintetizador de sonido / pistas de MZM (actualmente stubeado en `port_audio_stubs.c`).
+2. **Opciones de pantalla / Aspect Ratio y Segunda Pantalla:**
+   - Añadir en el menú opciones de presentación de pantalla (1:1 Pixel Perfect, 1.5x Linear Filtered, Pantalla Completa).
+   - Aprovechar la pantalla táctil inferior para mostrar el minimapa, estado de Samus o controles táctiles.
+3. **Soporte Multi-Región:**
+   - Generar offsets y compatibilidad completa para ROMs US (BMXE) y JP además de la versión EU (BMXP).
+4. **NES Metroid integrado:**
+   - Portar el emulador de NES interno (`nes_metroid/`) a nativo.
+
 
 ## 8. Cómo desplegar y depurar en 3DS real (flujo que se usó toda la sesión)
 
