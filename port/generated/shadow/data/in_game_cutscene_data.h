@@ -12,6 +12,8 @@
 #include "structs/in_game_cutscene.h"
 #include "constants/in_game_cutscene.h"
 
+#define IN_GAME_CUTSCENE_DATA_H
+
 extern const struct InGameCutsceneData(*p_sInGameCutsceneData)[IGC_COUNT];
 #define sInGameCutsceneData (*p_sInGameCutsceneData)
 

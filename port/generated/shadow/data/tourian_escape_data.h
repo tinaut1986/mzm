@@ -13,6 +13,11 @@
 #include "macros.h"
 #include "structs/tourian_escape.h"
 
+#define TOURIAN_ESCAPE_DATA_H
+// Defined in mother_brain_close_up_data.c
+// ...
+// ...
+
 extern const u16(*p_sTourianEscapeOam_375d10_Frame0)[OAM_DATA_SIZE(12)];
 #define sTourianEscapeOam_375d10_Frame0 (*p_sTourianEscapeOam_375d10_Frame0)
 extern const u16(*p_sTourianEscapeExplodingPal)[9*16];

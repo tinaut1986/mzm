@@ -15,6 +15,7 @@ extern u16 gBgPltt[256];       // 0x200 bytes
 extern u16 gObjPltt[256];      // 0x200 bytes
 extern u16 gOamMem[0x400 / 2]; // 0x400 bytes (OAM)
 extern u8 gVram[0x18000];      // 96 KB VRAM GBA (0x06000000-0x06017FFF)
+extern u8 gSramMem[0x10000];    // 64 KB SRAM (0x0E000000-0x0E00FFFF)
 
 // ROM data (loaded from baserom.gba)
 extern u8* gRomData;
@@ -49,6 +50,8 @@ static inline void* gba_TryMemPtr(uint32_t addr) {
         return &gVram[addr - 0x06000000u];
     if (addr >= 0x07000000u && addr < 0x07000400u)
         return &gOamMem[(addr - 0x07000000u) >> 1];
+    if (addr >= 0x0E000000u && addr < 0x0E010000u)
+        return &gSramMem[addr - 0x0E000000u];
     if (gRomData && addr >= 0x08000000u && addr < 0x08000000u + gRomSize) {
 #ifndef TMC_3DS
         Port_LogRomAccess(addr, "gba_TryMemPtr");
@@ -116,9 +119,7 @@ const void* port_resolve_copy_src(const void* src, u32 size);
 static inline void gba_MemClear(u32 addr, u32 size) {
     void* ptr = gba_MemPtr(addr);
     if (ptr != NULL) {
-        for (u32 i = 0; i < size; i++) {
-            ((u8*)ptr)[i] = 0;
-        }
+        memset(ptr, 0, size);
     }
 }
 
@@ -126,17 +127,13 @@ static inline void gba_MemCopy(u32 srcAddr, u32 destAddr, u32 size) {
     void* src = gba_MemPtr(srcAddr);
     void* dest = gba_MemPtr(destAddr);
     if (src != NULL && dest != NULL) {
-        for (u32 i = 0; i < size; i++) {
-            ((u8*)dest)[i] = ((u8*)src)[i];
-        }
+        memcpy(dest, src, size);
     }
 }
 
 static inline void port_MemCopyToGBA(const void* src, u32 destAddr, u32 size) {
     void* dest = gba_TryMemPtr(destAddr);
     if (src != NULL && dest != NULL) {
-        for (u32 i = 0; i < size; i++) {
-            ((u8*)dest)[i] = ((const u8*)src)[i];
-        }
+        memcpy(dest, src, size);
     }
 }

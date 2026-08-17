@@ -14,6 +14,27 @@
 #include "structs/minimap.h"
 #include "structs/save_file.h"
 
+#ifdef TMC_3DS
+const struct SaveDemo* sDemoRamDataPointers[MAX_AMOUNT_OF_DEMOS];
+static void __attribute__((constructor)) Init_sDemoRamDataPointers(void) {
+    sDemoRamDataPointers[0] = &sDemo0_Ram;
+    sDemoRamDataPointers[1] = &sDemo1_Ram;
+    sDemoRamDataPointers[2] = &sDemo2_Ram;
+    sDemoRamDataPointers[3] = &sDemo3_Ram;
+    sDemoRamDataPointers[4] = &sDemo4_Ram;
+    sDemoRamDataPointers[5] = &sDemo5_Ram;
+    sDemoRamDataPointers[6] = &sDemo6_Ram;
+    sDemoRamDataPointers[7] = &sDemo7_Ram;
+    sDemoRamDataPointers[8] = &sDemo8_Ram;
+    sDemoRamDataPointers[9] = &sDemo9_Ram;
+    sDemoRamDataPointers[10] = &sDemo10_Ram;
+    sDemoRamDataPointers[11] = &sDemo11_Ram;
+    sDemoRamDataPointers[12] = &sDemo12_Ram;
+    sDemoRamDataPointers[13] = &sDemo13_Ram;
+    sDemoRamDataPointers[14] = &sDemo14_Ram;
+    sDemoRamDataPointers[15] = &sDemo15_Ram;
+}
+#else
 const struct SaveDemo* sDemoRamDataPointers[MAX_AMOUNT_OF_DEMOS] = {
     [0] = &sDemo0_Ram,
     [1] = &sDemo1_Ram,
@@ -32,6 +53,7 @@ const struct SaveDemo* sDemoRamDataPointers[MAX_AMOUNT_OF_DEMOS] = {
     [14] = &sDemo14_Ram,
     [15] = &sDemo15_Ram
 };
+#endif
 
 /**
  * @brief 60b14 | c | Demo v-blank, empty

@@ -54,6 +54,36 @@ static struct TitleScreenAnimatedPalette sTitleScreenAnimatedPaletteTemplates[4]
     }
 };
 
+#ifdef TMC_3DS
+#ifdef REGION_EU
+static const u8* sRomInfoStringPointers[1];
+static const u32* sTitleScreenMenuGfxPointers[(LANGUAGE_COUNT - LANGUAGE_ENGLISH) * 2];
+#else
+static const u8* sRomInfoStringPointers[4];
+#endif
+
+static void __attribute__((constructor)) Init_sTitleScreenPointers(void) {
+#ifdef REGION_EU
+    sRomInfoStringPointers[0] = sTitleScreenRomInfoTime;
+
+    sTitleScreenMenuGfxPointers[0] = sTitleScreenEnglishMenuGfx_Top;
+    sTitleScreenMenuGfxPointers[1] = sTitleScreenEnglishMenuGfx_Bottom;
+    sTitleScreenMenuGfxPointers[2] = sTitleScreenGermanMenuGfx_Top;
+    sTitleScreenMenuGfxPointers[3] = sTitleScreenGermanMenuGfx_Bottom;
+    sTitleScreenMenuGfxPointers[4] = sTitleScreenFrenchMenuGfx_Top;
+    sTitleScreenMenuGfxPointers[5] = sTitleScreenFrenchMenuGfx_Bottom;
+    sTitleScreenMenuGfxPointers[6] = sTitleScreenItalianMenuGfx_Top;
+    sTitleScreenMenuGfxPointers[7] = sTitleScreenItalianMenuGfx_Bottom;
+    sTitleScreenMenuGfxPointers[8] = sTitleScreenSpanishMenuGfx_Top;
+    sTitleScreenMenuGfxPointers[9] = sTitleScreenSpanishMenuGfx_Bottom;
+#else
+    sRomInfoStringPointers[0] = sTitleScreenRomInfoTime;
+    sRomInfoStringPointers[1] = sTitleScreenRomInfoRegionJPN;
+    sRomInfoStringPointers[2] = sTitleScreenRomInfoRegionEUR;
+    sRomInfoStringPointers[3] = sTitleScreenRomInfoRegionUSA;
+#endif
+}
+#else
 #ifdef REGION_EU
 static const u8* sRomInfoStringPointers[1] = {
     sTitleScreenRomInfoTime
@@ -81,6 +111,7 @@ static const u32* sTitleScreenMenuGfxPointers[(LANGUAGE_COUNT - LANGUAGE_ENGLISH
     sTitleScreenSpanishMenuGfx_Bottom
 };
 #endif // REGION_EU
+#endif
 
 static u8 sTitleScreenCometsFlags[2][2] = {
     [0] = {

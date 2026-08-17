@@ -13,6 +13,8 @@
 #include "macros.h"
 #include "constants/game_state.h"
 
+#define CHOZODIA_ESCAPE_DATA_H
+
 extern const u16(*p_sChozodiaEscapeShipHeatingUpPal)[8*16];
 #define sChozodiaEscapeShipHeatingUpPal (*p_sChozodiaEscapeShipHeatingUpPal)
 extern const u16(*p_sChozodiaEscapeGroundHeatingUpPal)[8*16];

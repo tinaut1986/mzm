@@ -260,6 +260,25 @@ static void GameOverUpdateTextGfx(void)
         *dst = (*dst & 0xFFF) | palette << 12;
 }
 
+#ifdef TMC_3DS
+static const u32* sGameOverTextPromptGfxPointers[LANGUAGE_COUNT];
+static void __attribute__((constructor)) Init_sGameOverTextPromptGfxPointers(void) {
+    sGameOverTextPromptGfxPointers[LANGUAGE_JAPANESE] = sGameOverTextPromptEnglishGfx;
+    sGameOverTextPromptGfxPointers[LANGUAGE_HIRAGANA] = sGameOverTextPromptHiraganaGfx;
+    sGameOverTextPromptGfxPointers[LANGUAGE_ENGLISH] = sGameOverTextPromptEnglishGfx;
+#if defined(REGION_EU) || defined(REGION_US_BETA)
+    sGameOverTextPromptGfxPointers[LANGUAGE_GERMAN] = sGameOverTextPromptGermanGfx;
+    sGameOverTextPromptGfxPointers[LANGUAGE_FRENCH] = sGameOverTextPromptFrenchGfx;
+    sGameOverTextPromptGfxPointers[LANGUAGE_ITALIAN] = sGameOverTextPromptItalianGfx;
+    sGameOverTextPromptGfxPointers[LANGUAGE_SPANISH] = sGameOverTextPromptSpanishGfx;
+#else
+    sGameOverTextPromptGfxPointers[LANGUAGE_GERMAN] = sGameOverTextPromptEnglishGfx;
+    sGameOverTextPromptGfxPointers[LANGUAGE_FRENCH] = sGameOverTextPromptEnglishGfx;
+    sGameOverTextPromptGfxPointers[LANGUAGE_ITALIAN] = sGameOverTextPromptEnglishGfx;
+    sGameOverTextPromptGfxPointers[LANGUAGE_SPANISH] = sGameOverTextPromptEnglishGfx;
+#endif
+}
+#else
 static const u32* sGameOverTextPromptGfxPointers[LANGUAGE_COUNT] = {
     [LANGUAGE_JAPANESE] = sGameOverTextPromptEnglishGfx,
     [LANGUAGE_HIRAGANA] = sGameOverTextPromptHiraganaGfx,
@@ -276,6 +295,7 @@ static const u32* sGameOverTextPromptGfxPointers[LANGUAGE_COUNT] = {
     [LANGUAGE_SPANISH] = sGameOverTextPromptEnglishGfx
 #endif // REGION_EU || REGION_US_BETA
 };
+#endif
 
 /**
  * @brief 77ba8 | 230 | Initializes the game over menu

@@ -15,6 +15,25 @@
 
 extern u16** sStoryTextPointers[LANGUAGE_COUNT];
 
+#ifdef TMC_3DS
+static const u16** sDescriptionTextPointers[LANGUAGE_COUNT];
+static void __attribute__((constructor)) Init_sDescriptionTextPointers(void) {
+    sDescriptionTextPointers[LANGUAGE_JAPANESE] = sJapaneseTextPointers_Description;
+    sDescriptionTextPointers[LANGUAGE_HIRAGANA] = sHiraganaTextPointers_Description;
+    sDescriptionTextPointers[LANGUAGE_ENGLISH] = sEnglishTextPointers_Description;
+#if defined(REGION_EU) || defined(REGION_US_BETA)
+    sDescriptionTextPointers[LANGUAGE_GERMAN] = sGermanTextPointers_Description;
+    sDescriptionTextPointers[LANGUAGE_FRENCH] = sFrenchTextPointers_Description;
+    sDescriptionTextPointers[LANGUAGE_ITALIAN] = sItalianTextPointers_Description;
+    sDescriptionTextPointers[LANGUAGE_SPANISH] = sSpanishTextPointers_Description;
+#else
+    sDescriptionTextPointers[LANGUAGE_GERMAN] = sEnglishTextPointers_Description;
+    sDescriptionTextPointers[LANGUAGE_FRENCH] = sEnglishTextPointers_Description;
+    sDescriptionTextPointers[LANGUAGE_ITALIAN] = sEnglishTextPointers_Description;
+    sDescriptionTextPointers[LANGUAGE_SPANISH] = sEnglishTextPointers_Description;
+#endif
+}
+#else
 static const u16** sDescriptionTextPointers[LANGUAGE_COUNT] = {
     [LANGUAGE_JAPANESE] = sJapaneseTextPointers_Description,
     [LANGUAGE_HIRAGANA] = sHiraganaTextPointers_Description,
@@ -31,6 +50,7 @@ static const u16** sDescriptionTextPointers[LANGUAGE_COUNT] = {
     [LANGUAGE_SPANISH] = sEnglishTextPointers_Description
 #endif // REGION_EU || REGION_US_BETA
 };
+#endif
 
 static u32 sArray_7602f0[9] = {
     [0] = UINT_MAX ^ (UINT_MAX << 0 * sizeof(u32)),

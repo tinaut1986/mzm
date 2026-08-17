@@ -77,6 +77,28 @@ MAKE_ENUM(u8, ImagoMovementStage) {
 #define IMAGO_EGG_PART_NORMAL 0x0
 #define IMAGO_EGG_PART_LAST 0x80
 
+#ifdef TMC_3DS
+static const struct FrameData* sImagoFrameDataPointers[IMAGO_OAM_COUNT];
+static void __attribute__((constructor)) Init_sImagoFrameDataPointers(void) {
+    sImagoFrameDataPointers[IMAGO_OAM_BODY_IDLE] = sImagoPartOam_BodyIdle;
+    sImagoFrameDataPointers[IMAGO_OAM_BODY_GROWLING] = sImagoPartOam_BodyGrowling;
+    sImagoFrameDataPointers[IMAGO_OAM_BROKEN_STINGER] = sImagoOam_BrokenStinger;
+    sImagoFrameDataPointers[IMAGO_OAM_LEFT_WING_IDLE] = sImagoPartOam_LeftWingIdle;
+    sImagoFrameDataPointers[IMAGO_OAM_LEFT_WING_SHOOTING_NEEDLES] = sImagoPartOam_LeftWingShootingNeedles;
+    sImagoFrameDataPointers[IMAGO_OAM_LEFT_WING_DYING] = sImagoPartOam_LeftWingDying;
+    sImagoFrameDataPointers[IMAGO_OAM_RIGHT_WING_IDLE] = sImagoPartOam_RightWingIdle;
+    sImagoFrameDataPointers[IMAGO_OAM_RIGHT_WING_SHOOTING_NEEDLES] = sImagoPartOam_RightWingShootingNeedles;
+    sImagoFrameDataPointers[IMAGO_OAM_RIGHT_WING_DYING] = sImagoPartOam_RightWingDying;
+    sImagoFrameDataPointers[IMAGO_OAM_CORE] = sImagoPartOam_Core;
+    sImagoFrameDataPointers[IMAGO_OAM_FLYING] = sImagoOam_Flying;
+    sImagoFrameDataPointers[IMAGO_OAM_SHOOTING_NEEDLES] = sImagoOam_ShootingNeedles;
+    sImagoFrameDataPointers[IMAGO_OAM_RECHARGING_NEEDLES] = sImagoOam_RechargingNeedles;
+    sImagoFrameDataPointers[IMAGO_OAM_DAMAGED_STINGER] = sImagoDamagedStingerOam;
+    sImagoFrameDataPointers[IMAGO_OAM_NEEDLE] = sImagoNeedleOam;
+    sImagoFrameDataPointers[IMAGO_OAM_DAMAGED_STINGER_UNUSED] = sImagoDamagedStingerOam_Unused;
+    sImagoFrameDataPointers[IMAGO_OAM_EGG_BREAKING] = sImagoEggOam_Breaking;
+}
+#else
 static const struct FrameData* sImagoFrameDataPointers[IMAGO_OAM_COUNT] = {
     [IMAGO_OAM_BODY_IDLE] = sImagoPartOam_BodyIdle,
     [IMAGO_OAM_BODY_GROWLING] = sImagoPartOam_BodyGrowling,
@@ -96,6 +118,7 @@ static const struct FrameData* sImagoFrameDataPointers[IMAGO_OAM_COUNT] = {
     [IMAGO_OAM_DAMAGED_STINGER_UNUSED] = sImagoDamagedStingerOam_Unused,
     [IMAGO_OAM_EGG_BREAKING] = sImagoEggOam_Breaking
 };
+#endif
 
 /**
  * @brief 41e4c | 88 | Sync the sub sprites of Imago

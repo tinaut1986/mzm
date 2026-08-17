@@ -11,6 +11,8 @@
 #include "types.h"
 #include "oam.h"
 
+#define PROJECTILE_DATA_H
+
 extern const s16(*p_sTumblingMissileSpeed)[16];
 #define sTumblingMissileSpeed (*p_sTumblingMissileSpeed)
 extern const u8(*p_sProjectile_Array326cc8_Unused)[64];

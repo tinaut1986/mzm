@@ -10,6 +10,7 @@
 #define PORT_GEN_NES_METROID_ROM_H
 #include "types.h"
 
+#define NES_METROID_DATA_H
 typedef void (*NesEmuFunc_T)(void*);
 
 extern const NesEmuFunc_T*p_sNesEmuBootLoader;

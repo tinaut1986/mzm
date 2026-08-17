@@ -11,6 +11,8 @@
 #include "types.h"
 #include "structs/cable_link.h"
 
+#define IO_TRANSFER_DATA_H
+
 extern const struct IoTransferInfo*p_sIoTransferInfo_Empty;
 #define sIoTransferInfo_Empty (*p_sIoTransferInfo_Empty)
 extern const u8(*p_sPlayer4String)[4];

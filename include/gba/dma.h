@@ -34,6 +34,16 @@
 #define REG_DMA3_CNT_L (REG_DMA3 + 8)
 #define REG_DMA3_CNT_H (REG_DMA3 + 10)
 
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#include "dma.h"
+#define DMA_SET(channel, src, dst, cnt) do { (void)(channel); (void)(src); (void)(dst); (void)(cnt); } while(0)
+#define DMA3_COPY_16(src, dst, count)  { DmaTransfer(3, (src), (dst), (count) * 2, 16); }
+#define DMA3_COPY_32(src, dst, count)  { DmaTransfer(3, (src), (dst), (count) * 4, 32); }
+#define DMA3_FILL_16(value, dest, size) { BitFill(3, (value), (dest), (size), 16); }
+#define DMA3_FILL_32(value, dest, size) { BitFill(3, (value), (dest), (size), 32); }
+#define DMA3_CLEAR_16(dest, size)      { BitFill(3, 0, (dest), (size), 16); }
+#define DMA3_CLEAR_32(dest, size)      { BitFill(3, 0, (dest), (size), 32); }
+#else
 #define DMA_SET(channel, src, dst, cnt)                                        \
     {                                                                          \
         vu32 *dma_ = (vu32 *)REG_DMA##channel;                                 \
@@ -73,6 +83,7 @@
 
 #define DMA3_CLEAR_16(dest, size) DMA_CLEAR(3, dest, size, 16)
 #define DMA3_CLEAR_32(dest, size) DMA_CLEAR(3, dest, size, 32)
+#endif
 
 #define DMA_DEST_INC 0x0000
 #define DMA_DEST_DEC (1 << 5)

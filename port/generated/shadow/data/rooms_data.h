@@ -12,6 +12,8 @@
 #include "structs/connection.h"
 #include "structs/room.h"
 
+#define DOORS_DATA_H
+
 extern const u8(*p_sEnemyRoomData_Empty)[3];
 #define sEnemyRoomData_Empty (*p_sEnemyRoomData_Empty)
 extern const struct TilesetEntry(*p_sTilesetEntries)[79];

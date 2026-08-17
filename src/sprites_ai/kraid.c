@@ -72,6 +72,49 @@ MAKE_ENUM(u8, KraidNailType) {
 
 #define KRAID_NAIL_POSE_MOVING 0x9
 
+#ifdef TMC_3DS
+static const struct FrameData* sKraidFrameDataPointers[KRAID_OAM_COUNT];
+static void __attribute__((constructor)) Init_sKraidFrameDataPointers(void) {
+    sKraidFrameDataPointers[KRAID_OAM_MOUTH_CLOSED] = sKraidOam_MouthClosed;
+    sKraidFrameDataPointers[KRAID_OAM_MOUTH_CLOSED_BLINK] = sKraidOam_MouthClosedBlink;
+    sKraidFrameDataPointers[KRAID_OAM_OPENING_MOUTH] = sKraidOam_OpeningMouth;
+    sKraidFrameDataPointers[KRAID_OAM_MOUTH_OPENED] = sKraidOam_MouthOpened;
+    sKraidFrameDataPointers[KRAID_OAM_RISING] = sKraidOam_Rising;
+    sKraidFrameDataPointers[KRAID_OAM_CLOSING_MOUTH] = sKraidOam_ClosingMouth;
+    sKraidFrameDataPointers[KRAID_OAM_2cac5c] = sKraidPartOam_2cac5c;
+    sKraidFrameDataPointers[KRAID_OAM_LEFT_ARM_IDLE] = sKraidPartOam_LeftArmIdle;
+    sKraidFrameDataPointers[KRAID_OAM_LEFT_ARM_DYING] = sKraidPartOam_LeftArmDying;
+    sKraidFrameDataPointers[KRAID_OAM_LEFT_ARM_THROWING_NAILS] = sKraidPartOam_LeftArmThrowingNails;
+    sKraidFrameDataPointers[KRAID_OAM_2cadc4] = sKraidPartOam_2cadc4;
+    sKraidFrameDataPointers[KRAID_OAM_RIGHT_ARM_IDLE] = sKraidPartOam_RightArmIdle;
+    sKraidFrameDataPointers[KRAID_OAM_RIGHT_ARM_Attacking] = sKraidPartOam_RightArmAttacking;
+    sKraidFrameDataPointers[KRAID_OAM_RIGHT_ARM_DYING] = sKraidPartOam_RightArmDying;
+    sKraidFrameDataPointers[KRAID_OAM_LEFT_FEET_RISING] = sKraidPartOam_LeftFeetRising;
+    sKraidFrameDataPointers[KRAID_OAM_LEFT_FEET_IDLE_1] = sKraidPartOam_LeftFeetIdle1;
+    sKraidFrameDataPointers[KRAID_OAM_LEFT_FEET_MOVING_RIGHT] = sKraidPartOam_LeftFeetMovingRight;
+    sKraidFrameDataPointers[KRAID_OAM_LEFT_FEET_IDLE_2] = sKraidPartOam_LeftFeetIdle2;
+    sKraidFrameDataPointers[KRAID_OAM_LEFT_FEET_MOVED_RIGHT] = sKraidPartOam_LeftFeetMovedRight;
+    sKraidFrameDataPointers[KRAID_OAM_LEFT_FEET_MOVING_LEFT] = sKraidPartOam_LeftFeetMovingLeft;
+    sKraidFrameDataPointers[KRAID_OAM_LEFT_FEET_MOVED_LEFT] = sKraidPartOam_LeftFeetMovedLeft;
+    sKraidFrameDataPointers[KRAID_OAM_RIGHT_FEET_RISING] = sKraidPartOam_RightFeetRising;
+    sKraidFrameDataPointers[KRAID_OAM_RIGHT_FEET_IDLE_1] = sKraidPartOam_RightFeetIdle1;
+    sKraidFrameDataPointers[KRAID_OAM_RIGHT_FEET_MOVED_RIGHT] = sKraidPartOam_RightFeetMovedRight;
+    sKraidFrameDataPointers[KRAID_OAM_RIGHT_FEET_IDLE_2] = sKraidPartOam_RightFeetIdle2;
+    sKraidFrameDataPointers[KRAID_OAM_RIGHT_FEET_MOVING_RIGHT] = sKraidPartOam_RightFeetMovingRight;
+    sKraidFrameDataPointers[KRAID_OAM_RIGHT_FEET_MOVED_LEFT] = sKraidPartOam_RightFeetMovedLeft;
+    sKraidFrameDataPointers[KRAID_OAM_RIGHT_FEET_MOVING_LEFT] = sKraidPartOam_RightFeetMovingLeft;
+    sKraidFrameDataPointers[KRAID_OAM_TOP_HOLE_LEFT] = sKraidPartOam_TopHoleLeft;
+    sKraidFrameDataPointers[KRAID_OAM_TOP_HOLE_RIGHT] = sKraidPartOam_TopHoleRight;
+    sKraidFrameDataPointers[KRAID_OAM_MIDDLE_HOLE_LEFT] = sKraidPartOam_MiddleHoleLeft;
+    sKraidFrameDataPointers[KRAID_OAM_MIDDLE_HOLE_RIGHT] = sKraidPartOam_MiddleHoleRight;
+    sKraidFrameDataPointers[KRAID_OAM_BOTTOM_HOLE_LEFT] = sKraidPartOam_BottomHoleLeft;
+    sKraidFrameDataPointers[KRAID_OAM_BOTTOM_HOLE_RIGHT] = sKraidPartOam_BottomHoleRight;
+    sKraidFrameDataPointers[KRAID_OAM_NAIL] = sKraidNailOam;
+    sKraidFrameDataPointers[KRAID_OAM_2cb29c] = sKraidOam_2cb29c;
+    sKraidFrameDataPointers[KRAID_OAM_2cb2ac] = sKraidOam_2cb2ac;
+    sKraidFrameDataPointers[KRAID_OAM_SPIKE] = sKraidSpikeOam;
+}
+#else
 static const struct FrameData* sKraidFrameDataPointers[KRAID_OAM_COUNT] = {
     [KRAID_OAM_MOUTH_CLOSED] = sKraidOam_MouthClosed,
     [KRAID_OAM_MOUTH_CLOSED_BLINK] = sKraidOam_MouthClosedBlink,
@@ -112,6 +155,7 @@ static const struct FrameData* sKraidFrameDataPointers[KRAID_OAM_COUNT] = {
     [KRAID_OAM_2cb2ac] = sKraidOam_2cb2ac,
     [KRAID_OAM_SPIKE] = sKraidSpikeOam
 };
+#endif
 
 /**
  * @brief 183d8 | 68 | Synchronize the sub sprites of Kraid

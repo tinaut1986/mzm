@@ -11,6 +11,7 @@
 #include "types.h"
 #include "structs/fusion_gallery.h"
 
+#define ENDING_AND_GALLERY_DATA_H
 #define NUMBER_OF_FUSION_GALLERY_IMAGES 13
 
 extern const struct FusionGalleryImageEntry(*p_sFusionGalleryData)[NUMBER_OF_FUSION_GALLERY_IMAGES];

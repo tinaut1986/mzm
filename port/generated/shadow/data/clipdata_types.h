@@ -11,6 +11,8 @@
 #include "types.h"
 #include "constants/clipdata.h"
 
+#define CLIPDATA_TYPES_H
+
 extern const u8(*p_sClipdataCollisionTypes)[CLIPDATA_COUNT];
 #define sClipdataCollisionTypes (*p_sClipdataCollisionTypes)
 extern const u16(*p_sClipdataBehaviorTypes)[CLIPDATA_COUNT];

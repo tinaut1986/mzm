@@ -12,34 +12,22 @@
 #include "constants/audio.h"
 #include "structs/audio.h"
 
-extern const u16(*p_sUnk_808cad0)[128];
-#define sUnk_808cad0 (*p_sUnk_808cad0)
-extern const u8(*p_sClockTable)[49];
-#define sClockTable (*p_sClockTable)
-extern const u8(*p_sNoiseTable)[60];
-#define sNoiseTable (*p_sNoiseTable)
-extern const u8(*p_sCgb3Vol)[16];
-#define sCgb3Vol (*p_sCgb3Vol)
-extern const u8(*p_sUnk_808cc4d)[19];
-#define sUnk_808cc4d (*p_sUnk_808cc4d)
-extern const u32(*p_sNativeSampleRate)[SOUND_MODE_FREQ_COUNT];
-#define sNativeSampleRate (*p_sNativeSampleRate)
-extern const u32(*p_sMusicPitchData)[SOUND_MODE_FREQ_COUNT];
-#define sMusicPitchData (*p_sMusicPitchData)
-extern const u16(*p_sPcmSamplesPerVBlankTable)[SOUND_MODE_FREQ_COUNT];
-#define sPcmSamplesPerVBlankTable (*p_sPcmSamplesPerVBlankTable)
-extern const u8(*p_sArray_808cce2)[512];
-#define sArray_808cce2 (*p_sArray_808cce2)
-extern const u8(*p_sArray_808cee2)[10];
-#define sArray_808cee2 (*p_sArray_808cee2)
+extern const u16 sUnk_808cad0[128];
+extern const u8 sClockTable[49];
+extern const u8 sNoiseTable[60];
+extern const u8 sCgb3Vol[16];
+extern const u8 sUnk_808cc4d[19];
+extern const u32 sNativeSampleRate[SOUND_MODE_FREQ_COUNT];
+extern const u32 sMusicPitchData[SOUND_MODE_FREQ_COUNT];
+extern const u16 sPcmSamplesPerVBlankTable[SOUND_MODE_FREQ_COUNT];
+extern const u8 sArray_808cce2[512];
+extern const u8 sArray_808cee2[10];
 extern void* const*p_sDma1ControlPointer;
 #define sDma1ControlPointer p_sDma1ControlPointer
 extern const u32*p_sDma1ControlValue;
 #define sDma1ControlValue p_sDma1ControlValue
-extern const MusicFunc_T(*p_sMusicCommandFunctionPointers)[30];
-#define sMusicCommandFunctionPointers (*p_sMusicCommandFunctionPointers)
-extern const struct TrackGroupROMData(*p_sMusicTrackDataRom)[9];
-#define sMusicTrackDataRom (*p_sMusicTrackDataRom)
+extern const MusicFunc_T sMusicCommandFunctionPointers[30];
+extern const struct TrackGroupROMData sMusicTrackDataRom[9];
 extern const struct SoundEntry(*p_sSoundDataEntries)[SOUND_COUNT];
 #define sSoundDataEntries (*p_sSoundDataEntries)
 

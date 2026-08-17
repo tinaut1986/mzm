@@ -12,6 +12,9 @@
 #include "structs/color_effects.h"
 #include "constants/color_fading.h"
 
+#define COLOR_FADING_DATA_H
+// Temp
+
 extern const u8(*p_sDoorTransitionTilemap)[184];
 #define sDoorTransitionTilemap (*p_sDoorTransitionTilemap)
 extern const struct ColorFadingData(*p_sColorFadingData)[COLOR_FADING_COUNT];

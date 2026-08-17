@@ -2,6 +2,46 @@
 #include "gba.h"
 #include "macros.h"
 
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#include <string.h>
+#include "port_gba_mem.h"
+
+void DmaTransfer(u8 channel, const void *src, void *dst, u32 len, u8 bitSize)
+{
+    (void)channel;
+    (void)bitSize;
+    if (len == 0 || !src || !dst) return;
+    const void* r_src = port_resolve_copy_src(src, len);
+    void* r_dst = port_resolve_write_addr((uintptr_t)dst);
+    if (r_src && r_dst) {
+        memmove(r_dst, r_src, len);
+    }
+}
+
+void BitFill(u8 channel, u32 value, void *dst, u32 len, u8 bitSize)
+{
+    u32 i;
+    (void)channel;
+    if (len == 0 || !dst) return;
+    void* r_dst = port_resolve_write_addr((uintptr_t)dst);
+    if (!r_dst) return;
+    if (value == 0) {
+        memset(r_dst, 0, len);
+    } else if (bitSize == 16) {
+        u16* p = (u16*)r_dst;
+        u32 count = len / 2;
+        u16 v = (u16)value;
+        for (i = 0; i < count; i++) p[i] = v;
+    } else if (bitSize == 32) {
+        u32* p = (u32*)r_dst;
+        u32 count = len / 4;
+        for (i = 0; i < count; i++) p[i] = value;
+    } else {
+        memset(r_dst, (int)value, len);
+    }
+}
+#else
+
 struct DMA {
     const void* pSrc;
     void* pDst;
@@ -306,3 +346,5 @@ lbl_08003370: \n\
     ");
 }
 #endif
+#endif
+

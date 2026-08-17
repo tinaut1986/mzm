@@ -62,15 +62,15 @@ static void FileSelectVBlank_Empty(void);
 static void FileSelectDisplaySaveFileInfo(void);
 static void FileSelectDisplaySaveFileHealth(u8 file);
 static void FileSelectDisplaySaveFileTimer(u8 file);
-static void FileSelectDisplaySaveFileMiscInfo(struct SaveFileInfo* pFile, FileSelectCursorPosition file);
+void FileSelectDisplaySaveFileMiscInfo(struct SaveFileInfo* pFile, FileSelectCursorPosition file);
 static void FileScreenSetEnabledMenuFlags(void);
-static u8 FileSelectApplyMenuSelectInput(u8 set, FileSelectCursorPosition* pFileNumber);
-static void FileSelectFindFirstNonEmptyFile(FileSelectCursorPosition* pFileNumber);
+u8 FileSelectApplyMenuSelectInput(u8 set, FileSelectCursorPosition* pFileNumber);
+void FileSelectFindFirstNonEmptyFile(FileSelectCursorPosition* pFileNumber);
 static u8 FileSelectUpdateSubMenu(void);
 static u8 FileSelectProcessFileSelection(void);
 static void unk_7e3fc(u8 param_1, u8 param_2);
 static u32 FileSelectUpdateTilemap(TilemapRequest request);
-static void unk_7eedc(u16* pTilemap);
+void unk_7eedc(u16* pTilemap);
 
 static s8 sSaveFileAreasId[12] = {
     [0] = AREA_KRAID,
@@ -87,6 +87,42 @@ static s8 sSaveFileAreasId[12] = {
     [11] = AREA_BRINSTAR
 };
 
+#ifdef TMC_3DS
+static const u32* sFileSelectOptionsTextGfxPointers[LANGUAGE_COUNT - LANGUAGE_ENGLISH];
+#ifdef REGION_EU
+static const u32* sFileSelectLargeTextGfxPointers[LANGUAGE_COUNT - LANGUAGE_ENGLISH];
+static const u32* sFileSelectDifficultyTextGfxPointers[LANGUAGE_COUNT - LANGUAGE_ENGLISH];
+#endif
+
+static void __attribute__((constructor)) Init_sFileSelectTextGfxPointers(void) {
+    sFileSelectOptionsTextGfxPointers[LANGUAGE_ENGLISH - LANGUAGE_ENGLISH] = sFileSelectOptionsTextEnglishGfx;
+#if defined(DEBUG) || defined(REGION_EU)
+    sFileSelectOptionsTextGfxPointers[LANGUAGE_GERMAN - LANGUAGE_ENGLISH] = sFileSelectOptionsTextGermanGfx;
+    sFileSelectOptionsTextGfxPointers[LANGUAGE_FRENCH - LANGUAGE_ENGLISH] = sFileSelectOptionsTextFrenchGfx;
+    sFileSelectOptionsTextGfxPointers[LANGUAGE_ITALIAN - LANGUAGE_ENGLISH] = sFileSelectOptionsTextItalianGfx;
+    sFileSelectOptionsTextGfxPointers[LANGUAGE_SPANISH - LANGUAGE_ENGLISH] = sFileSelectOptionsTextSpanishGfx;
+#else
+    sFileSelectOptionsTextGfxPointers[LANGUAGE_GERMAN - LANGUAGE_ENGLISH] = sFileSelectOptionsTextEnglishGfx;
+    sFileSelectOptionsTextGfxPointers[LANGUAGE_FRENCH - LANGUAGE_ENGLISH] = sFileSelectOptionsTextEnglishGfx;
+    sFileSelectOptionsTextGfxPointers[LANGUAGE_ITALIAN - LANGUAGE_ENGLISH] = sFileSelectOptionsTextEnglishGfx;
+    sFileSelectOptionsTextGfxPointers[LANGUAGE_SPANISH - LANGUAGE_ENGLISH] = sFileSelectOptionsTextEnglishGfx;
+#endif
+
+#ifdef REGION_EU
+    sFileSelectLargeTextGfxPointers[LANGUAGE_ENGLISH - LANGUAGE_ENGLISH] = sFileSelectLargeTextEnglishGfx;
+    sFileSelectLargeTextGfxPointers[LANGUAGE_GERMAN - LANGUAGE_ENGLISH] = sFileSelectLargeTextGermanGfx;
+    sFileSelectLargeTextGfxPointers[LANGUAGE_FRENCH - LANGUAGE_ENGLISH] = sFileSelectLargeTextFrenchGfx;
+    sFileSelectLargeTextGfxPointers[LANGUAGE_ITALIAN - LANGUAGE_ENGLISH] = sFileSelectLargeTextItalianGfx;
+    sFileSelectLargeTextGfxPointers[LANGUAGE_SPANISH - LANGUAGE_ENGLISH] = sFileSelectLargeTextSpanishGfx;
+
+    sFileSelectDifficultyTextGfxPointers[LANGUAGE_ENGLISH - LANGUAGE_ENGLISH] = sFileSelectDifficultyTextEnglishGfx;
+    sFileSelectDifficultyTextGfxPointers[LANGUAGE_GERMAN - LANGUAGE_ENGLISH] = sFileSelectDifficultyTextGermanGfx;
+    sFileSelectDifficultyTextGfxPointers[LANGUAGE_FRENCH - LANGUAGE_ENGLISH] = sFileSelectDifficultyTextFrenchGfx;
+    sFileSelectDifficultyTextGfxPointers[LANGUAGE_ITALIAN - LANGUAGE_ENGLISH] = sFileSelectDifficultyTextItalianGfx;
+    sFileSelectDifficultyTextGfxPointers[LANGUAGE_SPANISH - LANGUAGE_ENGLISH] = sFileSelectDifficultyTextSpanishGfx;
+#endif
+}
+#else
 static const u32* sFileSelectOptionsTextGfxPointers[LANGUAGE_COUNT - LANGUAGE_ENGLISH] = {
     [LANGUAGE_ENGLISH - LANGUAGE_ENGLISH] = sFileSelectOptionsTextEnglishGfx,
 #if defined(DEBUG) || defined(REGION_EU)
@@ -103,6 +139,16 @@ static const u32* sFileSelectOptionsTextGfxPointers[LANGUAGE_COUNT - LANGUAGE_EN
 };
 
 #ifdef REGION_EU
+#ifdef TMC_3DS
+static const u32* sFileSelectLargeTextGfxPointers[LANGUAGE_COUNT - LANGUAGE_ENGLISH];
+static void __attribute__((constructor)) Init_sFileSelectLargeTextGfxPointers(void) {
+    sFileSelectLargeTextGfxPointers[LANGUAGE_ENGLISH - LANGUAGE_ENGLISH] = sFileSelectLargeTextEnglishGfx;
+    sFileSelectLargeTextGfxPointers[LANGUAGE_GERMAN - LANGUAGE_ENGLISH] = sFileSelectLargeTextGermanGfx;
+    sFileSelectLargeTextGfxPointers[LANGUAGE_FRENCH - LANGUAGE_ENGLISH] = sFileSelectLargeTextFrenchGfx;
+    sFileSelectLargeTextGfxPointers[LANGUAGE_ITALIAN - LANGUAGE_ENGLISH] = sFileSelectLargeTextItalianGfx;
+    sFileSelectLargeTextGfxPointers[LANGUAGE_SPANISH - LANGUAGE_ENGLISH] = sFileSelectLargeTextSpanishGfx;
+}
+#else
 static const u32* sFileSelectLargeTextGfxPointers[LANGUAGE_COUNT - LANGUAGE_ENGLISH] = {
     [LANGUAGE_ENGLISH - LANGUAGE_ENGLISH] = sFileSelectLargeTextEnglishGfx,
     [LANGUAGE_GERMAN - LANGUAGE_ENGLISH] = sFileSelectLargeTextGermanGfx,
@@ -110,7 +156,18 @@ static const u32* sFileSelectLargeTextGfxPointers[LANGUAGE_COUNT - LANGUAGE_ENGL
     [LANGUAGE_ITALIAN - LANGUAGE_ENGLISH] = sFileSelectLargeTextItalianGfx,
     [LANGUAGE_SPANISH - LANGUAGE_ENGLISH] = sFileSelectLargeTextSpanishGfx
 };
+#endif
 
+#ifdef TMC_3DS
+static const u32* sFileSelectDifficultyTextGfxPointers[LANGUAGE_COUNT - LANGUAGE_ENGLISH];
+static void __attribute__((constructor)) Init_sFileSelectDifficultyTextGfxPointers(void) {
+    sFileSelectDifficultyTextGfxPointers[LANGUAGE_ENGLISH - LANGUAGE_ENGLISH] = sFileSelectDifficultyTextEnglishGfx;
+    sFileSelectDifficultyTextGfxPointers[LANGUAGE_GERMAN - LANGUAGE_ENGLISH] = sFileSelectDifficultyTextGermanGfx;
+    sFileSelectDifficultyTextGfxPointers[LANGUAGE_FRENCH - LANGUAGE_ENGLISH] = sFileSelectDifficultyTextFrenchGfx;
+    sFileSelectDifficultyTextGfxPointers[LANGUAGE_ITALIAN - LANGUAGE_ENGLISH] = sFileSelectDifficultyTextItalianGfx;
+    sFileSelectDifficultyTextGfxPointers[LANGUAGE_SPANISH - LANGUAGE_ENGLISH] = sFileSelectDifficultyTextSpanishGfx;
+}
+#else
 static const u32* sFileSelectDifficultyTextGfxPointers[LANGUAGE_COUNT - LANGUAGE_ENGLISH] = {
     [LANGUAGE_ENGLISH - LANGUAGE_ENGLISH] = sFileSelectDifficultyTextEnglishGfx,
     [LANGUAGE_GERMAN - LANGUAGE_ENGLISH] = sFileSelectDifficultyTextGermanGfx,
@@ -118,7 +175,9 @@ static const u32* sFileSelectDifficultyTextGfxPointers[LANGUAGE_COUNT - LANGUAGE
     [LANGUAGE_ITALIAN - LANGUAGE_ENGLISH] = sFileSelectDifficultyTextItalianGfx,
     [LANGUAGE_SPANISH - LANGUAGE_ENGLISH] = sFileSelectDifficultyTextSpanishGfx
 };
+#endif
 #endif // REGION_EU
+#endif
 
 static struct FileSelectMenuCursors sFileSelectMenuCursors_Empty = {
     .confirmCopy = 1,
@@ -545,7 +604,7 @@ static void FileSelectUpdateCursor(CursorPose cursorPose, FileSelectCursorPositi
  * @param cursorPose Cursor pose
  * @param fileNumber File number
  */
-static void FileSelectUpdateCopyCursor(CursorCopyPose cursorPose, FileSelectCursorPosition fileNumber)
+void FileSelectUpdateCopyCursor(CursorCopyPose cursorPose, FileSelectCursorPosition fileNumber)
 {
     u32 oamId;
 
@@ -621,7 +680,7 @@ static void FileSelectUpdateCopyCursor(CursorCopyPose cursorPose, FileSelectCurs
  * @param arrowPose Arrow pose
  * @param dstFileNumber Destination file number
  */
-static void FileSelectUpdateCopyArrow(ArrowCopyPose arrowPose, u8 dstFileNumber)
+void FileSelectUpdateCopyArrow(ArrowCopyPose arrowPose, u8 dstFileNumber)
 {
     u32 oamId;
 
@@ -1078,7 +1137,7 @@ static void FileScreenProcessText(void)
  * @param newMessageInfoId ID for new message info
  * @return u32 Bool, result of update, option 0: added to queue, option 1: not in queue, option 2: always true
  */
-static u32 FileScreenUpdateMessageInfoIdQueue(u8 updateOption, u8 newMessageInfoId)
+u32 FileScreenUpdateMessageInfoIdQueue(u8 updateOption, u8 newMessageInfoId)
 {
     u32 result;
 
@@ -1131,7 +1190,7 @@ static u32 FileScreenUpdateMessageInfoIdQueue(u8 updateOption, u8 newMessageInfo
  * @brief 79178 | 98 | Selects a file to be used as a copy destination
  * 
  */
-static void FileSelectFileCopyChooseBaseDestinationFile(void)
+void FileSelectFileCopyChooseBaseDestinationFile(void)
 {
     s32 file;
 
@@ -5065,7 +5124,7 @@ static void FileSelectDisplaySaveFileTimer(u8 file)
  * @param pFile Save file info pointer
  * @param file Save file number
  */
-static void FileSelectDisplaySaveFileMiscInfo(struct SaveFileInfo* pFile, FileSelectCursorPosition file)
+void FileSelectDisplaySaveFileMiscInfo(struct SaveFileInfo* pFile, FileSelectCursorPosition file)
 {
     s32 offset;
     s32 temp;
@@ -5220,7 +5279,7 @@ static void FileScreenSetEnabledMenuFlags(void)
  * @param pFileNumber File number pointer
  * @return u8 Could move
  */
-static u8 FileSelectApplyMenuSelectInput(FileSelectSelectionSet set, FileSelectCursorPosition* pFileNumber)
+u8 FileSelectApplyMenuSelectInput(FileSelectSelectionSet set, FileSelectCursorPosition* pFileNumber)
 {
     s32 direction;
     u8 position;
@@ -5302,7 +5361,7 @@ static u8 FileSelectApplyMenuSelectInput(FileSelectSelectionSet set, FileSelectC
  * 
  * @param pFileNumber File number pointer
  */
-static void FileSelectFindFirstNonEmptyFile(FileSelectCursorPosition* pFileNumber)
+void FileSelectFindFirstNonEmptyFile(FileSelectCursorPosition* pFileNumber)
 {
     u8 file;
     u8 flags;
@@ -7884,7 +7943,7 @@ lbl_0807eed8: .4byte sNonGameplayRamPointer \n\
  * 
  * @param pTilemap Tilemap pointer
  */
-static void unk_7eedc(u16* pTilemap)
+void unk_7eedc(u16* pTilemap)
 {
     s32 i;
     s32 j;

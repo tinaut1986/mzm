@@ -27,6 +27,26 @@ extern const struct RoomEntryRom* sAreaRoomEntryPointers[AREA_ENTRY_COUNT];
 
 extern const u32* sMinimapDataPointers[AREA_COUNT];
 
+#ifdef TMC_3DS
+static const u8* sBootDebugCutsceneBTextPointers[CUTSCENE_COUNT];
+static void __attribute__((constructor)) Init_sBootDebugCutsceneBTextPointers(void) {
+    sBootDebugCutsceneBTextPointers[CUTSCENE_NONE] = sBootDebug_Cutscene_Blank_Text;
+    sBootDebugCutsceneBTextPointers[CUTSCENE_INTRO_TEXT] = sBootDebug_CutsceneB_StartMonologue_Text;
+    sBootDebugCutsceneBTextPointers[CUTSCENE_MOTHERSHIP_MONOLOGUE] = sBootDebug_CutsceneB_ShotDownMonologue1_Text;
+    sBootDebugCutsceneBTextPointers[CUTSCENE_COULD_I_SURVIVE] = sBootDebug_CutsceneB_ShotDownMonologue2_Text;
+    sBootDebugCutsceneBTextPointers[CUTSCENE_MOTHER_BRAIN_CLOSE_UP] = sBootDebug_CutsceneB_MotherBrain_Text;
+    sBootDebugCutsceneBTextPointers[CUTSCENE_KRAID_RISING] = sBootDebug_CutsceneB_KraidFight_Text;
+    sBootDebugCutsceneBTextPointers[CUTSCENE_STATUE_OPENING] = sBootDebug_CutsceneB_BossStatues_Text;
+    sBootDebugCutsceneBTextPointers[CUTSCENE_RIDLEY_IN_SPACE] = sBootDebug_CutsceneB_MotherShipReturning_Text;
+    sBootDebugCutsceneBTextPointers[CUTSCENE_RIDLEY_LANDING] = sBootDebug_CutsceneB_MotherShipLanding_Text;
+    sBootDebugCutsceneBTextPointers[CUTSCENE_RIDLEY_SPAWNING] = sBootDebug_CutsceneB_RidleyFight_Text;
+    sBootDebugCutsceneBTextPointers[CUTSCENE_ENTER_TOURIAN] = sBootDebug_CutsceneB_Metroids_Text;
+    sBootDebugCutsceneBTextPointers[CUTSCENE_BEFORE_RUINS_TEST] = sBootDebug_CutsceneB_ChozoMural_Text;
+    sBootDebugCutsceneBTextPointers[CUTSCENE_GETTING_FULLY_POWERED] = sBootDebug_CutsceneB_PoweredSuit_Text;
+    sBootDebugCutsceneBTextPointers[CUTSCENE_MECHA_RIDLEY_SEES_SAMUS] = sBootDebug_CutsceneB_MechaRidley_Text;
+    sBootDebugCutsceneBTextPointers[CUTSCENE_SAMUS_IN_BLUE_SHIP] = sBootDebug_CutsceneB_EscapeShip_Text;
+}
+#else
 static const u8* sBootDebugCutsceneBTextPointers[CUTSCENE_COUNT] = {
     [CUTSCENE_NONE] =                    sBootDebug_Cutscene_Blank_Text,
     [CUTSCENE_INTRO_TEXT] =              sBootDebug_CutsceneB_StartMonologue_Text,
@@ -44,6 +64,7 @@ static const u8* sBootDebugCutsceneBTextPointers[CUTSCENE_COUNT] = {
     [CUTSCENE_MECHA_RIDLEY_SEES_SAMUS] = sBootDebug_CutsceneB_MechaRidley_Text,
     [CUTSCENE_SAMUS_IN_BLUE_SHIP] =      sBootDebug_CutsceneB_EscapeShip_Text
 };
+#endif
 
 static const u8* sBootDebugCutsceneATextPointers[2] = {
     sBootDebug_Cutscene_Blank_Text,

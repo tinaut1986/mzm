@@ -10,6 +10,8 @@
 #define PORT_GEN_CABLE_LINK_DATA_ROM_H
 #include "types.h"
 
+#define CABLE_LINK_DATA_H
+
 extern const u8*p_sTransferData_8754bd0;
 #define sTransferData_8754bd0 p_sTransferData_8754bd0
 extern const u8*p_sTransferRom;

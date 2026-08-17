@@ -11,6 +11,9 @@
 #include "types.h"
 #include "structs/haze.h"
 
+#define HAZE_DATA_H
+// ...
+
 extern const u8(*p_sHaze_345ff8)[132];
 #define sHaze_345ff8 (*p_sHaze_345ff8)
 extern const s8(*p_sHaze_Bg3_StrongEffect)[48];

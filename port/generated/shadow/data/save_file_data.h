@@ -11,6 +11,7 @@
 #include "types.h"
 #include "structs/save_file.h"
 
+#define SAVE_FILE_DATA_H
 #if (defined(REGION_EU))
 #define SAVE_FILE_GAME_VER_TEXT sEurVer_Text
 #endif

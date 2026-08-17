@@ -11,6 +11,9 @@
 #include "types.h"
 #include "oam.h"
 
+#define PARTICLE_DATA_H
+// 833bd34
+
 extern const u16(*p_sParticleShootingBeamHorizontalOam_Frame0)[4];
 #define sParticleShootingBeamHorizontalOam_Frame0 (*p_sParticleShootingBeamHorizontalOam_Frame0)
 extern const u16(*p_sParticleShootingBeamHorizontalOam_Frame1)[10];

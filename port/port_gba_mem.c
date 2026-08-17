@@ -14,6 +14,7 @@ u16 gBgPltt[256];
 u16 gObjPltt[256];
 u16 gOamMem[0x400 / 2];
 u8 gVram[0x18000];
+u8 gSramMem[0x10000];
 
 void gba_write8(uint32_t addr, uint8_t v) {
     if (addr >= 0x02000000u && addr < 0x02040000u) {
@@ -32,6 +33,10 @@ void gba_write8(uint32_t addr, uint8_t v) {
         gVram[addr - 0x06000000u] = v;
         return;
     }
+    if (addr >= 0x0E000000u && addr < 0x0E010000u) {
+        gSramMem[addr - 0x0E000000u] = v;
+        return;
+    }
 
     printf("gba_write8: unimplemented for address 0x%08X\n", addr);
 }
@@ -45,6 +50,8 @@ u8 gba_read8(uint32_t addr) {
         return gIoMem[addr - 0x04000000u];
     if (addr >= 0x06000000u && addr < 0x06018000u)
         return gVram[addr - 0x06000000u];
+    if (addr >= 0x0E000000u && addr < 0x0E010000u)
+        return gSramMem[addr - 0x0E000000u];
     if (gRomData && addr >= 0x08000000u && addr < 0x08000000u + gRomSize) {
 #ifndef TMC_3DS
         Port_LogRomAccess(addr, "gba_read8");
@@ -94,26 +101,44 @@ void gba_write16(uint32_t addr, uint16_t v) {
         gOamMem[(addr - 0x07000000u) >> 1] = v;
         return;
     }
+    if (addr >= 0x0E000000u && addr < 0x0E00FFFEu) {
+        u32 off = addr - 0x0E000000u;
+        gSramMem[off] = v & 0xFF;
+        gSramMem[off + 1] = (v >> 8) & 0xFF;
+        return;
+    }
     printf("gba_write16: unimplemented for address 0x%08X\n", addr);
 }
 
 u16 gba_read16(uint32_t addr) {
     if (addr >= 0x04000000u && addr < 0x040003FFu)
         return gIoMem[addr - 0x04000000u] | (gIoMem[addr - 0x04000000u + 1] << 8);
+    if (addr >= 0x02000000u && addr < 0x0203FFFFu) {
+        u32 off = addr - 0x02000000u;
+        return gEwram[off] | (gEwram[off + 1] << 8);
+    }
+    if (addr >= 0x03000000u && addr < 0x03007FFFu) {
+        u32 off = addr - 0x03000000u;
+        return gIwram[off] | (gIwram[off + 1] << 8);
+    }
+    // BG palette
     if (addr >= 0x05000000u && addr < 0x050001FFu)
         return gBgPltt[(addr - 0x05000000u) >> 1];
+    // OBJ palette
     if (addr >= 0x05000200u && addr < 0x050003FFu)
         return gObjPltt[(addr - 0x05000200u) >> 1];
+    // VRAM
     if (addr >= 0x06000000u && addr < 0x06017FFFu) {
         u32 off = addr - 0x06000000u;
         return gVram[off] | (gVram[off + 1] << 8);
     }
+    // OAM
     if (addr >= 0x07000000u && addr < 0x070003FFu)
         return gOamMem[(addr - 0x07000000u) >> 1];
-    if (addr >= 0x02000000u && addr < 0x0203FFFFu)
-        return gEwram[addr - 0x02000000u] | (gEwram[addr - 0x02000000u + 1] << 8);
-    if (addr >= 0x03000000u && addr < 0x03007FFFu)
-        return gIwram[addr - 0x03000000u] | (gIwram[addr - 0x03000000u + 1] << 8);
+    if (addr >= 0x0E000000u && addr < 0x0E00FFFEu) {
+        u32 off = addr - 0x0E000000u;
+        return gSramMem[off] | (gSramMem[off + 1] << 8);
+    }
     if (gRomData && addr >= 0x08000000u) {
 #ifndef TMC_3DS
         Port_LogRomAccess(addr, "gba_read16");
@@ -183,6 +208,14 @@ void gba_write32(uint32_t addr, uint32_t v) {
         gIwram[off + 3] = (v >> 24) & 0xFF;
         return;
     }
+    if (addr >= 0x0E000000u && addr < 0x0E00FFFDu) {
+        u32 off = addr - 0x0E000000u;
+        gSramMem[off] = v & 0xFF;
+        gSramMem[off + 1] = (v >> 8) & 0xFF;
+        gSramMem[off + 2] = (v >> 16) & 0xFF;
+        gSramMem[off + 3] = (v >> 24) & 0xFF;
+        return;
+    }
     printf("gba_write32: unimplemented for address 0x%08X\n", addr);
 }
 
@@ -208,6 +241,10 @@ u32 gba_read32(uint32_t addr) {
         u32 off = addr - 0x03000000u;
         return gIwram[off] | (gIwram[off + 1] << 8) | (gIwram[off + 2] << 16) | (gIwram[off + 3] << 24);
     }
+    if (addr >= 0x0E000000u && addr < 0x0E00FFFDu) {
+        u32 off = addr - 0x0E000000u;
+        return gSramMem[off] | (gSramMem[off + 1] << 8) | (gSramMem[off + 2] << 16) | (gSramMem[off + 3] << 24);
+    }
     if (gRomData && addr >= 0x08000000u) {
 #ifndef TMC_3DS
         Port_LogRomAccess(addr, "gba_read32");
@@ -224,12 +261,12 @@ u32 gba_read32(uint32_t addr) {
 
 void* port_resolve_addr(uintptr_t val)
 {
-    /* GBA-range values (EWRAM/IWRAM/IO/palette/VRAM/OAM/ROM) are
+    /* GBA-range values (EWRAM/IWRAM/IO/palette/VRAM/OAM/ROM/SRAM) are
      * address-mapped through gba_TryMemPtr; anything outside that window is
      * already a native host pointer (e.g. a local scalar or struct whose
      * address happens to get passed through the same code path as a real
      * GBA address) and is returned unchanged. */
-    if (val >= 0x02000000u && val < 0x0A000000u) {
+    if ((val >= 0x02000000u && val < 0x0A000000u) || (val >= 0x0E000000u && val < 0x0E010000u)) {
         void* p = gba_TryMemPtr((uint32_t)val);
         if (p) {
             return p;
@@ -239,10 +276,10 @@ void* port_resolve_addr(uintptr_t val)
 }
 
 void* port_resolve_write_addr(uintptr_t val) {
-    /* 0x08000000 and above is read-only cartridge space on GBA. A write
-     * destination in that numeric range is therefore a native host pointer,
-     * most commonly a 3DS stack or heap object. */
-    if (val >= 0x02000000u && val < 0x08000000u) {
+    /* 0x08000000 and above (except 0x0E000000 SRAM) is read-only cartridge
+     * space on GBA. A write destination in that numeric range is therefore a
+     * native host pointer, most commonly a 3DS stack or heap object. */
+    if ((val >= 0x02000000u && val < 0x08000000u) || (val >= 0x0E000000u && val < 0x0E010000u)) {
         void* p = gba_TryMemPtr((uint32_t)val);
         if (p) return p;
     }

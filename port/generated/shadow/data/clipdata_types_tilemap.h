@@ -11,6 +11,8 @@
 #include "types.h"
 #include "constants/clipdata.h"
 
+#define CLIPDATA_TYPES_TILEMAP_H
+
 extern const ClipBehavior(*p_sClipdataBehaviorTypes_Tilemap)[CLIPDATA_TILEMAP_COUNT];
 #define sClipdataBehaviorTypes_Tilemap (*p_sClipdataBehaviorTypes_Tilemap)
 extern const u8(*p_sClipdataCollisionTypes_Tilemap)[CLIPDATA_TILEMAP_COUNT];

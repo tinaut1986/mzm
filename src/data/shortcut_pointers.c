@@ -41,6 +41,17 @@ static const u8 sBuffer_754ab4[256] = {
 };
 #endif // !REGION_EU || REGION_EU_BETA
 
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#include "port_gba_mem.h"
+
+union EwramData* sEwramPointer = (union EwramData*)gEwram;
+u16* sBgPalramPointer = gBgPltt;
+u16* sObjPalramPointer = gObjPltt;
+u32* sVisitedMinimapTilesPointer = (u32*)(gEwram + 0x37400);
+union NonGameplayRam* sNonGameplayRamPointer = &gNonGameplayRam;
+struct Sram* sSramEwramPointer = (struct Sram*)(gEwram + 0x38000);
+struct Sram* sSramFlashPointer = (struct Sram*)gSramMem;
+#else
 FORCE_RODATA
 union EwramData* sEwramPointer = (union EwramData*)EWRAM_BASE;
 FORCE_RODATA
@@ -55,3 +66,4 @@ FORCE_RODATA
 struct Sram* sSramEwramPointer = EWRAM_BASE + 0x38000;
 FORCE_RODATA
 struct Sram* sSramFlashPointer = SRAM_BASE;
+#endif

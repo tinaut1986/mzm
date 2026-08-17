@@ -16,6 +16,36 @@
 #define CROCOMIRE_PART_POSE_IDLE 0x9
 #define CROCOMIRE_PART_POSE_DYING 0x67
 
+#ifdef TMC_3DS
+static const struct FrameData* sCrocomireFrameDataPointers[CROCOMIRE_OAM_COUNT];
+static void __attribute__((constructor)) Init_sCrocomireFrameDataPointers(void) {
+    sCrocomireFrameDataPointers[CROCOMIRE_OAM_PART_BODY_IDLE] = sCrocomirePartOam_BodyIdle;
+    sCrocomireFrameDataPointers[CROCOMIRE_OAM_PART_BODY_ANGRY] = sCrocomirePartOam_BodyAngry;
+    sCrocomireFrameDataPointers[CROCOMIRE_OAM_IDLE] = sCrocomireOam_Idle;
+    sCrocomireFrameDataPointers[CROCOMIRE_OAM_SCREAMING] = sCrocomireOam_Screaming;
+    sCrocomireFrameDataPointers[CROCOMIRE_OAM_DYING] = sCrocomireOam_Dying;
+    sCrocomireFrameDataPointers[CROCOMIRE_OAM_PART_RIGHT_ARM_IDLE] = sCrocomirePartOam_RightArmIdle;
+    sCrocomireFrameDataPointers[CROCOMIRE_OAM_PART_LEFT_ARM_IDLE] = sCrocomirePartOam_LeftArmIdle;
+    sCrocomireFrameDataPointers[CROCOMIRE_OAM_PART_LEFT_ARM_SCREAMING] = sCrocomirePartOam_LeftArmScreaming;
+    sCrocomireFrameDataPointers[CROCOMIRE_OAM_PART_RIGHT_ARM_WALKING_FORWARD] = sCrocomirePartOam_RightArmWalkingForward;
+    sCrocomireFrameDataPointers[CROCOMIRE_OAM_PART_LEFT_ARM_WALKING_FORWARD] = sCrocomirePartOam_LeftArmWalkingForward;
+    sCrocomireFrameDataPointers[CROCOMIRE_OAM_PART_RIGHT_ARM_WALKING_BACKWARDS] = sCrocomirePartOam_RightArmWalkingBackwards;
+    sCrocomireFrameDataPointers[CROCOMIRE_OAM_PART_LEFT_ARM_WALKING_BACKWARDS] = sCrocomirePartOam_LeftArmWalkingBackwards;
+    sCrocomireFrameDataPointers[CROCOMIRE_OAM_PART_RIGHT_ARM_DYING] = sCrocomirePartOam_RightArmDying;
+    sCrocomireFrameDataPointers[CROCOMIRE_OAM_PART_LEFT_ARM_DYING] = sCrocomirePartOam_LeftArmDying;
+    sCrocomireFrameDataPointers[CROCOMIRE_OAM_PART_LEGS_IDLE] = sCrocomirePartOam_LegsIdle;
+    sCrocomireFrameDataPointers[CROCOMIRE_OAM_PART_LEGS_WALKING_FORWARD] = sCrocomirePartOam_LegsWalkingForward;
+    sCrocomireFrameDataPointers[CROCOMIRE_OAM_PART_LEGS_WALKING_BACKWARDS] = sCrocomirePartOam_LegsWalkingBackwards;
+    sCrocomireFrameDataPointers[CROCOMIRE_OAM_PART_LEGS_DYING] = sCrocomirePartOam_LegsDying;
+    sCrocomireFrameDataPointers[CROCOMIRE_OAM_PART_TONGUE] = sCrocomirePartOam_Tongue;
+    sCrocomireFrameDataPointers[CROCOMIRE_OAM_PART_TONGUE_DYING] = sCrocomirePartOam_TongueDying;
+    sCrocomireFrameDataPointers[CROCOMIRE_OAM_PROJECTILE] = sCrocomireProjectileOam;
+    sCrocomireFrameDataPointers[CROCOMIRE_OAM_PART_307028] = sCrocomirePartOam_307028;
+    sCrocomireFrameDataPointers[CROCOMIRE_OAM_PART_307058] = sCrocomirePartOam_307058;
+    sCrocomireFrameDataPointers[CROCOMIRE_OAM_PART_307088] = sCrocomirePartOam_307088;
+    sCrocomireFrameDataPointers[CROCOMIRE_OAM_PART_3070b8] = sCrocomirePartOam_3070b8;
+}
+#else
 static const struct FrameData* sCrocomireFrameDataPointers[CROCOMIRE_OAM_COUNT] = {
     [CROCOMIRE_OAM_PART_BODY_IDLE] = sCrocomirePartOam_BodyIdle,
     [CROCOMIRE_OAM_PART_BODY_ANGRY] = sCrocomirePartOam_BodyAngry,
@@ -43,6 +73,7 @@ static const struct FrameData* sCrocomireFrameDataPointers[CROCOMIRE_OAM_COUNT] 
     [CROCOMIRE_OAM_PART_307088] = sCrocomirePartOam_307088,
     [CROCOMIRE_OAM_PART_3070b8] = sCrocomirePartOam_3070b8
 };
+#endif
 
 /**
  * @brief 43d88 | 68 | Synchronize the sub sprites of Crocomire

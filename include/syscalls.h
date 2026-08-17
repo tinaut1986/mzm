@@ -3,7 +3,12 @@
 
 #include "types.h"
 
+#if defined(PORT_NATIVE) || defined(TMC_3DS)
+void Port_Bios_Halt(void);
+#define SYSCALL(num) Port_Bios_Halt()
+#else
 #define SYSCALL(num) asm("svc " #num)
+#endif
 
 #define SYSCALL_SoftReset 0
 #define SYSCALL_RegisterRamReset 1

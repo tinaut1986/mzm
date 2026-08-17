@@ -12,6 +12,8 @@
 #include "macros.h"
 #include "oam.h"
 
+#define VISUAL_EFFECTS_DATA_H
+
 extern const struct FrameData(*p_sEnvEffectOam_RunningOnDustyGround)[6];
 #define sEnvEffectOam_RunningOnDustyGround (*p_sEnvEffectOam_RunningOnDustyGround)
 extern const struct FrameData(*p_sEnvEffectOam_LandingOnDustyGround)[8];

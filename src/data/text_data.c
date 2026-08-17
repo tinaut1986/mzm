@@ -49,6 +49,50 @@ const u16 sJapaneseText_Message_ActivateEasySleep[] = INCTEXT("{GAP(53)}スリ�
 const u16 sJapaneseText_Message_PressSelectLAndR[] = INCTEXT("{GAP(50)}{Select_button} と {L_button} と {R_button} を\n{GAP(67)}同時に押してください");
 const u16 sJapaneseText_Message_EasySleepPrompt[] = INCTEXT("{GAP(101)}Yes\n{GAP(104)}No");
 
+#ifdef TMC_3DS
+static const u16* sJapaneseTextPointers_Message[MESSAGE_COUNT];
+static void __attribute__((constructor)) Init_sJapaneseTextPointers_Message(void) {
+    sJapaneseTextPointers_Message[MESSAGE_DUMMY] = sJapaneseText_Message_Dummy;
+    sJapaneseTextPointers_Message[MESSAGE_ENERGY_TANK_ACQUIRED] = sJapaneseText_Message_EnergyTankAcquired;
+    sJapaneseTextPointers_Message[MESSAGE_MISSILE_TANK_ACQUIRED] = sJapaneseText_Message_MissileTankAcquired;
+    sJapaneseTextPointers_Message[MESSAGE_FIRST_MISSILE_TANK] = sJapaneseText_Message_FirstMissileTank;
+    sJapaneseTextPointers_Message[MESSAGE_SUPER_MISSILE_TANK_ACQUIRED] = sJapaneseText_Message_SuperMissileTankAcquired;
+    sJapaneseTextPointers_Message[MESSAGE_FIRST_SUPER_MISSILE_TANK] = sJapaneseText_Message_FirstSuperMissileTank;
+    sJapaneseTextPointers_Message[MESSAGE_POWER_BOMB_TANK_ACQUIRED] = sJapaneseText_Message_PowerBombTankAcquired;
+    sJapaneseTextPointers_Message[MESSAGE_FIRST_POWER_BOMB_TANK] = sJapaneseText_Message_FirstPowerBombTank;
+    sJapaneseTextPointers_Message[MESSAGE_LONG_BEAM] = sJapaneseText_Message_LongBeam;
+    sJapaneseTextPointers_Message[MESSAGE_CHARGE_BEAM] = sJapaneseText_Message_ChargeBeam;
+    sJapaneseTextPointers_Message[MESSAGE_ICE_BEAM] = sJapaneseText_Message_IceBeam;
+    sJapaneseTextPointers_Message[MESSAGE_WAVE_BEAM] = sJapaneseText_Message_WaveBeam;
+    sJapaneseTextPointers_Message[MESSAGE_UKNOWN_ITEM_PLASMA] = sJapaneseText_Message_UnknownItemPlasma;
+    sJapaneseTextPointers_Message[MESSAGE_BOMB] = sJapaneseText_Message_Bomb;
+    sJapaneseTextPointers_Message[MESSAGE_VARIA_SUIT] = sJapaneseText_Message_VariaSuit;
+    sJapaneseTextPointers_Message[MESSAGE_UNKNOWN_ITEM_GRAVITY] = sJapaneseText_Message_UnknownItemGravity;
+    sJapaneseTextPointers_Message[MESSAGE_MORPH_BALL] = sJapaneseText_Message_MorphBall;
+    sJapaneseTextPointers_Message[MESSAGE_SPEED_BOOSTER] = sJapaneseText_Message_SpeedBooster;
+    sJapaneseTextPointers_Message[MESSAGE_HIGH_JUMP] = sJapaneseText_Message_HighJump;
+    sJapaneseTextPointers_Message[MESSAGE_SCREW_ATTACK] = sJapaneseText_Message_ScrewAttack;
+    sJapaneseTextPointers_Message[MESSAGE_UNKNOWN_ITEM_SPACE_JUMP] = sJapaneseText_Message_UnknownItemSpaceJump;
+    sJapaneseTextPointers_Message[MESSAGE_POWER_GRIP] = sJapaneseText_Message_PowerGrip;
+    sJapaneseTextPointers_Message[MESSAGE_SAVE_PROMPT] = sJapaneseText_Message_SavePrompt;
+    sJapaneseTextPointers_Message[MESSAGE_SAVE_COMPLETE] = sJapaneseText_Message_SaveComplete;
+    sJapaneseTextPointers_Message[MESSAGE_WEAPON_RESUPPLY_COMPLETE] = sJapaneseText_Message_WeaponResupplyComplete;
+    sJapaneseTextPointers_Message[MESSAGE_ENERGY_TANK_RECHARGE_COMPLETE] = sJapaneseText_Message_EnergyTankRechargeComplete;
+    sJapaneseTextPointers_Message[MESSAGE_WEAPONS_AND_ENERGY_RESTORED] = sJapaneseText_Message_WeaponsAndEnergyRestored;
+    sJapaneseTextPointers_Message[MESSAGE_BRINSTAR_MAP_ACQUIRED] = sJapaneseText_Message_BrinstarMap;
+    sJapaneseTextPointers_Message[MESSAGE_KRAID_MAP_ACQUIRED] = sJapaneseText_Message_KraidMap;
+    sJapaneseTextPointers_Message[MESSAGE_NORFAIR_MAP_ACQUIRED] = sJapaneseText_Message_NorfairMap;
+    sJapaneseTextPointers_Message[MESSAGE_RIDLEY_MAP_ACQUIRED] = sJapaneseText_Message_RidleyMap;
+    sJapaneseTextPointers_Message[MESSAGE_MOTHER_SHIP_MAP_ACQUIRED] = sJapaneseText_Message_MotherShipMap;
+    sJapaneseTextPointers_Message[MESSAGE_FULLY_POWERED_SUIT] = sJapaneseText_Message_FullyPoweredSuit;
+    sJapaneseTextPointers_Message[MESSAGE_ZEBES_ESCAPE] = sJapaneseText_Message_ZebesEscape;
+    sJapaneseTextPointers_Message[MESSAGE_CHOZODIA_ESCAPE] = sJapaneseText_Message_ChozodiaEscape;
+    sJapaneseTextPointers_Message[MESSAGE_ENEMY_LOCATION_ABNORMAL] = sJapaneseText_Message_EnemyLocationAbnormal;
+    sJapaneseTextPointers_Message[MESSAGE_ACTIVATE_EASY_SLEEP] = sJapaneseText_Message_ActivateEasySleep;
+    sJapaneseTextPointers_Message[MESSAGE_PRESS_SELECT_L_AND_R] = sJapaneseText_Message_PressSelectLAndR;
+    sJapaneseTextPointers_Message[MESSAGE_EASY_SLEEP_PROMPT] = sJapaneseText_Message_EasySleepPrompt;
+}
+#else
 static const u16* sJapaneseTextPointers_Message[MESSAGE_COUNT] = {
     [MESSAGE_DUMMY] = sJapaneseText_Message_Dummy,
     [MESSAGE_ENERGY_TANK_ACQUIRED] = sJapaneseText_Message_EnergyTankAcquired,
@@ -90,6 +134,7 @@ static const u16* sJapaneseTextPointers_Message[MESSAGE_COUNT] = {
     [MESSAGE_PRESS_SELECT_L_AND_R] = sJapaneseText_Message_PressSelectLAndR,
     [MESSAGE_EASY_SLEEP_PROMPT] = sJapaneseText_Message_EasySleepPrompt
 };
+#endif
 
 const u16 sJapaneseText_Location_Brinstar[] = INCTEXT("{GAP(43)}BRINSTAR  - ブリンスタ -");
 const u16 sJapaneseText_Location_Kraid[] = INCTEXT("{GAP(57)}KRAID  - クレイド -");
@@ -118,6 +163,37 @@ const u16 sJapaneseText_Location_Unused16[] = INCTEXT("{GAP(93)}空き１６");
 const u16 sJapaneseText_Location_Unused17[] = INCTEXT("{GAP(93)}空き１７");
 const u16 sJapaneseText_Location_Unused18[] = INCTEXT("{GAP(93)}空き１８");
 
+#ifdef TMC_3DS
+static const u16* sJapaneseTextPointers_Location[LT_COUNT];
+static void __attribute__((constructor)) Init_sJapaneseTextPointers_Location(void) {
+    sJapaneseTextPointers_Location[LT_BRINSTAR] = sJapaneseText_Location_Brinstar;
+    sJapaneseTextPointers_Location[LT_KRAID] = sJapaneseText_Location_Kraid;
+    sJapaneseTextPointers_Location[LT_NORFAIR] = sJapaneseText_Location_Norfair;
+    sJapaneseTextPointers_Location[LT_RIDLEY] = sJapaneseText_Location_Ridley;
+    sJapaneseTextPointers_Location[LT_TOURIAN] = sJapaneseText_Location_Tourian;
+    sJapaneseTextPointers_Location[LT_CRATERIA] = sJapaneseText_Location_Crateria;
+    sJapaneseTextPointers_Location[LT_CHOZODIA] = sJapaneseText_Location_Chozodia;
+    sJapaneseTextPointers_Location[LT_MOTHERSHIP] = sJapaneseText_Location_Mothership;
+    sJapaneseTextPointers_Location[LT_PLANET_ZEBES] = sJapaneseText_Location_PlanetZebes;
+    sJapaneseTextPointers_Location[LT_SAVE_ROOM] = sJapaneseText_Location_SaveRoom;
+    sJapaneseTextPointers_Location[LT_RESEARCH_ROOM] = sJapaneseText_Location_ResearchRoom;
+    sJapaneseTextPointers_Location[LT_MAP_ROOM] = sJapaneseText_Location_MapRoom;
+    sJapaneseTextPointers_Location[LT_CHOZO_RUINS] = sJapaneseText_Location_ChozoRuins;
+    sJapaneseTextPointers_Location[LT_STARSHIP] = sJapaneseText_Location_Starship;
+    sJapaneseTextPointers_Location[LT_UNUSED_7] = sJapaneseText_Location_Unused7;
+    sJapaneseTextPointers_Location[LT_UNUSED_8] = sJapaneseText_Location_Unused8;
+    sJapaneseTextPointers_Location[LT_UNUSED_9] = sJapaneseText_Location_Unused9;
+    sJapaneseTextPointers_Location[LT_UNUSED_10] = sJapaneseText_Location_Unused10;
+    sJapaneseTextPointers_Location[LT_UNUSED_11] = sJapaneseText_Location_Unused11;
+    sJapaneseTextPointers_Location[LT_UNUSED_12] = sJapaneseText_Location_Unused12;
+    sJapaneseTextPointers_Location[LT_UNUSED_13] = sJapaneseText_Location_Unused13;
+    sJapaneseTextPointers_Location[LT_UNUSED_14] = sJapaneseText_Location_Unused14;
+    sJapaneseTextPointers_Location[LT_UNUSED_15] = sJapaneseText_Location_Unused15;
+    sJapaneseTextPointers_Location[LT_UNUSED_16] = sJapaneseText_Location_Unused16;
+    sJapaneseTextPointers_Location[LT_UNUSED_17] = sJapaneseText_Location_Unused17;
+    sJapaneseTextPointers_Location[LT_UNUSED_18] = sJapaneseText_Location_Unused18;
+}
+#else
 static const u16* sJapaneseTextPointers_Location[LT_COUNT] = {
     [LT_BRINSTAR] = sJapaneseText_Location_Brinstar,
     [LT_KRAID] = sJapaneseText_Location_Kraid,
@@ -146,6 +222,7 @@ static const u16* sJapaneseTextPointers_Location[LT_COUNT] = {
     [LT_UNUSED_17] = sJapaneseText_Location_Unused17,
     [LT_UNUSED_18] = sJapaneseText_Location_Unused18
 };
+#endif
 
 const u16 sHiraganaText_Message_Dummy[] = INCTEXT("{GAP(98)}ダミー\n{GAP(110)}");
 const u16 sHiraganaText_Message_EnergyTankAcquired[] = INCTEXT("{GAP(78)}{COLOR(5)}エネルギータンク\n{GAP(40)}{COLOR(0)}たいりょくの　さいだいちが　あがった");
@@ -187,6 +264,50 @@ const u16 sHiraganaText_Message_ActivateEasySleep[] = INCTEXT("{GAP(50)}スリ�
 const u16 sHiraganaText_Message_PressSelectLAndR[] = INCTEXT("{GAP(50)}{Select_button} と {L_button} と {R_button} を\n{GAP(66)}どうじにおしてください");
 const u16 sHiraganaText_Message_EasySleepPrompt[] = INCTEXT("{GAP(102)}はい\n{GAP(98)}いいえ");
 
+#ifdef TMC_3DS
+static const u16* sHiraganaTextPointers_Message[MESSAGE_COUNT];
+static void __attribute__((constructor)) Init_sHiraganaTextPointers_Message(void) {
+    sHiraganaTextPointers_Message[MESSAGE_DUMMY] = sHiraganaText_Message_Dummy;
+    sHiraganaTextPointers_Message[MESSAGE_ENERGY_TANK_ACQUIRED] = sHiraganaText_Message_EnergyTankAcquired;
+    sHiraganaTextPointers_Message[MESSAGE_MISSILE_TANK_ACQUIRED] = sHiraganaText_Message_MissileTankAcquired;
+    sHiraganaTextPointers_Message[MESSAGE_FIRST_MISSILE_TANK] = sHiraganaText_Message_FirstMissileTank;
+    sHiraganaTextPointers_Message[MESSAGE_SUPER_MISSILE_TANK_ACQUIRED] = sHiraganaText_Message_SuperMissileTankAcquired;
+    sHiraganaTextPointers_Message[MESSAGE_FIRST_SUPER_MISSILE_TANK] = sHiraganaText_Message_FirstSuperMissileTank;
+    sHiraganaTextPointers_Message[MESSAGE_POWER_BOMB_TANK_ACQUIRED] = sHiraganaText_Message_PowerBombTankAcquired;
+    sHiraganaTextPointers_Message[MESSAGE_FIRST_POWER_BOMB_TANK] = sHiraganaText_Message_FirstPowerBombTank;
+    sHiraganaTextPointers_Message[MESSAGE_LONG_BEAM] = sHiraganaText_Message_LongBeam;
+    sHiraganaTextPointers_Message[MESSAGE_CHARGE_BEAM] = sHiraganaText_Message_ChargeBeam;
+    sHiraganaTextPointers_Message[MESSAGE_ICE_BEAM] = sHiraganaText_Message_IceBeam;
+    sHiraganaTextPointers_Message[MESSAGE_WAVE_BEAM] = sHiraganaText_Message_WaveBeam;
+    sHiraganaTextPointers_Message[MESSAGE_UKNOWN_ITEM_PLASMA] = sHiraganaText_Message_UnknownItemPlasma;
+    sHiraganaTextPointers_Message[MESSAGE_BOMB] = sHiraganaText_Message_Bomb;
+    sHiraganaTextPointers_Message[MESSAGE_VARIA_SUIT] = sHiraganaText_Message_VariaSuit;
+    sHiraganaTextPointers_Message[MESSAGE_UNKNOWN_ITEM_GRAVITY] = sHiraganaText_Message_UnknownItemGravity;
+    sHiraganaTextPointers_Message[MESSAGE_MORPH_BALL] = sHiraganaText_Message_MorphBall;
+    sHiraganaTextPointers_Message[MESSAGE_SPEED_BOOSTER] = sHiraganaText_Message_SpeedBooster;
+    sHiraganaTextPointers_Message[MESSAGE_HIGH_JUMP] = sHiraganaText_Message_HighJump;
+    sHiraganaTextPointers_Message[MESSAGE_SCREW_ATTACK] = sHiraganaText_Message_ScrewAttack;
+    sHiraganaTextPointers_Message[MESSAGE_UNKNOWN_ITEM_SPACE_JUMP] = sHiraganaText_Message_UnknownItemSpaceJump;
+    sHiraganaTextPointers_Message[MESSAGE_POWER_GRIP] = sHiraganaText_Message_PowerGrip;
+    sHiraganaTextPointers_Message[MESSAGE_SAVE_PROMPT] = sHiraganaText_Message_SavePrompt;
+    sHiraganaTextPointers_Message[MESSAGE_SAVE_COMPLETE] = sHiraganaText_Message_SaveComplete;
+    sHiraganaTextPointers_Message[MESSAGE_WEAPON_RESUPPLY_COMPLETE] = sHiraganaText_Message_WeaponResupplyComplete;
+    sHiraganaTextPointers_Message[MESSAGE_ENERGY_TANK_RECHARGE_COMPLETE] = sHiraganaText_Message_EnergyTankRechargeComplete;
+    sHiraganaTextPointers_Message[MESSAGE_WEAPONS_AND_ENERGY_RESTORED] = sHiraganaText_Message_WeaponsAndEnergyRestored;
+    sHiraganaTextPointers_Message[MESSAGE_BRINSTAR_MAP_ACQUIRED] = sHiraganaText_Message_BrinstarMap;
+    sHiraganaTextPointers_Message[MESSAGE_KRAID_MAP_ACQUIRED] = sHiraganaText_Message_KraidMap;
+    sHiraganaTextPointers_Message[MESSAGE_NORFAIR_MAP_ACQUIRED] = sHiraganaText_Message_NorfairMap;
+    sHiraganaTextPointers_Message[MESSAGE_RIDLEY_MAP_ACQUIRED] = sHiraganaText_Message_RidleyMap;
+    sHiraganaTextPointers_Message[MESSAGE_MOTHER_SHIP_MAP_ACQUIRED] = sHiraganaText_Message_MotherShipMap;
+    sHiraganaTextPointers_Message[MESSAGE_FULLY_POWERED_SUIT] = sHiraganaText_Message_FullyPoweredSuit;
+    sHiraganaTextPointers_Message[MESSAGE_ZEBES_ESCAPE] = sHiraganaText_Message_ZebesEscape;
+    sHiraganaTextPointers_Message[MESSAGE_CHOZODIA_ESCAPE] = sHiraganaText_Message_ChozodiaEscape;
+    sHiraganaTextPointers_Message[MESSAGE_ENEMY_LOCATION_ABNORMAL] = sHiraganaText_Message_EnemyLocationAbnormal;
+    sHiraganaTextPointers_Message[MESSAGE_ACTIVATE_EASY_SLEEP] = sHiraganaText_Message_ActivateEasySleep;
+    sHiraganaTextPointers_Message[MESSAGE_PRESS_SELECT_L_AND_R] = sHiraganaText_Message_PressSelectLAndR;
+    sHiraganaTextPointers_Message[MESSAGE_EASY_SLEEP_PROMPT] = sHiraganaText_Message_EasySleepPrompt;
+}
+#else
 static const u16* sHiraganaTextPointers_Message[MESSAGE_COUNT] = {
     [MESSAGE_DUMMY] = sHiraganaText_Message_Dummy,
     [MESSAGE_ENERGY_TANK_ACQUIRED] = sHiraganaText_Message_EnergyTankAcquired,
@@ -228,6 +349,7 @@ static const u16* sHiraganaTextPointers_Message[MESSAGE_COUNT] = {
     [MESSAGE_PRESS_SELECT_L_AND_R] = sHiraganaText_Message_PressSelectLAndR,
     [MESSAGE_EASY_SLEEP_PROMPT] = sHiraganaText_Message_EasySleepPrompt
 };
+#endif
 
 const u16 sHiraganaText_Location_Brinstar[] = INCTEXT("{GAP(90)}ブリンスタ");
 const u16 sHiraganaText_Location_Kraid[] = INCTEXT("{GAP(94)}クレイド");
@@ -256,6 +378,37 @@ const u16 sHiraganaText_Location_Unused16[] = INCTEXT("{GAP(93)}空き１６");
 const u16 sHiraganaText_Location_Unused17[] = INCTEXT("{GAP(93)}空き１７");
 const u16 sHiraganaText_Location_Unused18[] = INCTEXT("{GAP(93)}空き１８");
 
+#ifdef TMC_3DS
+static const u16* sHiraganaTextPointers_Location[LT_COUNT];
+static void __attribute__((constructor)) Init_sHiraganaTextPointers_Location(void) {
+    sHiraganaTextPointers_Location[LT_BRINSTAR] = sHiraganaText_Location_Brinstar;
+    sHiraganaTextPointers_Location[LT_KRAID] = sHiraganaText_Location_Kraid;
+    sHiraganaTextPointers_Location[LT_NORFAIR] = sHiraganaText_Location_Norfair;
+    sHiraganaTextPointers_Location[LT_RIDLEY] = sHiraganaText_Location_Ridley;
+    sHiraganaTextPointers_Location[LT_TOURIAN] = sHiraganaText_Location_Tourian;
+    sHiraganaTextPointers_Location[LT_CRATERIA] = sHiraganaText_Location_Crateria;
+    sHiraganaTextPointers_Location[LT_CHOZODIA] = sHiraganaText_Location_Chozodia;
+    sHiraganaTextPointers_Location[LT_MOTHERSHIP] = sHiraganaText_Location_Mothership;
+    sHiraganaTextPointers_Location[LT_PLANET_ZEBES] = sHiraganaText_Location_PlanetZebes;
+    sHiraganaTextPointers_Location[LT_SAVE_ROOM] = sHiraganaText_Location_SaveRoom;
+    sHiraganaTextPointers_Location[LT_RESEARCH_ROOM] = sHiraganaText_Location_ResearchRoom;
+    sHiraganaTextPointers_Location[LT_MAP_ROOM] = sHiraganaText_Location_MapRoom;
+    sHiraganaTextPointers_Location[LT_CHOZO_RUINS] = sHiraganaText_Location_ChozoRuins;
+    sHiraganaTextPointers_Location[LT_STARSHIP] = sHiraganaText_Location_Starship;
+    sHiraganaTextPointers_Location[LT_UNUSED_7] = sHiraganaText_Location_Unused7;
+    sHiraganaTextPointers_Location[LT_UNUSED_8] = sHiraganaText_Location_Unused8;
+    sHiraganaTextPointers_Location[LT_UNUSED_9] = sHiraganaText_Location_Unused9;
+    sHiraganaTextPointers_Location[LT_UNUSED_10] = sHiraganaText_Location_Unused10;
+    sHiraganaTextPointers_Location[LT_UNUSED_11] = sHiraganaText_Location_Unused11;
+    sHiraganaTextPointers_Location[LT_UNUSED_12] = sHiraganaText_Location_Unused12;
+    sHiraganaTextPointers_Location[LT_UNUSED_13] = sHiraganaText_Location_Unused13;
+    sHiraganaTextPointers_Location[LT_UNUSED_14] = sHiraganaText_Location_Unused14;
+    sHiraganaTextPointers_Location[LT_UNUSED_15] = sHiraganaText_Location_Unused15;
+    sHiraganaTextPointers_Location[LT_UNUSED_16] = sHiraganaText_Location_Unused16;
+    sHiraganaTextPointers_Location[LT_UNUSED_17] = sHiraganaText_Location_Unused17;
+    sHiraganaTextPointers_Location[LT_UNUSED_18] = sHiraganaText_Location_Unused18;
+}
+#else
 static const u16* sHiraganaTextPointers_Location[LT_COUNT] = {
     [LT_BRINSTAR] = sHiraganaText_Location_Brinstar,
     [LT_KRAID] = sHiraganaText_Location_Kraid,
@@ -284,6 +437,7 @@ static const u16* sHiraganaTextPointers_Location[LT_COUNT] = {
     [LT_UNUSED_17] = sHiraganaText_Location_Unused17,
     [LT_UNUSED_18] = sHiraganaText_Location_Unused18
 };
+#endif
 
 #ifdef REGION_EU
 // EU gap sizes are different
@@ -368,6 +522,50 @@ const u16 sEnglishText_Message_PressSelectLAndR[] = INCTEXT("{GAP(37)}press {Sel
 const u16 sEnglishText_Message_EasySleepPrompt[] = INCTEXT("{GAP(101)}Yes\n{GAP(104)}No");
 #endif // REGION_EU
 
+#ifdef TMC_3DS
+static const u16* sEnglishTextPointers_Message[MESSAGE_COUNT];
+static void __attribute__((constructor)) Init_sEnglishTextPointers_Message(void) {
+    sEnglishTextPointers_Message[MESSAGE_DUMMY] = sEnglishText_Message_Dummy;
+    sEnglishTextPointers_Message[MESSAGE_ENERGY_TANK_ACQUIRED] = sEnglishText_Message_EnergyTankAcquired;
+    sEnglishTextPointers_Message[MESSAGE_MISSILE_TANK_ACQUIRED] = sEnglishText_Message_MissileTankAcquired;
+    sEnglishTextPointers_Message[MESSAGE_FIRST_MISSILE_TANK] = sEnglishText_Message_FirstMissileTank;
+    sEnglishTextPointers_Message[MESSAGE_SUPER_MISSILE_TANK_ACQUIRED] = sEnglishText_Message_SuperMissileTankAcquired;
+    sEnglishTextPointers_Message[MESSAGE_FIRST_SUPER_MISSILE_TANK] = sEnglishText_Message_FirstSuperMissileTank;
+    sEnglishTextPointers_Message[MESSAGE_POWER_BOMB_TANK_ACQUIRED] = sEnglishText_Message_PowerBombTankAcquired;
+    sEnglishTextPointers_Message[MESSAGE_FIRST_POWER_BOMB_TANK] = sEnglishText_Message_FirstPowerBombTank;
+    sEnglishTextPointers_Message[MESSAGE_LONG_BEAM] = sEnglishText_Message_LongBeam;
+    sEnglishTextPointers_Message[MESSAGE_CHARGE_BEAM] = sEnglishText_Message_ChargeBeam;
+    sEnglishTextPointers_Message[MESSAGE_ICE_BEAM] = sEnglishText_Message_IceBeam;
+    sEnglishTextPointers_Message[MESSAGE_WAVE_BEAM] = sEnglishText_Message_WaveBeam;
+    sEnglishTextPointers_Message[MESSAGE_UKNOWN_ITEM_PLASMA] = sEnglishText_Message_UnknownItemPlasma;
+    sEnglishTextPointers_Message[MESSAGE_BOMB] = sEnglishText_Message_Bomb;
+    sEnglishTextPointers_Message[MESSAGE_VARIA_SUIT] = sEnglishText_Message_VariaSuit;
+    sEnglishTextPointers_Message[MESSAGE_UNKNOWN_ITEM_GRAVITY] = sEnglishText_Message_UnknownItemGravity;
+    sEnglishTextPointers_Message[MESSAGE_MORPH_BALL] = sEnglishText_Message_MorphBall;
+    sEnglishTextPointers_Message[MESSAGE_SPEED_BOOSTER] = sEnglishText_Message_SpeedBooster;
+    sEnglishTextPointers_Message[MESSAGE_HIGH_JUMP] = sEnglishText_Message_HighJump;
+    sEnglishTextPointers_Message[MESSAGE_SCREW_ATTACK] = sEnglishText_Message_ScrewAttack;
+    sEnglishTextPointers_Message[MESSAGE_UNKNOWN_ITEM_SPACE_JUMP] = sEnglishText_Message_UnknownItemSpaceJump;
+    sEnglishTextPointers_Message[MESSAGE_POWER_GRIP] = sEnglishText_Message_PowerGrip;
+    sEnglishTextPointers_Message[MESSAGE_SAVE_PROMPT] = sEnglishText_Message_SavePrompt;
+    sEnglishTextPointers_Message[MESSAGE_SAVE_COMPLETE] = sEnglishText_Message_SaveComplete;
+    sEnglishTextPointers_Message[MESSAGE_WEAPON_RESUPPLY_COMPLETE] = sEnglishText_Message_WeaponResupplyComplete;
+    sEnglishTextPointers_Message[MESSAGE_ENERGY_TANK_RECHARGE_COMPLETE] = sEnglishText_Message_EnergyTankRechargeComplete;
+    sEnglishTextPointers_Message[MESSAGE_WEAPONS_AND_ENERGY_RESTORED] = sEnglishText_Message_WeaponsAndEnergyRestored;
+    sEnglishTextPointers_Message[MESSAGE_BRINSTAR_MAP_ACQUIRED] = sEnglishText_Message_BrinstarMap;
+    sEnglishTextPointers_Message[MESSAGE_KRAID_MAP_ACQUIRED] = sEnglishText_Message_KraidMap;
+    sEnglishTextPointers_Message[MESSAGE_NORFAIR_MAP_ACQUIRED] = sEnglishText_Message_NorfairMap;
+    sEnglishTextPointers_Message[MESSAGE_RIDLEY_MAP_ACQUIRED] = sEnglishText_Message_RidleyMap;
+    sEnglishTextPointers_Message[MESSAGE_MOTHER_SHIP_MAP_ACQUIRED] = sEnglishText_Message_MotherShipMap;
+    sEnglishTextPointers_Message[MESSAGE_FULLY_POWERED_SUIT] = sEnglishText_Message_FullyPoweredSuit;
+    sEnglishTextPointers_Message[MESSAGE_ZEBES_ESCAPE] = sEnglishText_Message_ZebesEscape;
+    sEnglishTextPointers_Message[MESSAGE_CHOZODIA_ESCAPE] = sEnglishText_Message_ChozodiaEscape;
+    sEnglishTextPointers_Message[MESSAGE_ENEMY_LOCATION_ABNORMAL] = sEnglishText_Message_EnemyLocationAbnormal;
+    sEnglishTextPointers_Message[MESSAGE_ACTIVATE_EASY_SLEEP] = sEnglishText_Message_ActivateEasySleep;
+    sEnglishTextPointers_Message[MESSAGE_PRESS_SELECT_L_AND_R] = sEnglishText_Message_PressSelectLAndR;
+    sEnglishTextPointers_Message[MESSAGE_EASY_SLEEP_PROMPT] = sEnglishText_Message_EasySleepPrompt;
+}
+#else
 static const u16* sEnglishTextPointers_Message[MESSAGE_COUNT] = {
     [MESSAGE_DUMMY] = sEnglishText_Message_Dummy,
     [MESSAGE_ENERGY_TANK_ACQUIRED] = sEnglishText_Message_EnergyTankAcquired,
@@ -409,6 +607,7 @@ static const u16* sEnglishTextPointers_Message[MESSAGE_COUNT] = {
     [MESSAGE_PRESS_SELECT_L_AND_R] = sEnglishText_Message_PressSelectLAndR,
     [MESSAGE_EASY_SLEEP_PROMPT] = sEnglishText_Message_EasySleepPrompt
 };
+#endif
 
 
 #ifdef REGION_EU
@@ -468,6 +667,37 @@ const u16 sEnglishText_Location_Unused17[] = INCTEXT("{GAP(66)}UNUSED OBJ 17");
 const u16 sEnglishText_Location_Unused18[] = INCTEXT("{GAP(66)}UNUSED OBJ 18");
 #endif // REGION_EU
 
+#ifdef TMC_3DS
+static const u16* sEnglishTextPointers_Location[LT_COUNT];
+static void __attribute__((constructor)) Init_sEnglishTextPointers_Location(void) {
+    sEnglishTextPointers_Location[LT_BRINSTAR] = sEnglishText_Location_Brinstar;
+    sEnglishTextPointers_Location[LT_KRAID] = sEnglishText_Location_Kraid;
+    sEnglishTextPointers_Location[LT_NORFAIR] = sEnglishText_Location_Norfair;
+    sEnglishTextPointers_Location[LT_RIDLEY] = sEnglishText_Location_Ridley;
+    sEnglishTextPointers_Location[LT_TOURIAN] = sEnglishText_Location_Tourian;
+    sEnglishTextPointers_Location[LT_CRATERIA] = sEnglishText_Location_Crateria;
+    sEnglishTextPointers_Location[LT_CHOZODIA] = sEnglishText_Location_Chozodia;
+    sEnglishTextPointers_Location[LT_MOTHERSHIP] = sEnglishText_Location_Mothership;
+    sEnglishTextPointers_Location[LT_PLANET_ZEBES] = sEnglishText_Location_PlanetZebes;
+    sEnglishTextPointers_Location[LT_SAVE_ROOM] = sEnglishText_Location_SaveRoom;
+    sEnglishTextPointers_Location[LT_RESEARCH_ROOM] = sEnglishText_Location_ResearchRoom;
+    sEnglishTextPointers_Location[LT_MAP_ROOM] = sEnglishText_Location_MapRoom;
+    sEnglishTextPointers_Location[LT_CHOZO_RUINS] = sEnglishText_Location_ChozoRuins;
+    sEnglishTextPointers_Location[LT_STARSHIP] = sEnglishText_Location_Starship;
+    sEnglishTextPointers_Location[LT_UNUSED_7] = sEnglishText_Location_Unused7;
+    sEnglishTextPointers_Location[LT_UNUSED_8] = sEnglishText_Location_Unused8;
+    sEnglishTextPointers_Location[LT_UNUSED_9] = sEnglishText_Location_Unused9;
+    sEnglishTextPointers_Location[LT_UNUSED_10] = sEnglishText_Location_Unused10;
+    sEnglishTextPointers_Location[LT_UNUSED_11] = sEnglishText_Location_Unused11;
+    sEnglishTextPointers_Location[LT_UNUSED_12] = sEnglishText_Location_Unused12;
+    sEnglishTextPointers_Location[LT_UNUSED_13] = sEnglishText_Location_Unused13;
+    sEnglishTextPointers_Location[LT_UNUSED_14] = sEnglishText_Location_Unused14;
+    sEnglishTextPointers_Location[LT_UNUSED_15] = sEnglishText_Location_Unused15;
+    sEnglishTextPointers_Location[LT_UNUSED_16] = sEnglishText_Location_Unused16;
+    sEnglishTextPointers_Location[LT_UNUSED_17] = sEnglishText_Location_Unused17;
+    sEnglishTextPointers_Location[LT_UNUSED_18] = sEnglishText_Location_Unused18;
+}
+#else
 static const u16* sEnglishTextPointers_Location[LT_COUNT] = {
     [LT_BRINSTAR] = sEnglishText_Location_Brinstar,
     [LT_KRAID] = sEnglishText_Location_Kraid,
@@ -496,6 +726,7 @@ static const u16* sEnglishTextPointers_Location[LT_COUNT] = {
     [LT_UNUSED_17] = sEnglishText_Location_Unused17,
     [LT_UNUSED_18] = sEnglishText_Location_Unused18
 };
+#endif
 
 #ifdef REGION_EU
 
@@ -1126,6 +1357,30 @@ const u16 sJapaneseText_Description_SpaceJump[] = INCTEXT("回転ジャンプ中
 const u16 sJapaneseText_Description_UnknownItem[] = INCTEXT("{COLOR(6)}解析不能{COLOR(0)}\n現在のスーツに不適合");
 const u16 sJapaneseText_Description_Pistol[] = INCTEXT("自動で{COLOR(5)}パワーが充填される{COLOR(5)}短銃\n{COLOR(5)}パワー充填発射{COLOR(0)}で敵を{COLOR(6)}マヒ{COLOR(0)}させる");
 
+#ifdef TMC_3DS
+const u16* sJapaneseTextPointers_Description[DESCRIPTION_TEXT_COUNT];
+static void __attribute__((constructor)) Init_sJapaneseTextPointers_Description(void) {
+    sJapaneseTextPointers_Description[DESCRIPTION_TEXT_LONG_BEAM] = sJapaneseText_Description_LongBeam;
+    sJapaneseTextPointers_Description[DESCRIPTION_TEXT_CHARGE_BEAM] = sJapaneseText_Description_ChargeBeam;
+    sJapaneseTextPointers_Description[DESCRIPTION_TEXT_ICE_BEAM] = sJapaneseText_Description_IceBeam;
+    sJapaneseTextPointers_Description[DESCRIPTION_TEXT_WAVE_BEAM] = sJapaneseText_Description_WaveBeam;
+    sJapaneseTextPointers_Description[DESCRIPTION_TEXT_PLASMA_BEAM] = sJapaneseText_Description_PlasmaBeam;
+    sJapaneseTextPointers_Description[DESCRIPTION_TEXT_MISSILES] = sJapaneseText_Description_Missiles;
+    sJapaneseTextPointers_Description[DESCRIPTION_TEXT_SUPER_MISSILES] = sJapaneseText_Description_SuperMissiles;
+    sJapaneseTextPointers_Description[DESCRIPTION_TEXT_BOMBS] = sJapaneseText_Description_Bombs;
+    sJapaneseTextPointers_Description[DESCRIPTION_TEXT_POWER_BOMBS] = sJapaneseText_Description_PowerBombs;
+    sJapaneseTextPointers_Description[DESCRIPTION_TEXT_VARIA_SUIT] = sJapaneseText_Description_VariaSuit;
+    sJapaneseTextPointers_Description[DESCRIPTION_TEXT_GRAVITY_SUIT] = sJapaneseText_Description_GravitySuit;
+    sJapaneseTextPointers_Description[DESCRIPTION_TEXT_MORPH_BALL] = sJapaneseText_Description_MorphBall;
+    sJapaneseTextPointers_Description[DESCRIPTION_TEXT_POWER_GRIP] = sJapaneseText_Description_PowerGrip;
+    sJapaneseTextPointers_Description[DESCRIPTION_TEXT_SPEEDBOOSTER] = sJapaneseText_Description_Speedbooster;
+    sJapaneseTextPointers_Description[DESCRIPTION_TEXT_HIGH_JUMP] = sJapaneseText_Description_HighJump;
+    sJapaneseTextPointers_Description[DESCRIPTION_TEXT_SCREW_ATTACK] = sJapaneseText_Description_ScrewAttack;
+    sJapaneseTextPointers_Description[DESCRIPTION_TEXT_SPACE_JUMP] = sJapaneseText_Description_SpaceJump;
+    sJapaneseTextPointers_Description[DESCRIPTION_TEXT_UNKNOWN_ITEM] = sJapaneseText_Description_UnknownItem;
+    sJapaneseTextPointers_Description[DESCRIPTION_TEXT_PISTOL] = sJapaneseText_Description_Pistol;
+}
+#else
 const u16* sJapaneseTextPointers_Description[DESCRIPTION_TEXT_COUNT] = {
     [DESCRIPTION_TEXT_LONG_BEAM] = sJapaneseText_Description_LongBeam,
     [DESCRIPTION_TEXT_CHARGE_BEAM] = sJapaneseText_Description_ChargeBeam,
@@ -1147,6 +1402,7 @@ const u16* sJapaneseTextPointers_Description[DESCRIPTION_TEXT_COUNT] = {
     [DESCRIPTION_TEXT_UNKNOWN_ITEM] = sJapaneseText_Description_UnknownItem,
     [DESCRIPTION_TEXT_PISTOL] = sJapaneseText_Description_Pistol
 };
+#endif
 
 const u16 sJapaneseText_Story_PlanetZebes[] = INCTEXT("　私が幼い日々を過ごした、第二のふるさと\n　「惑星ゼーベス」・・・　今や臆の巣くつと化した\n　この星への、私のファーストアタックとなった、\n　通称「ZERO　MISSION」\n　その戦いの全てを、今ここに語ろう・・・\n　　　　　　　　　　　　　　　　　　－　サムス・アラン　－");
 const u16 sJapaneseText_Story_TheTiming[] = INCTEXT("最悪のタイミングで、ゼーベスに帰還してきた\nスペースパイレーツに追撃され、\n私は、この無防備な身体のままでの脱出を\n余儀なくされた。　その私に残されたものは、\n護身用と呼ぶことさえ、はばかられるような、\nこの一丁の銃だけだ。　これだけを頼りに、\n私は今、活路を求めてスペースパイレーツの\nマザーシップへの潜入を、試みようとしている。");
@@ -1155,6 +1411,17 @@ const u16 sJapaneseText_Story_Emergency[] = INCTEXT("{GAP(92)}緊急指令");
 const u16 sJapaneseText_Story_Exterminate[] = INCTEXT("{GAP(50)}惑星ゼーベスの「メトロイド」を\n{GAP(66)}殲滅せよ。そして・・・");
 const u16 sJapaneseText_Story_Defeat[] = INCTEXT("{GAP(25)}機械生命体「マザーブレイン」を破壊せよ。");
 
+#ifdef TMC_3DS
+const u16* sJapaneseTextPointers_Story[STORY_TEXT_COUNT];
+static void __attribute__((constructor)) Init_sJapaneseTextPointers_Story(void) {
+    sJapaneseTextPointers_Story[STORY_TEXT_PLANET_ZEBES] = sJapaneseText_Story_PlanetZebes;
+    sJapaneseTextPointers_Story[STORY_TEXT_THE_TIMING] = sJapaneseText_Story_TheTiming;
+    sJapaneseTextPointers_Story[STORY_TEXT_COULD_I_SURVIVE] = sJapaneseText_Story_CouldISurvive;
+    sJapaneseTextPointers_Story[STORY_TEXT_EMERGENCY] = sJapaneseText_Story_Emergency;
+    sJapaneseTextPointers_Story[STORY_TEXT_EXTERMINATE] = sJapaneseText_Story_Exterminate;
+    sJapaneseTextPointers_Story[STORY_TEXT_DEFEAT] = sJapaneseText_Story_Defeat;
+}
+#else
 const u16* sJapaneseTextPointers_Story[STORY_TEXT_COUNT] = {
     [STORY_TEXT_PLANET_ZEBES] = sJapaneseText_Story_PlanetZebes,
     [STORY_TEXT_THE_TIMING] = sJapaneseText_Story_TheTiming,
@@ -1163,6 +1430,7 @@ const u16* sJapaneseTextPointers_Story[STORY_TEXT_COUNT] = {
     [STORY_TEXT_EXTERMINATE] = sJapaneseText_Story_Exterminate,
     [STORY_TEXT_DEFEAT] = sJapaneseText_Story_Defeat
 };
+#endif
 
 const u16 sJapaneseText_FileScreen_StartGame[] = INCTEXT("ゲームスタート\nゲームスタート（通信）");
 const u16 sJapaneseText_FileScreen_CopySourceChoose[] = INCTEXT("コピーするデータを\nえらんでください");
@@ -1202,6 +1470,48 @@ const u16 sJapaneseText_FileScreen_TimeAttackRecordUnlock[] = INCTEXT("{COLOR(6)
 const u16 sJapaneseText_FileScreen_SoundTestUnlock[] = INCTEXT("{COLOR(6)}OPTIONS　[オプション]　{COLOR(0)}に\n{COLOR(5)}「サウンドテスト」{COLOR(0)}が\nついかされました。");
 const u16 sJapaneseText_FileScreen_NesMetroidUnlock[] = INCTEXT("{COLOR(6)}OPTIONS　[オプション]　{COLOR(0)}に\n{COLOR(5)}「オリジナルメトロイド」{COLOR(0)}が\nついかされました。");
 
+#ifdef TMC_3DS
+const u16* sJapaneseTextPointers_FileScreen[FILE_SCREEN_TEXT_COUNT];
+static void __attribute__((constructor)) Init_sJapaneseTextPointers_FileScreen(void) {
+    sJapaneseTextPointers_FileScreen[FILE_SCREEN_TEXT_START_GAME] = sJapaneseText_FileScreen_StartGame;
+    sJapaneseTextPointers_FileScreen[FILE_SCREEN_TEXT_COPY_SOURCE_CHOOSE] = sJapaneseText_FileScreen_CopySourceChoose;
+    sJapaneseTextPointers_FileScreen[FILE_SCREEN_TEXT_COPY_DESTINATION_CHOOSE] = sJapaneseText_FileScreen_CopyDestinationChoose;
+    sJapaneseTextPointers_FileScreen[FILE_SCREEN_TEXT_COPY_CONFIRM] = sJapaneseText_FileScreen_CopyConfirm;
+    sJapaneseTextPointers_FileScreen[FILE_SCREEN_TEXT_ERASE_CHOOSE] = sJapaneseText_FileScreen_EraseChoose;
+    sJapaneseTextPointers_FileScreen[FILE_SCREEN_TEXT_ERASE_CONFIRM] = sJapaneseText_FileScreen_EraseConfirm;
+    sJapaneseTextPointers_FileScreen[FILE_SCREEN_TEXT_FILE_A_CORRUPT_REVERT] = sJapaneseText_FileScreen_FileACorruptRevert;
+    sJapaneseTextPointers_FileScreen[FILE_SCREEN_TEXT_FILE_B_CORRUPT_REVERT] = sJapaneseText_FileScreen_FileBCorruptRevert;
+    sJapaneseTextPointers_FileScreen[FILE_SCREEN_TEXT_FILE_C_CORRUPT_REVERT] = sJapaneseText_FileScreen_FileCCorruptRevert;
+    sJapaneseTextPointers_FileScreen[FILE_SCREEN_TEXT_FILE_A_CORRUPT_ERASE] = sJapaneseText_FileScreen_FileACorruptErase;
+    sJapaneseTextPointers_FileScreen[FILE_SCREEN_TEXT_FILE_B_CORRUPT_ERASE] = sJapaneseText_FileScreen_FileBCorruptErase;
+    sJapaneseTextPointers_FileScreen[FILE_SCREEN_TEXT_FILE_C_CORRUPT_ERASE] = sJapaneseText_FileScreen_FileCCorruptErase;
+    sJapaneseTextPointers_FileScreen[FILE_SCREEN_TEXT_ERASE_ALL_REFORMAT] = sJapaneseText_FileScreen_EraseAllReformat;
+    sJapaneseTextPointers_FileScreen[FILE_SCREEN_TEXT_ERASE_ALL] = sJapaneseText_FileScreen_EraseAll;
+    sJapaneseTextPointers_FileScreen[FILE_SCREEN_TEXT_CONTINUE_NEW] = sJapaneseText_FileScreen_ContinueNew;
+    sJapaneseTextPointers_FileScreen[FILE_SCREEN_TEXT_CONTINUE_NEW_TIME_ATTACK] = sJapaneseText_FileScreen_ContinueNewTimeAttack;
+    sJapaneseTextPointers_FileScreen[FILE_SCREEN_TEXT_MESSAGE_OPTION] = sJapaneseText_FileScreen_MessageOption;
+    sJapaneseTextPointers_FileScreen[FILE_SCREEN_TEXT_DIFFICULTY] = sJapaneseText_FileScreen_Difficulty;
+    sJapaneseTextPointers_FileScreen[FILE_SCREEN_TEXT_DIFFICULTY_HARD] = sJapaneseText_FileScreen_DifficultyHard;
+    sJapaneseTextPointers_FileScreen[FILE_SCREEN_TEXT_ERASE_FILE_CONFIRM] = sJapaneseText_FileScreen_EraseFileConfirm;
+    sJapaneseTextPointers_FileScreen[FILE_SCREEN_TEXT_LINKING_PLEASE_WAIT] = sJapaneseText_FileScreen_LinkingPleaseWait;
+    sJapaneseTextPointers_FileScreen[FILE_SCREEN_TEXT_UNABLE_TO_DETECT_FUSION] = sJapaneseText_FileScreen_UnableToDetectFusion;
+    sJapaneseTextPointers_FileScreen[FILE_SCREEN_TEXT_LINKING_ERROR] = sJapaneseText_FileScreen_LinkingError;
+    sJapaneseTextPointers_FileScreen[FILE_SCREEN_TEXT_TURN_OFF_CONFIRM_LINK] = sJapaneseText_FileScreen_TurnOffConfirmLink;
+    sJapaneseTextPointers_FileScreen[FILE_SCREEN_TEXT_DO_NOT_TURN_POWER_OFF] = sJapaneseText_FileScreen_DoNotTurnPowerOff;
+    sJapaneseTextPointers_FileScreen[FILE_SCREEN_TEXT_DATA_UPLOAD_COMPLETE] = sJapaneseText_FileScreen_DataUploadComplete;
+    sJapaneseTextPointers_FileScreen[FILE_SCREEN_TEXT_LINK_COMPLETE] = sJapaneseText_FileScreen_LinkComplete;
+    sJapaneseTextPointers_FileScreen[FILE_SCREEN_TEXT_BEST_TIME] = sJapaneseText_FileScreen_BestTime;
+    sJapaneseTextPointers_FileScreen[FILE_SCREEN_TEXT_BEST_TIME_100] = sJapaneseText_FileScreen_BestTime100;
+    sJapaneseTextPointers_FileScreen[FILE_SCREEN_TEXT_ID_PASSWORD] = sJapaneseText_FileScreen_IdPassword;
+    sJapaneseTextPointers_FileScreen[FILE_SCREEN_TEXT_CANT_COPY_TIME_ATTACK] = sJapaneseText_FileScreen_CantCopyTimeAttack;
+    sJapaneseTextPointers_FileScreen[FILE_SCREEN_TEXT_LINKING_ERROR_TRY_AGAIN] = sJapaneseText_FileScreen_LinkingErrorTryAgain;
+    sJapaneseTextPointers_FileScreen[FILE_SCREEN_TEXT_LINKING_ERROR_CHECK_CONNECTION] = sJapaneseText_FileScreen_LinkingErrorCheckConnection;
+    sJapaneseTextPointers_FileScreen[FILE_SCREEN_TEXT_GALLERY_UNLOCK] = sJapaneseText_FileScreen_GalleryUnlock;
+    sJapaneseTextPointers_FileScreen[FILE_SCREEN_TEXT_TIME_ATTACK_RECORD_UNLOCK] = sJapaneseText_FileScreen_TimeAttackRecordUnlock;
+    sJapaneseTextPointers_FileScreen[FILE_SCREEN_TEXT_SOUND_TEST_UNLOCK] = sJapaneseText_FileScreen_SoundTestUnlock;
+    sJapaneseTextPointers_FileScreen[FILE_SCREEN_TEXT_NES_METROID_UNLOCK] = sJapaneseText_FileScreen_NesMetroidUnlock;
+}
+#else
 const u16* sJapaneseTextPointers_FileScreen[FILE_SCREEN_TEXT_COUNT] = {
     [FILE_SCREEN_TEXT_START_GAME] = sJapaneseText_FileScreen_StartGame,
     [FILE_SCREEN_TEXT_COPY_SOURCE_CHOOSE] = sJapaneseText_FileScreen_CopySourceChoose,
@@ -1241,6 +1551,7 @@ const u16* sJapaneseTextPointers_FileScreen[FILE_SCREEN_TEXT_COUNT] = {
     [FILE_SCREEN_TEXT_SOUND_TEST_UNLOCK] = sJapaneseText_FileScreen_SoundTestUnlock,
     [FILE_SCREEN_TEXT_NES_METROID_UNLOCK] = sJapaneseText_FileScreen_NesMetroidUnlock
 };
+#endif
 
 static const u16 sAlign_1 = 0; // File alignment
 
@@ -1264,6 +1575,30 @@ const u16 sHiraganaText_Description_SpaceJump[] = INCTEXT("かいてんジャン
 const u16 sHiraganaText_Description_UnknownItem[] = INCTEXT("{COLOR(6)}これがなにか、わかりません{COLOR(0)}\nいまのスーツでは、うごきません");
 const u16 sHiraganaText_Description_Pistol[] = INCTEXT("じどうで{COLOR(5)}パワーがたまる{COLOR(5)}ピストル\n{COLOR(5)}パワーをためてから、うつ{COLOR(0)}と　{COLOR(0)}てきが{COLOR(6)}しびれて、すこしとまる{COLOR(0)}");
 
+#ifdef TMC_3DS
+const u16* sHiraganaTextPointers_Description[DESCRIPTION_TEXT_COUNT];
+static void __attribute__((constructor)) Init_sHiraganaTextPointers_Description(void) {
+    sHiraganaTextPointers_Description[DESCRIPTION_TEXT_LONG_BEAM] = sHiraganaText_Description_LongBeam;
+    sHiraganaTextPointers_Description[DESCRIPTION_TEXT_CHARGE_BEAM] = sHiraganaText_Description_ChargeBeam;
+    sHiraganaTextPointers_Description[DESCRIPTION_TEXT_ICE_BEAM] = sHiraganaText_Description_IceBeam;
+    sHiraganaTextPointers_Description[DESCRIPTION_TEXT_WAVE_BEAM] = sHiraganaText_Description_WaveBeam;
+    sHiraganaTextPointers_Description[DESCRIPTION_TEXT_PLASMA_BEAM] = sHiraganaText_Description_PlasmaBeam;
+    sHiraganaTextPointers_Description[DESCRIPTION_TEXT_MISSILES] = sHiraganaText_Description_Missiles;
+    sHiraganaTextPointers_Description[DESCRIPTION_TEXT_SUPER_MISSILES] = sHiraganaText_Description_SuperMissiles;
+    sHiraganaTextPointers_Description[DESCRIPTION_TEXT_BOMBS] = sHiraganaText_Description_Bombs;
+    sHiraganaTextPointers_Description[DESCRIPTION_TEXT_POWER_BOMBS] = sHiraganaText_Description_PowerBombs;
+    sHiraganaTextPointers_Description[DESCRIPTION_TEXT_VARIA_SUIT] = sHiraganaText_Description_VariaSuit;
+    sHiraganaTextPointers_Description[DESCRIPTION_TEXT_GRAVITY_SUIT] = sHiraganaText_Description_GravitySuit;
+    sHiraganaTextPointers_Description[DESCRIPTION_TEXT_MORPH_BALL] = sHiraganaText_Description_MorphBall;
+    sHiraganaTextPointers_Description[DESCRIPTION_TEXT_POWER_GRIP] = sHiraganaText_Description_PowerGrip;
+    sHiraganaTextPointers_Description[DESCRIPTION_TEXT_SPEEDBOOSTER] = sHiraganaText_Description_Speedbooster;
+    sHiraganaTextPointers_Description[DESCRIPTION_TEXT_HIGH_JUMP] = sHiraganaText_Description_HighJump;
+    sHiraganaTextPointers_Description[DESCRIPTION_TEXT_SCREW_ATTACK] = sHiraganaText_Description_ScrewAttack;
+    sHiraganaTextPointers_Description[DESCRIPTION_TEXT_SPACE_JUMP] = sHiraganaText_Description_SpaceJump;
+    sHiraganaTextPointers_Description[DESCRIPTION_TEXT_UNKNOWN_ITEM] = sHiraganaText_Description_UnknownItem;
+    sHiraganaTextPointers_Description[DESCRIPTION_TEXT_PISTOL] = sHiraganaText_Description_Pistol;
+}
+#else
 const u16* sHiraganaTextPointers_Description[DESCRIPTION_TEXT_COUNT] = {
     [DESCRIPTION_TEXT_LONG_BEAM] = sHiraganaText_Description_LongBeam,
     [DESCRIPTION_TEXT_CHARGE_BEAM] = sHiraganaText_Description_ChargeBeam,
@@ -1285,6 +1620,7 @@ const u16* sHiraganaTextPointers_Description[DESCRIPTION_TEXT_COUNT] = {
     [DESCRIPTION_TEXT_UNKNOWN_ITEM] = sHiraganaText_Description_UnknownItem,
     [DESCRIPTION_TEXT_PISTOL] = sHiraganaText_Description_Pistol
 };
+#endif
 
 const u16 sHiraganaText_Story_PlanetZebes[] = INCTEXT("ちいさいころの　わたしが　くらした「わくせいゼーベス」\nいまはもう、とてもおそろしい　ほしになってしまった、\nそのゼーベスでの、わたしのさいしょの　にんむのことを\nみんなは「ゼロミッション」と、よんでいる。\nそのたたかいのことを、いま、ぜんぶはなそう・・・\n　　　　　　　　　　　　　　　　　　　　 　－　サムス・アラン　－");
 const u16 sHiraganaText_Story_TheTiming[] = INCTEXT("すごく　わるいタイミングで、ゼーベスにかえってきた\nうちゅうかいぞくに　おいかけられて、\nわたしは、こんなよわいかっこうで、\nだっしゅつしなければならなくなった。　わたしの　ぶきは、\nあんまり　やくにたちそうもない、いっちょうの\nこのピストルだけだ。　これだけをもって、わたしはいま　\nかえるほうほうを　みつけようと、うちゅうかいぞくの\nおおきなうちゅうせんに　はいっていこうとしている。");
@@ -1293,6 +1629,17 @@ const u16 sHiraganaText_Story_Emergency[] = INCTEXT("{GAP(80)}きんきゅうし
 const u16 sHiraganaText_Story_Exterminate[] = INCTEXT("{GAP(44)}わくせいゼーベスの「メトロイド」を\n{GAP(52)}ぜんぶやっつけろ。そして・・・");
 const u16 sHiraganaText_Story_Defeat[] = INCTEXT("きかいじかけのいきもの「マザーブレイン」を、はかいせよ。");
 
+#ifdef TMC_3DS
+const u16* sHiraganaTextPointers_Story[STORY_TEXT_COUNT];
+static void __attribute__((constructor)) Init_sHiraganaTextPointers_Story(void) {
+    sHiraganaTextPointers_Story[STORY_TEXT_PLANET_ZEBES] = sHiraganaText_Story_PlanetZebes;
+    sHiraganaTextPointers_Story[STORY_TEXT_THE_TIMING] = sHiraganaText_Story_TheTiming;
+    sHiraganaTextPointers_Story[STORY_TEXT_COULD_I_SURVIVE] = sHiraganaText_Story_CouldISurvive;
+    sHiraganaTextPointers_Story[STORY_TEXT_EMERGENCY] = sHiraganaText_Story_Emergency;
+    sHiraganaTextPointers_Story[STORY_TEXT_EXTERMINATE] = sHiraganaText_Story_Exterminate;
+    sHiraganaTextPointers_Story[STORY_TEXT_DEFEAT] = sHiraganaText_Story_Defeat;
+}
+#else
 const u16* sHiraganaTextPointers_Story[STORY_TEXT_COUNT] = {
     [STORY_TEXT_PLANET_ZEBES] = sHiraganaText_Story_PlanetZebes,
     [STORY_TEXT_THE_TIMING] = sHiraganaText_Story_TheTiming,
@@ -1301,6 +1648,7 @@ const u16* sHiraganaTextPointers_Story[STORY_TEXT_COUNT] = {
     [STORY_TEXT_EXTERMINATE] = sHiraganaText_Story_Exterminate,
     [STORY_TEXT_DEFEAT] = sHiraganaText_Story_Defeat
 };
+#endif
 
 const u16 sHiraganaText_FileScreen_StartGame[] = INCTEXT("ゲームスタート\nゲームスタート（通信）");
 const u16 sHiraganaText_FileScreen_CopySourceChoose[] = INCTEXT("コピーするデータを\nえらんでください");
@@ -1340,6 +1688,48 @@ const u16 sHiraganaText_FileScreen_TimeAttackRecordUnlock[] = INCTEXT("{COLOR(6)
 const u16 sHiraganaText_FileScreen_SoundTestUnlock[] = INCTEXT("{COLOR(6)}OPTIONS　[オプション]　{COLOR(0)}に\n{COLOR(5)}「サウンドテスト」{COLOR(0)}が\nついかされました。");
 const u16 sHiraganaText_FileScreen_NesMetroidUnlock[] = INCTEXT("{COLOR(6)}OPTIONS　[オプション]　{COLOR(0)}に\n{COLOR(5)}「オリジナルメトロイド」{COLOR(0)}が\nついかされました。");
 
+#ifdef TMC_3DS
+const u16* sHiraganaTextPointers_FileScreen[FILE_SCREEN_TEXT_COUNT];
+static void __attribute__((constructor)) Init_sHiraganaTextPointers_FileScreen(void) {
+    sHiraganaTextPointers_FileScreen[FILE_SCREEN_TEXT_START_GAME] = sHiraganaText_FileScreen_StartGame;
+    sHiraganaTextPointers_FileScreen[FILE_SCREEN_TEXT_COPY_SOURCE_CHOOSE] = sHiraganaText_FileScreen_CopySourceChoose;
+    sHiraganaTextPointers_FileScreen[FILE_SCREEN_TEXT_COPY_DESTINATION_CHOOSE] = sHiraganaText_FileScreen_CopyDestinationChoose;
+    sHiraganaTextPointers_FileScreen[FILE_SCREEN_TEXT_COPY_CONFIRM] = sHiraganaText_FileScreen_CopyConfirm;
+    sHiraganaTextPointers_FileScreen[FILE_SCREEN_TEXT_ERASE_CHOOSE] = sHiraganaText_FileScreen_EraseChoose;
+    sHiraganaTextPointers_FileScreen[FILE_SCREEN_TEXT_ERASE_CONFIRM] = sHiraganaText_FileScreen_EraseConfirm;
+    sHiraganaTextPointers_FileScreen[FILE_SCREEN_TEXT_FILE_A_CORRUPT_REVERT] = sHiraganaText_FileScreen_FileACorruptRevert;
+    sHiraganaTextPointers_FileScreen[FILE_SCREEN_TEXT_FILE_B_CORRUPT_REVERT] = sHiraganaText_FileScreen_FileBCorruptRevert;
+    sHiraganaTextPointers_FileScreen[FILE_SCREEN_TEXT_FILE_C_CORRUPT_REVERT] = sHiraganaText_FileScreen_FileCCorruptRevert;
+    sHiraganaTextPointers_FileScreen[FILE_SCREEN_TEXT_FILE_A_CORRUPT_ERASE] = sHiraganaText_FileScreen_FileACorruptErase;
+    sHiraganaTextPointers_FileScreen[FILE_SCREEN_TEXT_FILE_B_CORRUPT_ERASE] = sHiraganaText_FileScreen_FileBCorruptErase;
+    sHiraganaTextPointers_FileScreen[FILE_SCREEN_TEXT_FILE_C_CORRUPT_ERASE] = sHiraganaText_FileScreen_FileCCorruptErase;
+    sHiraganaTextPointers_FileScreen[FILE_SCREEN_TEXT_ERASE_ALL_REFORMAT] = sHiraganaText_FileScreen_EraseAllReformat;
+    sHiraganaTextPointers_FileScreen[FILE_SCREEN_TEXT_ERASE_ALL] = sHiraganaText_FileScreen_EraseAll;
+    sHiraganaTextPointers_FileScreen[FILE_SCREEN_TEXT_CONTINUE_NEW] = sHiraganaText_FileScreen_ContinueNew;
+    sHiraganaTextPointers_FileScreen[FILE_SCREEN_TEXT_CONTINUE_NEW_TIME_ATTACK] = sHiraganaText_FileScreen_ContinueNewTimeAttack;
+    sHiraganaTextPointers_FileScreen[FILE_SCREEN_TEXT_MESSAGE_OPTION] = sHiraganaText_FileScreen_MessageOption;
+    sHiraganaTextPointers_FileScreen[FILE_SCREEN_TEXT_DIFFICULTY] = sHiraganaText_FileScreen_Difficulty;
+    sHiraganaTextPointers_FileScreen[FILE_SCREEN_TEXT_DIFFICULTY_HARD] = sHiraganaText_FileScreen_DifficultyHard;
+    sHiraganaTextPointers_FileScreen[FILE_SCREEN_TEXT_ERASE_FILE_CONFIRM] = sHiraganaText_FileScreen_EraseFileConfirm;
+    sHiraganaTextPointers_FileScreen[FILE_SCREEN_TEXT_LINKING_PLEASE_WAIT] = sHiraganaText_FileScreen_LinkingPleaseWait;
+    sHiraganaTextPointers_FileScreen[FILE_SCREEN_TEXT_UNABLE_TO_DETECT_FUSION] = sHiraganaText_FileScreen_UnableToDetectFusion;
+    sHiraganaTextPointers_FileScreen[FILE_SCREEN_TEXT_LINKING_ERROR] = sHiraganaText_FileScreen_LinkingError;
+    sHiraganaTextPointers_FileScreen[FILE_SCREEN_TEXT_TURN_OFF_CONFIRM_LINK] = sHiraganaText_FileScreen_TurnOffConfirmLink;
+    sHiraganaTextPointers_FileScreen[FILE_SCREEN_TEXT_DO_NOT_TURN_POWER_OFF] = sHiraganaText_FileScreen_DoNotTurnPowerOff;
+    sHiraganaTextPointers_FileScreen[FILE_SCREEN_TEXT_DATA_UPLOAD_COMPLETE] = sHiraganaText_FileScreen_DataUploadComplete;
+    sHiraganaTextPointers_FileScreen[FILE_SCREEN_TEXT_LINK_COMPLETE] = sHiraganaText_FileScreen_LinkComplete;
+    sHiraganaTextPointers_FileScreen[FILE_SCREEN_TEXT_BEST_TIME] = sHiraganaText_FileScreen_BestTime;
+    sHiraganaTextPointers_FileScreen[FILE_SCREEN_TEXT_BEST_TIME_100] = sHiraganaText_FileScreen_BestTime100;
+    sHiraganaTextPointers_FileScreen[FILE_SCREEN_TEXT_ID_PASSWORD] = sHiraganaText_FileScreen_IdPassword;
+    sHiraganaTextPointers_FileScreen[FILE_SCREEN_TEXT_CANT_COPY_TIME_ATTACK] = sHiraganaText_FileScreen_CantCopyTimeAttack;
+    sHiraganaTextPointers_FileScreen[FILE_SCREEN_TEXT_LINKING_ERROR_TRY_AGAIN] = sHiraganaText_FileScreen_LinkingErrorTryAgain;
+    sHiraganaTextPointers_FileScreen[FILE_SCREEN_TEXT_LINKING_ERROR_CHECK_CONNECTION] = sHiraganaText_FileScreen_LinkingErrorCheckConnection;
+    sHiraganaTextPointers_FileScreen[FILE_SCREEN_TEXT_GALLERY_UNLOCK] = sHiraganaText_FileScreen_GalleryUnlock;
+    sHiraganaTextPointers_FileScreen[FILE_SCREEN_TEXT_TIME_ATTACK_RECORD_UNLOCK] = sHiraganaText_FileScreen_TimeAttackRecordUnlock;
+    sHiraganaTextPointers_FileScreen[FILE_SCREEN_TEXT_SOUND_TEST_UNLOCK] = sHiraganaText_FileScreen_SoundTestUnlock;
+    sHiraganaTextPointers_FileScreen[FILE_SCREEN_TEXT_NES_METROID_UNLOCK] = sHiraganaText_FileScreen_NesMetroidUnlock;
+}
+#else
 const u16* sHiraganaTextPointers_FileScreen[FILE_SCREEN_TEXT_COUNT] = {
     [FILE_SCREEN_TEXT_START_GAME] = sHiraganaText_FileScreen_StartGame,
     [FILE_SCREEN_TEXT_COPY_SOURCE_CHOOSE] = sHiraganaText_FileScreen_CopySourceChoose,
@@ -1379,6 +1769,7 @@ const u16* sHiraganaTextPointers_FileScreen[FILE_SCREEN_TEXT_COUNT] = {
     [FILE_SCREEN_TEXT_SOUND_TEST_UNLOCK] = sHiraganaText_FileScreen_SoundTestUnlock,
     [FILE_SCREEN_TEXT_NES_METROID_UNLOCK] = sHiraganaText_FileScreen_NesMetroidUnlock
 };
+#endif
 
 const u16 sEnglishText_Description_LongBeam[] = INCTEXT("Fire long-distance shots with this beam.\nPress {L_button} + {B_button} to fire diagonally.");
 const u16 sEnglishText_Description_ChargeBeam[] = INCTEXT("Hold {B_button} to charge. Release to fire.\nCharge Attack: Jump with a full charge.");
@@ -1400,6 +1791,30 @@ const u16 sEnglishText_Description_SpaceJump[] = INCTEXT("Somersault continually
 const u16 sEnglishText_Description_UnknownItem[] = INCTEXT("{COLOR(6)}Analysis inconclusive.{COLOR(0)}\nItem incompatible with current suit.");
 const u16 sEnglishText_Description_Pistol[] = INCTEXT("An {COLOR(5)}auto-charging{COLOR(5)} pistol.\n{COLOR(6)}Stun{COLOR(0)} enemies with {COLOR(5)}charged shots{COLOR(0)}.");
 
+#ifdef TMC_3DS
+const u16* sEnglishTextPointers_Description[DESCRIPTION_TEXT_COUNT];
+static void __attribute__((constructor)) Init_sEnglishTextPointers_Description(void) {
+    sEnglishTextPointers_Description[DESCRIPTION_TEXT_LONG_BEAM] = sEnglishText_Description_LongBeam;
+    sEnglishTextPointers_Description[DESCRIPTION_TEXT_CHARGE_BEAM] = sEnglishText_Description_ChargeBeam;
+    sEnglishTextPointers_Description[DESCRIPTION_TEXT_ICE_BEAM] = sEnglishText_Description_IceBeam;
+    sEnglishTextPointers_Description[DESCRIPTION_TEXT_WAVE_BEAM] = sEnglishText_Description_WaveBeam;
+    sEnglishTextPointers_Description[DESCRIPTION_TEXT_PLASMA_BEAM] = sEnglishText_Description_PlasmaBeam;
+    sEnglishTextPointers_Description[DESCRIPTION_TEXT_MISSILES] = sEnglishText_Description_Missiles;
+    sEnglishTextPointers_Description[DESCRIPTION_TEXT_SUPER_MISSILES] = sEnglishText_Description_SuperMissiles;
+    sEnglishTextPointers_Description[DESCRIPTION_TEXT_BOMBS] = sEnglishText_Description_Bombs;
+    sEnglishTextPointers_Description[DESCRIPTION_TEXT_POWER_BOMBS] = sEnglishText_Description_PowerBombs;
+    sEnglishTextPointers_Description[DESCRIPTION_TEXT_VARIA_SUIT] = sEnglishText_Description_VariaSuit;
+    sEnglishTextPointers_Description[DESCRIPTION_TEXT_GRAVITY_SUIT] = sEnglishText_Description_GravitySuit;
+    sEnglishTextPointers_Description[DESCRIPTION_TEXT_MORPH_BALL] = sEnglishText_Description_MorphBall;
+    sEnglishTextPointers_Description[DESCRIPTION_TEXT_POWER_GRIP] = sEnglishText_Description_PowerGrip;
+    sEnglishTextPointers_Description[DESCRIPTION_TEXT_SPEEDBOOSTER] = sEnglishText_Description_Speedbooster;
+    sEnglishTextPointers_Description[DESCRIPTION_TEXT_HIGH_JUMP] = sEnglishText_Description_HighJump;
+    sEnglishTextPointers_Description[DESCRIPTION_TEXT_SCREW_ATTACK] = sEnglishText_Description_ScrewAttack;
+    sEnglishTextPointers_Description[DESCRIPTION_TEXT_SPACE_JUMP] = sEnglishText_Description_SpaceJump;
+    sEnglishTextPointers_Description[DESCRIPTION_TEXT_UNKNOWN_ITEM] = sEnglishText_Description_UnknownItem;
+    sEnglishTextPointers_Description[DESCRIPTION_TEXT_PISTOL] = sEnglishText_Description_Pistol;
+}
+#else
 const u16* sEnglishTextPointers_Description[DESCRIPTION_TEXT_COUNT] = {
     [DESCRIPTION_TEXT_LONG_BEAM] = sEnglishText_Description_LongBeam,
     [DESCRIPTION_TEXT_CHARGE_BEAM] = sEnglishText_Description_ChargeBeam,
@@ -1421,6 +1836,7 @@ const u16* sEnglishTextPointers_Description[DESCRIPTION_TEXT_COUNT] = {
     [DESCRIPTION_TEXT_UNKNOWN_ITEM] = sEnglishText_Description_UnknownItem,
     [DESCRIPTION_TEXT_PISTOL] = sEnglishText_Description_Pistol
 };
+#endif
 
 static const u16 sAlign_2 = 0;
 
@@ -1441,6 +1857,17 @@ const u16 sEnglishText_Story_Exterminate[] = INCTEXT("Exterminate all Metroid or
 const u16 sEnglishText_Story_Defeat[] = INCTEXT("And defeat the mechanical life-form,\nMother Brain.");
 #endif // REGION_EU
 
+#ifdef TMC_3DS
+const u16* sEnglishTextPointers_Story[STORY_TEXT_COUNT];
+static void __attribute__((constructor)) Init_sEnglishTextPointers_Story(void) {
+    sEnglishTextPointers_Story[STORY_TEXT_PLANET_ZEBES] = sEnglishText_Story_PlanetZebes;
+    sEnglishTextPointers_Story[STORY_TEXT_THE_TIMING] = sEnglishText_Story_TheTiming;
+    sEnglishTextPointers_Story[STORY_TEXT_COULD_I_SURVIVE] = sEnglishText_Story_CouldISurvive;
+    sEnglishTextPointers_Story[STORY_TEXT_EMERGENCY] = sEnglishText_Story_Emergency;
+    sEnglishTextPointers_Story[STORY_TEXT_EXTERMINATE] = sEnglishText_Story_Exterminate;
+    sEnglishTextPointers_Story[STORY_TEXT_DEFEAT] = sEnglishText_Story_Defeat;
+}
+#else
 const u16* sEnglishTextPointers_Story[STORY_TEXT_COUNT] = {
     [STORY_TEXT_PLANET_ZEBES] = sEnglishText_Story_PlanetZebes,
     [STORY_TEXT_THE_TIMING] = sEnglishText_Story_TheTiming,
@@ -1449,6 +1876,7 @@ const u16* sEnglishTextPointers_Story[STORY_TEXT_COUNT] = {
     [STORY_TEXT_EXTERMINATE] = sEnglishText_Story_Exterminate,
     [STORY_TEXT_DEFEAT] = sEnglishText_Story_Defeat
 };
+#endif
 
 const u16 sEnglishText_FileScreen_StartGame[] = INCTEXT("Start Game\nStart Game (Link)");
 const u16 sEnglishText_FileScreen_CopySourceChoose[] = INCTEXT("Choose a data file\nto copy.");
@@ -1508,6 +1936,48 @@ const u16 sEnglishText_FileScreen_TimeAttackRecordUnlock[] = INCTEXT("{COLOR(5)}
 const u16 sEnglishText_FileScreen_SoundTestUnlock[] = INCTEXT("{COLOR(5)}Sound Test{COLOR(0)} has\nbeen added to the\n{COLOR(6)}OPTIONS{COLOR(0)} screen.");
 const u16 sEnglishText_FileScreen_NesMetroidUnlock[] = INCTEXT("{COLOR(5)}Original Metroid{COLOR(0)} has\nbeen added to the\n{COLOR(6)}OPTIONS{COLOR(0)} screen.");
 
+#ifdef TMC_3DS
+const u16* sEnglishTextPointers_FileScreen[FILE_SCREEN_TEXT_COUNT];
+static void __attribute__((constructor)) Init_sEnglishTextPointers_FileScreen(void) {
+    sEnglishTextPointers_FileScreen[FILE_SCREEN_TEXT_START_GAME] = sEnglishText_FileScreen_StartGame;
+    sEnglishTextPointers_FileScreen[FILE_SCREEN_TEXT_COPY_SOURCE_CHOOSE] = sEnglishText_FileScreen_CopySourceChoose;
+    sEnglishTextPointers_FileScreen[FILE_SCREEN_TEXT_COPY_DESTINATION_CHOOSE] = sEnglishText_FileScreen_CopyDestinationChoose;
+    sEnglishTextPointers_FileScreen[FILE_SCREEN_TEXT_COPY_CONFIRM] = sEnglishText_FileScreen_CopyConfirm;
+    sEnglishTextPointers_FileScreen[FILE_SCREEN_TEXT_ERASE_CHOOSE] = sEnglishText_FileScreen_EraseChoose;
+    sEnglishTextPointers_FileScreen[FILE_SCREEN_TEXT_ERASE_CONFIRM] = sEnglishText_FileScreen_EraseConfirm;
+    sEnglishTextPointers_FileScreen[FILE_SCREEN_TEXT_FILE_A_CORRUPT_REVERT] = sEnglishText_FileScreen_FileACorruptRevert;
+    sEnglishTextPointers_FileScreen[FILE_SCREEN_TEXT_FILE_B_CORRUPT_REVERT] = sEnglishText_FileScreen_FileBCorruptRevert;
+    sEnglishTextPointers_FileScreen[FILE_SCREEN_TEXT_FILE_C_CORRUPT_REVERT] = sEnglishText_FileScreen_FileCCorruptRevert;
+    sEnglishTextPointers_FileScreen[FILE_SCREEN_TEXT_FILE_A_CORRUPT_ERASE] = sEnglishText_FileScreen_FileACorruptErase;
+    sEnglishTextPointers_FileScreen[FILE_SCREEN_TEXT_FILE_B_CORRUPT_ERASE] = sEnglishText_FileScreen_FileBCorruptErase;
+    sEnglishTextPointers_FileScreen[FILE_SCREEN_TEXT_FILE_C_CORRUPT_ERASE] = sEnglishText_FileScreen_FileCCorruptErase;
+    sEnglishTextPointers_FileScreen[FILE_SCREEN_TEXT_ERASE_ALL_REFORMAT] = sEnglishText_FileScreen_EraseAllReformat;
+    sEnglishTextPointers_FileScreen[FILE_SCREEN_TEXT_ERASE_ALL] = sEnglishText_FileScreen_EraseAll;
+    sEnglishTextPointers_FileScreen[FILE_SCREEN_TEXT_CONTINUE_NEW] = sEnglishText_FileScreen_ContinueNew;
+    sEnglishTextPointers_FileScreen[FILE_SCREEN_TEXT_CONTINUE_NEW_TIME_ATTACK] = sEnglishText_FileScreen_ContinueNewTimeAttack;
+    sEnglishTextPointers_FileScreen[FILE_SCREEN_TEXT_MESSAGE_OPTION] = sEnglishText_FileScreen_MessageOption;
+    sEnglishTextPointers_FileScreen[FILE_SCREEN_TEXT_DIFFICULTY] = sEnglishText_FileScreen_Difficulty;
+    sEnglishTextPointers_FileScreen[FILE_SCREEN_TEXT_DIFFICULTY_HARD] = sEnglishText_FileScreen_DifficultyHard;
+    sEnglishTextPointers_FileScreen[FILE_SCREEN_TEXT_ERASE_FILE_CONFIRM] = sEnglishText_FileScreen_EraseFileConfirm;
+    sEnglishTextPointers_FileScreen[FILE_SCREEN_TEXT_LINKING_PLEASE_WAIT] = sEnglishText_FileScreen_LinkingPleaseWait;
+    sEnglishTextPointers_FileScreen[FILE_SCREEN_TEXT_UNABLE_TO_DETECT_FUSION] = sEnglishText_FileScreen_UnableToDetectFusion;
+    sEnglishTextPointers_FileScreen[FILE_SCREEN_TEXT_LINKING_ERROR] = sEnglishText_FileScreen_LinkingError;
+    sEnglishTextPointers_FileScreen[FILE_SCREEN_TEXT_TURN_OFF_CONFIRM_LINK] = sEnglishText_FileScreen_TurnOffConfirmLink;
+    sEnglishTextPointers_FileScreen[FILE_SCREEN_TEXT_DO_NOT_TURN_POWER_OFF] = sEnglishText_FileScreen_DoNotTurnPowerOff;
+    sEnglishTextPointers_FileScreen[FILE_SCREEN_TEXT_DATA_UPLOAD_COMPLETE] = sEnglishText_FileScreen_DataUploadComplete;
+    sEnglishTextPointers_FileScreen[FILE_SCREEN_TEXT_LINK_COMPLETE] = sEnglishText_FileScreen_LinkComplete;
+    sEnglishTextPointers_FileScreen[FILE_SCREEN_TEXT_BEST_TIME] = sEnglishText_FileScreen_BestTime;
+    sEnglishTextPointers_FileScreen[FILE_SCREEN_TEXT_BEST_TIME_100] = sEnglishText_FileScreen_BestTime100;
+    sEnglishTextPointers_FileScreen[FILE_SCREEN_TEXT_ID_PASSWORD] = sEnglishText_FileScreen_IdPassword;
+    sEnglishTextPointers_FileScreen[FILE_SCREEN_TEXT_CANT_COPY_TIME_ATTACK] = sEnglishText_FileScreen_CantCopyTimeAttack;
+    sEnglishTextPointers_FileScreen[FILE_SCREEN_TEXT_LINKING_ERROR_TRY_AGAIN] = sEnglishText_FileScreen_LinkingErrorTryAgain;
+    sEnglishTextPointers_FileScreen[FILE_SCREEN_TEXT_LINKING_ERROR_CHECK_CONNECTION] = sEnglishText_FileScreen_LinkingErrorCheckConnection;
+    sEnglishTextPointers_FileScreen[FILE_SCREEN_TEXT_GALLERY_UNLOCK] = sEnglishText_FileScreen_GalleryUnlock;
+    sEnglishTextPointers_FileScreen[FILE_SCREEN_TEXT_TIME_ATTACK_RECORD_UNLOCK] = sEnglishText_FileScreen_TimeAttackRecordUnlock;
+    sEnglishTextPointers_FileScreen[FILE_SCREEN_TEXT_SOUND_TEST_UNLOCK] = sEnglishText_FileScreen_SoundTestUnlock;
+    sEnglishTextPointers_FileScreen[FILE_SCREEN_TEXT_NES_METROID_UNLOCK] = sEnglishText_FileScreen_NesMetroidUnlock;
+}
+#else
 const u16* sEnglishTextPointers_FileScreen[FILE_SCREEN_TEXT_COUNT] = {
     [FILE_SCREEN_TEXT_START_GAME] = sEnglishText_FileScreen_StartGame,
     [FILE_SCREEN_TEXT_COPY_SOURCE_CHOOSE] = sEnglishText_FileScreen_CopySourceChoose,
@@ -1547,6 +2017,7 @@ const u16* sEnglishTextPointers_FileScreen[FILE_SCREEN_TEXT_COUNT] = {
     [FILE_SCREEN_TEXT_SOUND_TEST_UNLOCK] = sEnglishText_FileScreen_SoundTestUnlock,
     [FILE_SCREEN_TEXT_NES_METROID_UNLOCK] = sEnglishText_FileScreen_NesMetroidUnlock
 };
+#endif
 
 #if defined(REGION_EU)
 
@@ -2133,6 +2604,29 @@ const u16 sGermanText_Description_ScrewAttack[] = INCTEXT("回転ジャンプで
 const u16 sGermanText_Description_SpaceJump[] = INCTEXT("回転ジャンプ中に再びジャンプできる\n〈回転ジャンプ中にもう一度{A_button}〉");
 const u16 sGermanText_Description_UnknownItem[] = INCTEXT("Analysis is impossible.");
 
+#ifdef TMC_3DS
+const u16* sGermanTextPointers_Description[DESCRIPTION_TEXT_COUNT - 1];
+static void __attribute__((constructor)) Init_sGermanTextPointers_Description(void) {
+    sGermanTextPointers_Description[DESCRIPTION_TEXT_LONG_BEAM] = sGermanText_Description_LongBeam;
+    sGermanTextPointers_Description[DESCRIPTION_TEXT_CHARGE_BEAM] = sGermanText_Description_ChargeBeam;
+    sGermanTextPointers_Description[DESCRIPTION_TEXT_ICE_BEAM] = sGermanText_Description_IceBeam;
+    sGermanTextPointers_Description[DESCRIPTION_TEXT_WAVE_BEAM] = sGermanText_Description_WaveBeam;
+    sGermanTextPointers_Description[DESCRIPTION_TEXT_PLASMA_BEAM] = sGermanText_Description_PlasmaBeam;
+    sGermanTextPointers_Description[DESCRIPTION_TEXT_MISSILES] = sGermanText_Description_Missiles;
+    sGermanTextPointers_Description[DESCRIPTION_TEXT_SUPER_MISSILES] = sGermanText_Description_SuperMissiles;
+    sGermanTextPointers_Description[DESCRIPTION_TEXT_BOMBS] = sGermanText_Description_Bombs;
+    sGermanTextPointers_Description[DESCRIPTION_TEXT_POWER_BOMBS] = sGermanText_Description_PowerBombs;
+    sGermanTextPointers_Description[DESCRIPTION_TEXT_VARIA_SUIT] = sGermanText_Description_VariaSuit;
+    sGermanTextPointers_Description[DESCRIPTION_TEXT_GRAVITY_SUIT] = sGermanText_Description_GravitySuit;
+    sGermanTextPointers_Description[DESCRIPTION_TEXT_MORPH_BALL] = sGermanText_Description_MorphBall;
+    sGermanTextPointers_Description[DESCRIPTION_TEXT_POWER_GRIP] = sGermanText_Description_PowerGrip;
+    sGermanTextPointers_Description[DESCRIPTION_TEXT_SPEEDBOOSTER] = sGermanText_Description_Speedbooster;
+    sGermanTextPointers_Description[DESCRIPTION_TEXT_HIGH_JUMP] = sGermanText_Description_HighJump;
+    sGermanTextPointers_Description[DESCRIPTION_TEXT_SCREW_ATTACK] = sGermanText_Description_ScrewAttack;
+    sGermanTextPointers_Description[DESCRIPTION_TEXT_SPACE_JUMP] = sGermanText_Description_SpaceJump;
+    sGermanTextPointers_Description[DESCRIPTION_TEXT_UNKNOWN_ITEM] = sGermanText_Description_UnknownItem;
+}
+#else
 const u16* sGermanTextPointers_Description[DESCRIPTION_TEXT_COUNT - 1] = {
     [DESCRIPTION_TEXT_LONG_BEAM] = sGermanText_Description_LongBeam,
     [DESCRIPTION_TEXT_CHARGE_BEAM] = sGermanText_Description_ChargeBeam,
@@ -2153,6 +2647,7 @@ const u16* sGermanTextPointers_Description[DESCRIPTION_TEXT_COUNT - 1] = {
     [DESCRIPTION_TEXT_SPACE_JUMP] = sGermanText_Description_SpaceJump,
     [DESCRIPTION_TEXT_UNKNOWN_ITEM] = sGermanText_Description_UnknownItem
 };
+#endif
 
 const u16 sAlign_3 = 0;
 
@@ -2163,11 +2658,20 @@ const u16 sGermanText_Story_Emergency[] = INCTEXT("{DEL}");
 const u16 sGermanText_Story_Exterminate[] = INCTEXT("{DELAY(16)}コンピュータの口調は、私にある人物を連想させた。\n\n「アダム・マルコビッチ」。連邦軍の優秀な司令官\n\nであった彼の下で、私は任務についた経験がある。\n\n冷徹なまでに任務に忠実な彼の判断は、常にすばやく、\n\nそして正しかった。ややデリカシーに乏しく、時折私を\n\n「レディー」と呼び、神経を逆なですることもあったが・・\n\n私は、大いなる敬意と、ささやかな皮肉を込め、\n\nあのコンピュータを「アダム」と呼ぶことにした。{AWAIT_INPUT}");
 const u16 sGermanText_Story_Defeat[] = INCTEXT("{DEL}");
 
+#ifdef TMC_3DS
+const u16* sGermanTextPointers_Story[3];
+static void __attribute__((constructor)) Init_sGermanTextPointers_Story(void) {
+    sGermanTextPointers_Story[0] = sGermanText_Story_PlanetZebes;
+    sGermanTextPointers_Story[1] = sGermanText_Story_CouldISurvive;
+    sGermanTextPointers_Story[2] = sGermanText_Story_Exterminate;
+}
+#else
 const u16* sGermanTextPointers_Story[3] = {
     [0] = sGermanText_Story_PlanetZebes,
     [1] = sGermanText_Story_CouldISurvive,
     [2] = sGermanText_Story_Exterminate
 };
+#endif
 
 const u16 sAlign_4 = 0;
 
@@ -2190,6 +2694,29 @@ const u16 sFrenchText_Description_ScrewAttack[] = INCTEXT("回転ジャンプで
 const u16 sFrenchText_Description_SpaceJump[] = INCTEXT("回転ジャンプ中に再びジャンプできる\n〈回転ジャンプ中にもう一度{A_button}〉");
 const u16 sFrenchText_Description_UnknownItem[] = INCTEXT("Analysis is impossible.");
 
+#ifdef TMC_3DS
+const u16* sFrenchTextPointers_Description[DESCRIPTION_TEXT_COUNT - 1];
+static void __attribute__((constructor)) Init_sFrenchTextPointers_Description(void) {
+    sFrenchTextPointers_Description[DESCRIPTION_TEXT_LONG_BEAM] = sFrenchText_Description_LongBeam;
+    sFrenchTextPointers_Description[DESCRIPTION_TEXT_CHARGE_BEAM] = sFrenchText_Description_ChargeBeam;
+    sFrenchTextPointers_Description[DESCRIPTION_TEXT_ICE_BEAM] = sFrenchText_Description_IceBeam;
+    sFrenchTextPointers_Description[DESCRIPTION_TEXT_WAVE_BEAM] = sFrenchText_Description_WaveBeam;
+    sFrenchTextPointers_Description[DESCRIPTION_TEXT_PLASMA_BEAM] = sFrenchText_Description_PlasmaBeam;
+    sFrenchTextPointers_Description[DESCRIPTION_TEXT_MISSILES] = sFrenchText_Description_Missiles;
+    sFrenchTextPointers_Description[DESCRIPTION_TEXT_SUPER_MISSILES] = sFrenchText_Description_SuperMissiles;
+    sFrenchTextPointers_Description[DESCRIPTION_TEXT_BOMBS] = sFrenchText_Description_Bombs;
+    sFrenchTextPointers_Description[DESCRIPTION_TEXT_POWER_BOMBS] = sFrenchText_Description_PowerBombs;
+    sFrenchTextPointers_Description[DESCRIPTION_TEXT_VARIA_SUIT] = sFrenchText_Description_VariaSuit;
+    sFrenchTextPointers_Description[DESCRIPTION_TEXT_GRAVITY_SUIT] = sFrenchText_Description_GravitySuit;
+    sFrenchTextPointers_Description[DESCRIPTION_TEXT_MORPH_BALL] = sFrenchText_Description_MorphBall;
+    sFrenchTextPointers_Description[DESCRIPTION_TEXT_POWER_GRIP] = sFrenchText_Description_PowerGrip;
+    sFrenchTextPointers_Description[DESCRIPTION_TEXT_SPEEDBOOSTER] = sFrenchText_Description_Speedbooster;
+    sFrenchTextPointers_Description[DESCRIPTION_TEXT_HIGH_JUMP] = sFrenchText_Description_HighJump;
+    sFrenchTextPointers_Description[DESCRIPTION_TEXT_SCREW_ATTACK] = sFrenchText_Description_ScrewAttack;
+    sFrenchTextPointers_Description[DESCRIPTION_TEXT_SPACE_JUMP] = sFrenchText_Description_SpaceJump;
+    sFrenchTextPointers_Description[DESCRIPTION_TEXT_UNKNOWN_ITEM] = sFrenchText_Description_UnknownItem;
+}
+#else
 const u16* sFrenchTextPointers_Description[DESCRIPTION_TEXT_COUNT - 1] = {
     [DESCRIPTION_TEXT_LONG_BEAM] = sFrenchText_Description_LongBeam,
     [DESCRIPTION_TEXT_CHARGE_BEAM] = sFrenchText_Description_ChargeBeam,
@@ -2210,6 +2737,7 @@ const u16* sFrenchTextPointers_Description[DESCRIPTION_TEXT_COUNT - 1] = {
     [DESCRIPTION_TEXT_SPACE_JUMP] = sFrenchText_Description_SpaceJump,
     [DESCRIPTION_TEXT_UNKNOWN_ITEM] = sFrenchText_Description_UnknownItem
 };
+#endif
 
 const u16 sAlign_5 = 0;
 
@@ -2220,11 +2748,20 @@ const u16 sFrenchText_Story_Emergency[] = INCTEXT("{DEL}");
 const u16 sFrenchText_Story_Exterminate[] = INCTEXT("{DELAY(16)}コンピュータの口調は、私にある人物を連想させた。\n\n「アダム・マルコビッチ」。連邦軍の優秀な司令官\n\nであった彼の下で、私は任務についた経験がある。\n\n冷徹なまでに任務に忠実な彼の判断は、常にすばやく、\n\nそして正しかった。ややデリカシーに乏しく、時折私を\n\n「レディー」と呼び、神経を逆なですることもあったが・・\n\n私は、大いなる敬意と、ささやかな皮肉を込め、\n\nあのコンピュータを「アダム」と呼ぶことにした。{AWAIT_INPUT}");
 const u16 sFrenchText_Story_Defeat[] = INCTEXT("{DEL}");
 
+#ifdef TMC_3DS
+const u16* sFrenchTextPointers_Story[3];
+static void __attribute__((constructor)) Init_sFrenchTextPointers_Story(void) {
+    sFrenchTextPointers_Story[0] = sFrenchText_Story_PlanetZebes;
+    sFrenchTextPointers_Story[1] = sFrenchText_Story_CouldISurvive;
+    sFrenchTextPointers_Story[2] = sFrenchText_Story_Exterminate;
+}
+#else
 const u16* sFrenchTextPointers_Story[3] = {
     [0] = sFrenchText_Story_PlanetZebes,
     [1] = sFrenchText_Story_CouldISurvive,
     [2] = sFrenchText_Story_Exterminate
 };
+#endif
 
 const u16 sAlign_6 = 0;
 
@@ -2247,6 +2784,29 @@ const u16 sItalianText_Description_ScrewAttack[] = INCTEXT("回転ジャンプ�
 const u16 sItalianText_Description_SpaceJump[] = INCTEXT("回転ジャンプ中に再びジャンプできる\n〈回転ジャンプ中にもう一度{A_button}〉");
 const u16 sItalianText_Description_UnknownItem[] = INCTEXT("Analysis is impossible.");
 
+#ifdef TMC_3DS
+const u16* sItalianTextPointers_Description[DESCRIPTION_TEXT_COUNT - 1];
+static void __attribute__((constructor)) Init_sItalianTextPointers_Description(void) {
+    sItalianTextPointers_Description[DESCRIPTION_TEXT_LONG_BEAM] = sItalianText_Description_LongBeam;
+    sItalianTextPointers_Description[DESCRIPTION_TEXT_CHARGE_BEAM] = sItalianText_Description_ChargeBeam;
+    sItalianTextPointers_Description[DESCRIPTION_TEXT_ICE_BEAM] = sItalianText_Description_IceBeam;
+    sItalianTextPointers_Description[DESCRIPTION_TEXT_WAVE_BEAM] = sItalianText_Description_WaveBeam;
+    sItalianTextPointers_Description[DESCRIPTION_TEXT_PLASMA_BEAM] = sItalianText_Description_PlasmaBeam;
+    sItalianTextPointers_Description[DESCRIPTION_TEXT_MISSILES] = sItalianText_Description_Missiles;
+    sItalianTextPointers_Description[DESCRIPTION_TEXT_SUPER_MISSILES] = sItalianText_Description_SuperMissiles;
+    sItalianTextPointers_Description[DESCRIPTION_TEXT_BOMBS] = sItalianText_Description_Bombs;
+    sItalianTextPointers_Description[DESCRIPTION_TEXT_POWER_BOMBS] = sItalianText_Description_PowerBombs;
+    sItalianTextPointers_Description[DESCRIPTION_TEXT_VARIA_SUIT] = sItalianText_Description_VariaSuit;
+    sItalianTextPointers_Description[DESCRIPTION_TEXT_GRAVITY_SUIT] = sItalianText_Description_GravitySuit;
+    sItalianTextPointers_Description[DESCRIPTION_TEXT_MORPH_BALL] = sItalianText_Description_MorphBall;
+    sItalianTextPointers_Description[DESCRIPTION_TEXT_POWER_GRIP] = sItalianText_Description_PowerGrip;
+    sItalianTextPointers_Description[DESCRIPTION_TEXT_SPEEDBOOSTER] = sItalianText_Description_Speedbooster;
+    sItalianTextPointers_Description[DESCRIPTION_TEXT_HIGH_JUMP] = sItalianText_Description_HighJump;
+    sItalianTextPointers_Description[DESCRIPTION_TEXT_SCREW_ATTACK] = sItalianText_Description_ScrewAttack;
+    sItalianTextPointers_Description[DESCRIPTION_TEXT_SPACE_JUMP] = sItalianText_Description_SpaceJump;
+    sItalianTextPointers_Description[DESCRIPTION_TEXT_UNKNOWN_ITEM] = sItalianText_Description_UnknownItem;
+}
+#else
 const u16* sItalianTextPointers_Description[DESCRIPTION_TEXT_COUNT - 1] = {
     [DESCRIPTION_TEXT_LONG_BEAM] = sItalianText_Description_LongBeam,
     [DESCRIPTION_TEXT_CHARGE_BEAM] = sItalianText_Description_ChargeBeam,
@@ -2267,6 +2827,7 @@ const u16* sItalianTextPointers_Description[DESCRIPTION_TEXT_COUNT - 1] = {
     [DESCRIPTION_TEXT_SPACE_JUMP] = sItalianText_Description_SpaceJump,
     [DESCRIPTION_TEXT_UNKNOWN_ITEM] = sItalianText_Description_UnknownItem
 };
+#endif
 
 const u16 sAlign_7 = 0;
 
@@ -2277,11 +2838,20 @@ const u16 sItalianText_Story_Emergency[] = INCTEXT("{DEL}");
 const u16 sItalianText_Story_Exterminate[] = INCTEXT("{DELAY(16)}コンピュータの口調は、私にある人物を連想させた。\n\n「アダム・マルコビッチ」。連邦軍の優秀な司令官\n\nであった彼の下で、私は任務についた経験がある。\n\n冷徹なまでに任務に忠実な彼の判断は、常にすばやく、\n\nそして正しかった。ややデリカシーに乏しく、時折私を\n\n「レディー」と呼び、神経を逆なですることもあったが・・\n\n私は、大いなる敬意と、ささやかな皮肉を込め、\n\nあのコンピュータを「アダム」と呼ぶことにした。{AWAIT_INPUT}");
 const u16 sItalianText_Story_Defeat[] = INCTEXT("{DEL}");
 
+#ifdef TMC_3DS
+const u16* sItalianTextPointers_Story[3];
+static void __attribute__((constructor)) Init_sItalianTextPointers_Story(void) {
+    sItalianTextPointers_Story[0] = sItalianText_Story_PlanetZebes;
+    sItalianTextPointers_Story[1] = sItalianText_Story_CouldISurvive;
+    sItalianTextPointers_Story[2] = sItalianText_Story_Exterminate;
+}
+#else
 const u16* sItalianTextPointers_Story[3] = {
     [0] = sItalianText_Story_PlanetZebes,
     [1] = sItalianText_Story_CouldISurvive,
     [2] = sItalianText_Story_Exterminate
 };
+#endif
 
 const u16 sAlign_8 = 0;
 
@@ -2304,6 +2874,29 @@ const u16 sSpanishText_Description_ScrewAttack[] = INCTEXT("回転ジャンプ�
 const u16 sSpanishText_Description_SpaceJump[] = INCTEXT("回転ジャンプ中に再びジャンプできる\n〈回転ジャンプ中にもう一度{A_button}〉");
 const u16 sSpanishText_Description_UnknownItem[] = INCTEXT("Analysis is impossible.");
 
+#ifdef TMC_3DS
+const u16* sSpanishTextPointers_Description[DESCRIPTION_TEXT_COUNT - 1];
+static void __attribute__((constructor)) Init_sSpanishTextPointers_Description(void) {
+    sSpanishTextPointers_Description[DESCRIPTION_TEXT_LONG_BEAM] = sSpanishText_Description_LongBeam;
+    sSpanishTextPointers_Description[DESCRIPTION_TEXT_CHARGE_BEAM] = sSpanishText_Description_ChargeBeam;
+    sSpanishTextPointers_Description[DESCRIPTION_TEXT_ICE_BEAM] = sSpanishText_Description_IceBeam;
+    sSpanishTextPointers_Description[DESCRIPTION_TEXT_WAVE_BEAM] = sSpanishText_Description_WaveBeam;
+    sSpanishTextPointers_Description[DESCRIPTION_TEXT_PLASMA_BEAM] = sSpanishText_Description_PlasmaBeam;
+    sSpanishTextPointers_Description[DESCRIPTION_TEXT_MISSILES] = sSpanishText_Description_Missiles;
+    sSpanishTextPointers_Description[DESCRIPTION_TEXT_SUPER_MISSILES] = sSpanishText_Description_SuperMissiles;
+    sSpanishTextPointers_Description[DESCRIPTION_TEXT_BOMBS] = sSpanishText_Description_Bombs;
+    sSpanishTextPointers_Description[DESCRIPTION_TEXT_POWER_BOMBS] = sSpanishText_Description_PowerBombs;
+    sSpanishTextPointers_Description[DESCRIPTION_TEXT_VARIA_SUIT] = sSpanishText_Description_VariaSuit;
+    sSpanishTextPointers_Description[DESCRIPTION_TEXT_GRAVITY_SUIT] = sSpanishText_Description_GravitySuit;
+    sSpanishTextPointers_Description[DESCRIPTION_TEXT_MORPH_BALL] = sSpanishText_Description_MorphBall;
+    sSpanishTextPointers_Description[DESCRIPTION_TEXT_POWER_GRIP] = sSpanishText_Description_PowerGrip;
+    sSpanishTextPointers_Description[DESCRIPTION_TEXT_SPEEDBOOSTER] = sSpanishText_Description_Speedbooster;
+    sSpanishTextPointers_Description[DESCRIPTION_TEXT_HIGH_JUMP] = sSpanishText_Description_HighJump;
+    sSpanishTextPointers_Description[DESCRIPTION_TEXT_SCREW_ATTACK] = sSpanishText_Description_ScrewAttack;
+    sSpanishTextPointers_Description[DESCRIPTION_TEXT_SPACE_JUMP] = sSpanishText_Description_SpaceJump;
+    sSpanishTextPointers_Description[DESCRIPTION_TEXT_UNKNOWN_ITEM] = sSpanishText_Description_UnknownItem;
+}
+#else
 const u16* sSpanishTextPointers_Description[DESCRIPTION_TEXT_COUNT - 1] = {
     [DESCRIPTION_TEXT_LONG_BEAM] = sSpanishText_Description_LongBeam,
     [DESCRIPTION_TEXT_CHARGE_BEAM] = sSpanishText_Description_ChargeBeam,
@@ -2324,6 +2917,7 @@ const u16* sSpanishTextPointers_Description[DESCRIPTION_TEXT_COUNT - 1] = {
     [DESCRIPTION_TEXT_SPACE_JUMP] = sSpanishText_Description_SpaceJump,
     [DESCRIPTION_TEXT_UNKNOWN_ITEM] = sSpanishText_Description_UnknownItem
 };
+#endif
 
 const u16 sAlign_9 = 0;
 
@@ -2334,10 +2928,19 @@ const u16 sSpanishText_Story_Emergency[] = INCTEXT("{DEL}");
 const u16 sSpanishText_Story_Exterminate[] = INCTEXT("{DELAY(16)}コンピュータの口調は、私にある人物を連想させた。\n\n「アダム・マルコビッチ」。連邦軍の優秀な司令官\n\nであった彼の下で、私は任務についた経験がある。\n\n冷徹なまでに任務に忠実な彼の判断は、常にすばやく、\n\nそして正しかった。ややデリカシーに乏しく、時折私を\n\n「レディー」と呼び、神経を逆なですることもあったが・・\n\n私は、大いなる敬意と、ささやかな皮肉を込め、\n\nあのコンピュータを「アダム」と呼ぶことにした。{AWAIT_INPUT}");
 const u16 sSpanishText_Story_Defeat[] = INCTEXT("{DEL}");
 
+#ifdef TMC_3DS
+const u16* sSpanishTextPointers_Story[3];
+static void __attribute__((constructor)) Init_sSpanishTextPointers_Story(void) {
+    sSpanishTextPointers_Story[0] = sSpanishText_Story_PlanetZebes;
+    sSpanishTextPointers_Story[1] = sSpanishText_Story_CouldISurvive;
+    sSpanishTextPointers_Story[2] = sSpanishText_Story_Exterminate;
+}
+#else
 const u16* sSpanishTextPointers_Story[3] = {
     [0] = sSpanishText_Story_PlanetZebes,
     [1] = sSpanishText_Story_CouldISurvive,
     [2] = sSpanishText_Story_Exterminate
 };
+#endif
 
 #endif

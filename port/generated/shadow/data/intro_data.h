@@ -13,6 +13,8 @@
 #include "structs/in_game_timer.h"
 #include "structs/intro.h"
 
+#define INTRO_DATA_H
+
 extern const u16(*p_sIntroEmergencyOrderTextOam)[52];
 #define sIntroEmergencyOrderTextOam (*p_sIntroEmergencyOrderTextOam)
 extern const u16(*p_sIntroExterminateAllTextOam)[163];

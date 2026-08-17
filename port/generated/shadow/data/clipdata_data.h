@@ -14,6 +14,8 @@
 #include "structs/clipdata.h"
 #include "structs/scroll.h"
 
+#define CLIPDATA_DATA_H
+
 extern const u16(*p_sMovementClipdataValues)[16];
 #define sMovementClipdataValues (*p_sMovementClipdataValues)
 extern const u16(*p_sHazardsDefinitions)[EFFECT_HAZARD_COUNT][2];

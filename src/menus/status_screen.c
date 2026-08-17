@@ -29,6 +29,90 @@
 extern const u8* sStatusScreenFlagsOrderPointers[4];
 
 #ifdef DEBUG
+#ifdef TMC_3DS
+static const u8* sPauseDebugEventNamePointers[EVENT_COUNT];
+static void __attribute__((constructor)) Init_sPauseDebugEventNamePointers(void) {
+    sPauseDebugEventNamePointers[EVENT_NONE] = sPauseDebug_Event00_Text;
+    sPauseDebugEventNamePointers[EVENT_EASY] = sPauseDebug_Event01_Text;
+    sPauseDebugEventNamePointers[EVENT_HARD] = sPauseDebug_Event02_Text;
+    sPauseDebugEventNamePointers[EVENT_ENTER_NORFAIR_DEMO_PLAYED] = sPauseDebug_Event03_Text;
+    sPauseDebugEventNamePointers[EVENT_EXIT_KRAID_DEMO_PLAYED] = sPauseDebug_Event04_Text;
+    sPauseDebugEventNamePointers[EVENT_ENTER_RIDLEY_DEMO_PLAYED] = sPauseDebug_Event05_Text;
+    sPauseDebugEventNamePointers[EVENT_ENTER_MOTHERSHIP_DEMO_PLAYED] = sPauseDebug_Event06_Text;
+    sPauseDebugEventNamePointers[EVENT_ENTER_TOURIAN_DEMO_PLAYED] = sPauseDebug_Event07_Text;
+    sPauseDebugEventNamePointers[EVENT_STATUE_LONG_BEAM_GRABBED] = sPauseDebug_Event08_Text;
+    sPauseDebugEventNamePointers[EVENT_STATUE_BOMBS_GRABBED] = sPauseDebug_Event09_Text;
+    sPauseDebugEventNamePointers[EVENT_STATUE_ICE_BEAM_GRABBED] = sPauseDebug_Event0A_Text;
+    sPauseDebugEventNamePointers[EVENT_STATUE_SPEEDBOOSTER_GRABBED] = sPauseDebug_Event0B_Text;
+    sPauseDebugEventNamePointers[EVENT_STATUE_HIGH_JUMP_GRABBED] = sPauseDebug_Event0C_Text;
+    sPauseDebugEventNamePointers[EVENT_STATUE_VARIA_SUIT_GRABBED] = sPauseDebug_Event0D_Text;
+    sPauseDebugEventNamePointers[EVENT_STATUE_WAVE_BEAM_GRABBED] = sPauseDebug_Event0E_Text;
+    sPauseDebugEventNamePointers[EVENT_STATUE_SCREW_ATTACK_GRABBED] = sPauseDebug_Event0F_Text;
+    sPauseDebugEventNamePointers[EVENT_POWER_GRIP_OBTAINED] = sPauseDebug_Event10_Text;
+    sPauseDebugEventNamePointers[EVENT_CHOZO_PILLAR_FULLY_EXTENDED] = sPauseDebug_Event11_Text;
+    sPauseDebugEventNamePointers[EVENT_HIGH_JUMP_OBTAINED] = sPauseDebug_Event12_Text;
+    sPauseDebugEventNamePointers[EVENT_VARIA_SUIT_OBTAINED] = sPauseDebug_Event13_Text;
+    sPauseDebugEventNamePointers[EVENT_CHARGE_BEAM_OBTAINED] = sPauseDebug_Event14_Text;
+    sPauseDebugEventNamePointers[EVENT_SCREW_ATTACK_OBTAINED] = sPauseDebug_Event15_Text;
+    sPauseDebugEventNamePointers[EVENT_SPACE_JUMP_OBTAINED] = sPauseDebug_Event16_Text;
+    sPauseDebugEventNamePointers[EVENT_GRAVITY_SUIT_OBTAINED] = sPauseDebug_Event17_Text;
+    sPauseDebugEventNamePointers[EVENT_PLASMA_BEAM_OBTAINED] = sPauseDebug_Event18_Text;
+    sPauseDebugEventNamePointers[EVENT_DEOREM_ENCOUNTERED_AT_FIRST_LOCATION_OR_KILLED] = sPauseDebug_Event19_Text;
+    sPauseDebugEventNamePointers[EVENT_DEOREM_ENCOUNTERED_AT_SECOND_LOCATION_OR_KILLED] = sPauseDebug_Event1A_Text;
+    sPauseDebugEventNamePointers[EVENT_DEOREM_KILLED_AT_SECOND_LOCATION] = sPauseDebug_Event1B_Text;
+    sPauseDebugEventNamePointers[EVENT_ACID_WORM_KILLED] = sPauseDebug_Event1C_Text;
+    sPauseDebugEventNamePointers[EVENT_KRAID_GADORA_KILLED] = sPauseDebug_Event1D_Text;
+    sPauseDebugEventNamePointers[EVENT_KRAID_KILLED] = sPauseDebug_Event1E_Text;
+    sPauseDebugEventNamePointers[EVENT_KRAID_ELEVATOR_STATUE_DESTROYED] = sPauseDebug_Event1F_Text;
+    sPauseDebugEventNamePointers[EVENT_CATERPILLAR_KILLED] = sPauseDebug_Event20_Text;
+    sPauseDebugEventNamePointers[EVENT_IMAGO_TUNNEL_DISCOVERED] = sPauseDebug_Event21_Text;
+    sPauseDebugEventNamePointers[EVENT_IMAGO_COCOON_KILLED] = sPauseDebug_Event22_Text;
+    sPauseDebugEventNamePointers[EVENT_IMAGO_KILLED] = sPauseDebug_Event23_Text;
+    sPauseDebugEventNamePointers[EVENT_RIDLEY_GADORA_KILLED] = sPauseDebug_Event24_Text;
+    sPauseDebugEventNamePointers[EVENT_RIDLEY_KILLED] = sPauseDebug_Event25_Text;
+    sPauseDebugEventNamePointers[EVENT_RIDLEY_ELEVATOR_STATUE_DESTROYED] = sPauseDebug_Event26_Text;
+    sPauseDebugEventNamePointers[EVENT_MOTHER_BRAIN_KILLED] = sPauseDebug_Event27_Text;
+    sPauseDebugEventNamePointers[EVENT_CROCOMIRE_KILLED] = sPauseDebug_Event28_Text;
+    sPauseDebugEventNamePointers[EVENT_REPEL_MACHINE_KILLED] = sPauseDebug_Event29_Text;
+    sPauseDebugEventNamePointers[EVENT_VIEWED_STATUE_ROOM] = sPauseDebug_Event2A_Text;
+    sPauseDebugEventNamePointers[EVENT_LONG_BEAM_DESSGEEGA_KILLED] = sPauseDebug_Event2B_Text;
+    sPauseDebugEventNamePointers[EVENT_THREE_HIVES_DESTROYED] = sPauseDebug_Event2C_Text;
+    sPauseDebugEventNamePointers[EVENT_BUGS_KILLED] = sPauseDebug_Event2D_Text;
+    sPauseDebugEventNamePointers[EVENT_ZIPLINES_ACTIVATED] = sPauseDebug_Event2E_Text;
+    sPauseDebugEventNamePointers[EVENT_PLANT_DESTROYED_LAVA] = sPauseDebug_Event2F_Text;
+    sPauseDebugEventNamePointers[EVENT_PLANT_DESTROYED_POST_VARIA] = sPauseDebug_Event30_Text;
+    sPauseDebugEventNamePointers[EVENT_PLANT_DESTROYED_VARIA2] = sPauseDebug_Event31_Text;
+    sPauseDebugEventNamePointers[EVENT_PLANT_DESTROYED_VARIA3] = sPauseDebug_Event32_Text;
+    sPauseDebugEventNamePointers[EVENT_PLANT_DESTROYED_VARIA1] = sPauseDebug_Event33_Text;
+    sPauseDebugEventNamePointers[EVENT_KRAID_BARISTUTES_KILLED] = sPauseDebug_Event34_Text;
+    sPauseDebugEventNamePointers[EVENT_KRAID_STATUE_OPENED] = sPauseDebug_Event35_Text;
+    sPauseDebugEventNamePointers[EVENT_RIDLEY_STATUE_OPENED] = sPauseDebug_Event36_Text;
+    sPauseDebugEventNamePointers[EVENT_FIRST_METROID_ROOM_CLEARED] = sPauseDebug_Event37_Text;
+    sPauseDebugEventNamePointers[EVENT_THIRD_METROID_ROOM_CLEARED] = sPauseDebug_Event38_Text;
+    sPauseDebugEventNamePointers[EVENT_FIFTH_METROID_ROOM_CLEARED] = sPauseDebug_Event39_Text;
+    sPauseDebugEventNamePointers[EVENT_SECOND_METROID_ROOM_CLEARED] = sPauseDebug_Event3A_Text;
+    sPauseDebugEventNamePointers[EVENT_SIXTH_METROID_ROOM_CLEARED] = sPauseDebug_Event3B_Text;
+    sPauseDebugEventNamePointers[EVENT_FOURTH_METROID_ROOM_CLEARED] = sPauseDebug_Event3C_Text;
+    sPauseDebugEventNamePointers[EVENT_ZEBETITE_ONE_DESTROYED] = sPauseDebug_Event3D_Text;
+    sPauseDebugEventNamePointers[EVENT_ZEBETITE_TWO_DESTROYED] = sPauseDebug_Event3E_Text;
+    sPauseDebugEventNamePointers[EVENT_ZEBETITE_THREE_DESTROYED] = sPauseDebug_Event3F_Text;
+    sPauseDebugEventNamePointers[EVENT_ZEBETITE_FOUR_DESTROYED] = sPauseDebug_Event40_Text;
+    sPauseDebugEventNamePointers[EVENT_ESCAPED_ZEBES] = sPauseDebug_Event41_Text;
+    sPauseDebugEventNamePointers[EVENT_MARKER_BETWEEN_ZEBES_AND_MOTHERSHIP] = sPauseDebug_Event42_Text;
+    sPauseDebugEventNamePointers[EVENT_FULLY_POWERED_SUIT_OBTAINED] = sPauseDebug_Event43_Text;
+    sPauseDebugEventNamePointers[EVENT_SKIPPED_VARIA_SUIT] = sPauseDebug_Event44_Text;
+    sPauseDebugEventNamePointers[EVENT_CHOZOBLOCK] = sPauseDebug_Event45_Text;
+    sPauseDebugEventNamePointers[EVENT_POWER_BOMB_STOLEN] = sPauseDebug_Event46_Text;
+    sPauseDebugEventNamePointers[EVENT_SPACE_PIRATE_WITH_POWER_BOMB_ONE] = sPauseDebug_Event47_Text;
+    sPauseDebugEventNamePointers[EVENT_SPACE_PIRATE_WITH_POWER_BOMB_TWO] = sPauseDebug_Event48_Text;
+    sPauseDebugEventNamePointers[EVENT_GLASS_TUBE_BROKEN] = sPauseDebug_Event49_Text;
+    sPauseDebugEventNamePointers[EVENT_MECHA_RIDLEY_KILLED] = sPauseDebug_Event4A_Text;
+    sPauseDebugEventNamePointers[EVENT_ESCAPED_CHOZODIA] = sPauseDebug_Event4B_Text;
+    sPauseDebugEventNamePointers[EVENT_AKI] = sPauseDebug_Event4C_Text;
+    sPauseDebugEventNamePointers[EVENT_BOMBATE] = sPauseDebug_Event4D_Text;
+    sPauseDebugEventNamePointers[EVENT_END_UNUSED] = sPauseDebug_Event4E_Text;
+}
+#else
 static const u8* sPauseDebugEventNamePointers[EVENT_COUNT] = {
     [EVENT_NONE] = sPauseDebug_Event00_Text,
     [EVENT_EASY] = sPauseDebug_Event01_Text,
@@ -110,6 +194,7 @@ static const u8* sPauseDebugEventNamePointers[EVENT_COUNT] = {
     [EVENT_BOMBATE] = sPauseDebug_Event4D_Text,
     [EVENT_END_UNUSED] = sPauseDebug_Event4E_Text
 };
+#endif
 #endif // DEBUG
 
 // ability_group, nbr_rows, nbr_cols

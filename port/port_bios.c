@@ -57,38 +57,45 @@ u16 Sqrt(u32 value) {
 #define CPUSET_32BIT (1u << 24)
 #define CPUSET_FIXED_SRC (1u << 25)
 
+#include "port_gba_mem.h"
+
 void CpuSet(void* src, void* dst, u32 ctrl) {
     u32 count = ctrl & CPUSET_COUNT_MASK;
-    int fill = (ctrl & CPUSET_FIXED_SRC) != 0;
+    int fill = (ctrl & (CPUSET_FIXED_SRC | (1u << 24))) != 0;
+    u32 i;
+
+    void* d = port_resolve_write_addr((uintptr_t)dst);
+    const void* s = port_resolve_copy_src(src, count * 4);
+    if (!d || !s) return;
 
     if (ctrl & CPUSET_32BIT) {
-        const u32* s = (const u32*)src;
-        u32* d = (u32*)dst;
-        for (u32 i = 0; i < count; i++) {
-            d[i] = fill ? s[0] : s[i];
+        const u32* src32 = (const u32*)s;
+        u32* dst32 = (u32*)d;
+        for (i = 0; i < count; i++) {
+            dst32[i] = fill ? src32[0] : src32[i];
         }
     } else {
-        const u16* s = (const u16*)src;
-        u16* d = (u16*)dst;
-        for (u32 i = 0; i < count; i++) {
-            d[i] = fill ? s[0] : s[i];
+        const u16* src16 = (const u16*)s;
+        u16* dst16 = (u16*)d;
+        for (i = 0; i < count; i++) {
+            dst16[i] = fill ? src16[0] : src16[i];
         }
     }
 }
 
-void CpuFastSet(void* src, void* dst, u16 ctrl) {
-    /* Always 32-bit, count rounded up to a multiple of 8 words (one 32-byte
-     * block) -- matches real BIOS behavior of processing whole blocks. The
-     * fill/datasize control bits (24+) don't fit in this codebase's u16
-     * ctrl parameter, so every call site here only ever varies the count;
-     * fill-mode CpuFastSet calls (if any exist) would already have been
-     * broken by that same truncation in the original decompiled build. */
+void CpuFastSet(void* src, void* dst, u32 ctrl) {
     u32 count = (((u32)ctrl & CPUSET_COUNT_MASK) + 7u) & ~7u;
-    int fill = ((u32)ctrl & CPUSET_FIXED_SRC) != 0;
-    const u32* s = (const u32*)src;
-    u32* d = (u32*)dst;
-    for (u32 i = 0; i < count; i++) {
-        d[i] = fill ? s[0] : s[i];
+    int fill = (ctrl & (CPUSET_FIXED_SRC | (1u << 24))) != 0;
+    u32 i;
+
+    void* d = port_resolve_write_addr((uintptr_t)dst);
+    const void* s = port_resolve_copy_src(src, count * 4);
+    if (!d || !s) return;
+
+    const u32* src32 = (const u32*)s;
+    u32* dst32 = (u32*)d;
+    for (i = 0; i < count; i++) {
+        dst32[i] = fill ? src32[0] : src32[i];
     }
 }
 
@@ -103,25 +110,31 @@ void CpuFastSet(void* src, void* dst, u16 ctrl) {
  * port_gba_mem.c), so both variants share one byte-addressable
  * implementation -- there's no bus-width hazard to work around here. */
 static void Lz77Uncomp(const u8* src, u8* dst) {
-    u32 header = (u32)src[0] | ((u32)src[1] << 8) | ((u32)src[2] << 16) | ((u32)src[3] << 24);
-    u32 decompressedSize = header >> 8;
-    src += 4;
+    const u8* s = (const u8*)port_resolve_copy_src(src, 4);
+    u8* d = (u8*)port_resolve_write_addr((uintptr_t)dst);
+    int bit;
+    u32 i;
+    if (!s || !d) return;
 
-    u8* out = dst;
-    u8* outEnd = dst + decompressedSize;
+    u32 header = (u32)s[0] | ((u32)s[1] << 8) | ((u32)s[2] << 16) | ((u32)s[3] << 24);
+    u32 decompressedSize = header >> 8;
+    s += 4;
+
+    u8* out = d;
+    u8* outEnd = d + decompressedSize;
 
     while (out < outEnd) {
-        u8 flags = *src++;
-        for (int bit = 7; bit >= 0 && out < outEnd; bit--) {
+        u8 flags = *s++;
+        for (bit = 7; bit >= 0 && out < outEnd; bit--) {
             if ((flags & (1 << bit)) == 0) {
-                *out++ = *src++;
+                *out++ = *s++;
             } else {
-                u8 b0 = *src++;
-                u8 b1 = *src++;
+                u8 b0 = *s++;
+                u8 b1 = *s++;
                 u32 length = (u32)(b0 >> 4) + 3;
                 u32 distance = (((u32)(b0 & 0xF) << 8) | b1) + 1;
                 const u8* copySrc = out - distance;
-                for (u32 i = 0; i < length && out < outEnd; i++) {
+                for (i = 0; i < length && out < outEnd; i++) {
                     *out++ = *copySrc++;
                 }
             }
@@ -171,7 +184,8 @@ extern void CallbackCallVblank(void);
  * moment both are visible in one translation unit. Forward-declare just the
  * one libctru function actually needed instead of pulling in the whole
  * header -- real signature per libctru's gspgpu.h. */
-extern void gspWaitForVBlank(void);
+/* gspWaitForEvent forward declaration (GSPGPU_EVENT_VBlank0 = 0) */
+extern void gspWaitForEvent(int event, bool nextEvent);
 
 /* Synchronizes the GBA-side cooperative loop to real 60Hz vblank timing.
  * agbmain()'s frame loop is:
@@ -186,8 +200,18 @@ extern void gspWaitForVBlank(void);
  * num -- the two calls to SYSCALL(2)/(3) that exist across the whole
  * codebase both use it as a wait-for-next-vblank point, not to
  * differentiate GBA's Halt from Stop. */
+#if defined(PLATFORM_LINUX)
+extern void Platform_Linux_VBlank(void);
+#elif defined(TMC_3DS)
+#include <3ds.h>
+#endif
+
 void Port_Bios_Halt(void) {
-    gspWaitForVBlank();
+#if defined(PLATFORM_LINUX)
+    Platform_Linux_VBlank();
+#elif defined(TMC_3DS)
+    gspWaitForEvent(0, true);
+#endif
     CallbackCallVblank();
 }
 

@@ -10,6 +10,8 @@
 #define PORT_GEN_ANIMATED_TILES_DATA_ROM_H
 #include "types.h"
 
+#define ANIMATED_TILES_DATA_H
+
 extern const u8(*p_sAnimatedTilesGfx)[100*128];
 #define sAnimatedTilesGfx (*p_sAnimatedTilesGfx)
 extern const u8(*p_sAnimatedTankGfx)[4*512];

@@ -21,6 +21,114 @@
 #include "structs/samus.h"
 #include "structs/room.h"
 
+#ifdef TMC_3DS
+static const u8* sScrollPointer_Empty[1];
+static const u8* sBrinstarScrolls[20];
+static const u8* sKraidScrolls[12];
+static const u8* sNorfairScrolls[18];
+static const u8* sRidleyScrolls[15];
+static const u8* sTourianScrolls[7];
+static const u8* sCrateriaScrolls[12];
+static const u8* sChozodiaScrolls[61];
+static const u8** sAreaScrollPointers[AREA_COUNT];
+
+static void __attribute__((constructor)) Init_sScrollTables(void) {
+    sScrollPointer_Empty[0] = sScroll_Empty;
+
+    sBrinstarScrolls[0] = sBrinstar_0_Scrolls; sBrinstarScrolls[1] = sBrinstar_1_Scrolls;
+    sBrinstarScrolls[2] = sBrinstar_2_Scrolls; sBrinstarScrolls[3] = sBrinstar_3_Scrolls;
+    sBrinstarScrolls[4] = sBrinstar_4_Scrolls; sBrinstarScrolls[5] = sBrinstar_5_Scrolls;
+    sBrinstarScrolls[6] = sBrinstar_6_Scrolls; sBrinstarScrolls[7] = sBrinstar_7_Scrolls;
+    sBrinstarScrolls[8] = sBrinstar_8_Scrolls; sBrinstarScrolls[9] = sBrinstar_9_Scrolls;
+    sBrinstarScrolls[10] = sBrinstar_10_Scrolls; sBrinstarScrolls[11] = sBrinstar_11_Scrolls;
+    sBrinstarScrolls[12] = sBrinstar_12_Scrolls; sBrinstarScrolls[13] = sBrinstar_13_Scrolls;
+    sBrinstarScrolls[14] = sBrinstar_14_Scrolls; sBrinstarScrolls[15] = sBrinstar_15_Scrolls;
+    sBrinstarScrolls[16] = sBrinstar_16_Scrolls; sBrinstarScrolls[17] = sBrinstar_17_Scrolls;
+    sBrinstarScrolls[18] = sBrinstar_18_Scrolls; sBrinstarScrolls[19] = sScroll_Empty;
+
+    sKraidScrolls[0] = sKraid_0_Scrolls; sKraidScrolls[1] = sKraid_1_Scrolls;
+    sKraidScrolls[2] = sKraid_2_Scrolls; sKraidScrolls[3] = sKraid_3_Scrolls;
+    sKraidScrolls[4] = sKraid_4_Scrolls; sKraidScrolls[5] = sKraid_5_Scrolls;
+    sKraidScrolls[6] = sKraid_6_Scrolls; sKraidScrolls[7] = sKraid_7_Scrolls;
+    sKraidScrolls[8] = sKraid_8_Scrolls; sKraidScrolls[9] = sKraid_9_Scrolls;
+    sKraidScrolls[10] = sKraid_10_Scrolls; sKraidScrolls[11] = sScroll_Empty;
+
+    sNorfairScrolls[0] = sNorfair_0_Scrolls; sNorfairScrolls[1] = sNorfair_1_Scrolls;
+    sNorfairScrolls[2] = sNorfair_2_Scrolls; sNorfairScrolls[3] = sNorfair_3_Scrolls;
+    sNorfairScrolls[4] = sNorfair_4_Scrolls; sNorfairScrolls[5] = sNorfair_5_Scrolls;
+    sNorfairScrolls[6] = sNorfair_6_Scrolls; sNorfairScrolls[7] = sNorfair_7_Scrolls;
+    sNorfairScrolls[8] = sNorfair_8_Scrolls; sNorfairScrolls[9] = sNorfair_9_Scrolls;
+    sNorfairScrolls[10] = sNorfair_10_Scrolls; sNorfairScrolls[11] = sNorfair_11_Scrolls;
+    sNorfairScrolls[12] = sNorfair_12_Scrolls; sNorfairScrolls[13] = sNorfair_13_Scrolls;
+    sNorfairScrolls[14] = sNorfair_14_Scrolls; sNorfairScrolls[15] = sNorfair_15_Scrolls;
+    sNorfairScrolls[16] = sNorfair_16_Scrolls; sNorfairScrolls[17] = sScroll_Empty;
+
+    sRidleyScrolls[0] = sRidley_0_Scrolls; sRidleyScrolls[1] = sRidley_1_Scrolls;
+    sRidleyScrolls[2] = sRidley_2_Scrolls; sRidleyScrolls[3] = sRidley_3_Scrolls;
+    sRidleyScrolls[4] = sRidley_4_Scrolls; sRidleyScrolls[5] = sRidley_5_Scrolls;
+    sRidleyScrolls[6] = sRidley_6_Scrolls; sRidleyScrolls[7] = sRidley_7_Scrolls;
+    sRidleyScrolls[8] = sRidley_8_Scrolls; sRidleyScrolls[9] = sRidley_9_Scrolls;
+    sRidleyScrolls[10] = sRidley_10_Scrolls; sRidleyScrolls[11] = sRidley_11_Scrolls;
+    sRidleyScrolls[12] = sRidley_12_Scrolls; sRidleyScrolls[13] = sRidley_13_Scrolls;
+    sRidleyScrolls[14] = sScroll_Empty;
+
+    sTourianScrolls[0] = sTourian_0_Scrolls; sTourianScrolls[1] = sTourian_1_Scrolls;
+    sTourianScrolls[2] = sTourian_2_Scrolls; sTourianScrolls[3] = sTourian_3_Scrolls;
+    sTourianScrolls[4] = sTourian_4_Scrolls; sTourianScrolls[5] = sTourian_5_Scrolls;
+    sTourianScrolls[6] = sScroll_Empty;
+
+    sCrateriaScrolls[0] = sCrateria_0_Scrolls; sCrateriaScrolls[1] = sCrateria_1_Scrolls;
+    sCrateriaScrolls[2] = sCrateria_2_Scrolls; sCrateriaScrolls[3] = sCrateria_3_Scrolls;
+    sCrateriaScrolls[4] = sCrateria_4_Scrolls; sCrateriaScrolls[5] = sCrateria_5_Scrolls;
+    sCrateriaScrolls[6] = sCrateria_6_Scrolls; sCrateriaScrolls[7] = sCrateria_7_Scrolls;
+    sCrateriaScrolls[8] = sCrateria_8_Scrolls; sCrateriaScrolls[9] = sCrateria_9_Scrolls;
+    sCrateriaScrolls[10] = sCrateria_10_Scrolls; sCrateriaScrolls[11] = sScroll_Empty;
+
+    sChozodiaScrolls[0] = sChozodia_0_Scrolls; sChozodiaScrolls[1] = sChozodia_1_Scrolls;
+    sChozodiaScrolls[2] = sChozodia_2_Scrolls; sChozodiaScrolls[3] = sChozodia_3_Scrolls;
+    sChozodiaScrolls[4] = sChozodia_4_Scrolls; sChozodiaScrolls[5] = sChozodia_5_Scrolls;
+    sChozodiaScrolls[6] = sChozodia_6_Scrolls; sChozodiaScrolls[7] = sChozodia_7_Scrolls;
+    sChozodiaScrolls[8] = sChozodia_8_Scrolls; sChozodiaScrolls[9] = sChozodia_9_Scrolls;
+    sChozodiaScrolls[10] = sChozodia_10_Scrolls; sChozodiaScrolls[11] = sChozodia_11_Scrolls;
+    sChozodiaScrolls[12] = sChozodia_12_Scrolls; sChozodiaScrolls[13] = sChozodia_13_Scrolls;
+    sChozodiaScrolls[14] = sChozodia_14_Scrolls; sChozodiaScrolls[15] = sChozodia_15_Scrolls;
+    sChozodiaScrolls[16] = sChozodia_16_Scrolls; sChozodiaScrolls[17] = sChozodia_17_Scrolls;
+    sChozodiaScrolls[18] = sChozodia_18_Scrolls; sChozodiaScrolls[19] = sChozodia_19_Scrolls;
+    sChozodiaScrolls[20] = sChozodia_20_Scrolls; sChozodiaScrolls[21] = sChozodia_21_Scrolls;
+    sChozodiaScrolls[22] = sChozodia_22_Scrolls; sChozodiaScrolls[23] = sChozodia_23_Scrolls;
+    sChozodiaScrolls[24] = sChozodia_24_Scrolls; sChozodiaScrolls[25] = sChozodia_25_Scrolls;
+    sChozodiaScrolls[26] = sChozodia_26_Scrolls; sChozodiaScrolls[27] = sChozodia_27_Scrolls;
+    sChozodiaScrolls[28] = sChozodia_28_Scrolls; sChozodiaScrolls[29] = sChozodia_29_Scrolls;
+    sChozodiaScrolls[30] = sChozodia_30_Scrolls; sChozodiaScrolls[31] = sChozodia_31_Scrolls;
+    sChozodiaScrolls[32] = sChozodia_32_Scrolls; sChozodiaScrolls[33] = sChozodia_33_Scrolls;
+    sChozodiaScrolls[34] = sChozodia_34_Scrolls; sChozodiaScrolls[35] = sChozodia_35_Scrolls;
+    sChozodiaScrolls[36] = sChozodia_36_Scrolls; sChozodiaScrolls[37] = sChozodia_37_Scrolls;
+    sChozodiaScrolls[38] = sChozodia_38_Scrolls; sChozodiaScrolls[39] = sChozodia_39_Scrolls;
+    sChozodiaScrolls[40] = sChozodia_40_Scrolls; sChozodiaScrolls[41] = sChozodia_41_Scrolls;
+    sChozodiaScrolls[42] = sChozodia_42_Scrolls; sChozodiaScrolls[43] = sChozodia_43_Scrolls;
+    sChozodiaScrolls[44] = sChozodia_44_Scrolls; sChozodiaScrolls[45] = sChozodia_45_Scrolls;
+    sChozodiaScrolls[46] = sChozodia_46_Scrolls; sChozodiaScrolls[47] = sChozodia_47_Scrolls;
+    sChozodiaScrolls[48] = sChozodia_48_Scrolls; sChozodiaScrolls[49] = sChozodia_49_Scrolls;
+    sChozodiaScrolls[50] = sChozodia_50_Scrolls; sChozodiaScrolls[51] = sChozodia_51_Scrolls;
+    sChozodiaScrolls[52] = sChozodia_52_Scrolls; sChozodiaScrolls[53] = sChozodia_53_Scrolls;
+    sChozodiaScrolls[54] = sChozodia_54_Scrolls; sChozodiaScrolls[55] = sChozodia_55_Scrolls;
+    sChozodiaScrolls[56] = sChozodia_56_Scrolls; sChozodiaScrolls[57] = sChozodia_57_Scrolls;
+    sChozodiaScrolls[58] = sChozodia_58_Scrolls; sChozodiaScrolls[59] = sChozodia_59_Scrolls;
+    sChozodiaScrolls[60] = sScroll_Empty;
+
+    sAreaScrollPointers[AREA_BRINSTAR] = sBrinstarScrolls;
+    sAreaScrollPointers[AREA_KRAID] = sKraidScrolls;
+    sAreaScrollPointers[AREA_NORFAIR] = sNorfairScrolls;
+    sAreaScrollPointers[AREA_RIDLEY] = sRidleyScrolls;
+    sAreaScrollPointers[AREA_TOURIAN] = sTourianScrolls;
+    sAreaScrollPointers[AREA_CRATERIA] = sCrateriaScrolls;
+    sAreaScrollPointers[AREA_CHOZODIA] = sChozodiaScrolls;
+    sAreaScrollPointers[AREA_TEST] = sScrollPointer_Empty;
+    sAreaScrollPointers[AREA_TEST_1] = sScrollPointer_Empty;
+    sAreaScrollPointers[AREA_TEST_2] = sScrollPointer_Empty;
+    sAreaScrollPointers[AREA_TEST_3] = sScrollPointer_Empty;
+}
+#else
 static const u8* sScrollPointer_Empty[] = {
     sScroll_Empty
 };
@@ -204,6 +312,7 @@ static const u8** sAreaScrollPointers[AREA_COUNT] = {
     [AREA_TEST_2] = sScrollPointer_Empty,
     [AREA_TEST_3] = sScrollPointer_Empty
 };
+#endif
 
 static s8 sWaterLoopCounterArray[8][2] = {
     [0] = {

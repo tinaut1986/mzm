@@ -12,6 +12,7 @@
 #include "temp_globals.h"
 #include "structs/save_file.h"
 
+#define SHORTCUT_POINTERS_H
 extern union EwramData* sEwramPointer;
 extern u16* sBgPalramPointer;
 extern u16* sObjPalramPointer;

@@ -10,6 +10,8 @@
 #define PORT_GEN_SPRITESET_ROM_H
 #include "types.h"
 
+#define SPRITESET_DATA_H
+
 extern const u8(*p_sSpriteset0)[2];
 #define sSpriteset0 (*p_sSpriteset0)
 extern const u8(*p_sSpriteset113)[4];

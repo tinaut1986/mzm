@@ -58,6 +58,27 @@
 
 #define UNKNOWN_ITEM_CHOZO_STATUE_REFILL_POSE_IDLE 0x9
 
+#ifdef TMC_3DS
+static const struct FrameData* sUnknownItemChozoStatueFrameDataPointers[UNKNOWN_ITEM_CHOZO_STATUE_OAM_COUNT];
+static void __attribute__((constructor)) Init_sUnknownItemChozoStatueFrameDataPointers(void) {
+    sUnknownItemChozoStatueFrameDataPointers[UNKNOWN_ITEM_CHOZO_STATUE_OAM_LEG_STANDING] = sUnknownItemChozoStatuePartOam_LegStanding;
+    sUnknownItemChozoStatueFrameDataPointers[UNKNOWN_ITEM_CHOZO_STATUE_OAM_LEG_SITTING] = sUnknownItemChozoStatuePartOam_LegSitting;
+    sUnknownItemChozoStatueFrameDataPointers[UNKNOWN_ITEM_CHOZO_STATUE_OAM_LEG_SEATED] = sUnknownItemChozoStatuePartOam_LegSeated;
+    sUnknownItemChozoStatueFrameDataPointers[UNKNOWN_ITEM_CHOZO_STATUE_OAM_IDLE] = sUnknownItemChozoStatueOam_Idle;
+    sUnknownItemChozoStatueFrameDataPointers[UNKNOWN_ITEM_CHOZO_STATUE_OAM_EYE_OPENED] = sUnknownItemChozoStatuePartOam_EyeOpened;
+    sUnknownItemChozoStatueFrameDataPointers[UNKNOWN_ITEM_CHOZO_STATUE_OAM_EYE_CLOSING] = sUnknownItemChozoStatuePartOam_EyeClosing;
+    sUnknownItemChozoStatueFrameDataPointers[UNKNOWN_ITEM_CHOZO_STATUE_OAM_EYE_OPENING] = sUnknownItemChozoStatuePartOam_EyeOpening;
+    sUnknownItemChozoStatueFrameDataPointers[UNKNOWN_ITEM_CHOZO_STATUE_OAM_EYE_CLOSED] = sUnknownItemChozoStatuePartOam_EyeClosed;
+    sUnknownItemChozoStatueFrameDataPointers[UNKNOWN_ITEM_CHOZO_STATUE_OAM_ARM_IDLE] = sUnknownItemChozoStatuePartOam_ArmIdle;
+    sUnknownItemChozoStatueFrameDataPointers[UNKNOWN_ITEM_CHOZO_STATUE_OAM_ARM_GLOW] = sUnknownItemChozoStatuePartOam_ArmGlow;
+    sUnknownItemChozoStatueFrameDataPointers[UNKNOWN_ITEM_CHOZO_STATUE_OAM_ARM_SAMUS_GRABBED] = sUnknownItemChozoStatuePartOam_ArmSamusGrabbed;
+    sUnknownItemChozoStatueFrameDataPointers[UNKNOWN_ITEM_CHOZO_STATUE_OAM_BALL_NORMAL_CLOSED] = sChozoBallOam_UnknownClosed;
+    sUnknownItemChozoStatueFrameDataPointers[UNKNOWN_ITEM_CHOZO_STATUE_OAM_BALL_NORMAL_REVEALING] = sChozoBallOam_UnknownRevealing;
+    sUnknownItemChozoStatueFrameDataPointers[UNKNOWN_ITEM_CHOZO_STATUE_OAM_BALL_NORMAL_REVEALED] = sChozoBallOam_UnknownRevealed;
+    sUnknownItemChozoStatueFrameDataPointers[UNKNOWN_ITEM_CHOZO_STATUE_OAM_REFILL] = sUnknownItemChozoStatueRefillOam;
+    sUnknownItemChozoStatueFrameDataPointers[UNKNOWN_ITEM_CHOZO_STATUE_OAM_REFILL_GLOW_IDLE] = sUnknownItemChozoStatuePartOam_GlowIdle;
+}
+#else
 static const struct FrameData* sUnknownItemChozoStatueFrameDataPointers[UNKNOWN_ITEM_CHOZO_STATUE_OAM_COUNT] = {
     [UNKNOWN_ITEM_CHOZO_STATUE_OAM_LEG_STANDING] = sUnknownItemChozoStatuePartOam_LegStanding,
     [UNKNOWN_ITEM_CHOZO_STATUE_OAM_LEG_SITTING] = sUnknownItemChozoStatuePartOam_LegSitting,
@@ -76,6 +97,7 @@ static const struct FrameData* sUnknownItemChozoStatueFrameDataPointers[UNKNOWN_
     [UNKNOWN_ITEM_CHOZO_STATUE_OAM_REFILL] = sUnknownItemChozoStatueRefillOam,
     [UNKNOWN_ITEM_CHOZO_STATUE_OAM_REFILL_GLOW_IDLE] = sUnknownItemChozoStatuePartOam_GlowIdle
 };
+#endif
 
 /**
  * @brief 150a8 | 88 | Synchronize the sub sprites of an unknown item chozo statue

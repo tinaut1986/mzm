@@ -18,6 +18,25 @@
 #include "structs/game_state.h"
 #include "structs/text.h"
 
+#ifdef TMC_3DS
+const u16** sStoryTextPointers[7];
+static void __attribute__((constructor)) Init_sStoryTextPointers(void) {
+    sStoryTextPointers[LANGUAGE_JAPANESE] = sJapaneseTextPointers_Story;
+    sStoryTextPointers[LANGUAGE_HIRAGANA] = sHiraganaTextPointers_Story;
+    sStoryTextPointers[LANGUAGE_ENGLISH] = sEnglishTextPointers_Story;
+#if defined(REGION_EU) ||  defined(REGION_US_BETA)
+    sStoryTextPointers[LANGUAGE_GERMAN] = sGermanTextPointers_Story;
+    sStoryTextPointers[LANGUAGE_FRENCH] = sFrenchTextPointers_Story;
+    sStoryTextPointers[LANGUAGE_ITALIAN] = sItalianTextPointers_Story;
+    sStoryTextPointers[LANGUAGE_SPANISH] = sSpanishTextPointers_Story;
+#else
+    sStoryTextPointers[LANGUAGE_GERMAN] = sEnglishTextPointers_Story;
+    sStoryTextPointers[LANGUAGE_FRENCH] = sEnglishTextPointers_Story;
+    sStoryTextPointers[LANGUAGE_ITALIAN] = sEnglishTextPointers_Story;
+    sStoryTextPointers[LANGUAGE_SPANISH] = sEnglishTextPointers_Story;
+#endif
+}
+#else
 const u16** sStoryTextPointers[7] = {
     [LANGUAGE_JAPANESE] = sJapaneseTextPointers_Story,
     [LANGUAGE_HIRAGANA] = sHiraganaTextPointers_Story,
@@ -34,6 +53,7 @@ const u16** sStoryTextPointers[7] = {
     [LANGUAGE_SPANISH] = sEnglishTextPointers_Story
 #endif // REGION_EU || REGION_US_BETA
 };
+#endif
 
 /**
  * @brief 62b90 | fc | Initializes a story text cutscene

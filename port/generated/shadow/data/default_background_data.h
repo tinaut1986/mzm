@@ -10,6 +10,8 @@
 #define PORT_GEN_DEFAULT_BACKGROUND_DATA_ROM_H
 #include "types.h"
 
+#define DEFAULT_BACKGROUND_DATA_H
+
 extern const u32(*p_sTileset_0_Bg_Gfx)[949];
 #define sTileset_0_Bg_Gfx (*p_sTileset_0_Bg_Gfx)
 extern const u8(*p_sTest_Bg3)[896];

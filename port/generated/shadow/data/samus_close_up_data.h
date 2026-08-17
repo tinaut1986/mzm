@@ -10,6 +10,8 @@
 #define PORT_GEN_SAMUS_CLOSE_UP_DATA_ROM_H
 #include "types.h"
 
+#define SAMUS_CLOSE_UP_DATA_H
+
 extern const u16(*p_sSamusCloseUpPal)[6*16];
 #define sSamusCloseUpPal (*p_sSamusCloseUpPal)
 extern const u32(*p_sSamusCloseUpGfx)[2319];

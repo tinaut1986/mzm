@@ -12,6 +12,7 @@
 #include "structs/demo.h"
 #include "structs/save_file.h"
 
+#define DEMO_DATA_H
 #define MAX_AMOUNT_OF_DEMOS 16
 
 extern const struct SaveDemo*p_sDemo0_Ram;

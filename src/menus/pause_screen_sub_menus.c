@@ -20,6 +20,17 @@
 #include "structs/display.h"
 #include "structs/minimap.h"
 
+#ifdef TMC_3DS
+static const s8* sChozoStatueTargetPathPointers[6];
+static void __attribute__((constructor)) Init_sChozoStatueTargetPathPointers(void) {
+    sChozoStatueTargetPathPointers[AREA_BRINSTAR] = (s8*)sChozoStatueTargetPathBrinstar;
+    sChozoStatueTargetPathPointers[AREA_KRAID] = (s8*)sChozoStatueTargetPathKraid;
+    sChozoStatueTargetPathPointers[AREA_NORFAIR] = (s8*)sChozoStatueTargetPathNorfair;
+    sChozoStatueTargetPathPointers[AREA_RIDLEY] = (s8*)sChozoStatueTargetPathRidley;
+    sChozoStatueTargetPathPointers[AREA_TOURIAN] = (s8*)NULL;
+    sChozoStatueTargetPathPointers[AREA_CRATERIA] = (s8*)sChozoStatueTargetPathCrateria;
+}
+#else
 static const s8* sChozoStatueTargetPathPointers[6] = {
     [AREA_BRINSTAR] = (s8*)sChozoStatueTargetPathBrinstar,
     [AREA_KRAID] = (s8*)sChozoStatueTargetPathKraid,
@@ -28,6 +39,7 @@ static const s8* sChozoStatueTargetPathPointers[6] = {
     [AREA_TOURIAN] = (s8*)NULL,
     [AREA_CRATERIA] = (s8*)sChozoStatueTargetPathCrateria
 };
+#endif
 
 /**
  * @brief 71f70 | 1da | Easy sleep menu main loop

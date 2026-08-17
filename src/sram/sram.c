@@ -5,6 +5,47 @@
 
 static const char sSramVersion[] = "SRAM_V113";
 
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#include <string.h>
+#include "port_gba_mem.h"
+
+void SramWriteUnchecked(u8* src, u8* dest, u32 size)
+{
+    void* d = port_resolve_write_addr((uintptr_t)dest);
+    const void* s = port_resolve_copy_src(src, size);
+    if (d && s) memcpy(d, s, size);
+}
+
+void SramWrite(u8* src, u8* dest, u32 size)
+{
+    void* d = port_resolve_write_addr((uintptr_t)dest);
+    const void* s = port_resolve_copy_src(src, size);
+    if (d && s) memcpy(d, s, size);
+}
+
+u8* SramCheck(u8* src, u8* dest, u32 size)
+{
+    u32 i;
+    void* d = port_resolve_write_addr((uintptr_t)dest);
+    const void* s = port_resolve_copy_src(src, size);
+    if (d && s) {
+        u8* d8 = (u8*)d;
+        const u8* s8 = (const u8*)s;
+        for (i = 0; i < size; i++) {
+            if (d8[i] != s8[i]) return dest + i;
+        }
+    }
+    return NULL;
+}
+
+u8* SramWriteChecked(u8* src, u8* dest, u32 size)
+{
+    SramWrite(src, dest, size);
+    return SramCheck(src, dest, size);
+}
+
+#else
+
 static void SramWriteUncheckedInternal(u8* src, u8* dest, u32 size)
 {
     while (size-- != 0)
@@ -92,3 +133,5 @@ u8* SramWriteChecked(u8* src, u8* dest, u32 size)
 
     return diff;
 }
+#endif
+

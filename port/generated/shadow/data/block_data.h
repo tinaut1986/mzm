@@ -16,6 +16,8 @@
 #include "structs/block.h"
 #include "structs/connection.h"
 
+#define BLOCK_DATA_H
+
 extern const struct TankList(*p_sNumberOfTanksPerArea)[MAX_AMOUNT_OF_AREAS];
 #define sNumberOfTanksPerArea (*p_sNumberOfTanksPerArea)
 extern const struct TankList*p_sStartingHealthAmmo;

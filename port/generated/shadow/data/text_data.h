@@ -14,6 +14,8 @@
 #include "constants/text.h"
 #include "structs/text.h"
 
+#define TEXT_DATA_H
+
 extern const u8(*p_sCharactersGfx)[176*1024];
 #define sCharactersGfx (*p_sCharactersGfx)
 extern const u16*p_sJapaneseText_Message_Dummy;

@@ -1,6 +1,10 @@
 #include "event.h"
 #include "constants/event.h"
 
+#ifdef TMC_3DS
+u32 gEventsTriggered[8];
+#endif
+
 /**
  * 608bc | 6c | Function used to manipulate the events
  * 

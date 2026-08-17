@@ -362,22 +362,22 @@ void UpdatePsgSounds(void)
                 {
                     if ((pSound->unk_2 >> 1) > pSound->unk_3)
                     {
-                        *ptr = control | (1 << i);
+                        WRITE_8(ptr, control | (1 << i));
                     }
                     else
                     {
-                        *ptr = control | (17 << i);
+                        WRITE_8(ptr, control | (17 << i));
                     }
                 }
                 else
                 {
                     if ((pSound->unk_3 >> 1) > pSound->unk_2)
                     {
-                        *ptr = control | (16 << i);
+                        WRITE_8(ptr, control | (16 << i));
                     }
                     else
                     {
-                        *ptr = control | (17 << i);
+                        WRITE_8(ptr, control | (17 << i));
                     }
                 }
 

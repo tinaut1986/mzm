@@ -25,6 +25,24 @@ MAKE_ENUM(u8, TangleVineGerutaStatus) {
 
 #define TANGLE_VINE_POSE_IDLE 0x9
 
+#ifdef TMC_3DS
+static const struct FrameData* sTangleVineFrameDataPointers[TANGLE_VINE_OAM_COUNT];
+static void __attribute__((constructor)) Init_sTangleVineFrameDataPointers(void) {
+    sTangleVineFrameDataPointers[TANGLE_VINE_OAM_TALL_ON_GROUND] = sTangleVineTallOam_OnGround;
+    sTangleVineFrameDataPointers[TANGLE_VINE_OAM_MEDIUM_ON_GROUND] = sTangleVineMediumOam_OnGround;
+    sTangleVineFrameDataPointers[TANGLE_VINE_OAM_SHORT_ON_GROUND] = sTangleVineShortOam_OnGround;
+    sTangleVineFrameDataPointers[TANGLE_VINE_OAM_CURVED_ON_GROUND] = sTangleVineCurvedOam_OnGround;
+    sTangleVineFrameDataPointers[TANGLE_VINE_OAM_TALL_ON_CEILING] = sTangleVineTallOam_OnCeiling;
+    sTangleVineFrameDataPointers[TANGLE_VINE_OAM_MEDIUM_ON_CEILING] = sTangleVineMediumOam_OnCeiling;
+    sTangleVineFrameDataPointers[TANGLE_VINE_OAM_SHORT_ON_CEILING] = sTangleVineShortOam_OnCeiling;
+    sTangleVineFrameDataPointers[TANGLE_VINE_OAM_CURVED_ON_CEILING] = sTangleVineCurvedOam_OnCeiling;
+    sTangleVineFrameDataPointers[TANGLE_VINE_OAM_GERUTA_GRIP] = sTangleVineGerutaPartOam_Grip;
+    sTangleVineFrameDataPointers[TANGLE_VINE_OAM_GERUTA_ROOT] = sTangleVineGerutaOam_Root;
+    sTangleVineFrameDataPointers[TANGLE_VINE_OAM_GERUTA_FULL] = sTangleVineGerutaOam_Full;
+    sTangleVineFrameDataPointers[TANGLE_VINE_OAM_RED_GERUTA_OAM] = sTangleVineRedGerutaOam;
+    sTangleVineFrameDataPointers[TANGLE_VINE_OAM_GERUTA] = sTangleVineGerutaPartOam_Geruta;
+}
+#else
 static const struct FrameData* sTangleVineFrameDataPointers[TANGLE_VINE_OAM_COUNT] = {
     [TANGLE_VINE_OAM_TALL_ON_GROUND] = sTangleVineTallOam_OnGround,
     [TANGLE_VINE_OAM_MEDIUM_ON_GROUND] = sTangleVineMediumOam_OnGround,
@@ -40,6 +58,7 @@ static const struct FrameData* sTangleVineFrameDataPointers[TANGLE_VINE_OAM_COUN
     [TANGLE_VINE_OAM_RED_GERUTA_OAM] = sTangleVineRedGerutaOam,
     [TANGLE_VINE_OAM_GERUTA] = sTangleVineGerutaPartOam_Geruta
 };
+#endif
 
 /**
  * @brief 413c4 | 88 | Synchronize the sub sprites of a tangle vine

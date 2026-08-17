@@ -11,6 +11,8 @@
 #include "types.h"
 #include "macros.h"
 
+#define GENERIC_DATA_H
+
 extern const s16(*p_sSineTable)[2*PI+PI_2];
 #define sSineTable (*p_sSineTable)
 extern const u8(*p_sRandomNumberTable)[256];

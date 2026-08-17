@@ -12,6 +12,8 @@
 #include "structs/animated_graphics.h"
 #include "constants/animated_graphics.h"
 
+#define ANIMATED_GFX_DATA_H
+
 extern const struct AnimatedGraphicsData(*p_sAnimatedGraphicsEntries)[ANIMATED_GFX_ID_COUNT];
 #define sAnimatedGraphicsEntries (*p_sAnimatedGraphicsEntries)
 extern const u8(*p_sAnimatedTilesetEntries)[8][48];

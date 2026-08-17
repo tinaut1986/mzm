@@ -12,6 +12,8 @@
 #include "constants/connection.h"
 #include "structs/connection.h"
 
+#define HATCH_DATA_H
+
 extern const HatchType(*p_sHatchTypeTable)[HATCH_COUNT];
 #define sHatchTypeTable (*p_sHatchTypeTable)
 extern const struct HatchLockEvent(*p_sHatchLockEventsBrinstar)[1];
@@ -25,7 +27,7 @@ extern const struct HatchLockEvent(*p_sHatchLockEventsChozodia)[15];
 extern const u8(*p_sEventBasedConnections)[41][EVENT_BASED_CONNECTION_FIELD_COUNT];
 #define sEventBasedConnections (*p_sEventBasedConnections)
 extern const u8(*p_sAreaConnections)[AREA_CONNECTION_FIELD_COUNT];
-#define sAreaConnections (*p_sAreaConnections)
+#define sAreaConnections p_sAreaConnections
 extern const u8(*p_sHatchesAnimationDurationCounter)[6];
 #define sHatchesAnimationDurationCounter (*p_sHatchesAnimationDurationCounter)
 extern const u16(*p_sHatchesTilemapValues)[HATCH_COUNT];

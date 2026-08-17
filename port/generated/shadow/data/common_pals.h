@@ -10,6 +10,8 @@
 #define PORT_GEN_COMMON_PALS_ROM_H
 #include "types.h"
 
+#define DATA_COMMON_PALS_H
+
 extern const u16(*p_sCommonTilesPal)[1*16];
 #define sCommonTilesPal (*p_sCommonTilesPal)
 extern const u16(*p_sDoorTransitionPal)[15*16];

@@ -47,6 +47,34 @@
 #define IMAGO_LARVA_SHELL_TAIL_HITBOX (BLOCK_SIZE * 2 + HALF_BLOCK_SIZE + EIGHTH_BLOCK_SIZE)
 #define IMAGO_LARVA_SHELL_HEAD_HITBOX (BLOCK_SIZE * 2 + QUARTER_BLOCK_SIZE + EIGHTH_BLOCK_SIZE)
 
+#ifdef TMC_3DS
+static const struct FrameData* sImagoLarvaFrameDataPointers[IMAGO_LARVA_OAM_COUNT];
+static void __attribute__((constructor)) Init_sImagoLarvaFrameDataPointers(void) {
+    sImagoLarvaFrameDataPointers[IMAGO_LARVA_OAM_SHELL_ATTACKING] = sImagoLarvaPartOam_ShellAttacking;
+    sImagoLarvaFrameDataPointers[IMAGO_LARVA_OAM_SHELL_IDLE] = sImagoLarvaPartOam_ShellIdle;
+    sImagoLarvaFrameDataPointers[IMAGO_LARVA_OAM_SHELL_RETREATING] = sImagoLarvaPartOam_ShellRetreating;
+    sImagoLarvaFrameDataPointers[IMAGO_LARVA_OAM_SHELL_DYING] = sImagoLarvaPartOam_ShellDying;
+    sImagoLarvaFrameDataPointers[IMAGO_LARVA_OAM_CLAWS_ATTACKING] = sImagoLarvaPartOam_ClawsAttacking;
+    sImagoLarvaFrameDataPointers[IMAGO_LARVA_OAM_CLAWS_IDLE] = sImagoLarvaPartOam_ClawsIdle;
+    sImagoLarvaFrameDataPointers[IMAGO_LARVA_OAM_CLAWS_RETREATING] = sImagoLarvaPartOam_ClawsRetreating;
+    sImagoLarvaFrameDataPointers[IMAGO_LARVA_OAM_CLAWS_TAKING_DAMAGE] = sImagoLarvaPartOam_ClawsTakingDamage;
+    sImagoLarvaFrameDataPointers[IMAGO_LARVA_OAM_LEFT_DOT_APPEARING] = sImagoLarvaPartOam_LeftDotAppearing;
+    sImagoLarvaFrameDataPointers[IMAGO_LARVA_OAM_MIDDLE_DOT_APPEARING] = sImagoLarvaPartOam_MiddleDotAppearing;
+    sImagoLarvaFrameDataPointers[IMAGO_LARVA_OAM_RIGHT_DOT_APPEARING] = sImagoLarvaPartOam_RightDotAppearing;
+    sImagoLarvaFrameDataPointers[IMAGO_LARVA_OAM_LEFT_DOT_VISIBLE] = sImagoLarvaPartOam_LeftDotVisible;
+    sImagoLarvaFrameDataPointers[IMAGO_LARVA_OAM_MIDDLE_DOT_VISIBLE] = sImagoLarvaPartOam_MiddleDotVisible;
+    sImagoLarvaFrameDataPointers[IMAGO_LARVA_OAM_RIGHT_DOT_VISIBLE] = sImagoLarvaPartOam_RightDotVisible;
+    sImagoLarvaFrameDataPointers[IMAGO_LARVA_OAM_LEFT_DOT_DISAPPEARING] = sImagoLarvaPartOam_LeftDotDisappearing;
+    sImagoLarvaFrameDataPointers[IMAGO_LARVA_OAM_MIDDLE_DOT_DISAPPEARING] = sImagoLarvaPartOam_MiddleDotDisappearing;
+    sImagoLarvaFrameDataPointers[IMAGO_LARVA_OAM_RIGHT_DOT_DISAPPEARING] = sImagoLarvaPartOam_RightDotDisappearing;
+    sImagoLarvaFrameDataPointers[IMAGO_LARVA_OAM_SHELL_WARNING] = sImagoLarvaPartOam_ShellWarning;
+    sImagoLarvaFrameDataPointers[IMAGO_LARVA_OAM_IDLE] = sImagoLarvaOam_Idle;
+    sImagoLarvaFrameDataPointers[IMAGO_LARVA_OAM_CLAWS_WARNING_FIRST_PART] = sImagoLarvaPartOam_ClawsWarningFirstPart;
+    sImagoLarvaFrameDataPointers[IMAGO_LARVA_OAM_CLAWS_WARNING_SECOND_PART] = sImagoLarvaPartOam_ClawsWarningSecondPart;
+    sImagoLarvaFrameDataPointers[IMAGO_LARVA_OAM_WARNING] = sImagoLarvaOam_Warning;
+    sImagoLarvaFrameDataPointers[IMAGO_LARVA_OAM_SHELL_TAKING_DAMAGE] = sImagoLarvaPartOam_ShellTakingDamage;
+}
+#else
 static const struct FrameData* sImagoLarvaFrameDataPointers[IMAGO_LARVA_OAM_COUNT] = {
     [IMAGO_LARVA_OAM_SHELL_ATTACKING] = sImagoLarvaPartOam_ShellAttacking,
     [IMAGO_LARVA_OAM_SHELL_IDLE] = sImagoLarvaPartOam_ShellIdle,
@@ -72,6 +100,7 @@ static const struct FrameData* sImagoLarvaFrameDataPointers[IMAGO_LARVA_OAM_COUN
     [IMAGO_LARVA_OAM_WARNING] = sImagoLarvaOam_Warning,
     [IMAGO_LARVA_OAM_SHELL_TAKING_DAMAGE] = sImagoLarvaPartOam_ShellTakingDamage
 };
+#endif
 
 /**
  * @brief 259a0 | 84 | Synchronize the sub sprites of an Imago larva

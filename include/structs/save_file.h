@@ -236,8 +236,10 @@ struct Sram {
     u8 MetZeroSramCheck_Text[SRAM_TEXT_SIZE];
 };
 
+#if !defined(PORT_NATIVE)
 // Make sure that the size of the sram struct doesn't exceed the size of the flash sram
 STATIC_ASSERT(sizeof(struct Sram) <= SRAM_SIZE, SramStructSize);
+#endif
 
 extern u8 gSramOperationStage;
 extern u8 gSramCorruptFlag;

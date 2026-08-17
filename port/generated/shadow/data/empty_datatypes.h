@@ -18,6 +18,9 @@
 #include "structs/power_bomb_explosion.h"
 #include "structs/animated_graphics.h"
 
+#define EMPTY_DATATYPES_H
+// 345868
+
 extern const struct HatchData*p_sHatchData_Empty;
 #define sHatchData_Empty (*p_sHatchData_Empty)
 extern const struct Coordinates*p_sCoordsX_Empty;

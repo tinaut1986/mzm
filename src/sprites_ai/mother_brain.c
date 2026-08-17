@@ -54,6 +54,21 @@ MAKE_ENUM(u8, MotherBrainFightStage) {
 // Damage threshold at which mother closes her eye
 #define MOTHER_BRAIN_DAMAGE_THRESHOLD (SUPER_MISSILE_DAMAGE)
 
+#ifdef TMC_3DS
+static const struct FrameData* sMotherBrainFrameDataPointers[MOTHER_BRAIN_OAM_COUNT];
+static void __attribute__((constructor)) Init_sMotherBrainFrameDataPointers(void) {
+    sMotherBrainFrameDataPointers[MOTHER_BRAIN_OAM_IDLE] = sMotherBrainOam_Idle;
+    sMotherBrainFrameDataPointers[MOTHER_BRAIN_OAM_CHARGING_BEAM] = sMotherBrainOam_ChargingBeam;
+    sMotherBrainFrameDataPointers[MOTHER_BRAIN_OAM_EYE_CLOSED] = sMotherBrainPartOam_EyeClosed;
+    sMotherBrainFrameDataPointers[MOTHER_BRAIN_OAM_2fa934] = sMotherBrainPartOam_2fa934;
+    sMotherBrainFrameDataPointers[MOTHER_BRAIN_OAM_EYE_OPENING] = sMotherBrainPartOam_EyeOpening;
+    sMotherBrainFrameDataPointers[MOTHER_BRAIN_OAM_2fa984] = sMotherBrainPartOam_2fa984;
+    sMotherBrainFrameDataPointers[MOTHER_BRAIN_OAM_EYE_DYING] = sMotherBrainPartOam_EyeDying;
+    sMotherBrainFrameDataPointers[MOTHER_BRAIN_OAM_BOTTOM] = sMotherBrainPartOam_Bottom;
+    sMotherBrainFrameDataPointers[MOTHER_BRAIN_OAM_BEAM_SPAWNING] = sMotherBrainPartOam_BeamSpawning;
+    sMotherBrainFrameDataPointers[MOTHER_BRAIN_OAM_BEAM_MOVING] = sMotherBrainBeamOam_Moving;
+}
+#else
 static const struct FrameData* sMotherBrainFrameDataPointers[MOTHER_BRAIN_OAM_COUNT] = {
     [MOTHER_BRAIN_OAM_IDLE] = sMotherBrainOam_Idle,
     [MOTHER_BRAIN_OAM_CHARGING_BEAM] = sMotherBrainOam_ChargingBeam,
@@ -66,6 +81,7 @@ static const struct FrameData* sMotherBrainFrameDataPointers[MOTHER_BRAIN_OAM_CO
     [MOTHER_BRAIN_OAM_BEAM_SPAWNING] = sMotherBrainPartOam_BeamSpawning,
     [MOTHER_BRAIN_OAM_BEAM_MOVING] = sMotherBrainBeamOam_Moving
 };
+#endif
 
 /**
  * @brief 3c964 | 68 | Synchronize the sub sprites of Mother Brain

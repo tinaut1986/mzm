@@ -30,6 +30,18 @@ void BgClipSetClipdataBlockValue(u16, u16, u16); // From bg_clip.h
 // bg_clip.h must not be included, as declaring the correct signature for some
 // of its functions produces non-matching code here.
 
+#ifdef TMC_3DS
+static const struct HatchLockEvent* sHatchLockEventsPointers[AREA_NORMAL_COUNT];
+static void __attribute__((constructor)) Init_sHatchLockEventsPointers(void) {
+    sHatchLockEventsPointers[AREA_BRINSTAR] = sHatchLockEventsBrinstar;
+    sHatchLockEventsPointers[AREA_KRAID] = sHatchLockEventsKraid;
+    sHatchLockEventsPointers[AREA_NORFAIR] = sHatchLockEventsCrateria;
+    sHatchLockEventsPointers[AREA_RIDLEY] = sHatchLockEventsCrateria;
+    sHatchLockEventsPointers[AREA_TOURIAN] = sHatchLockEventsCrateria;
+    sHatchLockEventsPointers[AREA_CRATERIA] = sHatchLockEventsCrateria;
+    sHatchLockEventsPointers[AREA_CHOZODIA] = sHatchLockEventsChozodia;
+}
+#else
 static const struct HatchLockEvent* sHatchLockEventsPointers[AREA_NORMAL_COUNT] = {
     [AREA_BRINSTAR] = sHatchLockEventsBrinstar,
     [AREA_KRAID] = sHatchLockEventsKraid,
@@ -39,6 +51,7 @@ static const struct HatchLockEvent* sHatchLockEventsPointers[AREA_NORMAL_COUNT] 
     [AREA_CRATERIA] = sHatchLockEventsCrateria,
     [AREA_CHOZODIA] = sHatchLockEventsChozodia
 };
+#endif
 
 /**
  * @brief 5e760 | 198 | Updates the hatches

@@ -30,6 +30,27 @@
 
 #define DELAY_BEFORE_HINT (CONVERT_SECONDS(2.f))
 
+#ifdef TMC_3DS
+static const struct FrameData* sChozoStatueFrameDataPointers[CHOZO_STATUE_OAM_COUNT];
+static void __attribute__((constructor)) Init_sChozoStatueFrameDataPointers(void) {
+    sChozoStatueFrameDataPointers[CHOZO_STATUE_OAM_LEG_STANDING] = sChozoStatuePartOam_LegStanding;
+    sChozoStatueFrameDataPointers[CHOZO_STATUE_OAM_LEG_SITTING] = sChozoStatuePartOam_LegSitting;
+    sChozoStatueFrameDataPointers[CHOZO_STATUE_OAM_LEG_SEATED] = sChozoStatuePartOam_LegSeated;
+    sChozoStatueFrameDataPointers[CHOZO_STATUE_OAM_IDLE] = sChozoStatueOam_Idle;
+    sChozoStatueFrameDataPointers[CHOZO_STATUE_OAM_EYE_OPENED] = sChozoStatuePartOam_EyeOpened;
+    sChozoStatueFrameDataPointers[CHOZO_STATUE_OAM_EYE_CLOSING] = sChozoStatuePartOam_EyeClosing;
+    sChozoStatueFrameDataPointers[CHOZO_STATUE_OAM_EYE_OPENING] = sChozoStatuePartOam_EyeOpening;
+    sChozoStatueFrameDataPointers[CHOZO_STATUE_OAM_EYE_CLOSED] = sChozoStatuePartOam_EyeClosed;
+    sChozoStatueFrameDataPointers[CHOZO_STATUE_OAM_ARM_IDLE] = sChozoStatuePartOam_ArmIdle;
+    sChozoStatueFrameDataPointers[CHOZO_STATUE_OAM_ARM_GLOW] = sChozoStatuePartOam_ArmGlow;
+    sChozoStatueFrameDataPointers[CHOZO_STATUE_OAM_ARM_SAMUS_GRABBED] = sChozoStatuePartOam_ArmSamusGrabbed;
+    sChozoStatueFrameDataPointers[CHOZO_STATUE_OAM_BALL_NORMAL_CLOSED] = sChozoBallOam_NormalClosed;
+    sChozoStatueFrameDataPointers[CHOZO_STATUE_OAM_BALL_NORMAL_REVEALING] = sChozoBallOam_NormalRevealing;
+    sChozoStatueFrameDataPointers[CHOZO_STATUE_OAM_BALL_NORMAL_REVEALED] = sChozoBallOam_NormalRevealed;
+    sChozoStatueFrameDataPointers[CHOZO_STATUE_OAM_REFILL] = sChozoStatueRefillOam;
+    sChozoStatueFrameDataPointers[CHOZO_STATUE_OAM_REFILL_GLOW_IDLE] = sChozoStatuePartOam_GlowIdle;
+}
+#else
 static const struct FrameData* sChozoStatueFrameDataPointers[CHOZO_STATUE_OAM_COUNT] = {
     [CHOZO_STATUE_OAM_LEG_STANDING] = sChozoStatuePartOam_LegStanding,
     [CHOZO_STATUE_OAM_LEG_SITTING] = sChozoStatuePartOam_LegSitting,
@@ -48,6 +69,7 @@ static const struct FrameData* sChozoStatueFrameDataPointers[CHOZO_STATUE_OAM_CO
     [CHOZO_STATUE_OAM_REFILL] = sChozoStatueRefillOam,
     [CHOZO_STATUE_OAM_REFILL_GLOW_IDLE] = sChozoStatuePartOam_GlowIdle
 };
+#endif
 
 /**
  * @brief 13850 | 88 | Synchronize the sub sprites of a chozo statue

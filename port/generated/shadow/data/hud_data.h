@@ -10,8 +10,11 @@
 #define PORT_GEN_HUD_DATA_ROM_H
 #include "types.h"
 
+#define HUD_DATA_H
 #define SUITLESS_BAR_NBR_ELEMS 56
 #define SUITLESS_BAR_SIZE 256
+// 32ba08
+// 8339aa8
 
 extern const u16(*p_sCommonSpritesPal)[96];
 #define sCommonSpritesPal (*p_sCommonSpritesPal)

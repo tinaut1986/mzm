@@ -25,5 +25,12 @@ tools/agbcc
 
 err.log
 
-# 3DS port build artifacts
+# 3DS and Linux port build artifacts
 platform/3ds/build/
+platform/3ds/*.cia
+platform/3ds/*.smdh
+platform/3ds/*.elf
+platform/3ds/*.3dsx
+platform/linux/build/
+platform/linux/mzm-linux
+scratch/

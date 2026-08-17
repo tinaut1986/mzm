@@ -645,6 +645,9 @@ static void MultiBootWaitCycles(s32 cycles)
      * (If V blank interrupt is processed during this, actual wait is longer)
      */
 
+#if defined(PORT_NATIVE)
+    (void)cycles;
+#else
     asm("                            \n\
         mov r2, pc                   \n\
         lsr r2, r2, #0x18            \n\
@@ -660,6 +663,7 @@ static void MultiBootWaitCycles(s32 cycles)
         bgt MultiBootWaitCyclesLoop  \n\
         bx lr                        \n\
     ");
+#endif
 }
 
 /**

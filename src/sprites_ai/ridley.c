@@ -128,6 +128,44 @@ MAKE_ENUM(u8, RidleyFireballType) {
 
 #define RIDLEY_FIREBALL_ASCENDING_Y_TARGET_OFFSET (THREE_QUARTER_BLOCK_SIZE + PIXEL_SIZE / 2)
 
+#ifdef TMC_3DS
+static const struct FrameData* sRidleyFrameDataPointers[RIDLEY_OAM_COUNT];
+static void __attribute__((constructor)) Init_sRidleyFrameDataPointers(void) {
+    sRidleyFrameDataPointers[RIDLEY_OAM_IDLE] = sRidleyOam_Idle;
+    sRidleyFrameDataPointers[RIDLEY_OAM_SPITTING_FIREBALLS] = sRidleyOam_SpittingFireballs;
+    sRidleyFrameDataPointers[RIDLEY_OAM_TURNING_AROUND_FIRST_PART] = sRidleyOam_TurningAroundFirstPart;
+    sRidleyFrameDataPointers[RIDLEY_OAM_TURNING_AROUND_SECOND_PART] = sRidleyOam_TurningAroundSecondPart;
+    sRidleyFrameDataPointers[RIDLEY_OAM_HEAD_IDLE] = sRidleyPartOam_HeadIdle;
+    sRidleyFrameDataPointers[RIDLEY_OAM_OPENING_MOUTH] = sRidleyPartOam_OpeningMouth;
+    sRidleyFrameDataPointers[RIDLEY_OAM_MOUTH_OPENED] = sRidleyPartOam_MouthOpened;
+    sRidleyFrameDataPointers[RIDLEY_OAM_HEAD_DYING] = sRidleyPartOam_HeadDying;
+    sRidleyFrameDataPointers[RIDLEY_OAM_HEAD_TURNING_AROUND] = sRidleyPartOam_HeadTurningAround;
+    sRidleyFrameDataPointers[RIDLEY_OAM_CLAW_IDLE] = sRidleyPartOam_ClawIdle;
+    sRidleyFrameDataPointers[RIDLEY_OAM_CLAW_SPITTING_FIREBALLS] = sRidleyPartOam_ClawSpittingFireballs;
+    sRidleyFrameDataPointers[RIDLEY_OAM_CLAW_TURNING_AROUND_FIRST_PART] = sRidleyPartOam_ClawTurningAroundFirstPart;
+    sRidleyFrameDataPointers[RIDLEY_OAM_CLAW_TURNING_AROUND_SECOND_PART] = sRidleyPartOam_ClawTurningAroundSecondPart;
+    sRidleyFrameDataPointers[RIDLEY_OAM_CLAW_CARRYING_SAMUS] = sRidleyPartOam_ClawCarryingSamus;
+    sRidleyFrameDataPointers[RIDLEY_OAM_CLAW_LIFTING_SAMUS] = sRidleyPartOam_ClawLiftingSamus;
+    sRidleyFrameDataPointers[RIDLEY_OAM_CLAW_SAMUS_LIFTED] = sRidleyPartOam_ClawSamusLifted;
+    sRidleyFrameDataPointers[RIDLEY_OAM_CLAW_RELEASING_SAMUS] = sRidleyPartOam_ClawReleasingSamus;
+    sRidleyFrameDataPointers[RIDLEY_OAM_LEFT_WING_IDLE] = sRidleyPartOam_LeftWingIdle;
+    sRidleyFrameDataPointers[RIDLEY_OAM_RIGHT_WING_IDLE] = sRidleyPartOam_RightWingIdle;
+    sRidleyFrameDataPointers[RIDLEY_OAM_LEFT_WING_UNUSED] = sRidleyPartOam_LeftWing_Unused;
+    sRidleyFrameDataPointers[RIDLEY_OAM_RIGHT_WING_UNUSED] = sRidleyPartOam_RightWing_Unused;
+    sRidleyFrameDataPointers[RIDLEY_OAM_LEFT_WING_SPITTING_FIREBALLS] = sRidleyPartOam_LeftWingSpittingFireballs;
+    sRidleyFrameDataPointers[RIDLEY_OAM_RIGHT_WING_SPITTING_FIREBALLS] = sRidleyPartOam_RightWingSpittingFireballs;
+    sRidleyFrameDataPointers[RIDLEY_OAM_TAIL_PART] = sRidleyTailOam_Part;
+    sRidleyFrameDataPointers[RIDLEY_OAM_TAIL_TIP_POINTING_DOWN] = sRidleyTailOam_TipPointingDown;
+    sRidleyFrameDataPointers[RIDLEY_OAM_TAIL_TIP_POINTING_UP] = sRidleyTailOam_TipPointingUp;
+    sRidleyFrameDataPointers[RIDLEY_OAM_TAIL_TIP_POINTING_DIAGONALLY_DOWN_RIGHT] = sRidleyTailOam_TipPointingDiagonallyDownRight;
+    sRidleyFrameDataPointers[RIDLEY_OAM_TAIL_TIP_POINTING_DIAGONALLY_UP_RIGHT] = sRidleyTailOam_TipPointingDiagonallyUpRight;
+    sRidleyFrameDataPointers[RIDLEY_OAM_TAIL_TIP_POINTING_DIAGONALLY_DOWN_LEFT] = sRidleyTailOam_TipPointingDiagonallyDownLeft;
+    sRidleyFrameDataPointers[RIDLEY_OAM_TAIL_TIP_POINTING_DIAGONALLY_UP_LEFT] = sRidleyTailOam_TipPointingDiagonallyUpLeft;
+    sRidleyFrameDataPointers[RIDLEY_OAM_SQUARE] = sRidleyOam_Square;
+    sRidleyFrameDataPointers[RIDLEY_OAM_FIREBALL_SMALL] = sRidleyFireballOam_Small;
+    sRidleyFrameDataPointers[RIDLEY_OAM_FIREBALL_BIG] = sRidleyFireballOam_Big;
+}
+#else
 static const struct FrameData* sRidleyFrameDataPointers[RIDLEY_OAM_COUNT] = {
     [RIDLEY_OAM_IDLE] = sRidleyOam_Idle,
     [RIDLEY_OAM_SPITTING_FIREBALLS] = sRidleyOam_SpittingFireballs,
@@ -163,6 +201,7 @@ static const struct FrameData* sRidleyFrameDataPointers[RIDLEY_OAM_COUNT] = {
     [RIDLEY_OAM_FIREBALL_SMALL] = sRidleyFireballOam_Small,
     [RIDLEY_OAM_FIREBALL_BIG] = sRidleyFireballOam_Big
 };
+#endif
 
 /**
  * @brief 31aa4 | 9c | Synchronize the sub sprites of Ridley

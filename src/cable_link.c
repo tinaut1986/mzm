@@ -16,12 +16,22 @@
 #include "structs/game_state.h"
 #include "structs/multiboot.h"
 
+#ifdef TMC_3DS
+static const u8* sPlayerNumbersStringPointers[4];
+static void __attribute__((constructor)) Init_sPlayerNumbersStringPointers(void) {
+    sPlayerNumbersStringPointers[0] = sPlayer1String;
+    sPlayerNumbersStringPointers[1] = sPlayer2String;
+    sPlayerNumbersStringPointers[2] = sPlayer3String;
+    sPlayerNumbersStringPointers[3] = sPlayer4String;
+}
+#else
 static const u8* sPlayerNumbersStringPointers[4] = {
     [0] = sPlayer1String,
     [1] = sPlayer2String,
     [2] = sPlayer3String,
     [3] = sPlayer4String
 };
+#endif
 
 /**
  * @brief 88ea0 | 270 | Handles sending multiboot and fusion gallery transfer roms

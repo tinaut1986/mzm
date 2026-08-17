@@ -40,6 +40,39 @@
 #include "structs/screen_shake.h"
 #include "structs/visual_effects.h"
 
+#ifdef TMC_3DS
+const struct Door* sAreaDoorsPointers[AREA_ENTRY_COUNT];
+const struct RoomEntryRom* sAreaRoomEntryPointers[AREA_ENTRY_COUNT];
+static void __attribute__((constructor)) Init_sAreaPointers(void) {
+    sAreaDoorsPointers[AREA_BRINSTAR] = sBrinstarDoors;
+    sAreaDoorsPointers[AREA_KRAID] = sKraidDoors;
+    sAreaDoorsPointers[AREA_NORFAIR] = sNorfairDoors;
+    sAreaDoorsPointers[AREA_RIDLEY] = sRidleyDoors;
+    sAreaDoorsPointers[AREA_TOURIAN] = sTourianDoors;
+    sAreaDoorsPointers[AREA_CRATERIA] = sCrateriaDoors;
+    sAreaDoorsPointers[AREA_CHOZODIA] = sChozodiaDoors;
+#ifdef DEBUG
+    sAreaDoorsPointers[AREA_TEST] = sTestDoors;
+    sAreaDoorsPointers[AREA_TEST_1] = sTest123Doors;
+    sAreaDoorsPointers[AREA_TEST_2] = sTest123Doors;
+    sAreaDoorsPointers[AREA_TEST_3] = sTest123Doors;
+#endif
+
+    sAreaRoomEntryPointers[AREA_BRINSTAR] = sBrinstarRoomEntries;
+    sAreaRoomEntryPointers[AREA_KRAID] = sKraidRoomEntries;
+    sAreaRoomEntryPointers[AREA_NORFAIR] = sNorfairRoomEntries;
+    sAreaRoomEntryPointers[AREA_RIDLEY] = sRidleyRoomEntries;
+    sAreaRoomEntryPointers[AREA_TOURIAN] = sTourianRoomEntries;
+    sAreaRoomEntryPointers[AREA_CRATERIA] = sCrateriaRoomEntries;
+    sAreaRoomEntryPointers[AREA_CHOZODIA] = sChozodiaRoomEntries;
+#ifdef DEBUG
+    sAreaRoomEntryPointers[AREA_TEST] = sTestRoomEntries;
+    sAreaRoomEntryPointers[AREA_TEST_1] = sTest1RoomEntries;
+    sAreaRoomEntryPointers[AREA_TEST_2] = sTest2RoomEntries;
+    sAreaRoomEntryPointers[AREA_TEST_3] = sTest3RoomEntries;
+#endif
+}
+#else
 const struct Door* sAreaDoorsPointers[AREA_ENTRY_COUNT] = {
     [AREA_BRINSTAR] = sBrinstarDoors,
     [AREA_KRAID] = sKraidDoors,
@@ -56,6 +89,22 @@ const struct Door* sAreaDoorsPointers[AREA_ENTRY_COUNT] = {
 #endif // DEBUG
 };
 
+#ifdef TMC_3DS
+const struct RoomEntryRom* sAreaRoomEntryPointers[AREA_ENTRY_COUNT];
+static void __attribute__((constructor)) Init_sAreaRoomEntryPointers(void) {
+    sAreaRoomEntryPointers[AREA_BRINSTAR] = sBrinstarRoomEntries;
+    sAreaRoomEntryPointers[AREA_KRAID] = sKraidRoomEntries;
+    sAreaRoomEntryPointers[AREA_NORFAIR] = sNorfairRoomEntries;
+    sAreaRoomEntryPointers[AREA_RIDLEY] = sRidleyRoomEntries;
+    sAreaRoomEntryPointers[AREA_TOURIAN] = sTourianRoomEntries;
+    sAreaRoomEntryPointers[AREA_CRATERIA] = sCrateriaRoomEntries;
+    sAreaRoomEntryPointers[AREA_CHOZODIA] = sChozodiaRoomEntries;
+    sAreaRoomEntryPointers[AREA_TEST] = sTestRoomEntries;
+    sAreaRoomEntryPointers[AREA_TEST_1] = sTest1RoomEntries;
+    sAreaRoomEntryPointers[AREA_TEST_2] = sTest2RoomEntries;
+    sAreaRoomEntryPointers[AREA_TEST_3] = sTest3RoomEntries;
+}
+#else
 const struct RoomEntryRom* sAreaRoomEntryPointers[AREA_ENTRY_COUNT] = {
     [AREA_BRINSTAR] = sBrinstarRoomEntries,
     [AREA_KRAID] = sKraidRoomEntries,
@@ -71,6 +120,8 @@ const struct RoomEntryRom* sAreaRoomEntryPointers[AREA_ENTRY_COUNT] = {
     [AREA_TEST_3] = sTest3RoomEntries
 #endif // DEBUG
 };
+#endif
+#endif
 
 /**
  * @brief 55f7c | 26c | Loads the current room
