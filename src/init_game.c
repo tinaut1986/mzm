@@ -12,6 +12,10 @@
 #include "structs/audio.h"
 #include "structs/game_state.h"
 
+#ifdef TMC_3DS
+#include "port_debug_log.h"
+#endif
+
 void InitializeGame(void)
 {
     WRITE_16(REG_DISPCNT, DCNT_BLANK);
@@ -21,11 +25,29 @@ void InitializeGame(void)
     DMA3_FILL_32(0, EWRAM_BASE, EWRAM_SIZE);
     DMA3_FILL_32(0, IWRAM_BASE, IWRAM_SIZE - 0x200);
 
+#ifdef TMC_3DS
+    Port_DebugLog("InitializeGame: before ClearGfxRam");
+#endif
     ClearGfxRam();
+#ifdef TMC_3DS
+    Port_DebugLog("InitializeGame: before LoadInterruptCode");
+#endif
     LoadInterruptCode();
+#ifdef TMC_3DS
+    Port_DebugLog("InitializeGame: before CallbackSetVblank");
+#endif
     CallbackSetVblank(SoftResetVBlankCallback);
+#ifdef TMC_3DS
+    Port_DebugLog("InitializeGame: before SramRead_All");
+#endif
     SramRead_All();
+#ifdef TMC_3DS
+    Port_DebugLog("InitializeGame: before InitializeAudio");
+#endif
     InitializeAudio();
+#ifdef TMC_3DS
+    Port_DebugLog("InitializeGame: after InitializeAudio");
+#endif
 #ifdef BUGFIX
     SramRead_SoundMode();
     FileSelectApplyStereo();
