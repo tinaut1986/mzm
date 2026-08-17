@@ -523,29 +523,38 @@ s32 ScrollProcessY(struct Scroll* pScroll, struct Coordinates* pCoords)
  */
 void ScrollLoad(void)
 {
-    const u8** ppSrc;
+    const u8* const* ppSrc;
 
     ppSrc = sAreaScrollPointers[gCurrentArea];
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+    ppSrc = GBA_RESOLVE(ppSrc);
+#endif
 
     // Loop through every scroll of the area
     for (; ; ppSrc++)
     {
-        if (**ppSrc == gCurrentRoom)
+        const u8* pData = *ppSrc;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+        pData = GBA_RESOLVE(pData);
+#endif
+        if (!pData || *pData == gCurrentRoom)
         {
             // Found room, set pointer and flag
-            gCurrentRoomScrollDataPointer = *ppSrc;
-            gCurrentRoomEntry.scrollsFlag = ROOM_SCROLLS_FLAG_HAS_SCROLLS;
+            gCurrentRoomScrollDataPointer = pData;
+            if (pData && *pData == gCurrentRoom)
+                gCurrentRoomEntry.scrollsFlag = ROOM_SCROLLS_FLAG_HAS_SCROLLS;
             break;
         }
         
-        if (**ppSrc == UCHAR_MAX)
+        if (*pData == UCHAR_MAX)
         {
             // Reached terminator
-            gCurrentRoomScrollDataPointer = *ppSrc;
+            gCurrentRoomScrollDataPointer = pData;
             break;
         }
     }
 }
+
 
 /**
  * @brief 584d8 | 138 | Updates the current scrolls

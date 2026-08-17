@@ -133,6 +133,10 @@ const struct RoomEntryRom* sAreaRoomEntryPointers[AREA_ENTRY_COUNT] = {
  */
 void RoomLoad(void)
 {
+#ifdef TMC_3DS
+    extern void Port_DebugLog(const char* msg);
+    Port_DebugLog("RoomLoad: start");
+#endif
     ClipdataSetupCode();
     RoomReset();
 
@@ -140,7 +144,13 @@ void RoomLoad(void)
     if (gPauseScreenFlag == PAUSE_SCREEN_NONE)
     {
         // No PSF, fully load room
+#ifdef TMC_3DS
+        Port_DebugLog("RoomLoad: before RoomLoadEntry");
+#endif
         RoomLoadEntry();
+#ifdef TMC_3DS
+        Port_DebugLog("RoomLoad: before ScrollLoad");
+#endif
         ScrollLoad();
         RoomSetBackgroundScrolling();
     }
@@ -185,7 +195,13 @@ void RoomLoad(void)
         PlayMusic(MUSIC_CHOZO_RUINS, 0x10);
 
     // Load graphics
+#ifdef TMC_3DS
+    Port_DebugLog("RoomLoad: before RoomLoadTileset");
+#endif
     RoomLoadTileset();
+#ifdef TMC_3DS
+    Port_DebugLog("RoomLoad: before RoomLoadBackgrounds");
+#endif
     RoomLoadBackgrounds();
     RoomRemoveNeverReformBlocksAndCollectedTanks();
     gPreviousXPosition = gSamusData.xPosition;
@@ -205,8 +221,14 @@ void RoomLoad(void)
     // Load states, entities
     AnimatedGraphicsCheckPlayLightningEffect();
     RoomUpdateBackgroundsPosition();
+#ifdef TMC_3DS
+    Port_DebugLog("RoomLoad: before ConnectionLoadDoors");
+#endif
     ConnectionLoadDoors();
     ConnectionCheckHatchLockEvents();
+#ifdef TMC_3DS
+    Port_DebugLog("RoomLoad: before RoomSetInitialTilemap");
+#endif
     RoomSetInitialTilemap(0);
     RoomSetInitialTilemap(1);
     RoomSetInitialTilemap(2);
@@ -215,6 +237,10 @@ void RoomLoad(void)
     HazeSetBackgroundEffect();
     HazeProcess();
     MinimapCheckOnTransition();
+#ifdef TMC_3DS
+    Port_DebugLog("RoomLoad: finished");
+#endif
+
 
     // Check using elevator
     if (!gIsLoadingFile && gSubGameMode3 != 0 && gPauseScreenFlag == PAUSE_SCREEN_NONE && gSamusData.pose == SPOSE_USING_AN_ELEVATOR)
@@ -251,6 +277,37 @@ void RoomLoad(void)
     }
 }
 
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#include "port_gba_mem.h"
+
+static struct TilesetEntry Port_ResolveTilesetEntry(struct TilesetEntry entry)
+{
+    entry.pTileGraphics = GBA_RESOLVE(entry.pTileGraphics);
+    entry.pPalette = GBA_RESOLVE(entry.pPalette);
+    entry.pBackgroundGraphics = GBA_RESOLVE(entry.pBackgroundGraphics);
+    entry.pTilemap = GBA_RESOLVE(entry.pTilemap);
+    return entry;
+}
+
+static struct RoomEntryRom Port_ResolveRoomEntryRom(struct RoomEntryRom entry)
+{
+    entry.pBg0Data = GBA_RESOLVE(entry.pBg0Data);
+    entry.pBg1Data = GBA_RESOLVE(entry.pBg1Data);
+    entry.pBg2Data = GBA_RESOLVE(entry.pBg2Data);
+    entry.pClipData = GBA_RESOLVE(entry.pClipData);
+    entry.pBg3Data = GBA_RESOLVE(entry.pBg3Data);
+    entry.pDefaultSpriteData = GBA_RESOLVE(entry.pDefaultSpriteData);
+    entry.pFirstSpriteData = GBA_RESOLVE(entry.pFirstSpriteData);
+    entry.pSecondSpriteData = GBA_RESOLVE(entry.pSecondSpriteData);
+    return entry;
+}
+#define RESOLVE_TILESET_ENTRY(e) Port_ResolveTilesetEntry(e)
+#define RESOLVE_ROOM_ENTRY_ROM(e) Port_ResolveRoomEntryRom(e)
+#else
+#define RESOLVE_TILESET_ENTRY(e) (e)
+#define RESOLVE_ROOM_ENTRY_ROM(e) (e)
+#endif
+
 /**
  * @brief 561e8 | 21c | Loads the tileset of the current room
  * 
@@ -260,9 +317,10 @@ void RoomLoadTileset(void)
     struct TilesetEntry entry;
     u32 backgroundGfxSize;
 
-    entry = sTilesetEntries[gCurrentRoomEntry.tileset];
+    entry = RESOLVE_TILESET_ENTRY(sTilesetEntries[gCurrentRoomEntry.tileset]);
 
     gTilemapAndClipPointers.pTilemap = gTilemap;
+
     gTilemapAndClipPointers.pClipCollisions = gClipdataCollisionTypes;
     gTilemapAndClipPointers.pClipBehaviors = gClipdataBehaviorTypes;
 
@@ -325,9 +383,10 @@ void RoomLoadEntry(void)
 {
     struct RoomEntryRom entry;
 
-    entry = sAreaRoomEntryPointers[gCurrentArea][gCurrentRoom];
+    entry = RESOLVE_ROOM_ENTRY_ROM(sAreaRoomEntryPointers[gCurrentArea][gCurrentRoom]);
 
     gCurrentRoomEntry.tileset = entry.tileset;
+
 
     gCurrentRoomEntry.bg0Prop = entry.bg0Prop;
     gCurrentRoomEntry.bg1Prop = entry.bg1Prop;
@@ -400,9 +459,10 @@ void RoomLoadBackgrounds(void)
     const u8* src;
 
     // Why
-    entry = sAreaRoomEntryPointers[gCurrentArea][gCurrentRoom];
+    entry = RESOLVE_ROOM_ENTRY_ROM(sAreaRoomEntryPointers[gCurrentArea][gCurrentRoom]);
 
     // Load BG3, always LZ77
+
     gCurrentRoomEntry.bg3Size = *entry.pBg3Data;
     src = entry.pBg3Data + 4;
     CallLZ77UncompWram(src, gDecompBg3Map);
