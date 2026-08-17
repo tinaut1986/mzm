@@ -2,7 +2,13 @@
 #include "color_fading.h"
 #include "macros.h"
 
-const struct ColorFadingData sColorFadingData[COLOR_FADING_COUNT] = {
+#undef sColorFadingData
+#undef sColorFadingColorInfo
+#undef sDoorTransitionTilemap
+
+const struct ColorFadingData sColorFadingData_Compiled[COLOR_FADING_COUNT] = {
+
+
     [COLOR_FADING_NONE] = {
         .isWhite = FALSE,
         .pUpdateFunction = NULL,

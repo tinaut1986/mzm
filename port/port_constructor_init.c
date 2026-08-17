@@ -21,6 +21,9 @@
 #include "location_text.h"
 #include "port_gba_mem.h"
 #include "data/text_data.h"
+#include "constants/color_fading.h"
+#include "data/color_fading_data.h"
+
 
 extern void Init_sEraseSramTextGfxPointers(void) __attribute__((weak));
 extern void Init_sTitleScreenPointers(void) __attribute__((weak));
@@ -283,5 +286,9 @@ void Port_InitConstructorPointers(void)
     if (Init_sAreaRoomEntryPointers) Init_sAreaRoomEntryPointers();
     if (Init_sScrollTables) Init_sScrollTables();
     if (Init_sPauseScreenPointers) Init_sPauseScreenPointers();
+
+    extern const struct ColorFadingData sColorFadingData_Compiled[COLOR_FADING_COUNT];
+    p_sColorFadingData = (const struct ColorFadingData(*)[COLOR_FADING_COUNT])sColorFadingData_Compiled;
 }
+
 
