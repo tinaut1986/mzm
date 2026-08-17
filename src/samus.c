@@ -20,9 +20,16 @@
 #include "structs/clipdata.h"
 #include "structs/game_state.h"
 #include "structs/visual_effects.h"
-#include "structs/samus.h"
 #include "structs/screen_shake.h"
 #include "structs/scroll.h"
+
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#include "port_gba_mem.h"
+#define RESOLVE_SAMUS_PTR(p) GBA_RESOLVE(p)
+#else
+#define RESOLVE_SAMUS_PTR(p) (p)
+#endif
+
 
 static SamusFunc_T sSamusPoseFunctionPointers[SPOSE_COUNT] = {
     [SPOSE_RUNNING] = SamusRunning,
@@ -3820,8 +3827,11 @@ SamusAnimState SamusUpdateAnimation(struct SamusData* pData, u8 slowed)
     else
         pAnim = sSamusAnimPointers_PowerSuit[pData->pose][0];
 
+    pAnim = RESOLVE_SAMUS_PTR(pAnim);
+
     // Get for current frame
     pAnim = &pAnim[pData->currentAnimationFrame];
+
 
     // Get time of current frame
     timer = pAnim->timer;
@@ -3949,8 +3959,11 @@ SamusPose SamusRunningGfx(struct SamusData* pData)
         pScrew->flag = SCREW_SPEED_FLAG_ACTIVE;
     }
 
+    pAnim = RESOLVE_SAMUS_PTR(pAnim);
+
     // Get for current frame
     pAnim = &pAnim[pData->currentAnimationFrame];
+
 
     // Get time of current frame
     timer = pAnim->timer;
@@ -4904,8 +4917,11 @@ SamusPose SamusScrewAttackingGfx(struct SamusData* pData)
             SoundPlay(SOUND_SCREW_ATTACK);
     }
 
+    pAnim = RESOLVE_SAMUS_PTR(pAnim);
+
     // Get current frame
     pAnim = &pAnim[pData->currentAnimationFrame];
+
 
     // Scale timer with slowed
     timer = pAnim->timer;
@@ -5796,8 +5812,11 @@ SamusPose SamusUsingAnElevatorGfx(struct SamusData* pData)
     else
         pAnim = sSamusAnimPointers_PowerSuit_UsingAnElevator[1][0];
 
+    pAnim = RESOLVE_SAMUS_PTR(pAnim);
+
     // Get current frame
     pAnim = &pAnim[pData->currentAnimationFrame];
+
 
     // Update samus animation
     if (pData->animationDurationCounter >= pAnim->timer)
@@ -5998,8 +6017,11 @@ SamusPose SamusShinesparkingGfx(struct SamusData* pData)
         loopFrame = 2;
     }
 
+    pAnim = RESOLVE_SAMUS_PTR(pAnim);
+
     // Get current frame
     pAnim = &pAnim[pData->currentAnimationFrame];
+
 
     // Update samus animation
     if (pData->animationDurationCounter >= pAnim->timer)
@@ -6123,7 +6145,9 @@ SamusPose SamusBallsparkingGfx(struct SamusData* pData)
     const struct SamusAnimationData* pAnim;
 
     pAnim = sSamusAnimPointers_PowerSuit[pData->pose][0];
+    pAnim = RESOLVE_SAMUS_PTR(pAnim);
     pAnim = &pAnim[pData->currentAnimationFrame];
+
 
     // Update samus animation
     if (pData->animationDurationCounter >= pAnim->timer)
@@ -7279,19 +7303,21 @@ void SamusUpdateGraphicsOam(struct SamusData* pData, u8 direction)
     }
 
     // Offset by current frame
+    pAnim = RESOLVE_SAMUS_PTR(pAnim);
+    pArmCannonAnim = RESOLVE_SAMUS_PTR(pArmCannonAnim);
     pAnim = &pAnim[pData->currentAnimationFrame];
 
-    pPhysics->pBodyOam = pAnim->pOam;
+    pPhysics->pBodyOam = RESOLVE_SAMUS_PTR(pAnim->pOam);
 
     // Update head and upper body
-    pGraphics = pAnim->pTopGfx;
+    pGraphics = RESOLVE_SAMUS_PTR(pAnim->pTopGfx);
     pPhysics->shoulderGfxSize = *pGraphics++ * SAMUS_GFX_PART_SIZE;
     pPhysics->torsoGfxSize = *pGraphics++ * SAMUS_GFX_PART_SIZE;
     pPhysics->pShouldersGfx = pGraphics;
     pPhysics->pTorsoGfx = &pGraphics[pPhysics->shoulderGfxSize];
 
     // Update legs and lower body
-    pGraphics = pAnim->pBottomGfx;
+    pGraphics = RESOLVE_SAMUS_PTR(pAnim->pBottomGfx);
     pPhysics->legsGfxSize = *pGraphics++ * SAMUS_GFX_PART_SIZE;
     pPhysics->bodyLowerHalfGfxSize = *pGraphics++ * SAMUS_GFX_PART_SIZE;
     pPhysics->pLegsGfx = pGraphics;
@@ -7314,7 +7340,7 @@ void SamusUpdateGraphicsOam(struct SamusData* pData, u8 direction)
     // Update arm cannon OAM
     pArmCannonAnim = &pArmCannonAnim[pData->currentAnimationFrame];
 
-    pPhysics->pArmCannonOam = pArmCannonAnim->pOam;
+    pPhysics->pArmCannonOam = RESOLVE_SAMUS_PTR(pArmCannonAnim->pOam);
     pPhysics->unk_22 = *pPhysics->pArmCannonOam;
 
     // Fetch current arm cannon graphics based on the current pose and arm cannon direction
@@ -7425,6 +7451,9 @@ void SamusUpdateGraphicsOam(struct SamusData* pData, u8 direction)
             }
     }
 
+    pPhysics->pArmCannonGfxUpper = RESOLVE_SAMUS_PTR(pPhysics->pArmCannonGfxUpper);
+    pPhysics->pArmCannonGfxLower = RESOLVE_SAMUS_PTR(pPhysics->pArmCannonGfxLower);
+
     // Reset effect graphics info
     pPhysics->unk_36 = 0;
     pPhysics->screwSpeedGfxSize = 0;
@@ -7450,11 +7479,7 @@ void SamusUpdateGraphicsOam(struct SamusData* pData, u8 direction)
     if (pScrew->flag == SCREW_SPEED_FLAG_NONE)
         return;
 
-    pPhysics->unk_36 = 1 * SAMUS_GFX_PART_SIZE;
-
-#ifdef BUGFIX
     pEffectAnim = NULL;
-#endif // BUGFIX
 
     // Fetch current effect graphics and OAM based on the current pose and the effect flag
     switch (pose)
@@ -7488,19 +7513,25 @@ void SamusUpdateGraphicsOam(struct SamusData* pData, u8 direction)
             break;
     }
 
+    if (!pEffectAnim)
+        return;
+
     // Offset by current frame
+    pEffectAnim = RESOLVE_SAMUS_PTR(pEffectAnim);
     pEffectAnim = &pEffectAnim[pScrew->currentAnimationFrame];
 
+
     // Update OAM
-    pPhysics->pScrewSpeedOam = pEffectAnim->pOam;
+    pPhysics->pScrewSpeedOam = RESOLVE_SAMUS_PTR(pEffectAnim->pOam);
 
     // Update graphics
-    pGraphics = pEffectAnim->pGraphics;
+    pGraphics = RESOLVE_SAMUS_PTR(pEffectAnim->pGraphics);
     pPhysics->screwSpeedGfxSize = *pGraphics++ * SAMUS_GFX_PART_SIZE;
     pPhysics->screwShinesparkGfxSize = *pGraphics++ * SAMUS_GFX_PART_SIZE;
 
     pPhysics->pScrewSpeedGfx = pGraphics;
     pPhysics->pScrewShinesparkGfx = &pGraphics[pPhysics->screwSpeedGfxSize];
+
 }
 
 /**
@@ -8032,11 +8063,13 @@ void SamusUpdateArmCannonPositionOffset(u8 direction)
     }
 
     // Get current animation
+    pAnim = RESOLVE_SAMUS_PTR(pAnim);
     pAnim = &pAnim[pData->currentAnimationFrame];
 
-    pOffset = pAnim->pOffset;
+    pOffset = RESOLVE_SAMUS_PTR(pAnim->pOffset);
 
     // Update Y offset
+
     // Check sign bit set (8-bit)
     offset = pOffset->y;
     if (offset & 0x80)
