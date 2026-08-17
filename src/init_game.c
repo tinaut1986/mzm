@@ -47,6 +47,15 @@ void InitializeGame(void)
     InitializeAudio();
 #ifdef TMC_3DS
     Port_DebugLog("InitializeGame: after InitializeAudio");
+    {
+        extern struct TrackVariables gTrack0Variables[12];
+        extern struct TrackData gTrackData0;
+        char msg[192];
+        __builtin_snprintf(msg, sizeof(msg),
+            "InitializeAudio check: gTrackData0.pVariables=%p gTrack0Variables=%p gTrack0Variables[0].pRawData=%p",
+            (void*)gTrackData0.pVariables, (void*)gTrack0Variables, (void*)gTrack0Variables[0].pRawData);
+        Port_DebugLog(msg);
+    }
 #endif
 #ifdef BUGFIX
     SramRead_SoundMode();
