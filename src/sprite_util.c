@@ -3519,6 +3519,9 @@ void SpriteUtilSyncCurrentSpritePositionWithSubSprite1Position(void)
     MultiSpriteDataInfo_T pData;
 
     pData = gSubSpriteData1.pMultiOam[gSubSpriteData1.currentAnimationFrame].pData;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+    pData = GBA_RESOLVE(pData);
+#endif
 
     gCurrentSprite.yPosition = gSubSpriteData1.yPosition + pData[gCurrentSprite.roomSlot][MULTI_SPRITE_DATA_ELEMENT_Y_OFFSET];
     gCurrentSprite.xPosition = gSubSpriteData1.xPosition + pData[gCurrentSprite.roomSlot][MULTI_SPRITE_DATA_ELEMENT_X_OFFSET];
@@ -3529,6 +3532,9 @@ void SpriteUtilSyncCurrentSpritePositionWithSubSpriteData1PositionAndOam(void)
     MultiSpriteDataInfo_T pData;
 
     pData = gSubSpriteData1.pMultiOam[gSubSpriteData1.currentAnimationFrame].pData;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+    pData = GBA_RESOLVE(pData);
+#endif
 
     gCurrentSprite.yPosition = gSubSpriteData1.yPosition + pData[gCurrentSprite.roomSlot][MULTI_SPRITE_DATA_ELEMENT_Y_OFFSET];
 
@@ -3565,6 +3571,9 @@ void SpriteUtilSyncCurrentSpritePositionWithSubSpriteData2PositionAndOam(void)
     MultiSpriteDataInfo_T pData;
 
     pData = gSubSpriteData2.pMultiOam[gSubSpriteData2.currentAnimationFrame].pData;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+    pData = GBA_RESOLVE(pData);
+#endif
 
     gCurrentSprite.yPosition = gSubSpriteData2.yPosition + pData[gCurrentSprite.roomSlot][MULTI_SPRITE_DATA_ELEMENT_Y_OFFSET];
 
@@ -3603,6 +3612,9 @@ void SpriteUtilSyncCurrentSpritePositionWithSubSpritePosition(struct SubSpriteDa
     MultiSpriteDataInfo_T pData;
 
     pData = pSub->pMultiOam[pSub->currentAnimationFrame].pData;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+    pData = GBA_RESOLVE(pData);
+#endif
 
     gCurrentSprite.yPosition = pSub->yPosition + pData[gCurrentSprite.roomSlot][MULTI_SPRITE_DATA_ELEMENT_Y_OFFSET];
     gCurrentSprite.xPosition = pSub->xPosition + pData[gCurrentSprite.roomSlot][MULTI_SPRITE_DATA_ELEMENT_X_OFFSET];
@@ -3618,6 +3630,9 @@ void SpriteUtilSyncCurrentSpritePositionWithSubSpritePositionAndOam(struct SubSp
     MultiSpriteDataInfo_T pData;
 
     pData = pSub->pMultiOam[pSub->currentAnimationFrame].pData;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+    pData = GBA_RESOLVE(pData);
+#endif
 
     gCurrentSprite.yPosition = pSub->yPosition + pData[gCurrentSprite.roomSlot][MULTI_SPRITE_DATA_ELEMENT_Y_OFFSET];
 
@@ -3626,6 +3641,7 @@ void SpriteUtilSyncCurrentSpritePositionWithSubSpritePositionAndOam(struct SubSp
     else
         gCurrentSprite.xPosition = pSub->xPosition + pData[gCurrentSprite.roomSlot][MULTI_SPRITE_DATA_ELEMENT_X_OFFSET];
 }
+
 
 /**
  * @brief 1157c | a4 | Checks if the current sprite is colliding with Samus

@@ -612,21 +612,16 @@ u32 BlockApplyCcaa(u16 yPosition, u16 xPosition, u16 trueClip)
     {
         case CAA_BEAM:
         case CAA_BOMB_PISTOL:
-#include "port_debug_log.h"
-#include <stdio.h>
-            {
-                char dbg[128];
-                snprintf(dbg, sizeof(dbg), "BlockApplyCcaa: x=%d y=%d clip=%d col=%d (DOOR=%d)\n",
-                    clipBlock.xPosition, clipBlock.yPosition, trueClip,
-                    gTilemapAndClipPointers.pClipCollisions[trueClip], CLIPDATA_TYPE_DOOR);
-                Port_DebugLog(dbg);
-            }
+        case CAA_MISSILE:
+        case CAA_SUPER_MISSILE:
+        case CAA_POWER_BOMB:
             // Check on hatch
             if (gTilemapAndClipPointers.pClipCollisions[trueClip] == CLIPDATA_TYPE_DOOR &&
                 BgClipCheckOpeningHatch(clipBlock.xPosition, clipBlock.yPosition) != HATCH_OPENING_ACTION_NOT_OPENING)
             {
                 result = TRUE;
             }
+
 
 
             else

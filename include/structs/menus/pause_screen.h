@@ -44,6 +44,7 @@ struct PauseScreenWireframeData {
     u8 objMode;
     u16 xPosition2; // TODO: better name
     u16 yPosition2;
+    u8 _pad[2];
 };
 
 struct WorldMapData {
@@ -51,6 +52,7 @@ struct WorldMapData {
     u8 outlinedOamId;
     u16 xPosition;
     u16 yPosition;
+    u8 _pad[2];
 };
 
 struct MapScreenAreaIds {
@@ -69,7 +71,9 @@ struct MinimapAreaName {
     u8 mapY2;
     s8 xOffset2;
     s8 yOffset2;
+    u8 _pad[2];
 };
+
 
 struct PauseScreenStateData {
     PauseScreenState state;

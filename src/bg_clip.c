@@ -701,38 +701,22 @@ void BgClipCheckGrabbingCrumbleBlock(u8 dontDestroy)
  * @param yPosition Y Position
  * @return u32 Hatch opening action
  */
-#include "port_debug_log.h"
-#include <stdio.h>
-
 HatchOpeningAction BgClipCheckOpeningHatch(u16 xPosition, u16 yPosition)
 {
     s32 i;
     HatchOpeningAction action;
-    char dbg[128];
 
 #ifdef BUGFIX
     action = HATCH_OPENING_ACTION_NOT_OPENING;
 #endif // BUGFIX
 
-    snprintf(dbg, sizeof(dbg), "HatchCheck: x=%d y=%d caa=%d (dmg=%04x)\n",
-        xPosition, yPosition, gCurrentClipdataAffectingAction,
-        sClipdataAffectingActionDamageTypes[gCurrentClipdataAffectingAction]);
-    Port_DebugLog(dbg);
-
     for (i = 0; i < MAX_AMOUNT_OF_HATCHES; i++)
     {
-        if (!gHatchData[i].exists)
-            continue;
-
-        snprintf(dbg, sizeof(dbg), "  hatch[%d]: ex=%d st=%d x=%d y=%d type=%d weak=%04x hits=%d/%d\n",
-            i, gHatchData[i].exists, gHatchData[i].state, gHatchData[i].xPosition, gHatchData[i].yPosition,
-            gHatchData[i].type, sHatchBehaviors[gHatchData[i].type][0], gHatchData[i].hits, sHatchBehaviors[gHatchData[i].type][1]);
-        Port_DebugLog(dbg);
-
-        if (gHatchData[i].state != HATCH_STATE_CLOSED)
+        if (!gHatchData[i].exists || gHatchData[i].state != HATCH_STATE_CLOSED)
             continue;
 
         action = HATCH_OPENING_ACTION_NOT_OPENING;
+
 
 
         // Check touches hatch and hatch is weak
