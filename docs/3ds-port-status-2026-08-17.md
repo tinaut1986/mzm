@@ -19,13 +19,19 @@ sobre libctru/citro2d/citro3d.
 
 Fork: `tinaut1986/mzm`, rama `wip/3ds-port-no-audio-ppu`.
 
-## 1. Estado actual en una frase
+## 1. Estado actual en una frase (actualizado, última sesión 2026-08-17 tarde)
 
-**El juego arranca en 3DS real, procesa lógica de juego real durante varios
-segundos, y muestra la pantalla de selección de idioma en pantalla — la
-primera vez que se ve contenido real del juego en hardware.** Después
-crashea, en el motor de audio, en un punto que aún no se ha localizado del
-todo. Ver sección 6 para el siguiente paso concreto.
+**El juego arranca en 3DS real, pasa selección de idioma, la animación de
+intro se ve bien, llega al menú de título (visualmente incorrecto, ver
+6d) y al menú de selección de partida (3 slots) — pero crashea al elegir
+un slot, dentro de `TextProcessCurrentMessage` (`src/text.c:1396`),
+leyendo un puntero de texto corrupto (`pText`). Sin diagnosticar aún, ver
+sección 6d para los detalles del volcado y por dónde seguir.**
+
+El audio real sigue desactivado (stubeado, ver 6a) — no es la causa de
+nada de lo anterior. Rendimiento: aceptable tras 6c (dejó de ir a cámara
+lenta). Ver sección 6b/6c/6d para el detalle de todo lo arreglado hoy y
+sección 7 para la lista de pendientes grandes sin tocar.
 
 ## 2. Arquitectura del port — lo que ya estaba antes de hoy
 
@@ -230,9 +236,55 @@ valor de puntero host de `gRomData`), y se devuelve tal cual.
 exactamente estos datos) pasó de crashear siempre a renderizarse
 correctamente.
 
-## 6. Siguiente paso concreto: corrupción de `TrackVariables` en el motor de audio
+## 6. Corrupción de `TrackVariables` en el motor de audio — root cause encontrado y arreglado
 
-Bug nuevo, sin resolver, encontrado justo al final de la sesión.
+**Actualización: root cause identificado y arreglado (sin verificar aún en
+hardware real — pendiente de que el usuario pruebe el CIA).**
+
+La causa era el mismo patrón de "dirección de ROM cruda sin traducir" de las
+secciones 5.1/5.2/5.5, pero en un sitio nuevo: `InitTrack` (la función real
+que arranca una pista de música/sonido) **no está en C**, es asm Thumb sin
+tocar del decomp (`asm/audio_internal.s`, no aparece en
+`docs/non_matching_functions.md` como pendiente de descompilar — simplemente
+nunca se ha portado a C). Esa asm lee dos campos directamente de la cabecera
+de sonido en ROM y los copia tal cual, sin pasar por `port_resolve_addr()`:
+
+1. `pTrack->pVoice` (línea ~57-60 del fichero): puntero a la tabla de voces/
+   instrumentos, usado luego en `AudioCommand_Voice` (`src/audio.c:1545`,
+   `pVoice = &pTrack->pVoice[*pVariables->pRawData]`) — con el puntero sin
+   traducir, esto indexa memoria arbitraria del host.
+2. `pVariables->pRawData` (línea ~96-99, dentro del bucle que inicializa
+   cada `TrackVariables` de la pista): puntero a los datos crudos de la
+   partitura, exactamente el campo que `UpdateTrack()` desreferenciaba
+   cuando crasheaba con `0xfefefeff` (sección original de este apartado,
+   ver más abajo el texto tal cual se dejó al final de la sesión anterior).
+
+Ambos se arreglaron insertando un `bl port_resolve_addr` en la asm justo
+después de leer el valor crudo de la cabecera y antes de guardarlo en el
+struct, preservando a mano los registros caller-saved (`r0`-`r3`) que
+seguían haciendo falta después de la llamada (`push`/`pop` alrededor del
+`bl`; `r4`-`r7` son callee-saved y sobreviven solos). `port_resolve_addr()`
+ya es idempotente (ver comentario en `port_gba_mem.c` sobre
+`IsWithinRomDataBuffer`), así que es seguro llamarlo aunque el valor
+resultara no ser una dirección GBA cruda.
+
+Compila limpio tanto en `platform/linux` (sigue sin reproducir el bug ahí,
+como ya se sabía — `PORT_NATIVE_AUDIO_STUBS` stubea `InitTrack` a un no-op
+en Linux, así que esta asm ni se ejercita en ese target) como en
+`platform/3ds` (genera `mzm-3ds.cia` sin warnings nuevos). **Falta
+confirmar en hardware real** que la pantalla de selección de idioma ya no
+crashea al llegar al primer `VOICE`/nota con `pRawData`.
+
+Si el crash persiste tras esto, revisar `asm/soundcode.s`
+(`SoundCodeA/B/C`, mezclador PCM de bajo nivel) — no se tocó porque
+parece código muerto por ahora (nada en el motor engancha DMA/timer real
+todavía, ver sección 7), pero si en algún momento se conecta a NDSP habrá
+que auditarlo con la misma lupa.
+
+### Texto original de esta sección (contexto de cómo se encontró)
+
+Bug encontrado (ya resuelto arriba), descripción original de cuando se
+detectó, sin resolver, al final de la sesión previa.
 
 **Síntoma**: tras ver la pantalla de selección de idioma unos segundos, la
 app crashea dentro de `UpdateTrack()` (`src/audio.c:750`,
@@ -284,11 +336,192 @@ sospecha, sin confirmar ninguno todavía):
    (`gMusicInfo.occupied`) que podrían estar enmascarando una llamada
    solapada.
 
-## 7. Lo que sigue sin tocar (grande, pendiente, sin cambios respecto a antes)
+## 6b. Barrido sistémico: "BASE macro cruda + desreferencia directa" (2026-08-17, sesión posterior)
 
-- **Audio real**: aparte del bug de la sección 6, el motor de audio propio
-  de `mzm` (`UpdateMusic()`/`TrackVariables`, no M4A/Sappy) no está
-  conectado a NDSP. `port_audio_stubs.c` son no-ops.
+Tras arreglar el audio (6a) se encontró el mismo patrón de 5.1 (puntero
+`VRAM_BASE`/`PALRAM_BASE`/`EWRAM_BASE`/`OAM_BASE` + offset, desreferenciado
+directamente sin pasar por `WRITE_16`/`READ_16`) repetido en **más de 40
+sitios en 12+ ficheros** — no era un caso aislado, es sistémico en el motor.
+Se añadió `GBA_RESOLVE(p)` a `port_gba_mem.h` (envuelve `gba_MemPtr`) y se
+aplicó en cada sitio con desreferencia directa confirmada:
+`in_game_cutscene.c`, `text.c` (`TextDrawMessageCharacter`/`TextDrawCharacter`,
+un único punto de traducción reusado por varios call sites),
+`menus/game_over.c`, `menus/title_screen.c`, `block.c`, `room.c`,
+`menus/status_screen.c` (solo el sitio fuera de `#ifdef DEBUG`, el resto de
+esa pantalla de debug es código muerto en este build), `menus/file_select.c`,
+`menus/pause_screen_map.c`, `menus/pause_screen.c`.
+
+**Descartados tras comprobar que NO hace falta tocarlos** (ya se traducen
+solos): cualquier sitio donde el puntero crudo solo se pasa a
+`DmaTransfer`/`BitFill`/`LZ77Uncomp*`/`DMA3_*` (estas ya resuelven
+internamente vía `port_resolve_write_addr`/`port_resolve_copy_src`) —
+`data/menus/pause_screen_data.c`'s `sPauseScreen_IgtAndTanksVramAddresses`,
+la mayoría de `haze.c` (usa `DMA_SET`, registro de hardware, no memoria
+directa), y varios sitios de `file_select.c`/`text.c` que solo hacen
+aritmética de punteros sin desreferenciar. `data/shortcut_pointers.c`'s
+`sSramEwramPointer`/`sBgPalramPointer` YA estaban bien: tienen una rama
+`#if defined(TMC_3DS) || defined(PORT_NATIVE)` que los inicializa
+directamente contra `gEwram`/`gBgPltt` (los buffers reales), no contra la
+macro cruda — patrón a copiar si aparecen más globales de este tipo.
+`menus/boot_debug.c` entero está bajo `#ifdef DEBUG` (no compilado, código
+muerto en este build) — no se tocó.
+
+**Compilado y verificado**: `platform/3ds` linka limpio, `platform/linux`
+sigue sin regresiones (`--test 500` pasa). **Pendiente confirmar en
+hardware real** que esto desbloquea pasar de la animación de intro al menú
+principal sin nuevos crashes de este tipo.
+
+## 6c. Silenciado el logging por frame + capturado el mensaje FATAL de `gba_MemPtr` (2026-08-17, sesión posterior)
+
+Con los fixes de 6/6b el arranque llegaba establemente hasta la animación de
+intro (confirmado en hardware, se ve bien). Pero iba muy lento: `agbmain.c`
+y `Port_Bios_Halt()` hacían ~10-18 `Port_DebugLog()` por frame (cada uno una
+escritura a fichero en la SD con flush inmediato). Todos esos checkpoints
+(diagnóstico del cuelgue de arranque, ya resuelto) se pusieron detrás de
+`PORT_VERBOSE_FRAME_LOG` (apagado por defecto) — reactivar añadiendo
+`-DPORT_VERBOSE_FRAME_LOG` al Makefile de 3DS si hace falta bisecar un
+cuelgue de arranque nuevo. Mejora notable de velocidad confirmada en
+hardware.
+
+También se detectó que `gba_MemPtr()` (el traductor de direcciones) hacía
+`abort()` con el mensaje de error solo por `stderr` — invisible en hardware
+real (pantalla "Fatal error" genérica de homebrew, sin detalle). Ahora
+también lo manda a `Port_DebugLog()` (siempre activo, no depende de
+`PORT_VERBOSE_FRAME_LOG`, dispara como mucho una vez antes de abortar). Esto
+permitió cazar el siguiente bug real sin necesidad de parsear un volcado de
+crash.
+
+**Bug encontrado con esto**: `ProcessMenuOam`/`ProcessComplexMenuOam` en
+`src/menus/pause_screen.c` (usado también por el menú de título, que reusa
+el renderizador OAM genérico del pause) leían
+`pFrame = pOamData[pOam->oamId].pOam;` — otro caso más del patrón de 5.1:
+`.pOam` es un puntero crudo de ROM embebido en la tabla de datos
+`OamArray`, no traducido. Se repetía **15 veces en el mismo fichero**
+(`sed` para las 15 de golpe, todas con `GBA_RESOLVE(pFrame)` justo después
+de la asignación). No confundir con `gCurrentSprite.pOam`/`struct Sprite`'s
+`.pOam` usado en `src/sprites_ai/*.c` — es un campo de runtime distinto,
+ya resuelto por el pipeline de sprites normal, no tocado.
+
+**Pendiente de confirmar en hardware**: si esto arregla el crash al pulsar
+un botón en el menú de título. El menú desordenado (título/"Pulse Start"
+con tiles mal colocados) sigue sin explicación — puede ser este mismo tipo
+de bug en otra tabla `OamArray` de datos del título, o un problema distinto
+de descompresión/carga de gráficos. Investigar después de confirmar que el
+crash al pulsar botón ya no ocurre.
+
+## 6d. Siguiente crash sin resolver: `pText` corrupto en `TextProcessCurrentMessage` al elegir partida
+
+Encontrado justo al final de esta sesión, **sin diagnosticar, sin
+arreglar**. Flujo para reproducir: arrancar → selección de idioma → animación
+intro → menú de título (pulsar un botón) → menú de selección de partida (3
+slots) → elegir un slot → **crash**.
+
+**Volcado de crash** (`crash_dump_00000015.dmp`, parseado con la técnica de
+la sección 5.5/8 — estructura `ExceptionDumpHeader` de Luma3DS):
+
+```
+pc  = 0x0013b72c  ->  TextProcessCurrentMessage, src/text.c:1396
+r1  = 0x55555555
+lr  = 0x55555555
+r12 = 0x0847b420  (pinta a dirección de ROM cruda sin traducir, 0x08xxxxxx)
+r4  = 0x06005800  (pinta a dirección de VRAM cruda sin traducir, 0x06xxxxxx)
+extra2 (DFAR) = 0x55555555
+```
+
+`0x55555555` repetido en varios registros (no es una dirección plausible en
+ningún espacio de direcciones del port) — **mismo tipo de patrón sospechoso
+que el `0xfefefeff` de la sección 6 (audio)**: no parece un puntero de ROM
+mal traducido (eso daría algo con pinta de `0x08xxxxxx`/`0x06xxxxxx`, como sí
+tienen `r12`/`r4` aquí, curiosamente — puede que esos dos SÍ sean el patrón
+de siempre y `r1`/`lr` sean colaterales), sino más bien memoria realmente sin
+inicializar o un valor "centinela" de algún sitio.
+
+Código donde crashea (`src/text.c:1370-1396`, función
+`TextProcessCurrentMessage`):
+
+```c
+    if (state < TEXT_STATE_NOTHING)
+    {
+        pMessage->delay = 0;
+        pMessage->timer = 0;
+        pText += pMessage->textIndex;      // <- pText llega corrupto aquí
+        while (state < TEXT_STATE_NOTHING)
+        {
+            width = 0;
+            switch (*pText & CHAR_MASK)    // <- crash: *pText, src/text.c:1396
+```
+
+`pText` es un parámetro de la función (`const u16* pText`), viene de la
+tabla de punteros de texto del idioma actual (`sMessageTextPointers[gLanguage][...]`
+o similar, ver otros call-sites de `TextProcessCurrentMessage` en la
+sección 6b) — candidato sospechoso número uno dado el historial de hoy:
+otro caso más del patrón "puntero de ROM embebido en datos, sin traducir"
+(secciones 5.1, 5.5, 6b, 6c) en la tabla de punteros de texto del menú de
+selección de partida, o en algo que la precede (nombre de fichero
+guardado, texto de la hora de juego, etc. — el menú de selección de
+partida dibuja bastante texto dinámico).
+
+**Por dónde seguir (no hecho todavía):**
+
+1. Igual que en 6c: el mensaje `FATAL: gba_MemPtr: ...` ahora se manda a
+   `Port_DebugLog` (si esto fuera un caso de "no pasa por `gba_MemPtr` en
+   absoluto", como parece — no hay línea `FATAL` en el log de esta prueba,
+   así que **no** pasó por el resolutor de direcciones antes de crashear;
+   el bug está en un sitio que ni siquiera lo intenta).
+2. Localizar qué llama a `TextProcessCurrentMessage` desde el flujo de
+   selección de partida (`src/menus/file_select.c`, buscar
+   `TextProcessCurrentMessage(` — hay varias llamadas, ver sección 6b)
+   y qué le pasa como `pText`/`dst`.
+3. Comprobar si esa tabla de punteros de texto (o el string concreto que
+   se intenta dibujar al confirmar un slot) es un `CAST_TO_ARRAY`/macro de
+   direcciones crudas sin arreglar (como en 6b/6c), o un puntero embebido
+   en otra estructura de datos (como en 6c con `.pOam`).
+4. Si no es eso: mirar si `pMessage->textIndex` está corrupto o fuera de
+   rango (el `+=` podría estar desplazando un puntero por lo demás válido
+   fuera de los límites del buffer real).
+
+No se ha tocado nada de esto todavía — es el primer sitio donde parar la
+próxima sesión.
+
+## 7. Lo que sigue sin tocar (actualizado tras la sesión del 2026-08-17 tarde)
+
+**Pendiente inmediato (bloqueante, ver 6d):**
+
+- Crash al elegir partida en el menú de selección de partida —
+  `TextProcessCurrentMessage` con `pText` corrupto. Sin diagnosticar. Es
+  el primer sitio por donde seguir.
+- Menú de título con gráficos "desordenados" (tiles mal colocados) —
+  visual, no crashea. Sin diagnosticar; sospecha de otra instancia del
+  patrón de puntero-crudo-sin-traducir (secciones 5.1/6b/6c) en alguna
+  tabla de datos gráficos del título, o un problema de
+  descompresión/orden de carga distinto. No confirmado.
+- Patrón general a tener en cuenta: **cada nueva pantalla/menú que se
+  ejercite por primera vez tiene bastantes papeletas de traer un bug
+  nuevo de esta misma familia** (puntero crudo `VRAM_BASE`/`PALRAM_BASE`/
+  `EWRAM_BASE`/`OAM_BASE`, o un puntero embebido en datos de ROM, sin
+  pasar por `gba_MemPtr`/`GBA_RESOLVE`/`port_resolve_addr`). Ver sección
+  6b para la lista de sitios ya arreglados y el criterio para distinguir
+  "hace falta arreglar" (desreferencia directa) de "no hace falta"
+  (solo se pasa a `DmaTransfer`/`BitFill`/`LZ77Uncomp*`, que ya
+  traducen solos). El flujo de trabajo que ha funcionado toda la sesión:
+  desplegar, capturar el volcado de Luma3DS o el mensaje `FATAL` de
+  `gba_MemPtr` en el log (ver sección 8), `addr2line` al PC/LR, mirar el
+  código fuente en esa línea, aplicar `GBA_RESOLVE`.
+
+**Grande, pendiente, sin cambios respecto a antes:**
+
+- **Audio real**: desactivado por completo desde esta sesión (sección
+  6a) — `platform/3ds/Makefile` ya no compila `asm/audio_internal.s` ni
+  `asm/soundcode.s`, usa los stubs de `port_audio_stubs.c` igual que
+  Linux. El bug original de audio (`gTrack2Variables[1].pRawData` =
+  `0xfefefeff`, sección 6) **sigue sin explicación real** — se arreglaron
+  3 casos confirmados del patrón de puntero-crudo en `InitTrack`/
+  `AudioCommand_Goto`/`AudioCommand_PatternPlay`, pero el crash persistía
+  exactamente igual después, así que la causa real de ese `0xfefefeff`
+  concreto sigue sin saberse. Cuando se retome el audio: revertir el
+  Makefile (volver a añadir esos dos `.s` y quitar
+  `PORT_NATIVE_AUDIO_STUBS`), y retomar la investigación desde ahí — no
+  descartar que la causa raíz sea la misma familia de bug que 6d.
 - **Sincronía de vídeo real**: revisar `gspWaitForEvent` (sección 5.3) en
   cuanto el pipeline de audio/vídeo necesite de verdad sincronía a 60Hz
   real en vez del `svcSleepThread` actual.
@@ -296,17 +529,15 @@ sospecha, sin confirmar ninguno todavía):
   (`mzm_eu.map`). Faltan baseroms US/JP.
 - **`nes_metroid/`**: modo NES embebido, asm GBA a mano, sin plan de
   traducción/ejecución todavía.
-- **Limpieza antes de publicar**: quitar toda la instrumentación de debug
-  (`Port_DebugLog` repartido por `agbmain.c`, `init_game.c`,
-  `port_bios.c`, `port_ppu_mzm.c`, `port_rom.c`) una vez el arranque esté
-  sólido — ahora mismo el logging por frame a fichero tiene un coste real
-  de rendimiento (el usuario notó que va lento; parte es esto, parte es el
-  renderer sin optimizar, parte es el `svcSleepThread` en vez de vsync
-  real).
-- **Rendimiento**: no hay perfilado hecho todavía sobre hardware real. Ir
-  quitando el logging de depuración y arreglando la sincronía real de
-  vídeo son los dos candidatos más obvios para mejorar el framerate visible
-  antes de perfilar nada más fino.
+- **Rendimiento**: mejoró mucho tras 6c (logging por frame apagado por
+  defecto, ver `PORT_VERBOSE_FRAME_LOG`), pero no hay perfilado real
+  hecho. La sincronía de vídeo (`svcSleepThread` en vez de vsync real) y
+  el renderer sin optimizar siguen siendo candidatos para mejorar más.
+- **Limpieza antes de publicar**: una vez el juego sea jugable de verdad,
+  revisar si merece la pena quitar del todo (no solo apagar) la
+  instrumentación de `Port_DebugLog` repartida por `agbmain.c`,
+  `init_game.c`, `port_bios.c`, `port_ppu_mzm.c`, `port_rom.c`,
+  `port_gba_mem.h`.
 
 ## 8. Cómo desplegar y depurar en 3DS real (flujo que se usó toda la sesión)
 
