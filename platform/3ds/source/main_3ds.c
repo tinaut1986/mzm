@@ -1,5 +1,6 @@
 #include "platform_3ds.h"
 
+#include "port_debug_log.h"
 #include "port_rom.h"
 
 /* PPU (screen rendering) and audio init are not wired up yet -- this build
@@ -76,7 +77,10 @@ static int FindRom(char* out, size_t outSize) {
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
+    remove("sdmc:/3ds/mzm-debug.log");
+    Port_DebugLog("main: start");
     if (!Platform3DS_Init()) return 1;
+    Port_DebugLog("main: Platform3DS_Init done");
     Platform3DS_ShowSplash();
 
     printf("Metroid Zero Mission 3DS v" MZM_PORT_VERSION "\n\n");
@@ -125,16 +129,20 @@ int main(int argc, char** argv) {
     fclose(rom);
 
     printf("Loading ROM...\n");
+    Port_DebugLog("main: before Port_LoadRom");
     if (!Port_LoadRom(romPath)) {
         Platform3DS_ShowFatal("ROM error", "Port_LoadRom failed after the region check passed.");
         Platform3DS_Shutdown();
         return 1;
     }
+    Port_DebugLog("main: Port_LoadRom done");
     printf("Loaded region: %s\n", Port_RomRegionLabel(gRomRegion));
 
     printf("Starting engine (no video/audio yet)...\n");
     Platform3DS_EnterGameplayDisplay();
+    Port_DebugLog("main: before agbmain()");
     agbmain();
+    Port_DebugLog("main: agbmain() returned (unexpected -- it should loop forever)");
 
     Platform3DS_Shutdown();
     return 0;

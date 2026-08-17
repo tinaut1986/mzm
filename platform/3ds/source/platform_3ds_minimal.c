@@ -25,11 +25,29 @@ static bool sIsNew3DS;
 static bool sRunning;
 static bool sGameplayDisplayActive;
 
+/* Body lives in port/port_gba_timing.c (plain C, no <3ds.h> -- see that
+ * file's header comment for why). Spawned here because this file is the
+ * one place that safely includes the real <3ds.h> for threadCreate's exact
+ * signature; the port/ side only needs a single-argument svcSleepThread
+ * forward declaration, much lower ABI risk than getting threadCreate's
+ * five-parameter signature wrong from a hand-written declaration. */
+extern void Port_GbaTiming_ThreadMain(void* arg);
+
 int Platform3DS_Init(void) {
     gfxInitDefault();
     consoleInit(GFX_TOP, NULL);
 
     APT_CheckNew3DS(&sIsNew3DS);
+
+    /* Without this, every busy-wait on REG_VCOUNT (e.g.
+     * src/audio_wrappers.c:205-206) spins forever -- see
+     * port_gba_timing.c's header comment. Must start before agbmain() runs
+     * (main_3ds.c calls it right after this). Priority 0x18 is well above
+     * the main thread's default 0x30 (lower number = higher priority in
+     * Horizon OS) since this needs to actually get scheduled roughly every
+     * 73us to be useful. */
+    threadCreate(Port_GbaTiming_ThreadMain, NULL, 4096, 0x18, -1, true);
+
     sRunning = true;
     return 1;
 }

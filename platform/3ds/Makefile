@@ -45,6 +45,8 @@ SRCS_ROOT := \
 	$(ROOT)/port/port_rom.c \
 	$(ROOT)/port/port_gba_mem.c \
 	$(ROOT)/port/port_bios.c \
+	$(ROOT)/port/port_gba_timing.c \
+	$(ROOT)/port/port_debug_log.c \
 	$(filter-out %_selftest.c %_test.c, $(wildcard $(ROOT)/port/generated/*.c))
 
 SRCS_ASM := \

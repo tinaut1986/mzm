@@ -17,22 +17,53 @@
  */
 void agbmain(void)
 {
+#ifdef TMC_3DS
+    /* Temporary boot-hang diagnostic checkpoints, see port/port_debug_log.h.
+     * Remove once the 3DS port's boot sequence is confirmed working past
+     * this point. */
+    extern void Port_DebugLog(const char* msg);
+    Port_DebugLog("agbmain: before InitializeGame()");
+#endif
     InitializeGame();
+#ifdef TMC_3DS
+    Port_DebugLog("agbmain: InitializeGame() done, entering main loop");
+#endif
 
     while (TRUE)
     {
+#ifdef TMC_3DS
+        {
+            static int sLoopCount = 0;
+            if (sLoopCount < 5) {
+                Port_DebugLog("agbmain: loop iteration start");
+                sLoopCount++;
+            }
+        }
+#endif
         gVblankActive = FALSE;
 #ifdef REGION_EU
         if (gMainGameMode == GM_INGAME || gMainGameMode == GM_DEMO)
             InGameIoWriteRegisters();
 #endif // REGION_EU
+#ifdef TMC_3DS
+        Port_DebugLog("agbmain: before UpdateAudio()");
+#endif
         UpdateAudio();
+#ifdef TMC_3DS
+        Port_DebugLog("agbmain: UpdateAudio() done");
+#endif
 
         if (gResetGame)
             break;
 
         UpdateInput();
+#ifdef TMC_3DS
+        Port_DebugLog("agbmain: UpdateInput() done");
+#endif
         SoftResetCheck();
+#ifdef TMC_3DS
+        Port_DebugLog("agbmain: SoftResetCheck() done");
+#endif
         // Increment frame counters
         APPLY_DELTA_TIME_INC(gFrameCounter8Bit);
         APPLY_DELTA_TIME_INC(gFrameCounter16Bit);
@@ -376,11 +407,17 @@ void agbmain(void)
         }
         
 
+#ifdef TMC_3DS
+        Port_DebugLog("agbmain: switch done, before Halt wait");
+#endif
         gVBlankRequestFlag &= ~TRUE;
         gVblankActive = TRUE;
 
         do {
             SYSCALL(2); /* SYS_Halt */
         } while (!(gVBlankRequestFlag & 1));
+#ifdef TMC_3DS
+        Port_DebugLog("agbmain: Halt wait done, looping");
+#endif
     }
 }
