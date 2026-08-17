@@ -108,35 +108,34 @@ void Port_PPU_PresentFrame(void) {
      * being debugged anymore. */
 #ifdef PORT_VERBOSE_FRAME_LOG
     static uint16_t sLastDispcnt = 0xFFFF;
-    static unsigned sDetailedDumps;
+    static unsigned sInGameDumps;
+    static unsigned sBootDumps;
     const bool dispcntChanged = dispcnt != sLastDispcnt;
     sLastDispcnt = dispcnt;
     extern uint8_t gSubGameMode1;
     extern uint8_t gMainGameMode;
-    const bool shouldLog = (sPresentFrameCount < 20 || dispcntChanged || sPresentFrameCount % 30 == 0)
-        && sDetailedDumps < 80;
+    const bool isIngame = (gMainGameMode == 4);
+    const bool shouldLog = (isIngame && sInGameDumps < 20 && (sPresentFrameCount % 10 == 0 || dispcntChanged)) ||
+                           (!isIngame && (sPresentFrameCount < 10 || dispcntChanged) && sBootDumps < 20);
     if (shouldLog) {
-        ++sDetailedDumps;
+        if (isIngame) ++sInGameDumps; else ++sBootDumps;
         char msg[256];
         const uint16_t bg0cnt = (uint16_t)(gIoMem[0x08] | (gIoMem[0x09] << 8));
         const uint16_t bg1cnt = (uint16_t)(gIoMem[0x0A] | (gIoMem[0x0B] << 8));
         const uint16_t bg2cnt = (uint16_t)(gIoMem[0x0C] | (gIoMem[0x0D] << 8));
         const uint16_t bg3cnt = (uint16_t)(gIoMem[0x0E] | (gIoMem[0x0F] << 8));
+        const uint16_t winin = (uint16_t)(gIoMem[0x48] | (gIoMem[0x49] << 8));
+        const uint16_t winout = (uint16_t)(gIoMem[0x4A] | (gIoMem[0x4B] << 8));
+        const uint16_t win1h = (uint16_t)(gIoMem[0x42] | (gIoMem[0x43] << 8));
+        const uint16_t win1v = (uint16_t)(gIoMem[0x46] | (gIoMem[0x47] << 8));
+        const uint16_t bldcnt = (uint16_t)(gIoMem[0x50] | (gIoMem[0x51] << 8));
+        const uint16_t bldalpha = (uint16_t)(gIoMem[0x52] | (gIoMem[0x53] << 8));
         __builtin_snprintf(msg, sizeof(msg),
-            "PPU[%u]: %smode=%u/%u dispcnt=%04x bg0-3cnt=%04x,%04x,%04x,%04x vram[0..3]=%02x%02x%02x%02x pal[0..1]=%04x,%04x",
-            sPresentFrameCount, dispcntChanged ? "DISPCNT CHANGED! " : "",
-            gMainGameMode, gSubGameMode1, dispcnt, bg0cnt, bg1cnt, bg2cnt, bg3cnt,
-            gVram[0], gVram[1], gVram[2], gVram[3], gBgPltt[0], gBgPltt[1]);
+            "PPU[%u]: mode=%u/%u dispcnt=%04x bg0-3cnt=%04x,%04x,%04x,%04x winin/out=%04x/%04x win1=%04x,%04x bld=%04x/%04x px[80,120]=%08lx",
+            sPresentFrameCount, gMainGameMode, gSubGameMode1, dispcnt,
+            bg0cnt, bg1cnt, bg2cnt, bg3cnt, winin, winout, win1h, win1v, bldcnt, bldalpha,
+            (unsigned long)sTopBuffer[(size_t)80 * TOP_PITCH + 120]);
         Port_DebugLog(msg);
-        for (int row = 0; row < 160; row += 20) {
-            const uint32_t* r = sTopBuffer + (size_t)row * TOP_PITCH;
-            __builtin_snprintf(msg, sizeof(msg),
-                "PPU[%u]: row%3d px[0..5]=%08lx,%08lx,%08lx,%08lx,%08lx,%08lx",
-                sPresentFrameCount, row,
-                (unsigned long)r[0], (unsigned long)r[1], (unsigned long)r[2],
-                (unsigned long)r[3], (unsigned long)r[4], (unsigned long)r[5]);
-            Port_DebugLog(msg);
-        }
     }
 #endif
     ++sPresentFrameCount;

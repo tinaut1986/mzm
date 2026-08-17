@@ -327,11 +327,13 @@ bool PlatformGpu3DS_EndBottom(const uint32_t* pixels, bool changed) {
         sStats.boundedFlushBytes += sC2dFlushSize;
     }
     C3D_FrameEnd(GX_CMDLIST_FLUSH);
+    C3D_FrameSync();
     ++sStats.frames;
     sStats.drawingTime = C3D_GetDrawingTime();
     sStats.processingTime = C3D_GetProcessingTime();
     sFrameActive = false;
     return true;
+
 }
 
 void PlatformGpu3DS_ShowDumpSavedOverlay(void) {
