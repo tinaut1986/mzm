@@ -147,12 +147,14 @@ int main(int argc, char** argv) {
         Platform3DS_Shutdown();
         return 1;
     }
-    Port_DebugLog("main: Port_PPU_Init done");
+    extern void Port_LoadSram(void);
+    Port_LoadSram();
 
     printf("Starting engine (no audio yet)...\n");
     Platform3DS_EnterGameplayDisplay();
     Port_DebugLog("main: before agbmain()");
     agbmain();
+
     Port_DebugLog("main: agbmain() returned (unexpected -- it should loop forever)");
 
     Platform3DS_Shutdown();

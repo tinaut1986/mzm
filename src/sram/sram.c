@@ -7,13 +7,37 @@ static const char sSramVersion[] = "SRAM_V113";
 
 #if defined(TMC_3DS) || defined(PORT_NATIVE)
 #include <string.h>
+#include <stdio.h>
 #include "port_gba_mem.h"
+
+#define SAVE_FILE_PATH "mzm.sav"
+
+void Port_LoadSram(void)
+{
+    FILE* f = fopen(SAVE_FILE_PATH, "rb");
+    if (f)
+    {
+        fread(gSramMem, 1, sizeof(gSramMem), f);
+        fclose(f);
+    }
+}
+
+void Port_SaveSram(void)
+{
+    FILE* f = fopen(SAVE_FILE_PATH, "wb");
+    if (f)
+    {
+        fwrite(gSramMem, 1, sizeof(gSramMem), f);
+        fclose(f);
+    }
+}
 
 void SramWriteUnchecked(u8* src, u8* dest, u32 size)
 {
     void* d = port_resolve_write_addr((uintptr_t)dest);
     const void* s = port_resolve_copy_src(src, size);
     if (d && s) memcpy(d, s, size);
+    Port_SaveSram();
 }
 
 void SramWrite(u8* src, u8* dest, u32 size)
@@ -21,6 +45,7 @@ void SramWrite(u8* src, u8* dest, u32 size)
     void* d = port_resolve_write_addr((uintptr_t)dest);
     const void* s = port_resolve_copy_src(src, size);
     if (d && s) memcpy(d, s, size);
+    Port_SaveSram();
 }
 
 u8* SramCheck(u8* src, u8* dest, u32 size)
@@ -43,6 +68,7 @@ u8* SramWriteChecked(u8* src, u8* dest, u32 size)
     SramWrite(src, dest, size);
     return SramCheck(src, dest, size);
 }
+
 
 #else
 

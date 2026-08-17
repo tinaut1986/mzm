@@ -20,26 +20,17 @@
 #include "structs/display.h"
 #include "structs/minimap.h"
 
-#ifdef TMC_3DS
-static const s8* sChozoStatueTargetPathPointers[6];
-void Init_sChozoStatueTargetPathPointers(void) {
-    sChozoStatueTargetPathPointers[AREA_BRINSTAR] = (s8*)sChozoStatueTargetPathBrinstar;
-    sChozoStatueTargetPathPointers[AREA_KRAID] = (s8*)sChozoStatueTargetPathKraid;
-    sChozoStatueTargetPathPointers[AREA_NORFAIR] = (s8*)sChozoStatueTargetPathNorfair;
-    sChozoStatueTargetPathPointers[AREA_RIDLEY] = (s8*)sChozoStatueTargetPathRidley;
-    sChozoStatueTargetPathPointers[AREA_TOURIAN] = (s8*)NULL;
-    sChozoStatueTargetPathPointers[AREA_CRATERIA] = (s8*)sChozoStatueTargetPathCrateria;
+static const s8* GetChozoStatueTargetPath(u8 area) {
+    switch (area) {
+        case AREA_BRINSTAR: return (const s8*)sChozoStatueTargetPathBrinstar;
+        case AREA_KRAID:    return (const s8*)sChozoStatueTargetPathKraid;
+        case AREA_NORFAIR:  return (const s8*)sChozoStatueTargetPathNorfair;
+        case AREA_RIDLEY:   return (const s8*)sChozoStatueTargetPathRidley;
+        case AREA_CRATERIA: return (const s8*)sChozoStatueTargetPathCrateria;
+        default: return NULL;
+    }
 }
-#else
-static const s8* sChozoStatueTargetPathPointers[6] = {
-    [AREA_BRINSTAR] = (s8*)sChozoStatueTargetPathBrinstar,
-    [AREA_KRAID] = (s8*)sChozoStatueTargetPathKraid,
-    [AREA_NORFAIR] = (s8*)sChozoStatueTargetPathNorfair,
-    [AREA_RIDLEY] = (s8*)sChozoStatueTargetPathRidley,
-    [AREA_TOURIAN] = (s8*)NULL,
-    [AREA_CRATERIA] = (s8*)sChozoStatueTargetPathCrateria
-};
-#endif
+
 
 /**
  * @brief 71f70 | 1da | Easy sleep menu main loop
@@ -806,7 +797,7 @@ void ChozoStatueHintDeterminePath(u8 param_1)
         }
         else
         {
-            pTarget = sChozoStatueTargetPathPointers[gCurrentArea];
+            pTarget = GetChozoStatueTargetPath(gCurrentArea);
             pTarget += pStatueTarget->targetArea * 6;
 
             if (PAUSE_SCREEN_DATA.currentArea == pStatueTarget->statueArea)
@@ -854,7 +845,8 @@ void ChozoStatueHintDeterminePath(u8 param_1)
     else if (PAUSE_SCREEN_DATA.chozoHintTarget.activatedTargets != 0 && gCurrentArea < AREA_CHOZODIA)
     {
         gCurrentArea = gCurrentArea;
-        pTarget = sChozoStatueTargetPathPointers[gCurrentArea];
+        pTarget = GetChozoStatueTargetPath(gCurrentArea);
+
         if (pTarget != NULL)
         {
             for (i = 0; i < ARRAY_SIZE(sChozoStatueTargetConditions) - 1; i++)
