@@ -6,6 +6,8 @@
 
 void Platform_Linux_Init(bool headless);
 void Platform_Linux_Cleanup(void);
+void Platform_Linux_StartTimingThread(void);
+void Platform_Linux_StopTimingThread(void);
 void Platform_Linux_VBlank(void);
 u16  Platform_Linux_PollKeys(void);
 bool Platform_Linux_ShouldQuit(void);

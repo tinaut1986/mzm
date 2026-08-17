@@ -79,11 +79,13 @@ int main(int argc, char** argv) {
 
     /* 2. Initialize Platform */
     Platform_Linux_Init(headless);
+    Platform_Linux_StartTimingThread();
 
     /* 3. Run game */
     printf("[Linux] Starting agbmain()...\n");
     agbmain();
 
+    Platform_Linux_StopTimingThread();
     Platform_Linux_Cleanup();
     printf("[Linux] Game terminated cleanly.\n");
     return 0;

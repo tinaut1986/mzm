@@ -7,6 +7,7 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#include <pthread.h>
 
 #ifdef HAVE_X11
 #include <X11/Xlib.h>
@@ -73,6 +74,56 @@ void Platform_Linux_Cleanup(void) {
         sDisplay = NULL;
     }
 #endif
+}
+
+/* GBA PPU emulation, minimal: game code busy-waits on REG_VCOUNT/REG_DISPSTAT
+ * all over the place (e.g. src/audio_wrappers.c SetupSoundTransfer, called
+ * from InitializeAudio() before the main loop even starts). Without
+ * something advancing them, those waits spin forever. Mirrors the 3DS port's
+ * port_gba_timing.c (which uses a 3DS-native thread); this is the same idea
+ * via pthreads since this target doesn't link against libctru. */
+#define GBA_SCANLINES_PER_FRAME 228
+#define GBA_VBLANK_START_LINE 160
+#define SCANLINE_NS 73350L /* ~73.35us/scanline, 228 lines/frame @ ~59.7Hz */
+
+static pthread_t sTimingThread;
+static volatile bool sTimingThreadRunning = false;
+
+static void* Platform_Linux_TimingThreadMain(void* arg) {
+    (void)arg;
+    u8 line = 0;
+    struct timespec ts;
+    ts.tv_sec = 0;
+    ts.tv_nsec = SCANLINE_NS;
+
+    while (sTimingThreadRunning) {
+        nanosleep(&ts, NULL);
+
+        line++;
+        if (line >= GBA_SCANLINES_PER_FRAME) {
+            line = 0;
+        }
+        gba_write8(REG_VCOUNT, line);
+
+        u16 dispstat = gba_read16(REG_DISPSTAT);
+        if (line >= GBA_VBLANK_START_LINE) {
+            dispstat |= DSTAT_IN_VBLANK;
+        } else {
+            dispstat &= ~DSTAT_IN_VBLANK;
+        }
+        gba_write16(REG_DISPSTAT, dispstat);
+    }
+    return NULL;
+}
+
+void Platform_Linux_StartTimingThread(void) {
+    sTimingThreadRunning = true;
+    pthread_create(&sTimingThread, NULL, Platform_Linux_TimingThreadMain, NULL);
+}
+
+void Platform_Linux_StopTimingThread(void) {
+    sTimingThreadRunning = false;
+    pthread_join(sTimingThread, NULL);
 }
 
 u16 Platform_Linux_PollKeys(void) {

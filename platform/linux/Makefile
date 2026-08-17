@@ -25,7 +25,7 @@ CPPFLAGS := \
 	-I$(ROOT)/include \
 	-I$(CURDIR)/source
 
-LDFLAGS := -lrt -lm
+LDFLAGS := -lrt -lm -lpthread
 
 # Fuentes C
 SRCS_ROOT := \
@@ -42,6 +42,8 @@ SRCS_ROOT := \
 	$(ROOT)/port/port_gba_mem.c \
 	$(ROOT)/port/port_bios.c \
 	$(ROOT)/port/port_audio_stubs.c \
+	$(ROOT)/port/port_debug_log.c \
+	$(ROOT)/port/port_constructor_init.c \
 	$(filter-out %_selftest.c %_test.c, $(wildcard $(ROOT)/port/generated/*.c))
 
 SRCS_LINUX := \
