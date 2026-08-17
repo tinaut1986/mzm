@@ -266,9 +266,14 @@ static void DrawTopImage(const uint32_t* pixels, unsigned width) {
         char label[20];
         double fps = Port_PPU_3DS_CurrentFps();
         unsigned rounded = fps > 0.0 ? (unsigned)(fps + 0.5) : 0u;
-        if (rounded > 999u) rounded = 999u;
-        snprintf(label, sizeof(label), "FPS %u", rounded);
-        C2D_DrawRectSolid(5.0f, 216.0f, 0.7f, 82.0f, 20.0f, C2D_Color32(0, 0, 0, 210));
+        if (rounded > 99999u) rounded = 99999u;
+        /* Repurposed as a plain present-frame counter for now (see
+         * Port_PPU_3DS_CurrentFps() in port_ppu_mzm.c) -- there's no real
+         * FPS measurement wired up yet, and knowing how far the boot
+         * sequence has gotten on screen is more useful during bring-up
+         * than a rate that's currently just the fixed 60Hz sleep pace. */
+        snprintf(label, sizeof(label), "F %u", rounded);
+        C2D_DrawRectSolid(5.0f, 216.0f, 0.7f, 100.0f, 20.0f, C2D_Color32(0, 0, 0, 210));
         DrawStatusText(10.0f, 219.0f, 2.0f, label);
     }
 }

@@ -29,16 +29,20 @@
 static uint32_t* sTopBuffer;
 static uint32_t* sBottomBuffer;
 static bool sReady;
+static unsigned sPresentFrameCount;
 
 /* platform_gpu_3ds.c calls these (FPS HUD / aspect ratio / display style
  * config, normally backed by a settings menu that doesn't exist yet).
- * Fixed defaults: no FPS overlay, wide aspect, pixel-perfect scaling. */
+ * The "FPS" overlay is left on and repurposed to show the raw present-frame
+ * count instead (see platform_gpu_3ds.c's DrawTopImage) -- during bring-up,
+ * knowing how far the boot sequence got on screen before the user stops the
+ * app is more useful than an actual frame rate. */
 extern bool Platform3DS_IsNew3DS(void);
 
-bool Port_Config_GetShowFps(void) { return false; }
+bool Port_Config_GetShowFps(void) { return true; }
 int Port_Config_Get3DSAspectRatio(void) { return 0; /* TOP_ASPECT_WIDE */ }
 int Port_Config_Get3DSDisplayStyle(void) { return 0; /* TOP_DISPLAY_PIXEL_PERFECT */ }
-double Port_PPU_3DS_CurrentFps(void) { return 0.0; }
+double Port_PPU_3DS_CurrentFps(void) { return (double)sPresentFrameCount; }
 
 bool Port_PPU_Init(void) {
     VirtuaPPUMode1GbaMemory memory = { gIoMem, gVram, gBgPltt, gObjPltt, gOamMem };
@@ -60,7 +64,6 @@ bool Port_PPU_Init(void) {
 }
 
 extern void Port_DebugLog(const char* msg);
-static unsigned sPresentFrameCount;
 
 void Port_PPU_PresentFrame(void) {
     if (!sReady) return;
@@ -76,22 +79,72 @@ void Port_PPU_PresentFrame(void) {
      * Zero Mission only ever uses GBA modes 0 and 1 (docs/3ds-port-ppu-audit.md). */
     ppu.mode = (gbaMode == 1 || gbaMode == 2) ? 2 : 1;
 
+#ifdef PORT_PPU_TEST_PATTERN
+    /* Diagnostic: bypass virtuappu entirely and write a known-good pattern
+     * (solid alternating 8px-tall horizontal bars) straight into the output
+     * buffer. If this still shows up sheared/diagonal on real hardware, the
+     * bug is in the GPU presentation pipeline (platform_gpu_3ds.c) or the
+     * buffer geometry (TOP_PITCH/width) below, not in virtuappu/mode1.c. */
+    for (int row = 0; row < 160; ++row) {
+        uint32_t color = ((row / 8) % 2 == 0) ? 0xFFFFFFFFu : 0xFF000000u;
+        uint32_t* r = sTopBuffer + (size_t)row * TOP_PITCH;
+        for (int col = 0; col < TOP_NATIVE_W; ++col) r[col] = color;
+    }
+#else
     virtuappu_mode1_set_frame_geometry(&ppu);
     virtuappu_mode1_render_frame(&ppu);
+#endif
 
-    if (sPresentFrameCount < 5) {
+    /* Log the first few frames unconditionally, then only when DISPCNT
+     * actually changes (the interesting boot-sequence transitions --
+     * force-blank lifting, mode/BG-enable changes) or every ~5s as a
+     * liveness heartbeat, capped so the log can't grow unbounded if the
+     * game ends up toggling DISPCNT every frame during normal gameplay. */
+    static uint16_t sLastDispcnt = 0xFFFF;
+    static unsigned sDetailedDumps;
+    const bool dispcntChanged = dispcnt != sLastDispcnt;
+    sLastDispcnt = dispcnt;
+    extern uint8_t gSubGameMode1;
+    extern uint8_t gMainGameMode;
+    const bool shouldLog = (sPresentFrameCount < 20 || dispcntChanged || sPresentFrameCount % 30 == 0)
+        && sDetailedDumps < 80;
+    if (shouldLog) {
+        ++sDetailedDumps;
         char msg[256];
+        const uint16_t bg0cnt = (uint16_t)(gIoMem[0x08] | (gIoMem[0x09] << 8));
+        const uint16_t bg1cnt = (uint16_t)(gIoMem[0x0A] | (gIoMem[0x0B] << 8));
+        const uint16_t bg2cnt = (uint16_t)(gIoMem[0x0C] | (gIoMem[0x0D] << 8));
+        const uint16_t bg3cnt = (uint16_t)(gIoMem[0x0E] | (gIoMem[0x0F] << 8));
         __builtin_snprintf(msg, sizeof(msg),
-            "Port_PPU_PresentFrame[%u]: dispcnt=%04x mode=%u vram[0..3]=%02x%02x%02x%02x "
-            "pal[0..1]=%04x,%04x out[0..3]=%08lx,%08lx,%08lx,%08lx",
-            sPresentFrameCount, dispcnt, ppu.mode, gVram[0], gVram[1], gVram[2], gVram[3],
-            gBgPltt[0], gBgPltt[1],
-            (unsigned long)sTopBuffer[0], (unsigned long)sTopBuffer[1],
-            (unsigned long)sTopBuffer[TOP_PITCH], (unsigned long)sTopBuffer[TOP_PITCH + 1]);
+            "PPU[%u]: %smode=%u/%u dispcnt=%04x bg0-3cnt=%04x,%04x,%04x,%04x vram[0..3]=%02x%02x%02x%02x pal[0..1]=%04x,%04x",
+            sPresentFrameCount, dispcntChanged ? "DISPCNT CHANGED! " : "",
+            gMainGameMode, gSubGameMode1, dispcnt, bg0cnt, bg1cnt, bg2cnt, bg3cnt,
+            gVram[0], gVram[1], gVram[2], gVram[3], gBgPltt[0], gBgPltt[1]);
         Port_DebugLog(msg);
+        for (int row = 0; row < 160; row += 20) {
+            const uint32_t* r = sTopBuffer + (size_t)row * TOP_PITCH;
+            __builtin_snprintf(msg, sizeof(msg),
+                "PPU[%u]: row%3d px[0..5]=%08lx,%08lx,%08lx,%08lx,%08lx,%08lx",
+                sPresentFrameCount, row,
+                (unsigned long)r[0], (unsigned long)r[1], (unsigned long)r[2],
+                (unsigned long)r[3], (unsigned long)r[4], (unsigned long)r[5]);
+            Port_DebugLog(msg);
+        }
     }
     ++sPresentFrameCount;
 
     PlatformGpu3DS_BeginTop(sTopBuffer, TOP_NATIVE_W);
-    PlatformGpu3DS_EndBottom(sBottomBuffer, false);
+    /* changed=true: PlatformGpu3DS_EndBottom() only actually uploads
+     * sBottomBuffer to the GPU texture when changed is true. Passing false
+     * unconditionally (as this did originally) meant the bottom screen's
+     * C3D_TexInitVRAM-allocated texture -- never zero-initialized by
+     * libctru, left holding whatever was in VRAM before (another app's
+     * leftover framebuffer content) -- was what actually displayed, never
+     * our black buffer. Seen on hardware as a fixed diagonal-line pattern
+     * on the bottom screen from frame 0, unrelated to the top-screen
+     * renderer (confirmed clean separately). No real second-screen content
+     * yet, so this re-uploads a static black buffer every frame -- wasteful
+     * but correct; revisit once there's real bottom-screen content to only
+     * re-upload when it actually changes. */
+    PlatformGpu3DS_EndBottom(sBottomBuffer, true);
 }
