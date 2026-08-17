@@ -229,7 +229,9 @@ void Port_Bios_Halt(void) {
 #if defined(PLATFORM_LINUX)
     Platform_Linux_VBlank();
 #elif defined(TMC_3DS)
+#ifdef PORT_VERBOSE_FRAME_LOG
     Port_DebugLog("Port_Bios_Halt: before aptMainLoop");
+#endif
     if (!aptMainLoop()) {
         Port_DebugLog("Port_Bios_Halt: aptMainLoop returned false, exiting");
         gfxExit();
@@ -246,15 +248,23 @@ void Port_Bios_Halt(void) {
      * isn't needed yet either; a plain 60Hz sleep unblocks gameplay-logic
      * testing now and can be swapped back once gfxSwapBuffers()-driven
      * presentation exists to investigate the gspWaitForEvent hang for real. */
+#ifdef PORT_VERBOSE_FRAME_LOG
     Port_DebugLog("Port_Bios_Halt: before sleep");
+#endif
     svcSleepThread(16666667LL);
+#ifdef PORT_VERBOSE_FRAME_LOG
     Port_DebugLog("Port_Bios_Halt: after sleep");
+#endif
 #endif
     CallbackCallVblank();
 #if defined(TMC_3DS) && !defined(PLATFORM_LINUX)
+#ifdef PORT_VERBOSE_FRAME_LOG
     Port_DebugLog("Port_Bios_Halt: after CallbackCallVblank");
+#endif
     Port_PPU_PresentFrame();
+#ifdef PORT_VERBOSE_FRAME_LOG
     Port_DebugLog("Port_Bios_Halt: after Port_PPU_PresentFrame");
+#endif
 #endif
 }
 

@@ -17,21 +17,24 @@
  */
 void agbmain(void)
 {
-#ifdef TMC_3DS
+#if defined(TMC_3DS) && defined(PORT_VERBOSE_FRAME_LOG)
     /* Temporary boot-hang diagnostic checkpoints, see port/port_debug_log.h.
-     * Remove once the 3DS port's boot sequence is confirmed working past
-     * this point. */
+     * Gated behind PORT_VERBOSE_FRAME_LOG (off by default) since this does a
+     * flushed file write per call -- ~10x/frame between this file and
+     * Port_Bios_Halt was the single biggest perf cost once boot was no
+     * longer hanging. Re-enable (add -DPORT_VERBOSE_FRAME_LOG to the
+     * Makefile) when bisecting a new boot-time hang. */
     extern void Port_DebugLog(const char* msg);
     Port_DebugLog("agbmain: before InitializeGame()");
 #endif
     InitializeGame();
-#ifdef TMC_3DS
+#if defined(TMC_3DS) && defined(PORT_VERBOSE_FRAME_LOG)
     Port_DebugLog("agbmain: InitializeGame() done, entering main loop");
 #endif
 
     while (TRUE)
     {
-#ifdef TMC_3DS
+#if defined(TMC_3DS) && defined(PORT_VERBOSE_FRAME_LOG)
         {
             static int sLoopCount = 0;
             if (sLoopCount < 5) {
@@ -45,11 +48,11 @@ void agbmain(void)
         if (gMainGameMode == GM_INGAME || gMainGameMode == GM_DEMO)
             InGameIoWriteRegisters();
 #endif // REGION_EU
-#ifdef TMC_3DS
+#if defined(TMC_3DS) && defined(PORT_VERBOSE_FRAME_LOG)
         Port_DebugLog("agbmain: before UpdateAudio()");
 #endif
         UpdateAudio();
-#ifdef TMC_3DS
+#if defined(TMC_3DS) && defined(PORT_VERBOSE_FRAME_LOG)
         Port_DebugLog("agbmain: UpdateAudio() done");
 #endif
 
@@ -57,11 +60,11 @@ void agbmain(void)
             break;
 
         UpdateInput();
-#ifdef TMC_3DS
+#if defined(TMC_3DS) && defined(PORT_VERBOSE_FRAME_LOG)
         Port_DebugLog("agbmain: UpdateInput() done");
 #endif
         SoftResetCheck();
-#ifdef TMC_3DS
+#if defined(TMC_3DS) && defined(PORT_VERBOSE_FRAME_LOG)
         Port_DebugLog("agbmain: SoftResetCheck() done");
 #endif
         // Increment frame counters
@@ -407,7 +410,7 @@ void agbmain(void)
         }
         
 
-#ifdef TMC_3DS
+#if defined(TMC_3DS) && defined(PORT_VERBOSE_FRAME_LOG)
         Port_DebugLog("agbmain: switch done, before Halt wait");
 #endif
         gVBlankRequestFlag &= ~TRUE;
@@ -416,7 +419,7 @@ void agbmain(void)
         do {
             SYSCALL(2); /* SYS_Halt */
         } while (!(gVBlankRequestFlag & 1));
-#ifdef TMC_3DS
+#if defined(TMC_3DS) && defined(PORT_VERBOSE_FRAME_LOG)
         Port_DebugLog("agbmain: Halt wait done, looping");
 #endif
     }

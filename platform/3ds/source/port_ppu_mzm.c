@@ -99,7 +99,11 @@ void Port_PPU_PresentFrame(void) {
      * actually changes (the interesting boot-sequence transitions --
      * force-blank lifting, mode/BG-enable changes) or every ~5s as a
      * liveness heartbeat, capped so the log can't grow unbounded if the
-     * game ends up toggling DISPCNT every frame during normal gameplay. */
+     * game ends up toggling DISPCNT every frame during normal gameplay.
+     * Gated behind PORT_VERBOSE_FRAME_LOG -- even throttled, each triggered
+     * dump is 8 flushed file writes, a real cost once boot isn't the thing
+     * being debugged anymore. */
+#ifdef PORT_VERBOSE_FRAME_LOG
     static uint16_t sLastDispcnt = 0xFFFF;
     static unsigned sDetailedDumps;
     const bool dispcntChanged = dispcnt != sLastDispcnt;
@@ -131,6 +135,7 @@ void Port_PPU_PresentFrame(void) {
             Port_DebugLog(msg);
         }
     }
+#endif
     ++sPresentFrameCount;
 
     PlatformGpu3DS_BeginTop(sTopBuffer, TOP_NATIVE_W);
