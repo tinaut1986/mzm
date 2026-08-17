@@ -26,7 +26,9 @@ struct ChozoStatueTarget {
     u8 targetX;
     u8 targetY;
     u8 endIcon;
+    u8 _pad[2];
 };
+
 
 struct PauseScreenAreaIconData {
     OverlayOamId nameOamId;

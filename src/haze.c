@@ -478,6 +478,9 @@ void Haze_Bg3(void)
     gHazeLoops[1].unk_3 = FALSE;
 
     src = sHaze_Bg3_StrongEffect;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+    src = GBA_RESOLVE(src);
+#endif
     mask = ARRAY_SIZE(sHaze_Bg3_StrongEffect) / 3 - 1;
     gHazeLoops[0].unk_3 = FALSE;
     gHazeLoops[0].timer++;
@@ -511,16 +514,16 @@ void Haze_Bg3(void)
 }
 
 /**
- * @brief 5d828 | 118 | Updates the haze effect (BG3, strong in effect, weak outside)
+ * @brief 5d81c | 124 | Updates the haze effect (BG3, strong in effect, weak outside)
  * 
  */
 void Haze_Bg3StrongWeak(void)
 {
     s32 i;
-    const s8* src1;
     s32 mask1;
-    const s8* src2;
     s32 mask2;
+    const s8* src1;
+    const s8* src2;
     s32 position;
     u16* dst;
     s32 offset;
@@ -533,6 +536,9 @@ void Haze_Bg3StrongWeak(void)
     gHazeLoops[2].unk_3 = FALSE;
 
     src1 = sHaze_Bg3_StrongEffect;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+    src1 = GBA_RESOLVE(src1);
+#endif
     mask1 = 0xF;
 
     gHazeLoops[0].unk_3 = FALSE;
@@ -545,7 +551,11 @@ void Haze_Bg3StrongWeak(void)
     }
 
     src2 = sHaze_Bg3_WeakOutside;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+    src2 = GBA_RESOLVE(src2);
+#endif
     mask2 = 0xF;
+
 
     gHazeLoops[1].unk_3 = FALSE;
     gHazeLoops[1].timer++;
@@ -596,6 +606,9 @@ void Haze_Bg3NoneWeak(void)
     gHazeLoops[1].unk_3 = FALSE;
 
     src = sHaze_Bg_WeakOutside;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+    src = GBA_RESOLVE(src);
+#endif
     mask = ARRAY_SIZE(sHaze_Bg_WeakOutside) - 1;
     gHazeLoops[0].unk_3 = FALSE;
 
@@ -631,6 +644,9 @@ void Haze_Bg3Bg2StrongWeakMedium(void)
     gHazeLoops[1].unk_3 = FALSE;
 
     src = sHaze_Bg_WeakOutside;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+    src = GBA_RESOLVE(src);
+#endif
     mask = ARRAY_SIZE(sHaze_Bg_WeakOutside) - 1;
     gHazeLoops[0].unk_3 = FALSE;
 
@@ -690,6 +706,9 @@ void Haze_Bg3Bg2Bg1(void)
     }
 
     src = sHaze_Bg3Bg2Bg1[gHazeLoops[2].unk_3];
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+    src = GBA_RESOLVE(src);
+#endif
     mask = ARRAY_SIZE(sHaze_Bg3Bg2Bg1[0]) - 1;
 
     gHazeLoops[0].unk_3 = FALSE;
@@ -742,6 +761,9 @@ u32 Haze_PowerBombExpanding(void)
         return FALSE;
 
     src = sHaze_PowerBomb_WindowValuesPointers[gCurrentPowerBomb.semiMinorAxis];
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+    src = GBA_RESOLVE(src);
+#endif
     size = gCurrentPowerBomb.semiMinorAxis;
     xPosition = SUB_PIXEL_TO_PIXEL_(gCurrentPowerBomb.xPosition - gBg1XPosition);
     yPosition = SUB_PIXEL_TO_PIXEL_(gCurrentPowerBomb.yPosition - gBg1YPosition);
@@ -816,6 +838,10 @@ u32 Haze_PowerBombRetracting(void)
         return FALSE;
 
     src = sHaze_PowerBomb_WindowValuesPointers[gCurrentPowerBomb.semiMinorAxis];
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+    src = GBA_RESOLVE(src);
+#endif
+
     size = gCurrentPowerBomb.semiMinorAxis;
     xPosition = SUB_PIXEL_TO_PIXEL_(gCurrentPowerBomb.xPosition - gBg1XPosition);
     yPosition = SUB_PIXEL_TO_PIXEL_(gCurrentPowerBomb.yPosition - gBg1YPosition);

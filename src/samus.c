@@ -2769,10 +2769,14 @@ s16 SamusChangeVelocityOnSlope(struct SamusData* pData)
 void SamusCopyPalette(const u16* src, s32 offset, s32 nbrColors)
 {
     s32 i;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+    src = GBA_RESOLVE(src);
+#endif
 
     for (i = offset; i < offset + nbrColors; i++)
         gSamusPalette[i] = *src++;
 }
+
 
 /**
  * @brief 779c | 4c | Updates samus
