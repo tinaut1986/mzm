@@ -781,8 +781,18 @@ void ConnectionLoadDoors(void)
     // Resest hatches count
     gNumberOfValidHatchesInRoom = 0;
 
+#include "port_debug_log.h"
+#include <stdio.h>
+
     // Get current doors
     pDoor = sAreaDoorsPointers[gCurrentArea];
+
+    {
+        char dbg[128];
+        snprintf(dbg, sizeof(dbg), "LoadDoors: area=%d room=%d pDoor=%p\n",
+            gCurrentArea, gCurrentRoom, pDoor);
+        Port_DebugLog(dbg);
+    }
 
     for (hatchCount = 0, currDoor = 0; pDoor->type != DOOR_TYPE_NONE; pDoor++, currDoor++)
     {
@@ -791,6 +801,13 @@ void ConnectionLoadDoors(void)
 
         // Get door type
         doorType = (pDoor->type & DOOR_TYPE_NO_FLAGS);
+
+        {
+            char dbg[128];
+            snprintf(dbg, sizeof(dbg), "  door[%d]: type=%d dType=%d xS=%d yS=%d\n",
+                currDoor, pDoor->type, doorType, pDoor->xStart, pDoor->yStart);
+            Port_DebugLog(dbg);
+        }
 
         // Doors with hatches are handled differently than doors without
         if (doorType == DOOR_TYPE_OPEN_HATCH || doorType == DOOR_TYPE_CLOSED_HATCH)
@@ -823,6 +840,13 @@ void ConnectionLoadDoors(void)
 
             // Get hatch type
             hatchType = sHatchTypeTable[hatchType];
+
+            {
+                char dbg[128];
+                snprintf(dbg, sizeof(dbg), "    hatch: w=%d pos=%d clip=%d col=%d beh=%d hType=%d\n",
+                    gBgPointersAndDimensions.clipdataWidth, position, clipdata, collision, behavior, hatchType);
+                Port_DebugLog(dbg);
+            }
 
             // Start iteration from the first un-initialized hatch
             i = gNumberOfValidHatchesInRoom;
@@ -859,6 +883,14 @@ void ConnectionLoadDoors(void)
 
                         // Increment number of hatches
                         gNumberOfValidHatchesInRoom = i + 1;
+
+                        {
+                            char dbg[128];
+                            snprintf(dbg, sizeof(dbg), "    hatch[%d] created: x=%d y=%d ex=%d\n",
+                                i, gHatchData[i].xPosition, gHatchData[i].yPosition, gHatchData[i].exists);
+                            Port_DebugLog(dbg);
+                        }
+
 
                         // Set hatch lock flag
                         if (hatchType == HATCH_LOCKED)
