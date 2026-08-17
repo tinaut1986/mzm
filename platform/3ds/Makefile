@@ -42,6 +42,8 @@ SRCS_ROOT := \
 	$(ROOT)/src/data/music_track_data.c \
 	$(ROOT)/src/data/audio.c \
 	$(ROOT)/src/data/color_fading_data.c \
+	$(ROOT)/src/data/cutscenes/cutscenes_data.c \
+	$(ROOT)/src/data/in_game_cutscene_data.c \
 	$(ROOT)/port/port_gba_symbols.c \
 	$(ROOT)/port/port_rom.c \
 	$(ROOT)/port/port_gba_mem.c \
@@ -53,6 +55,7 @@ SRCS_ROOT := \
 	$(ROOT)/port/ppu/src/virtuappu.c \
 	$(ROOT)/port/ppu/src/mode1.c \
 	$(filter-out %_selftest.c %_test.c, $(wildcard $(ROOT)/port/generated/*.c))
+
 
 
 # asm/audio_internal.s y asm/soundcode.s (motor de audio real, sin

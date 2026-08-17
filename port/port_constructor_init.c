@@ -23,6 +23,9 @@
 #include "data/text_data.h"
 #include "constants/color_fading.h"
 #include "data/color_fading_data.h"
+#include "data/cutscenes/cutscenes_data.h"
+#include "data/in_game_cutscene_data.h"
+
 
 
 extern void Init_sEraseSramTextGfxPointers(void) __attribute__((weak));
@@ -289,6 +292,13 @@ void Port_InitConstructorPointers(void)
 
     extern const struct ColorFadingData sColorFadingData_Compiled[COLOR_FADING_COUNT];
     p_sColorFadingData = (const struct ColorFadingData(*)[COLOR_FADING_COUNT])sColorFadingData_Compiled;
+
+    extern const struct CutsceneInfo sCutsceneData_Compiled[CUTSCENE_COUNT];
+    p_sCutsceneData = (const struct CutsceneInfo(*)[CUTSCENE_COUNT])sCutsceneData_Compiled;
+
+    extern const struct InGameCutsceneData sInGameCutsceneData_Compiled[IGC_COUNT];
+    p_sInGameCutsceneData = (const struct InGameCutsceneData(*)[IGC_COUNT])sInGameCutsceneData_Compiled;
 }
+
 
 

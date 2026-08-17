@@ -1,10 +1,11 @@
 #include "data/in_game_cutscene_data.h"
 #include "macros.h"
 
-#include "constants/connection.h"
 #include "in_game_cutscene.h"
 
-const struct InGameCutsceneData sInGameCutsceneData[IGC_COUNT] = {
+#undef sInGameCutsceneData
+const struct InGameCutsceneData sInGameCutsceneData_Compiled[IGC_COUNT] = {
+
     [0] = {
         .unk_0 = 1,
         .area = SCHAR_MAX,
