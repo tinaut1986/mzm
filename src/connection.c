@@ -32,7 +32,7 @@ void BgClipSetClipdataBlockValue(u16, u16, u16); // From bg_clip.h
 
 #ifdef TMC_3DS
 static const struct HatchLockEvent* sHatchLockEventsPointers[AREA_NORMAL_COUNT];
-static void __attribute__((constructor)) Init_sHatchLockEventsPointers(void) {
+void Init_sHatchLockEventsPointers(void) {
     sHatchLockEventsPointers[AREA_BRINSTAR] = sHatchLockEventsBrinstar;
     sHatchLockEventsPointers[AREA_KRAID] = sHatchLockEventsKraid;
     sHatchLockEventsPointers[AREA_NORFAIR] = sHatchLockEventsCrateria;

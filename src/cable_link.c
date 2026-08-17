@@ -18,7 +18,7 @@
 
 #ifdef TMC_3DS
 static const u8* sPlayerNumbersStringPointers[4];
-static void __attribute__((constructor)) Init_sPlayerNumbersStringPointers(void) {
+void Init_sPlayerNumbersStringPointers(void) {
     sPlayerNumbersStringPointers[0] = sPlayer1String;
     sPlayerNumbersStringPointers[1] = sPlayer2String;
     sPlayerNumbersStringPointers[2] = sPlayer3String;

@@ -60,7 +60,7 @@
 
 #ifdef TMC_3DS
 static const struct FrameData* sUnknownItemChozoStatueFrameDataPointers[UNKNOWN_ITEM_CHOZO_STATUE_OAM_COUNT];
-static void __attribute__((constructor)) Init_sUnknownItemChozoStatueFrameDataPointers(void) {
+void Init_sUnknownItemChozoStatueFrameDataPointers(void) {
     sUnknownItemChozoStatueFrameDataPointers[UNKNOWN_ITEM_CHOZO_STATUE_OAM_LEG_STANDING] = sUnknownItemChozoStatuePartOam_LegStanding;
     sUnknownItemChozoStatueFrameDataPointers[UNKNOWN_ITEM_CHOZO_STATUE_OAM_LEG_SITTING] = sUnknownItemChozoStatuePartOam_LegSitting;
     sUnknownItemChozoStatueFrameDataPointers[UNKNOWN_ITEM_CHOZO_STATUE_OAM_LEG_SEATED] = sUnknownItemChozoStatuePartOam_LegSeated;

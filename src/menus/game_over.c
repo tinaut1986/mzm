@@ -262,7 +262,7 @@ static void GameOverUpdateTextGfx(void)
 
 #ifdef TMC_3DS
 static const u32* sGameOverTextPromptGfxPointers[LANGUAGE_COUNT];
-static void __attribute__((constructor)) Init_sGameOverTextPromptGfxPointers(void) {
+void Init_sGameOverTextPromptGfxPointers(void) {
     sGameOverTextPromptGfxPointers[LANGUAGE_JAPANESE] = sGameOverTextPromptEnglishGfx;
     sGameOverTextPromptGfxPointers[LANGUAGE_HIRAGANA] = sGameOverTextPromptHiraganaGfx;
     sGameOverTextPromptGfxPointers[LANGUAGE_ENGLISH] = sGameOverTextPromptEnglishGfx;

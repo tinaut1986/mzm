@@ -49,7 +49,7 @@
 
 #ifdef TMC_3DS
 static const struct FrameData* sImagoLarvaFrameDataPointers[IMAGO_LARVA_OAM_COUNT];
-static void __attribute__((constructor)) Init_sImagoLarvaFrameDataPointers(void) {
+void Init_sImagoLarvaFrameDataPointers(void) {
     sImagoLarvaFrameDataPointers[IMAGO_LARVA_OAM_SHELL_ATTACKING] = sImagoLarvaPartOam_ShellAttacking;
     sImagoLarvaFrameDataPointers[IMAGO_LARVA_OAM_SHELL_IDLE] = sImagoLarvaPartOam_ShellIdle;
     sImagoLarvaFrameDataPointers[IMAGO_LARVA_OAM_SHELL_RETREATING] = sImagoLarvaPartOam_ShellRetreating;

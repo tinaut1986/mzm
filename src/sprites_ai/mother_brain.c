@@ -56,7 +56,7 @@ MAKE_ENUM(u8, MotherBrainFightStage) {
 
 #ifdef TMC_3DS
 static const struct FrameData* sMotherBrainFrameDataPointers[MOTHER_BRAIN_OAM_COUNT];
-static void __attribute__((constructor)) Init_sMotherBrainFrameDataPointers(void) {
+void Init_sMotherBrainFrameDataPointers(void) {
     sMotherBrainFrameDataPointers[MOTHER_BRAIN_OAM_IDLE] = sMotherBrainOam_Idle;
     sMotherBrainFrameDataPointers[MOTHER_BRAIN_OAM_CHARGING_BEAM] = sMotherBrainOam_ChargingBeam;
     sMotherBrainFrameDataPointers[MOTHER_BRAIN_OAM_EYE_CLOSED] = sMotherBrainPartOam_EyeClosed;

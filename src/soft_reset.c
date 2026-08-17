@@ -14,6 +14,10 @@
 #include "structs/game_state.h"
 #include "structs/cutscene.h"
 
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#include "port_gba_mem.h"
+#endif
+
 #ifdef REGION_EU
 static void LanguageSelectChangeHighlight(u8 highlight, u8 language);
 static void LanguageSelectUpdateHighlightAnimation(struct LanguageColorAnimation* pAnim);
@@ -134,6 +138,16 @@ static void LanguageSelectChangeHighlight(u8 highlight, u8 language)
     dst2 = VRAM_BASE + 0xF800;
     dst1 = dst2 + sLanguageSelectLanguageTileTableOffsets[language - LANGUAGE_ENGLISH];
     dst2 = dst1 + 0x20;
+
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+    /* VRAM_BASE is a raw GBA address (0x06000000), not a real host pointer
+     * on this port -- dereferencing it directly segfaults. Elsewhere in the
+     * codebase this gets translated via WRITE_16/READ_16 (io.h), but this
+     * function does its own pointer arithmetic + direct dereference below,
+     * bypassing that. Resolve to the real VRAM buffer here instead. */
+    dst1 = (u16*)gba_MemPtr((uintptr_t)dst1);
+    dst2 = (u16*)gba_MemPtr((uintptr_t)dst2);
+#endif
 
     if (highlight)
     {

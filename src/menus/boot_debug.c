@@ -29,7 +29,7 @@ extern const u32* sMinimapDataPointers[AREA_COUNT];
 
 #ifdef TMC_3DS
 static const u8* sBootDebugCutsceneBTextPointers[CUTSCENE_COUNT];
-static void __attribute__((constructor)) Init_sBootDebugCutsceneBTextPointers(void) {
+void Init_sBootDebugCutsceneBTextPointers(void) {
     sBootDebugCutsceneBTextPointers[CUTSCENE_NONE] = sBootDebug_Cutscene_Blank_Text;
     sBootDebugCutsceneBTextPointers[CUTSCENE_INTRO_TEXT] = sBootDebug_CutsceneB_StartMonologue_Text;
     sBootDebugCutsceneBTextPointers[CUTSCENE_MOTHERSHIP_MONOLOGUE] = sBootDebug_CutsceneB_ShotDownMonologue1_Text;

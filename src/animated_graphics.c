@@ -25,7 +25,7 @@
 
 #if defined(TMC_3DS) || defined(PORT_NATIVE)
 static const BackgroundEffectBehaviorEntry_T* sBackgroundEffectBehaviorPointers[BACKGROUND_EFFECT_COUNT];
-static void __attribute__((constructor)) Init_sBackgroundEffectBehaviorPointers(void) {
+void Init_sBackgroundEffectBehaviorPointers(void) {
     sBackgroundEffectBehaviorPointers[BACKGROUND_EFFECT_NONE] = sBackgroundEffectBehavior_Lightning;
     sBackgroundEffectBehaviorPointers[BACKGROUND_EFFECT_LIGHTNING] = sBackgroundEffectBehavior_Lightning;
     sBackgroundEffectBehaviorPointers[BACKGROUND_EFFECT_SLIGHT_YELLOW] = sBackgroundEffectBehavior_SlightYellow;

@@ -22,7 +22,7 @@
 
 #ifdef TMC_3DS
 static const s8* sChozoStatueTargetPathPointers[6];
-static void __attribute__((constructor)) Init_sChozoStatueTargetPathPointers(void) {
+void Init_sChozoStatueTargetPathPointers(void) {
     sChozoStatueTargetPathPointers[AREA_BRINSTAR] = (s8*)sChozoStatueTargetPathBrinstar;
     sChozoStatueTargetPathPointers[AREA_KRAID] = (s8*)sChozoStatueTargetPathKraid;
     sChozoStatueTargetPathPointers[AREA_NORFAIR] = (s8*)sChozoStatueTargetPathNorfair;

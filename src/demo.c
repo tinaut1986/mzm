@@ -16,7 +16,7 @@
 
 #ifdef TMC_3DS
 const struct SaveDemo* sDemoRamDataPointers[MAX_AMOUNT_OF_DEMOS];
-static void __attribute__((constructor)) Init_sDemoRamDataPointers(void) {
+void Init_sDemoRamDataPointers(void) {
     sDemoRamDataPointers[0] = &sDemo0_Ram;
     sDemoRamDataPointers[1] = &sDemo1_Ram;
     sDemoRamDataPointers[2] = &sDemo2_Ram;

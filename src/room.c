@@ -43,7 +43,7 @@
 #ifdef TMC_3DS
 const struct Door* sAreaDoorsPointers[AREA_ENTRY_COUNT];
 const struct RoomEntryRom* sAreaRoomEntryPointers[AREA_ENTRY_COUNT];
-static void __attribute__((constructor)) Init_sAreaPointers(void) {
+void Init_sAreaPointers(void) {
     sAreaDoorsPointers[AREA_BRINSTAR] = sBrinstarDoors;
     sAreaDoorsPointers[AREA_KRAID] = sKraidDoors;
     sAreaDoorsPointers[AREA_NORFAIR] = sNorfairDoors;
@@ -91,7 +91,7 @@ const struct Door* sAreaDoorsPointers[AREA_ENTRY_COUNT] = {
 
 #ifdef TMC_3DS
 const struct RoomEntryRom* sAreaRoomEntryPointers[AREA_ENTRY_COUNT];
-static void __attribute__((constructor)) Init_sAreaRoomEntryPointers(void) {
+void Init_sAreaRoomEntryPointers(void) {
     sAreaRoomEntryPointers[AREA_BRINSTAR] = sBrinstarRoomEntries;
     sAreaRoomEntryPointers[AREA_KRAID] = sKraidRoomEntries;
     sAreaRoomEntryPointers[AREA_NORFAIR] = sNorfairRoomEntries;

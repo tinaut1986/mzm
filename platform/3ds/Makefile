@@ -47,6 +47,9 @@ SRCS_ROOT := \
 	$(ROOT)/port/port_bios.c \
 	$(ROOT)/port/port_gba_timing.c \
 	$(ROOT)/port/port_debug_log.c \
+	$(ROOT)/port/port_constructor_init.c \
+	$(ROOT)/port/ppu/src/virtuappu.c \
+	$(ROOT)/port/ppu/src/mode1.c \
 	$(filter-out %_selftest.c %_test.c, $(wildcard $(ROOT)/port/generated/*.c))
 
 SRCS_ASM := \
@@ -57,7 +60,9 @@ SRCS_ASM := \
 
 SRCS_3DS := \
 	$(CURDIR)/source/main_3ds.c \
-	$(CURDIR)/source/platform_3ds_minimal.c
+	$(CURDIR)/source/platform_3ds_minimal.c \
+	$(CURDIR)/source/platform_gpu_3ds.c \
+	$(CURDIR)/source/port_ppu_mzm.c
 
 # Generar objetos
 OBJS_ROOT := $(patsubst $(ROOT)/%.c, $(BUILD)/root/%.o, $(SRCS_ROOT))

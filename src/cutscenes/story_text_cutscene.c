@@ -20,7 +20,7 @@
 
 #ifdef TMC_3DS
 const u16** sStoryTextPointers[7];
-static void __attribute__((constructor)) Init_sStoryTextPointers(void) {
+void Init_sStoryTextPointers(void) {
     sStoryTextPointers[LANGUAGE_JAPANESE] = sJapaneseTextPointers_Story;
     sStoryTextPointers[LANGUAGE_HIRAGANA] = sHiraganaTextPointers_Story;
     sStoryTextPointers[LANGUAGE_ENGLISH] = sEnglishTextPointers_Story;

@@ -130,7 +130,7 @@ MAKE_ENUM(u8, RidleyFireballType) {
 
 #ifdef TMC_3DS
 static const struct FrameData* sRidleyFrameDataPointers[RIDLEY_OAM_COUNT];
-static void __attribute__((constructor)) Init_sRidleyFrameDataPointers(void) {
+void Init_sRidleyFrameDataPointers(void) {
     sRidleyFrameDataPointers[RIDLEY_OAM_IDLE] = sRidleyOam_Idle;
     sRidleyFrameDataPointers[RIDLEY_OAM_SPITTING_FIREBALLS] = sRidleyOam_SpittingFireballs;
     sRidleyFrameDataPointers[RIDLEY_OAM_TURNING_AROUND_FIRST_PART] = sRidleyOam_TurningAroundFirstPart;

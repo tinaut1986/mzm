@@ -1,5 +1,6 @@
 #include "port_rom.h"
 #include "generated/port_all_rom_init.h"
+#include "port_constructor_init.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -87,6 +88,7 @@ int Port_LoadRom(const char* path) {
     gRomSize = (u32)size;
     gRomRegion = region;
     PortGen_All_Init();
+    Port_InitConstructorPointers();
     return 1;
 }
 

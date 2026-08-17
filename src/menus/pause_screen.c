@@ -50,7 +50,7 @@ static const u32* sMapScreenUnknownItemsNamesGfxPointers[LANGUAGE_COUNT];
 static const u32* sMapScreenEquipmentNamesGfxPointers[LANGUAGE_COUNT];
 static const u32* sMapScreenMenuNamesGfxPointers[LANGUAGE_COUNT];
 
-static void __attribute__((constructor)) Init_sMapScreenGfxPointers(void) {
+void Init_sMapScreenGfxPointers(void) {
     sMapScreenAreaNamesGfxPointers[LANGUAGE_JAPANESE] = sMapScreenAreaNamesEnglishGfx;
     sMapScreenAreaNamesGfxPointers[LANGUAGE_HIRAGANA] = sMapScreenAreaNamesHiraganaGfx;
     sMapScreenAreaNamesGfxPointers[LANGUAGE_ENGLISH] = sMapScreenAreaNamesEnglishGfx;
@@ -125,7 +125,7 @@ static const u32* sMapScreenAreaNamesGfxPointers[LANGUAGE_COUNT] = {
 
 #ifdef TMC_3DS
 static const u32* sMapScreenChozoStatueAreaNamesGfxPointers[LANGUAGE_COUNT];
-static void __attribute__((constructor)) Init_sMapScreenChozoStatueAreaNamesGfxPointers(void) {
+void Init_sMapScreenChozoStatueAreaNamesGfxPointers(void) {
     sMapScreenChozoStatueAreaNamesGfxPointers[LANGUAGE_JAPANESE] = sMapScreenChozoStatueAreaNamesEnglishGfx;
     sMapScreenChozoStatueAreaNamesGfxPointers[LANGUAGE_HIRAGANA] = sMapScreenChozoStatueAreaNamesHiraganaGfx;
     sMapScreenChozoStatueAreaNamesGfxPointers[LANGUAGE_ENGLISH] = sMapScreenChozoStatueAreaNamesEnglishGfx;
@@ -148,7 +148,7 @@ static const u32* sMapScreenChozoStatueAreaNamesGfxPointers[LANGUAGE_COUNT] = {
 
 #ifdef TMC_3DS
 static const u32* sMapScreenUnknownItemsNamesGfxPointers[LANGUAGE_COUNT];
-static void __attribute__((constructor)) Init_sMapScreenUnknownItemsNamesGfxPointers(void) {
+void Init_sMapScreenUnknownItemsNamesGfxPointers(void) {
     sMapScreenUnknownItemsNamesGfxPointers[LANGUAGE_JAPANESE] = sMapScreenUnknownItemsNamesJapaneseGfx;
     sMapScreenUnknownItemsNamesGfxPointers[LANGUAGE_HIRAGANA] = sMapScreenUnknownItemsNamesHiraganaGfx;
     sMapScreenUnknownItemsNamesGfxPointers[LANGUAGE_ENGLISH] = sMapScreenUnknownItemsNamesEnglishGfx;
@@ -182,7 +182,7 @@ static const u32* sMapScreenUnknownItemsNamesGfxPointers[LANGUAGE_COUNT] = {
 
 #ifdef TMC_3DS
 static const u32* sMapScreenEquipmentNamesGfxPointers[LANGUAGE_COUNT];
-static void __attribute__((constructor)) Init_sMapScreenEquipmentNamesGfxPointers(void) {
+void Init_sMapScreenEquipmentNamesGfxPointers(void) {
     sMapScreenEquipmentNamesGfxPointers[LANGUAGE_JAPANESE] = sEquipmentNamesJapaneseGfx;
     sMapScreenEquipmentNamesGfxPointers[LANGUAGE_HIRAGANA] = sEquipmentNamesHiraganaGfx;
     sMapScreenEquipmentNamesGfxPointers[LANGUAGE_ENGLISH] = sEquipmentNamesEnglishGfx;
@@ -216,7 +216,7 @@ static const u32* sMapScreenEquipmentNamesGfxPointers[LANGUAGE_COUNT] = {
 
 #ifdef TMC_3DS
 static const u32* sMapScreenMenuNamesGfxPointers[LANGUAGE_COUNT];
-static void __attribute__((constructor)) Init_sMapScreenMenuNamesGfxPointers(void) {
+void Init_sMapScreenMenuNamesGfxPointers(void) {
     sMapScreenMenuNamesGfxPointers[LANGUAGE_JAPANESE] = sMenuNamesJapaneseGfx;
     sMapScreenMenuNamesGfxPointers[LANGUAGE_HIRAGANA] = sMenuNamesHiraganaGfx;
     sMapScreenMenuNamesGfxPointers[LANGUAGE_ENGLISH] = sMenuNamesEnglishGfx;
@@ -290,7 +290,7 @@ const u32* sMinimapDataPointers[AREA_COUNT];
 static const u8* sMaintainedInputDelaysPointers[MAINTAINED_INPUT_SPEED_COUNT];
 #endif
 
-static void __attribute__((constructor)) Init_sPauseScreenPointers(void) {
+void Init_sPauseScreenPointers(void) {
     sStatusScreenFlagsOrderPointers[ABILITY_GROUP_BEAMS] = sStatusScreenBeamFlagsOrder;
     sStatusScreenFlagsOrderPointers[ABILITY_GROUP_BOMBS] = sStatusScreenBombFlagsOrder;
     sStatusScreenFlagsOrderPointers[ABILITY_GROUP_SUITS] = sStatusScreenSuitFlagsOrder;
@@ -323,7 +323,7 @@ const u8* sStatusScreenFlagsOrderPointers[4] = {
 
 #ifdef TMC_3DS
 const u32* sMinimapDataPointers[AREA_COUNT];
-static void __attribute__((constructor)) Init_sMinimapDataPointers(void) {
+void Init_sMinimapDataPointers(void) {
     sMinimapDataPointers[AREA_BRINSTAR] = sBrinstarMinimap;
     sMinimapDataPointers[AREA_KRAID] = sKraidMinimap;
     sMinimapDataPointers[AREA_NORFAIR] = sNorfairMinimap;
@@ -355,7 +355,7 @@ const u32* sMinimapDataPointers[AREA_COUNT] = {
 #ifdef REGION_EU
 #ifdef TMC_3DS
 static const u8* sMaintainedInputDelaysPointers[MAINTAINED_INPUT_SPEED_COUNT];
-static void __attribute__((constructor)) Init_sMaintainedInputDelaysPointers(void) {
+void Init_sMaintainedInputDelaysPointers(void) {
     sMaintainedInputDelaysPointers[MAINTAINED_INPUT_SPEED_FAST] = sMaintainedInputDelays_Fast;
     sMaintainedInputDelaysPointers[MAINTAINED_INPUT_SPEED_SLOW] = sMaintainedInputDelays_Slow;
 }

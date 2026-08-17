@@ -94,7 +94,7 @@ static const u32* sFileSelectLargeTextGfxPointers[LANGUAGE_COUNT - LANGUAGE_ENGL
 static const u32* sFileSelectDifficultyTextGfxPointers[LANGUAGE_COUNT - LANGUAGE_ENGLISH];
 #endif
 
-static void __attribute__((constructor)) Init_sFileSelectTextGfxPointers(void) {
+void Init_sFileSelectTextGfxPointers(void) {
     sFileSelectOptionsTextGfxPointers[LANGUAGE_ENGLISH - LANGUAGE_ENGLISH] = sFileSelectOptionsTextEnglishGfx;
 #if defined(DEBUG) || defined(REGION_EU)
     sFileSelectOptionsTextGfxPointers[LANGUAGE_GERMAN - LANGUAGE_ENGLISH] = sFileSelectOptionsTextGermanGfx;
@@ -141,7 +141,7 @@ static const u32* sFileSelectOptionsTextGfxPointers[LANGUAGE_COUNT - LANGUAGE_EN
 #ifdef REGION_EU
 #ifdef TMC_3DS
 static const u32* sFileSelectLargeTextGfxPointers[LANGUAGE_COUNT - LANGUAGE_ENGLISH];
-static void __attribute__((constructor)) Init_sFileSelectLargeTextGfxPointers(void) {
+void Init_sFileSelectLargeTextGfxPointers(void) {
     sFileSelectLargeTextGfxPointers[LANGUAGE_ENGLISH - LANGUAGE_ENGLISH] = sFileSelectLargeTextEnglishGfx;
     sFileSelectLargeTextGfxPointers[LANGUAGE_GERMAN - LANGUAGE_ENGLISH] = sFileSelectLargeTextGermanGfx;
     sFileSelectLargeTextGfxPointers[LANGUAGE_FRENCH - LANGUAGE_ENGLISH] = sFileSelectLargeTextFrenchGfx;
@@ -160,7 +160,7 @@ static const u32* sFileSelectLargeTextGfxPointers[LANGUAGE_COUNT - LANGUAGE_ENGL
 
 #ifdef TMC_3DS
 static const u32* sFileSelectDifficultyTextGfxPointers[LANGUAGE_COUNT - LANGUAGE_ENGLISH];
-static void __attribute__((constructor)) Init_sFileSelectDifficultyTextGfxPointers(void) {
+void Init_sFileSelectDifficultyTextGfxPointers(void) {
     sFileSelectDifficultyTextGfxPointers[LANGUAGE_ENGLISH - LANGUAGE_ENGLISH] = sFileSelectDifficultyTextEnglishGfx;
     sFileSelectDifficultyTextGfxPointers[LANGUAGE_GERMAN - LANGUAGE_ENGLISH] = sFileSelectDifficultyTextGermanGfx;
     sFileSelectDifficultyTextGfxPointers[LANGUAGE_FRENCH - LANGUAGE_ENGLISH] = sFileSelectDifficultyTextFrenchGfx;

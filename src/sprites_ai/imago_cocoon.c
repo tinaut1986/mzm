@@ -77,7 +77,7 @@
 
 #ifdef TMC_3DS
 static const struct FrameData* sImagoCocoonFrameDataPointers[IMAGO_COCOON_OAM_COUNT];
-static void __attribute__((constructor)) Init_sImagoCocoonFrameDataPointers(void) {
+void Init_sImagoCocoonFrameDataPointers(void) {
     sImagoCocoonFrameDataPointers[IMAGO_COCOON_OAM_CEILING_VINE_MOTIONLESS] = sImagoCocoonOam_CeilingVineMotionless;
     sImagoCocoonFrameDataPointers[IMAGO_COCOON_OAM_CEILING_VINE_MOVING] = sImagoCocoonOam_CeilingVineMoving;
     sImagoCocoonFrameDataPointers[IMAGO_COCOON_OAM_CEILING_VINE_BROKEN] = sImagoCocoonOam_CeilingVineBroken;

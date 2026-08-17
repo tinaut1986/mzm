@@ -27,7 +27,7 @@ static void EraseSramProcessOam(void);
 
 #ifdef TMC_3DS
 static const u32* sEraseSramTextGfxPointers[LANGUAGE_COUNT][2];
-static void __attribute__((constructor)) Init_sEraseSramTextGfxPointers(void) {
+void Init_sEraseSramTextGfxPointers(void) {
     sEraseSramTextGfxPointers[LANGUAGE_JAPANESE][0] = sEraseSramMenuQuestionJapaneseGfx;
     sEraseSramTextGfxPointers[LANGUAGE_JAPANESE][1] = sEraseSramMenuConfirmJapaneseGfx;
     sEraseSramTextGfxPointers[LANGUAGE_HIRAGANA][0] = sEraseSramMenuQuestionJapaneseGfx;

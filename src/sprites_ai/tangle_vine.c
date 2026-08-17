@@ -27,7 +27,7 @@ MAKE_ENUM(u8, TangleVineGerutaStatus) {
 
 #ifdef TMC_3DS
 static const struct FrameData* sTangleVineFrameDataPointers[TANGLE_VINE_OAM_COUNT];
-static void __attribute__((constructor)) Init_sTangleVineFrameDataPointers(void) {
+void Init_sTangleVineFrameDataPointers(void) {
     sTangleVineFrameDataPointers[TANGLE_VINE_OAM_TALL_ON_GROUND] = sTangleVineTallOam_OnGround;
     sTangleVineFrameDataPointers[TANGLE_VINE_OAM_MEDIUM_ON_GROUND] = sTangleVineMediumOam_OnGround;
     sTangleVineFrameDataPointers[TANGLE_VINE_OAM_SHORT_ON_GROUND] = sTangleVineShortOam_OnGround;

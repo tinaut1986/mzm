@@ -74,7 +74,7 @@ MAKE_ENUM(u8, KraidNailType) {
 
 #ifdef TMC_3DS
 static const struct FrameData* sKraidFrameDataPointers[KRAID_OAM_COUNT];
-static void __attribute__((constructor)) Init_sKraidFrameDataPointers(void) {
+void Init_sKraidFrameDataPointers(void) {
     sKraidFrameDataPointers[KRAID_OAM_MOUTH_CLOSED] = sKraidOam_MouthClosed;
     sKraidFrameDataPointers[KRAID_OAM_MOUTH_CLOSED_BLINK] = sKraidOam_MouthClosedBlink;
     sKraidFrameDataPointers[KRAID_OAM_OPENING_MOUTH] = sKraidOam_OpeningMouth;

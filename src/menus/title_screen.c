@@ -62,7 +62,7 @@ static const u32* sTitleScreenMenuGfxPointers[(LANGUAGE_COUNT - LANGUAGE_ENGLISH
 static const u8* sRomInfoStringPointers[4];
 #endif
 
-static void __attribute__((constructor)) Init_sTitleScreenPointers(void) {
+void Init_sTitleScreenPointers(void) {
 #ifdef REGION_EU
     sRomInfoStringPointers[0] = sTitleScreenRomInfoTime;
 

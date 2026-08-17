@@ -31,7 +31,7 @@ extern const u8* sStatusScreenFlagsOrderPointers[4];
 #ifdef DEBUG
 #ifdef TMC_3DS
 static const u8* sPauseDebugEventNamePointers[EVENT_COUNT];
-static void __attribute__((constructor)) Init_sPauseDebugEventNamePointers(void) {
+void Init_sPauseDebugEventNamePointers(void) {
     sPauseDebugEventNamePointers[EVENT_NONE] = sPauseDebug_Event00_Text;
     sPauseDebugEventNamePointers[EVENT_EASY] = sPauseDebug_Event01_Text;
     sPauseDebugEventNamePointers[EVENT_HARD] = sPauseDebug_Event02_Text;

@@ -32,7 +32,7 @@ static const u8* sCrateriaScrolls[12];
 static const u8* sChozodiaScrolls[61];
 static const u8** sAreaScrollPointers[AREA_COUNT];
 
-static void __attribute__((constructor)) Init_sScrollTables(void) {
+void Init_sScrollTables(void) {
     sScrollPointer_Empty[0] = sScroll_Empty;
 
     sBrinstarScrolls[0] = sBrinstar_0_Scrolls; sBrinstarScrolls[1] = sBrinstar_1_Scrolls;

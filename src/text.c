@@ -17,7 +17,7 @@ extern u16** sStoryTextPointers[LANGUAGE_COUNT];
 
 #ifdef TMC_3DS
 static const u16** sDescriptionTextPointers[LANGUAGE_COUNT];
-static void __attribute__((constructor)) Init_sDescriptionTextPointers(void) {
+void Init_sDescriptionTextPointers(void) {
     sDescriptionTextPointers[LANGUAGE_JAPANESE] = sJapaneseTextPointers_Description;
     sDescriptionTextPointers[LANGUAGE_HIRAGANA] = sHiraganaTextPointers_Description;
     sDescriptionTextPointers[LANGUAGE_ENGLISH] = sEnglishTextPointers_Description;

@@ -79,7 +79,7 @@ MAKE_ENUM(u8, ImagoMovementStage) {
 
 #ifdef TMC_3DS
 static const struct FrameData* sImagoFrameDataPointers[IMAGO_OAM_COUNT];
-static void __attribute__((constructor)) Init_sImagoFrameDataPointers(void) {
+void Init_sImagoFrameDataPointers(void) {
     sImagoFrameDataPointers[IMAGO_OAM_BODY_IDLE] = sImagoPartOam_BodyIdle;
     sImagoFrameDataPointers[IMAGO_OAM_BODY_GROWLING] = sImagoPartOam_BodyGrowling;
     sImagoFrameDataPointers[IMAGO_OAM_BROKEN_STINGER] = sImagoOam_BrokenStinger;

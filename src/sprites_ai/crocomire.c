@@ -18,7 +18,7 @@
 
 #ifdef TMC_3DS
 static const struct FrameData* sCrocomireFrameDataPointers[CROCOMIRE_OAM_COUNT];
-static void __attribute__((constructor)) Init_sCrocomireFrameDataPointers(void) {
+void Init_sCrocomireFrameDataPointers(void) {
     sCrocomireFrameDataPointers[CROCOMIRE_OAM_PART_BODY_IDLE] = sCrocomirePartOam_BodyIdle;
     sCrocomireFrameDataPointers[CROCOMIRE_OAM_PART_BODY_ANGRY] = sCrocomirePartOam_BodyAngry;
     sCrocomireFrameDataPointers[CROCOMIRE_OAM_IDLE] = sCrocomireOam_Idle;

@@ -316,7 +316,7 @@ static Func_T sPrimarySpritesAIPointers[PSPRITE_COUNT] = {
 static const u32* sSpritesGraphicsPointers[PSPRITE_OFFSET_FOR_GRAPHICS(PSPRITE_COUNT)];
 static const u16* sSpritesPalettePointers[PSPRITE_OFFSET_FOR_GRAPHICS(PSPRITE_COUNT)];
 
-static void __attribute__((constructor)) Init_sSpritesGfxPalPointers(void) {
+void Init_sSpritesGfxPalPointers(void) {
     sSpritesGraphicsPointers[PSPRITE_OFFSET_FOR_GRAPHICS(PSPRITE_UNUSED16)] = sUnusedSpritesGfx;
     sSpritesGraphicsPointers[PSPRITE_OFFSET_FOR_GRAPHICS(PSPRITE_MESSAGE_BANNER)] = sMessageBannerGfx;
     sSpritesGraphicsPointers[PSPRITE_OFFSET_FOR_GRAPHICS(PSPRITE_ZOOMER_YELLOW)] = sZoomerGfx;
@@ -895,7 +895,7 @@ static const u32* sSpritesGraphicsPointers[PSPRITE_OFFSET_FOR_GRAPHICS(PSPRITE_C
 
 #ifdef TMC_3DS
 static const u16* sSpritesPalettePointers[PSPRITE_OFFSET_FOR_GRAPHICS(PSPRITE_COUNT)];
-static void __attribute__((constructor)) Init_sSpritesPalettePointers(void) {
+void Init_sSpritesPalettePointers(void) {
     sSpritesPalettePointers[PSPRITE_OFFSET_FOR_GRAPHICS(PSPRITE_UNUSED16)] = sUnusedSpritesPal;
     sSpritesPalettePointers[PSPRITE_OFFSET_FOR_GRAPHICS(PSPRITE_MESSAGE_BANNER)] = sMessageBannerPal;
     sSpritesPalettePointers[PSPRITE_OFFSET_FOR_GRAPHICS(PSPRITE_ZOOMER_YELLOW)] = sZoomerPal;
@@ -1365,7 +1365,7 @@ static Func_T sSecondarySpritesAIPointers[SSPRITE_COUNT] = {
 
 #ifdef TMC_3DS
 static const u8* sSpritesetPointers[MAX_AMOUNT_OF_SPRITESET];
-static void __attribute__((constructor)) Init_sSpritesetPointers(void) {
+void Init_sSpritesetPointers(void) {
     sSpritesetPointers[0] = sSpriteset0;
     sSpritesetPointers[1] = sSpriteset1;
     sSpritesetPointers[2] = sSpriteset2;

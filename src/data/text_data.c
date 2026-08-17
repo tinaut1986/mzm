@@ -51,7 +51,7 @@ const u16 sJapaneseText_Message_EasySleepPrompt[] = INCTEXT("{GAP(101)}Yes\n{GAP
 
 #ifdef TMC_3DS
 static const u16* sJapaneseTextPointers_Message[MESSAGE_COUNT];
-static void __attribute__((constructor)) Init_sJapaneseTextPointers_Message(void) {
+void Init_sJapaneseTextPointers_Message(void) {
     sJapaneseTextPointers_Message[MESSAGE_DUMMY] = sJapaneseText_Message_Dummy;
     sJapaneseTextPointers_Message[MESSAGE_ENERGY_TANK_ACQUIRED] = sJapaneseText_Message_EnergyTankAcquired;
     sJapaneseTextPointers_Message[MESSAGE_MISSILE_TANK_ACQUIRED] = sJapaneseText_Message_MissileTankAcquired;
@@ -165,7 +165,7 @@ const u16 sJapaneseText_Location_Unused18[] = INCTEXT("{GAP(93)}空き１８");
 
 #ifdef TMC_3DS
 static const u16* sJapaneseTextPointers_Location[LT_COUNT];
-static void __attribute__((constructor)) Init_sJapaneseTextPointers_Location(void) {
+void Init_sJapaneseTextPointers_Location(void) {
     sJapaneseTextPointers_Location[LT_BRINSTAR] = sJapaneseText_Location_Brinstar;
     sJapaneseTextPointers_Location[LT_KRAID] = sJapaneseText_Location_Kraid;
     sJapaneseTextPointers_Location[LT_NORFAIR] = sJapaneseText_Location_Norfair;
@@ -266,7 +266,7 @@ const u16 sHiraganaText_Message_EasySleepPrompt[] = INCTEXT("{GAP(102)}はい\n{
 
 #ifdef TMC_3DS
 static const u16* sHiraganaTextPointers_Message[MESSAGE_COUNT];
-static void __attribute__((constructor)) Init_sHiraganaTextPointers_Message(void) {
+void Init_sHiraganaTextPointers_Message(void) {
     sHiraganaTextPointers_Message[MESSAGE_DUMMY] = sHiraganaText_Message_Dummy;
     sHiraganaTextPointers_Message[MESSAGE_ENERGY_TANK_ACQUIRED] = sHiraganaText_Message_EnergyTankAcquired;
     sHiraganaTextPointers_Message[MESSAGE_MISSILE_TANK_ACQUIRED] = sHiraganaText_Message_MissileTankAcquired;
@@ -380,7 +380,7 @@ const u16 sHiraganaText_Location_Unused18[] = INCTEXT("{GAP(93)}空き１８");
 
 #ifdef TMC_3DS
 static const u16* sHiraganaTextPointers_Location[LT_COUNT];
-static void __attribute__((constructor)) Init_sHiraganaTextPointers_Location(void) {
+void Init_sHiraganaTextPointers_Location(void) {
     sHiraganaTextPointers_Location[LT_BRINSTAR] = sHiraganaText_Location_Brinstar;
     sHiraganaTextPointers_Location[LT_KRAID] = sHiraganaText_Location_Kraid;
     sHiraganaTextPointers_Location[LT_NORFAIR] = sHiraganaText_Location_Norfair;
@@ -524,7 +524,7 @@ const u16 sEnglishText_Message_EasySleepPrompt[] = INCTEXT("{GAP(101)}Yes\n{GAP(
 
 #ifdef TMC_3DS
 static const u16* sEnglishTextPointers_Message[MESSAGE_COUNT];
-static void __attribute__((constructor)) Init_sEnglishTextPointers_Message(void) {
+void Init_sEnglishTextPointers_Message(void) {
     sEnglishTextPointers_Message[MESSAGE_DUMMY] = sEnglishText_Message_Dummy;
     sEnglishTextPointers_Message[MESSAGE_ENERGY_TANK_ACQUIRED] = sEnglishText_Message_EnergyTankAcquired;
     sEnglishTextPointers_Message[MESSAGE_MISSILE_TANK_ACQUIRED] = sEnglishText_Message_MissileTankAcquired;
@@ -669,7 +669,7 @@ const u16 sEnglishText_Location_Unused18[] = INCTEXT("{GAP(66)}UNUSED OBJ 18");
 
 #ifdef TMC_3DS
 static const u16* sEnglishTextPointers_Location[LT_COUNT];
-static void __attribute__((constructor)) Init_sEnglishTextPointers_Location(void) {
+void Init_sEnglishTextPointers_Location(void) {
     sEnglishTextPointers_Location[LT_BRINSTAR] = sEnglishText_Location_Brinstar;
     sEnglishTextPointers_Location[LT_KRAID] = sEnglishText_Location_Kraid;
     sEnglishTextPointers_Location[LT_NORFAIR] = sEnglishText_Location_Norfair;
@@ -1359,7 +1359,7 @@ const u16 sJapaneseText_Description_Pistol[] = INCTEXT("自動で{COLOR(5)}パ�
 
 #ifdef TMC_3DS
 const u16* sJapaneseTextPointers_Description[DESCRIPTION_TEXT_COUNT];
-static void __attribute__((constructor)) Init_sJapaneseTextPointers_Description(void) {
+void Init_sJapaneseTextPointers_Description(void) {
     sJapaneseTextPointers_Description[DESCRIPTION_TEXT_LONG_BEAM] = sJapaneseText_Description_LongBeam;
     sJapaneseTextPointers_Description[DESCRIPTION_TEXT_CHARGE_BEAM] = sJapaneseText_Description_ChargeBeam;
     sJapaneseTextPointers_Description[DESCRIPTION_TEXT_ICE_BEAM] = sJapaneseText_Description_IceBeam;
@@ -1413,7 +1413,7 @@ const u16 sJapaneseText_Story_Defeat[] = INCTEXT("{GAP(25)}機械生命体「マ
 
 #ifdef TMC_3DS
 const u16* sJapaneseTextPointers_Story[STORY_TEXT_COUNT];
-static void __attribute__((constructor)) Init_sJapaneseTextPointers_Story(void) {
+void Init_sJapaneseTextPointers_Story(void) {
     sJapaneseTextPointers_Story[STORY_TEXT_PLANET_ZEBES] = sJapaneseText_Story_PlanetZebes;
     sJapaneseTextPointers_Story[STORY_TEXT_THE_TIMING] = sJapaneseText_Story_TheTiming;
     sJapaneseTextPointers_Story[STORY_TEXT_COULD_I_SURVIVE] = sJapaneseText_Story_CouldISurvive;
@@ -1472,7 +1472,7 @@ const u16 sJapaneseText_FileScreen_NesMetroidUnlock[] = INCTEXT("{COLOR(6)}OPTIO
 
 #ifdef TMC_3DS
 const u16* sJapaneseTextPointers_FileScreen[FILE_SCREEN_TEXT_COUNT];
-static void __attribute__((constructor)) Init_sJapaneseTextPointers_FileScreen(void) {
+void Init_sJapaneseTextPointers_FileScreen(void) {
     sJapaneseTextPointers_FileScreen[FILE_SCREEN_TEXT_START_GAME] = sJapaneseText_FileScreen_StartGame;
     sJapaneseTextPointers_FileScreen[FILE_SCREEN_TEXT_COPY_SOURCE_CHOOSE] = sJapaneseText_FileScreen_CopySourceChoose;
     sJapaneseTextPointers_FileScreen[FILE_SCREEN_TEXT_COPY_DESTINATION_CHOOSE] = sJapaneseText_FileScreen_CopyDestinationChoose;
@@ -1577,7 +1577,7 @@ const u16 sHiraganaText_Description_Pistol[] = INCTEXT("じどうで{COLOR(5)}�
 
 #ifdef TMC_3DS
 const u16* sHiraganaTextPointers_Description[DESCRIPTION_TEXT_COUNT];
-static void __attribute__((constructor)) Init_sHiraganaTextPointers_Description(void) {
+void Init_sHiraganaTextPointers_Description(void) {
     sHiraganaTextPointers_Description[DESCRIPTION_TEXT_LONG_BEAM] = sHiraganaText_Description_LongBeam;
     sHiraganaTextPointers_Description[DESCRIPTION_TEXT_CHARGE_BEAM] = sHiraganaText_Description_ChargeBeam;
     sHiraganaTextPointers_Description[DESCRIPTION_TEXT_ICE_BEAM] = sHiraganaText_Description_IceBeam;
@@ -1631,7 +1631,7 @@ const u16 sHiraganaText_Story_Defeat[] = INCTEXT("きかいじかけのいきも
 
 #ifdef TMC_3DS
 const u16* sHiraganaTextPointers_Story[STORY_TEXT_COUNT];
-static void __attribute__((constructor)) Init_sHiraganaTextPointers_Story(void) {
+void Init_sHiraganaTextPointers_Story(void) {
     sHiraganaTextPointers_Story[STORY_TEXT_PLANET_ZEBES] = sHiraganaText_Story_PlanetZebes;
     sHiraganaTextPointers_Story[STORY_TEXT_THE_TIMING] = sHiraganaText_Story_TheTiming;
     sHiraganaTextPointers_Story[STORY_TEXT_COULD_I_SURVIVE] = sHiraganaText_Story_CouldISurvive;
@@ -1690,7 +1690,7 @@ const u16 sHiraganaText_FileScreen_NesMetroidUnlock[] = INCTEXT("{COLOR(6)}OPTIO
 
 #ifdef TMC_3DS
 const u16* sHiraganaTextPointers_FileScreen[FILE_SCREEN_TEXT_COUNT];
-static void __attribute__((constructor)) Init_sHiraganaTextPointers_FileScreen(void) {
+void Init_sHiraganaTextPointers_FileScreen(void) {
     sHiraganaTextPointers_FileScreen[FILE_SCREEN_TEXT_START_GAME] = sHiraganaText_FileScreen_StartGame;
     sHiraganaTextPointers_FileScreen[FILE_SCREEN_TEXT_COPY_SOURCE_CHOOSE] = sHiraganaText_FileScreen_CopySourceChoose;
     sHiraganaTextPointers_FileScreen[FILE_SCREEN_TEXT_COPY_DESTINATION_CHOOSE] = sHiraganaText_FileScreen_CopyDestinationChoose;
@@ -1793,7 +1793,7 @@ const u16 sEnglishText_Description_Pistol[] = INCTEXT("An {COLOR(5)}auto-chargin
 
 #ifdef TMC_3DS
 const u16* sEnglishTextPointers_Description[DESCRIPTION_TEXT_COUNT];
-static void __attribute__((constructor)) Init_sEnglishTextPointers_Description(void) {
+void Init_sEnglishTextPointers_Description(void) {
     sEnglishTextPointers_Description[DESCRIPTION_TEXT_LONG_BEAM] = sEnglishText_Description_LongBeam;
     sEnglishTextPointers_Description[DESCRIPTION_TEXT_CHARGE_BEAM] = sEnglishText_Description_ChargeBeam;
     sEnglishTextPointers_Description[DESCRIPTION_TEXT_ICE_BEAM] = sEnglishText_Description_IceBeam;
@@ -1859,7 +1859,7 @@ const u16 sEnglishText_Story_Defeat[] = INCTEXT("And defeat the mechanical life-
 
 #ifdef TMC_3DS
 const u16* sEnglishTextPointers_Story[STORY_TEXT_COUNT];
-static void __attribute__((constructor)) Init_sEnglishTextPointers_Story(void) {
+void Init_sEnglishTextPointers_Story(void) {
     sEnglishTextPointers_Story[STORY_TEXT_PLANET_ZEBES] = sEnglishText_Story_PlanetZebes;
     sEnglishTextPointers_Story[STORY_TEXT_THE_TIMING] = sEnglishText_Story_TheTiming;
     sEnglishTextPointers_Story[STORY_TEXT_COULD_I_SURVIVE] = sEnglishText_Story_CouldISurvive;
@@ -1938,7 +1938,7 @@ const u16 sEnglishText_FileScreen_NesMetroidUnlock[] = INCTEXT("{COLOR(5)}Origin
 
 #ifdef TMC_3DS
 const u16* sEnglishTextPointers_FileScreen[FILE_SCREEN_TEXT_COUNT];
-static void __attribute__((constructor)) Init_sEnglishTextPointers_FileScreen(void) {
+void Init_sEnglishTextPointers_FileScreen(void) {
     sEnglishTextPointers_FileScreen[FILE_SCREEN_TEXT_START_GAME] = sEnglishText_FileScreen_StartGame;
     sEnglishTextPointers_FileScreen[FILE_SCREEN_TEXT_COPY_SOURCE_CHOOSE] = sEnglishText_FileScreen_CopySourceChoose;
     sEnglishTextPointers_FileScreen[FILE_SCREEN_TEXT_COPY_DESTINATION_CHOOSE] = sEnglishText_FileScreen_CopyDestinationChoose;
@@ -2606,7 +2606,7 @@ const u16 sGermanText_Description_UnknownItem[] = INCTEXT("Analysis is impossibl
 
 #ifdef TMC_3DS
 const u16* sGermanTextPointers_Description[DESCRIPTION_TEXT_COUNT - 1];
-static void __attribute__((constructor)) Init_sGermanTextPointers_Description(void) {
+void Init_sGermanTextPointers_Description(void) {
     sGermanTextPointers_Description[DESCRIPTION_TEXT_LONG_BEAM] = sGermanText_Description_LongBeam;
     sGermanTextPointers_Description[DESCRIPTION_TEXT_CHARGE_BEAM] = sGermanText_Description_ChargeBeam;
     sGermanTextPointers_Description[DESCRIPTION_TEXT_ICE_BEAM] = sGermanText_Description_IceBeam;
@@ -2660,7 +2660,7 @@ const u16 sGermanText_Story_Defeat[] = INCTEXT("{DEL}");
 
 #ifdef TMC_3DS
 const u16* sGermanTextPointers_Story[3];
-static void __attribute__((constructor)) Init_sGermanTextPointers_Story(void) {
+void Init_sGermanTextPointers_Story(void) {
     sGermanTextPointers_Story[0] = sGermanText_Story_PlanetZebes;
     sGermanTextPointers_Story[1] = sGermanText_Story_CouldISurvive;
     sGermanTextPointers_Story[2] = sGermanText_Story_Exterminate;
@@ -2696,7 +2696,7 @@ const u16 sFrenchText_Description_UnknownItem[] = INCTEXT("Analysis is impossibl
 
 #ifdef TMC_3DS
 const u16* sFrenchTextPointers_Description[DESCRIPTION_TEXT_COUNT - 1];
-static void __attribute__((constructor)) Init_sFrenchTextPointers_Description(void) {
+void Init_sFrenchTextPointers_Description(void) {
     sFrenchTextPointers_Description[DESCRIPTION_TEXT_LONG_BEAM] = sFrenchText_Description_LongBeam;
     sFrenchTextPointers_Description[DESCRIPTION_TEXT_CHARGE_BEAM] = sFrenchText_Description_ChargeBeam;
     sFrenchTextPointers_Description[DESCRIPTION_TEXT_ICE_BEAM] = sFrenchText_Description_IceBeam;
@@ -2750,7 +2750,7 @@ const u16 sFrenchText_Story_Defeat[] = INCTEXT("{DEL}");
 
 #ifdef TMC_3DS
 const u16* sFrenchTextPointers_Story[3];
-static void __attribute__((constructor)) Init_sFrenchTextPointers_Story(void) {
+void Init_sFrenchTextPointers_Story(void) {
     sFrenchTextPointers_Story[0] = sFrenchText_Story_PlanetZebes;
     sFrenchTextPointers_Story[1] = sFrenchText_Story_CouldISurvive;
     sFrenchTextPointers_Story[2] = sFrenchText_Story_Exterminate;
@@ -2786,7 +2786,7 @@ const u16 sItalianText_Description_UnknownItem[] = INCTEXT("Analysis is impossib
 
 #ifdef TMC_3DS
 const u16* sItalianTextPointers_Description[DESCRIPTION_TEXT_COUNT - 1];
-static void __attribute__((constructor)) Init_sItalianTextPointers_Description(void) {
+void Init_sItalianTextPointers_Description(void) {
     sItalianTextPointers_Description[DESCRIPTION_TEXT_LONG_BEAM] = sItalianText_Description_LongBeam;
     sItalianTextPointers_Description[DESCRIPTION_TEXT_CHARGE_BEAM] = sItalianText_Description_ChargeBeam;
     sItalianTextPointers_Description[DESCRIPTION_TEXT_ICE_BEAM] = sItalianText_Description_IceBeam;
@@ -2840,7 +2840,7 @@ const u16 sItalianText_Story_Defeat[] = INCTEXT("{DEL}");
 
 #ifdef TMC_3DS
 const u16* sItalianTextPointers_Story[3];
-static void __attribute__((constructor)) Init_sItalianTextPointers_Story(void) {
+void Init_sItalianTextPointers_Story(void) {
     sItalianTextPointers_Story[0] = sItalianText_Story_PlanetZebes;
     sItalianTextPointers_Story[1] = sItalianText_Story_CouldISurvive;
     sItalianTextPointers_Story[2] = sItalianText_Story_Exterminate;
@@ -2876,7 +2876,7 @@ const u16 sSpanishText_Description_UnknownItem[] = INCTEXT("Analysis is impossib
 
 #ifdef TMC_3DS
 const u16* sSpanishTextPointers_Description[DESCRIPTION_TEXT_COUNT - 1];
-static void __attribute__((constructor)) Init_sSpanishTextPointers_Description(void) {
+void Init_sSpanishTextPointers_Description(void) {
     sSpanishTextPointers_Description[DESCRIPTION_TEXT_LONG_BEAM] = sSpanishText_Description_LongBeam;
     sSpanishTextPointers_Description[DESCRIPTION_TEXT_CHARGE_BEAM] = sSpanishText_Description_ChargeBeam;
     sSpanishTextPointers_Description[DESCRIPTION_TEXT_ICE_BEAM] = sSpanishText_Description_IceBeam;
@@ -2930,7 +2930,7 @@ const u16 sSpanishText_Story_Defeat[] = INCTEXT("{DEL}");
 
 #ifdef TMC_3DS
 const u16* sSpanishTextPointers_Story[3];
-static void __attribute__((constructor)) Init_sSpanishTextPointers_Story(void) {
+void Init_sSpanishTextPointers_Story(void) {
     sSpanishTextPointers_Story[0] = sSpanishText_Story_PlanetZebes;
     sSpanishTextPointers_Story[1] = sSpanishText_Story_CouldISurvive;
     sSpanishTextPointers_Story[2] = sSpanishText_Story_Exterminate;
