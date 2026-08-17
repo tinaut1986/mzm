@@ -285,7 +285,7 @@ static const u8 sColorFading_345fcc[1] = {
     32
 };
 
-const struct ColorFadingColorInfo sColorFadingColorInfo[COLOR_FADING_SPEED_COUNT] = {
+const struct ColorFadingColorInfo sColorFadingColorInfo_Compiled[COLOR_FADING_SPEED_COUNT] = {
     [COLOR_FADING_SPEED_FASTER] = {
         .colorArray = sColorFading_345f58,
         .size = ARRAY_SIZE(sColorFading_345f58)
@@ -307,3 +307,4 @@ const struct ColorFadingColorInfo sColorFadingColorInfo[COLOR_FADING_SPEED_COUNT
         .size = ARRAY_SIZE(sColorFading_345fcc)
     }
 };
+
