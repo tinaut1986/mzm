@@ -259,8 +259,35 @@ u32 gba_read32(uint32_t addr) {
     return 0;
 }
 
+/* On the 3DS specifically, malloc() can (and does -- confirmed on hardware,
+ * gRomData observed at 0x0800eb20) hand back addresses that numerically fall
+ * inside the very same 0x08000000-0x0A000000 window this file treats as "raw
+ * GBA ROM address, needs translating through gba_TryMemPtr()". gRomData
+ * itself is exactly such an allocation, so any ALREADY-RESOLVED pointer into
+ * it (e.g. a shim macro like sLanguageSelectGfx, which is
+ * *p_sLanguageSelectGfx = gRomData + romOffset) numerically collides with
+ * that heuristic. Passing such a pointer back through port_resolve_addr()
+ * translates it a SECOND time as if it were a raw GBA address, landing on
+ * the wrong ROM bytes entirely -- this was a real, reproduced-on-hardware
+ * bug: Lz77Uncomp (port_bios.c) read a bogus decompressed-size from a
+ * mistranslated sLanguageSelectGfx pointer and walked its output past the
+ * whole program's BSS before faulting (see docs/3ds-port-status-*.md and the
+ * commit that added this check). Doesn't reproduce on Linux/x86_64, where
+ * malloc() addresses never land in that range.
+ *
+ * A value inside [gRomData, gRomData+gRomSize) is unambiguous: only
+ * already-resolved ROM pointers can equal it (no code constructs a raw GBA
+ * address from gRomData's host pointer value), so checking this first and
+ * returning unchanged is always correct, on every platform. */
+static bool IsWithinRomDataBuffer(uintptr_t val) {
+    return gRomData != NULL && val >= (uintptr_t)gRomData && val < (uintptr_t)gRomData + gRomSize;
+}
+
 void* port_resolve_addr(uintptr_t val)
 {
+    if (IsWithinRomDataBuffer(val)) {
+        return (void*)val;
+    }
     /* GBA-range values (EWRAM/IWRAM/IO/palette/VRAM/OAM/ROM/SRAM) are
      * address-mapped through gba_TryMemPtr; anything outside that window is
      * already a native host pointer (e.g. a local scalar or struct whose
@@ -276,6 +303,9 @@ void* port_resolve_addr(uintptr_t val)
 }
 
 void* port_resolve_write_addr(uintptr_t val) {
+    if (IsWithinRomDataBuffer(val)) {
+        return (void*)val;
+    }
     /* 0x08000000 and above (except 0x0E000000 SRAM) is read-only cartridge
      * space on GBA. A write destination in that numeric range is therefore a
      * native host pointer, most commonly a 3DS stack or heap object. */

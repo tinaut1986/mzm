@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 
 u8* gRomData = NULL;
 u32 gRomSize = 0;
@@ -87,6 +88,27 @@ int Port_LoadRom(const char* path) {
     gRomData = buffer;
     gRomSize = (u32)size;
     gRomRegion = region;
+#ifdef TMC_3DS
+    {
+        /* Diagnostic: on the 3DS, malloc()'d addresses (gRomData included)
+         * can plausibly fall inside the 0x02000000-0x0A000000 window that
+         * port_resolve_addr()/port_resolve_copy_src() treat as "raw GBA
+         * address, needs translating via gba_TryMemPtr()". If gRomData (or
+         * gRomData + a real in-ROM offset like sLanguageSelectGfx) lands in
+         * that range, an ALREADY-RESOLVED host pointer gets treated as a
+         * raw GBA address and translated AGAIN, landing on the wrong ROM
+         * bytes entirely -- a real candidate for the LZ77 header corruption
+         * seen in sdmc:/luma/dumps/arm11 (Lz77Uncomp buffer overrun,
+         * port_bios.c:139), which doesn't reproduce on Linux/x86_64 where
+         * malloc() addresses never collide with that range. */
+        extern void Port_DebugLog(const char* msg);
+        char msg[128];
+        __builtin_snprintf(msg, sizeof(msg), "Port_LoadRom: gRomData=%p (in 0x02..0x0A range: %s)",
+            (void*)gRomData,
+            ((uintptr_t)gRomData >= 0x02000000u && (uintptr_t)gRomData < 0x0A000000u) ? "YES -- SUSPECT" : "no");
+        Port_DebugLog(msg);
+    }
+#endif
     PortGen_All_Init();
     Port_InitConstructorPointers();
     return 1;
