@@ -17,6 +17,10 @@
  */
 
 #include "port_constructor_init.h"
+#include "constants/text.h"
+#include "location_text.h"
+#include "port_gba_mem.h"
+#include "data/text_data.h"
 
 extern void Init_sEraseSramTextGfxPointers(void) __attribute__((weak));
 extern void Init_sTitleScreenPointers(void) __attribute__((weak));
@@ -82,8 +86,140 @@ extern void Init_sAreaRoomEntryPointers(void) __attribute__((weak));
 extern void Init_sScrollTables(void) __attribute__((weak));
 extern void Init_sPauseScreenPointers(void) __attribute__((weak));
 
+/*
+ * Text pointer tables in ROM contain 32-bit raw GBA addresses (both for the
+ * language subtables and the message strings themselves). In host memory,
+ * indexing these as 2D pointer arrays directly will dereference GBA addresses
+ * as host pointers, causing unaligned reads or accessing unmapped/heap memory
+ * (e.g. 0x55555555 on 3DS). We populate RAM tables with fully resolved host
+ * pointers at ROM load time.
+ */
+static const u16* sLocationTextPointers_Ram[LANGUAGE_COUNT][LT_COUNT];
+static const u16* sMessageTextPointers_Ram[LANGUAGE_COUNT][MESSAGE_COUNT];
+static const u16* sFileScreenTextPointers_Ram[LANGUAGE_COUNT][FILE_SCREEN_TEXT_COUNT];
+static const u16* sStoryTextPointers_Ram[LANGUAGE_COUNT][STORY_TEXT_COUNT];
+static const u16* sDescriptionTextPointers_Ram[LANGUAGE_COUNT][DESCRIPTION_TEXT_COUNT];
+
+static const u16* sLocationTextLangPointers_Ram[LANGUAGE_COUNT][LT_COUNT];
+static const u16* sMessageTextLangPointers_Ram[LANGUAGE_COUNT][MESSAGE_COUNT];
+static const u16* sFileScreenTextLangPointers_Ram[LANGUAGE_COUNT][FILE_SCREEN_TEXT_COUNT];
+
+static const u16* const* sLocationTextRoot_Ram[LANGUAGE_COUNT];
+static const u16* const* sMessageTextRoot_Ram[LANGUAGE_COUNT];
+static const u16* const* sFileScreenTextRoot_Ram[LANGUAGE_COUNT];
+
+static void Port_Build2DTextTable(void* pRomRawTable, const u16* pRamTable[][1], const u16* const** pRootTable, u32 count)
+{
+    u32 l, m;
+    const uint32_t* romLangs;
+    if (!pRomRawTable) return;
+    romLangs = (const uint32_t*)pRomRawTable;
+    for (l = 0; l < LANGUAGE_COUNT; l++) {
+        const u16** ramSubTable = (const u16**)((uintptr_t)pRamTable + l * count * sizeof(const u16*));
+        uint32_t langGbaAddr;
+        const uint32_t* romMsgPointers;
+        pRootTable[l] = ramSubTable;
+        langGbaAddr = romLangs[l];
+        romMsgPointers = (const uint32_t*)port_resolve_addr(langGbaAddr);
+        if (romMsgPointers) {
+            for (m = 0; m < count; m++) {
+                uint32_t textGbaAddr = romMsgPointers[m];
+                ramSubTable[m] = (const u16*)port_resolve_addr(textGbaAddr);
+            }
+        }
+    }
+}
+
+static void Port_Build1DTextTable(void* pRomRawTable, const u16** pRamTable, u32 count)
+{
+    u32 m;
+    const uint32_t* romMsgPointers;
+    if (!pRomRawTable) return;
+    romMsgPointers = (const uint32_t*)pRomRawTable;
+    for (m = 0; m < count; m++) {
+        uint32_t textGbaAddr = romMsgPointers[m];
+        pRamTable[m] = (const u16*)port_resolve_addr(textGbaAddr);
+    }
+}
+
+
+static void Port_InitTextPointerTables(void)
+{
+    // Build 2D tables: FileScreen, Message, Location
+    Port_Build2DTextTable((void*)p_sFileScreenTextPointers, (const u16* (*)[1])sFileScreenTextPointers_Ram, sFileScreenTextRoot_Ram, FILE_SCREEN_TEXT_COUNT);
+    p_sFileScreenTextPointers = (const u16**(*)[LANGUAGE_COUNT])&sFileScreenTextRoot_Ram;
+
+    Port_Build2DTextTable((void*)p_sMessageTextPointers, (const u16* (*)[1])sMessageTextPointers_Ram, sMessageTextRoot_Ram, MESSAGE_COUNT);
+    p_sMessageTextPointers = (const u16**(*)[LANGUAGE_COUNT])&sMessageTextRoot_Ram;
+
+    Port_Build2DTextTable((void*)p_sLocationTextPointers, (const u16* (*)[1])sLocationTextPointers_Ram, sLocationTextRoot_Ram, LT_COUNT);
+    p_sLocationTextPointers = (const u16**(*)[LANGUAGE_COUNT])&sLocationTextRoot_Ram;
+
+
+    // Per-language FileScreen sub-tables
+    p_sJapaneseTextPointers_FileScreen = (const u16*(*)[FILE_SCREEN_TEXT_COUNT])sFileScreenTextPointers_Ram[LANGUAGE_JAPANESE];
+    p_sHiraganaTextPointers_FileScreen = (const u16*(*)[FILE_SCREEN_TEXT_COUNT])sFileScreenTextPointers_Ram[LANGUAGE_HIRAGANA];
+    p_sEnglishTextPointers_FileScreen = (const u16*(*)[FILE_SCREEN_TEXT_COUNT])sFileScreenTextPointers_Ram[LANGUAGE_ENGLISH];
+#if defined(REGION_EU)
+    p_sGermanTextPointers_FileScreen = (const u16*(*)[FILE_SCREEN_TEXT_COUNT])sFileScreenTextPointers_Ram[LANGUAGE_GERMAN];
+    p_sFrenchTextPointers_FileScreen = (const u16*(*)[FILE_SCREEN_TEXT_COUNT])sFileScreenTextPointers_Ram[LANGUAGE_FRENCH];
+    p_sItalianTextPointers_FileScreen = (const u16*(*)[FILE_SCREEN_TEXT_COUNT])sFileScreenTextPointers_Ram[LANGUAGE_ITALIAN];
+    p_sSpanishTextPointers_FileScreen = (const u16*(*)[FILE_SCREEN_TEXT_COUNT])sFileScreenTextPointers_Ram[LANGUAGE_SPANISH];
+#endif
+
+    // Per-language Story tables
+    Port_Build1DTextTable((void*)p_sJapaneseTextPointers_Story, sStoryTextPointers_Ram[LANGUAGE_JAPANESE], STORY_TEXT_COUNT);
+    p_sJapaneseTextPointers_Story = (const u16*(*)[STORY_TEXT_COUNT])sStoryTextPointers_Ram[LANGUAGE_JAPANESE];
+
+    Port_Build1DTextTable((void*)p_sHiraganaTextPointers_Story, sStoryTextPointers_Ram[LANGUAGE_HIRAGANA], STORY_TEXT_COUNT);
+    p_sHiraganaTextPointers_Story = (const u16*(*)[STORY_TEXT_COUNT])sStoryTextPointers_Ram[LANGUAGE_HIRAGANA];
+
+    Port_Build1DTextTable((void*)p_sEnglishTextPointers_Story, sStoryTextPointers_Ram[LANGUAGE_ENGLISH], STORY_TEXT_COUNT);
+    p_sEnglishTextPointers_Story = (const u16*(*)[STORY_TEXT_COUNT])sStoryTextPointers_Ram[LANGUAGE_ENGLISH];
+
+#if defined(REGION_EU)
+    Port_Build1DTextTable((void*)p_sGermanTextPointers_Story, sStoryTextPointers_Ram[LANGUAGE_GERMAN], STORY_TEXT_COUNT);
+    p_sGermanTextPointers_Story = (const u16*(*)[STORY_TEXT_COUNT])sStoryTextPointers_Ram[LANGUAGE_GERMAN];
+
+    Port_Build1DTextTable((void*)p_sFrenchTextPointers_Story, sStoryTextPointers_Ram[LANGUAGE_FRENCH], STORY_TEXT_COUNT);
+    p_sFrenchTextPointers_Story = (const u16*(*)[STORY_TEXT_COUNT])sStoryTextPointers_Ram[LANGUAGE_FRENCH];
+
+    Port_Build1DTextTable((void*)p_sItalianTextPointers_Story, sStoryTextPointers_Ram[LANGUAGE_ITALIAN], STORY_TEXT_COUNT);
+    p_sItalianTextPointers_Story = (const u16*(*)[STORY_TEXT_COUNT])sStoryTextPointers_Ram[LANGUAGE_ITALIAN];
+
+    Port_Build1DTextTable((void*)p_sSpanishTextPointers_Story, sStoryTextPointers_Ram[LANGUAGE_SPANISH], STORY_TEXT_COUNT);
+    p_sSpanishTextPointers_Story = (const u16*(*)[STORY_TEXT_COUNT])sStoryTextPointers_Ram[LANGUAGE_SPANISH];
+#endif
+
+    // Per-language Description tables
+    Port_Build1DTextTable((void*)p_sJapaneseTextPointers_Description, sDescriptionTextPointers_Ram[LANGUAGE_JAPANESE], DESCRIPTION_TEXT_COUNT);
+    p_sJapaneseTextPointers_Description = (const u16*(*)[DESCRIPTION_TEXT_COUNT])sDescriptionTextPointers_Ram[LANGUAGE_JAPANESE];
+
+    Port_Build1DTextTable((void*)p_sHiraganaTextPointers_Description, sDescriptionTextPointers_Ram[LANGUAGE_HIRAGANA], DESCRIPTION_TEXT_COUNT);
+    p_sHiraganaTextPointers_Description = (const u16*(*)[DESCRIPTION_TEXT_COUNT])sDescriptionTextPointers_Ram[LANGUAGE_HIRAGANA];
+
+    Port_Build1DTextTable((void*)p_sEnglishTextPointers_Description, sDescriptionTextPointers_Ram[LANGUAGE_ENGLISH], DESCRIPTION_TEXT_COUNT);
+    p_sEnglishTextPointers_Description = (const u16*(*)[DESCRIPTION_TEXT_COUNT])sDescriptionTextPointers_Ram[LANGUAGE_ENGLISH];
+
+#if defined(REGION_EU)
+    Port_Build1DTextTable((void*)p_sGermanTextPointers_Description, sDescriptionTextPointers_Ram[LANGUAGE_GERMAN], DESCRIPTION_TEXT_COUNT);
+    p_sGermanTextPointers_Description = (const u16*(*)[DESCRIPTION_TEXT_COUNT])sDescriptionTextPointers_Ram[LANGUAGE_GERMAN];
+
+    Port_Build1DTextTable((void*)p_sFrenchTextPointers_Description, sDescriptionTextPointers_Ram[LANGUAGE_FRENCH], DESCRIPTION_TEXT_COUNT);
+    p_sFrenchTextPointers_Description = (const u16*(*)[DESCRIPTION_TEXT_COUNT])sDescriptionTextPointers_Ram[LANGUAGE_FRENCH];
+
+    Port_Build1DTextTable((void*)p_sItalianTextPointers_Description, sDescriptionTextPointers_Ram[LANGUAGE_ITALIAN], DESCRIPTION_TEXT_COUNT);
+    p_sItalianTextPointers_Description = (const u16*(*)[DESCRIPTION_TEXT_COUNT])sDescriptionTextPointers_Ram[LANGUAGE_ITALIAN];
+
+    Port_Build1DTextTable((void*)p_sSpanishTextPointers_Description, sDescriptionTextPointers_Ram[LANGUAGE_SPANISH], DESCRIPTION_TEXT_COUNT);
+    p_sSpanishTextPointers_Description = (const u16*(*)[DESCRIPTION_TEXT_COUNT])sDescriptionTextPointers_Ram[LANGUAGE_SPANISH];
+#endif
+}
+
 void Port_InitConstructorPointers(void)
 {
+    Port_InitTextPointerTables();
+
     if (Init_sEraseSramTextGfxPointers) Init_sEraseSramTextGfxPointers();
     if (Init_sTitleScreenPointers) Init_sTitleScreenPointers();
     if (Init_sGameOverTextPromptGfxPointers) Init_sGameOverTextPromptGfxPointers();
@@ -148,3 +284,4 @@ void Port_InitConstructorPointers(void)
     if (Init_sScrollTables) Init_sScrollTables();
     if (Init_sPauseScreenPointers) Init_sPauseScreenPointers();
 }
+

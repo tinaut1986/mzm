@@ -791,6 +791,9 @@ void TextDrawLocation(u8 locationText, u8 gfxSlot)
     BitFill(3, 0xFFFF, EWRAM_BASE, 0x800, 16);
 
     pText = sLocationTextPointers[gLanguage][locationText];
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+    pText = (const u16*)port_resolve_addr((uintptr_t)pText);
+#endif
     TextDrawLocationTextCharacters(1, &pText);
 
     
@@ -1363,6 +1366,11 @@ u8 TextProcessCurrentMessage(struct Message* pMessage, const u16* pText, u32* ds
     s32 state;
     s32 width;
 
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+    pText = (const u16*)port_resolve_addr((uintptr_t)pText);
+    dst = (u32*)port_resolve_write_addr((uintptr_t)dst);
+#endif
+
     state = TEXT_STATE_NONE;
     pMessage->timer++;
 
@@ -1497,6 +1505,9 @@ void TextDrawYesNoEasySleep(void)
 
     // Get text pointer
     pText = sMessageTextPointers[gLanguage][MESSAGE_EASY_SLEEP_PROMPT];
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+    pText = (const u16*)port_resolve_addr((uintptr_t)pText);
+#endif
 
     // Reset current message
     BitFill(3, 0, &gCurrentMessage, sizeof(gCurrentMessage), 32);

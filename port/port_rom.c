@@ -65,7 +65,17 @@ int Port_LoadRom(const char* path) {
     }
     rewind(file);
 
-    u8* buffer = (u8*)malloc((size_t)size);
+#ifdef TMC_3DS
+extern void* linearAlloc(size_t size);
+extern void linearFree(void* mem);
+#define PORT_ROM_ALLOC(sz) linearAlloc(sz)
+#define PORT_ROM_FREE(p) do { if (p) linearFree(p); } while(0)
+#else
+#define PORT_ROM_ALLOC(sz) malloc(sz)
+#define PORT_ROM_FREE(p) do { if (p) free(p); } while(0)
+#endif
+
+    u8* buffer = (u8*)PORT_ROM_ALLOC((size_t)size);
     if (!buffer) {
         fclose(file);
         return 0;
@@ -74,20 +84,21 @@ int Port_LoadRom(const char* path) {
     size_t readBytes = fread(buffer, 1, (size_t)size, file);
     fclose(file);
     if (readBytes != (size_t)size) {
-        free(buffer);
+        PORT_ROM_FREE(buffer);
         return 0;
     }
 
     PortRomRegion region = DetectRegion(buffer, (u32)size);
     if (region == PORT_ROM_REGION_UNKNOWN) {
-        free(buffer);
+        PORT_ROM_FREE(buffer);
         return 0;
     }
 
-    free(gRomData);
+    PORT_ROM_FREE(gRomData);
     gRomData = buffer;
     gRomSize = (u32)size;
     gRomRegion = region;
+
 #ifdef TMC_3DS
     {
         /* Diagnostic: on the 3DS, malloc()'d addresses (gRomData included)

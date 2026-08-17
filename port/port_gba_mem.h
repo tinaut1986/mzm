@@ -113,17 +113,6 @@ static inline void* gba_MemPtr(uint32_t addr) {
 #endif
 }
 
-/* Many engine functions build a pointer from a raw *_BASE macro
- * (VRAM_BASE/PALRAM_BASE/EWRAM_BASE/OAM_BASE, see include/gba/memory.h) plus
- * an offset and then dereference it directly, bypassing the WRITE_16/READ_16
- * translation macros in io.h entirely. On real GBA hardware that "just
- * works" because those addresses are memory-mapped; here they need explicit
- * translation before use. Wrap the pointer in this right after the
- * assignment: `dst = GBA_RESOLVE(VRAM_BASE + offset);`. See
- * docs/3ds-port-status-2026-08-17.md section 6 for the bug class this
- * fixes (first found in LanguageSelectChangeHighlight / soft_reset.c). */
-#define GBA_RESOLVE(p) ((__typeof__(p))gba_MemPtr((uintptr_t)(p)))
-
 /* Resolve a GBA address or an already-native pointer for reads. */
 #ifdef __cplusplus
 extern "C" {
@@ -138,6 +127,18 @@ const void* port_resolve_copy_src(const void* src, u32 size);
 #ifdef __cplusplus
 }
 #endif
+
+/* Many engine functions build a pointer from a raw *_BASE macro
+ * (VRAM_BASE/PALRAM_BASE/EWRAM_BASE/OAM_BASE, see include/gba/memory.h) plus
+ * an offset and then dereference it directly, bypassing the WRITE_16/READ_16
+ * translation macros in io.h entirely. On real GBA hardware that "just
+ * works" because those addresses are memory-mapped; here they need explicit
+ * translation before use. Wrap the pointer in this right after the
+ * assignment: `dst = GBA_RESOLVE(VRAM_BASE + offset);`.
+ * Using port_resolve_addr ensures it is safe if called on an already-resolved
+ * host pointer. */
+#define GBA_RESOLVE(p) ((__typeof__(p))port_resolve_addr((uintptr_t)(p)))
+
 
 static inline void gba_MemClear(u32 addr, u32 size) {
     void* ptr = gba_MemPtr(addr);
