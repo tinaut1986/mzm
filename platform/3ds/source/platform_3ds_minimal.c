@@ -38,6 +38,11 @@ int Platform3DS_Init(void) {
     consoleInit(GFX_TOP, NULL);
 
     APT_CheckNew3DS(&sIsNew3DS);
+    if (sIsNew3DS) {
+        osSetSpeedupEnable(true);
+        APT_SetAppCpuTimeLimit(80);
+    }
+
 
     /* Without this, every busy-wait on REG_VCOUNT (e.g.
      * src/audio_wrappers.c:205-206) spins forever -- see
