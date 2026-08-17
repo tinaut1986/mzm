@@ -3,6 +3,10 @@
 #include "menus/pause_screen.h"
 #include "dma.h"
 
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#include "port_gba_mem.h"
+#endif
+
 #include "data/block_data.h"
 #include "data/shortcut_pointers.h"
 #include "data/menus/status_screen_data.h"
@@ -1910,6 +1914,9 @@ u32 StatusScreenDrawItems(u8 row)
         for (j = 0; j < (tmp = sStatusScreenGroupsDimensions)[i][2]; j++, position++)
         {
             dst = VRAM_BASE + 0xC000;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+            dst = GBA_RESOLVE(dst);
+#endif
             dst[position] = PAUSE_SCREEN_EWRAM.statusScreenTilemap[position];
         }
     }

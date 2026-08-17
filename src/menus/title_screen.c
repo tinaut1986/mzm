@@ -5,6 +5,10 @@
 #include "oam_id.h"
 #include "gba/rom_header.h"
 
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#include "port_gba_mem.h"
+#endif
+
 #include "data/shortcut_pointers.h"
 #include "data/menus/title_screen_data.h"
 #include "data/menus/pause_screen_data.h"
@@ -1473,6 +1477,13 @@ static void TitleScreenSetMenuPalette(TitleScreenMenuOption option)
     dst1 = VRAM_BASE + 0x352 + sTitleScreenPageData[0].tiletablePage * 0x800;
     dst2 = dst1 + 0x20;
 
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+    /* Same VRAM_BASE-raw-pointer issue as TitleScreenSetCopyrightSymbol
+     * above and LanguageSelectChangeHighlight in soft_reset.c. */
+    dst1 = (u16*)gba_MemPtr((uintptr_t)dst1);
+    dst2 = (u16*)gba_MemPtr((uintptr_t)dst2);
+#endif
+
     if (option == TITLE_SCREEN_MENU_OPTION_START_GAME)
     {
         for (i = 0; i < 12; i++, dst1++, dst2++)
@@ -1493,6 +1504,11 @@ static void TitleScreenSetMenuPalette(TitleScreenMenuOption option)
     // Set "Language" palette
     dst1 = VRAM_BASE + 0x3D6 + sTitleScreenPageData[0].tiletablePage * 0x800;
     dst2 = dst1 + 0x20;
+
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+    dst1 = (u16*)gba_MemPtr((uintptr_t)dst1);
+    dst2 = (u16*)gba_MemPtr((uintptr_t)dst2);
+#endif
 
     if (option != TITLE_SCREEN_MENU_OPTION_START_GAME)
     {
@@ -1542,6 +1558,15 @@ void TitleScreenSetCopyrightSymbol(TitleScreenCopyrightSymbol symbol)
     mask = 0xFC00;
     dst = VRAM_BASE + 0x178 + bgOffset;
 
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+    /* VRAM_BASE is a raw GBA address (0x06000000), not a real host pointer
+     * on this port. Same issue as LanguageSelectChangeHighlight in
+     * soft_reset.c: this function does its own pointer arithmetic + direct
+     * dereference below instead of going through WRITE_16/READ_16, so it
+     * needs an explicit translation. */
+    dst = (u16*)gba_MemPtr((uintptr_t)dst);
+#endif
+
     while (i < 2)
     {
         *dst++ = (*dst & mask) | (value + i);
@@ -1560,6 +1585,13 @@ void TitleScreenSetCopyrightSymbol(TitleScreenCopyrightSymbol symbol)
 void TitleScreenDrawString(const u8* pString, u16* dst, u8 palette)
 {
     u16 tile;
+
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+    /* Callers pass a raw VRAM_BASE-relative GBA address (see call sites
+     * below), and this function dereferences dst directly instead of going
+     * through WRITE_16 -- same issue as TitleScreenSetCopyrightSymbol. */
+    dst = (u16*)gba_MemPtr((uintptr_t)dst);
+#endif
 
     while (*pString)
     {

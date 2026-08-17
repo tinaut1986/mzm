@@ -254,6 +254,10 @@ extern u16 gSramDemoInputDuration[DEMO_MAX_DURATION];
 
 #ifdef USE_EWRAM_SYMBOLS
 extern struct Sram gSram;
+#elif defined(TMC_3DS) || defined(PORT_NATIVE)
+/* Same EWRAM_BASE-raw-pointer issue as CAST_TO_ARRAY in macros.h -- this
+ * port doesn't map real GBA memory. */
+#define gSram (*(struct Sram*)(gba_MemPtr((uintptr_t)(EWRAM_BASE + 0x38000))))
 #else
 #define gSram (*(struct Sram*)(EWRAM_BASE + 0x38000))
 #endif /* USE_EWRAM_SYMBOLS */

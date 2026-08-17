@@ -1635,6 +1635,13 @@ void SamusUpdateEnvironmentalEffect(struct SamusData* pData)
 
         // Set oam frame pointer
         pEnv->pOamFrame = pOam->pFrame;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+        /* pOam->pFrame is a raw GBA ROM address baked into frame table
+         * data. Resolved once here since pOamFrame gets dereferenced
+         * directly downstream (e.g. src/samus.c's environmental effects
+         * OAM processing). */
+        pEnv->pOamFrame = GBA_RESOLVE(pEnv->pOamFrame);
+#endif
 
         if (subAnimEnded)
         {

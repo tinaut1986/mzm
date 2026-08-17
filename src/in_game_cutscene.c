@@ -3,6 +3,10 @@
 #include "dma.h"
 #include "gba.h"
 
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#include "port_gba_mem.h"
+#endif
+
 #include "data/in_game_cutscene_data.h"
 #include "data/samus_close_up_data.h"
 
@@ -195,6 +199,10 @@ void unk_5fd58(void)
 
     src = EWRAM_BASE + 0x2AA94;
     dst = EWRAM_BASE + 0x2B000; // sSamusCloseUpEyesTiletable
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+    src = GBA_RESOLVE(src);
+    dst = GBA_RESOLVE(dst);
+#endif
 
     for (i = 0; i < 6; i++)
     {

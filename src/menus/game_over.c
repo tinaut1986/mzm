@@ -5,6 +5,10 @@
 #include "oam_id.h"
 #include "temp_globals.h"
 
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#include "port_gba_mem.h"
+#endif
+
 #include "data/menus/game_over_data.h"
 #include "data/menus/file_select_data.h"
 #include "data/shortcut_pointers.h"
@@ -240,6 +244,9 @@ static void GameOverUpdateTextGfx(void)
     s32 i;
 
     dst = VRAM_BASE + 0x340;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+    dst = GBA_RESOLVE(dst);
+#endif
 
     // Get palette
     if (GAME_OVER_DATA.optionSelected == 0)

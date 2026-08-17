@@ -3,6 +3,10 @@
 #include "gba.h"
 #include "event.h"
 
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#include "port_gba_mem.h"
+#endif
+
 #include "data/empty_datatypes.h"
 #include "data/common_pals.h"
 #include "data/clipdata_types.h"
@@ -578,6 +582,9 @@ void RoomReset(void)
     gDisableAnimatedGraphicsTimer = 0;
 
     ptr = EWRAM_BASE + 0x27780;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+    ptr = GBA_RESOLVE(ptr);
+#endif
     for (xOffset = 64; xOffset != 0; xOffset--)
     {
         ptr[xOffset - 1] = 0;
@@ -753,6 +760,9 @@ void RoomSetInitialTilemap(u8 bgNumber)
                 tmpOffset = 0x800; // Needed to produce matching ASM.
                 if (tmpX & 0x10)
                     dst = VRAM_BASE + tmpOffset + bgNumber * 0x1000;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+                dst = GBA_RESOLVE(dst);
+#endif
 
                 dst = &dst[(tmpX & 0xF) * 2 + (yPos & 0xF) * 64];
 
@@ -1234,6 +1244,9 @@ void RoomUpdateVerticalTilemap(s32 offset)
         tilemapOffset = yPosition * gBgPointersAndDimensions.backgrounds[i].width + xPosition;
         
         dst = VRAM_BASE + i * 4096;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+        dst = GBA_RESOLVE(dst);
+#endif
         dst += (yPosition & 0xF) * 32;
 
         for (properties = 0; properties < size; properties++, xPosition++, tilemapOffset++)
@@ -1317,6 +1330,9 @@ void RoomUpdateHorizontalTilemap(s32 offset)
         dst = VRAM_BASE + i * 4096;
         if (xPosition & 0x10)
             dst = VRAM_BASE + 0x800 + i * 4096;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+        dst = GBA_RESOLVE(dst);
+#endif
         dst += (xPosition & 0xF);
 
         for (properties = 0; properties < size; properties++)

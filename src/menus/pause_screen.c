@@ -3,6 +3,10 @@
 #include "temp_globals.h"
 #include "gba.h"
 #include "macros.h"
+
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#include "port_gba_mem.h"
+#endif
 #include "minimap.h"
 #include "oam_id.h"
 #include "event.h"
@@ -1418,6 +1422,9 @@ void ProcessMenuOam(u8 length, struct MenuOamData* pOam, const struct OamArray* 
 
         // Get frame data
         pFrame = pOamData[pOam->oamId].pOam;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+                        pFrame = GBA_RESOLVE(pFrame);
+#endif
 
         if (pOam->animationDurationCounter >= pFrame[pOam->currentAnimationFrame].timer)
         {
@@ -1497,6 +1504,9 @@ void ProcessMenuOam(u8 length, struct MenuOamData* pOam, const struct OamArray* 
                         pOam->oamId++;
                         pOam->currentAnimationFrame = 0;
                         pFrame = pOamData[pOam->oamId].pOam;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+                        pFrame = GBA_RESOLVE(pFrame);
+#endif
                     }
                     break;
 
@@ -1513,6 +1523,9 @@ void ProcessMenuOam(u8 length, struct MenuOamData* pOam, const struct OamArray* 
                         // Lock on last frame, pretty unsafe as the number of frames need to be the same
                         pOam->currentAnimationFrame--;
                         pFrame = pOamData[pOam->oamId].pOam;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+                        pFrame = GBA_RESOLVE(pFrame);
+#endif
                     }
                     break;
 
@@ -1528,6 +1541,9 @@ void ProcessMenuOam(u8 length, struct MenuOamData* pOam, const struct OamArray* 
                         pOam->oamId--;
                         pOam->currentAnimationFrame = 0;
                         pFrame = pOamData[pOam->oamId].pOam;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+                        pFrame = GBA_RESOLVE(pFrame);
+#endif
                     }
                     break;
 
@@ -1567,6 +1583,9 @@ void ProcessMenuOam(u8 length, struct MenuOamData* pOam, const struct OamArray* 
                         pOam->oamId--;
                         pOam->currentAnimationFrame = 0;
                         pFrame = pOamData[pOam->oamId].pOam;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+                        pFrame = GBA_RESOLVE(pFrame);
+#endif
                     }
                     break;
             }
@@ -1616,6 +1635,12 @@ void ProcessMenuOam(u8 length, struct MenuOamData* pOam, const struct OamArray* 
 
         // Get raw data pointer
         src = pFrame->pFrame;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+        /* pFrame->pFrame is a raw GBA ROM address baked into the frame
+         * table data (like sLanguageSelectGfx, see soft_reset.c section
+         * 5.1/5.2), not translated when pFrame itself was resolved. */
+        src = GBA_RESOLVE(src);
+#endif
 
         // Check for buffer overflow
         if (nextSlot + *src > 0x7F)
@@ -1699,6 +1724,9 @@ void ProcessComplexMenuOam(u8 length, struct MenuOamData* pOam, const struct Oam
 
         // Get frame data
         pFrame = pOamData[pOam->oamId].pOam;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+                        pFrame = GBA_RESOLVE(pFrame);
+#endif
 
         if (pOam->animationDurationCounter >= pFrame[pOam->currentAnimationFrame].timer)
         {
@@ -1778,6 +1806,9 @@ void ProcessComplexMenuOam(u8 length, struct MenuOamData* pOam, const struct Oam
                         pOam->oamId++;
                         pOam->currentAnimationFrame = 0;
                         pFrame = pOamData[pOam->oamId].pOam;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+                        pFrame = GBA_RESOLVE(pFrame);
+#endif
                     }
                     break;
 
@@ -1794,6 +1825,9 @@ void ProcessComplexMenuOam(u8 length, struct MenuOamData* pOam, const struct Oam
                         // Lock on last frame, pretty unsafe as the number of frames need to be the same
                         pOam->currentAnimationFrame--;
                         pFrame = pOamData[pOam->oamId].pOam;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+                        pFrame = GBA_RESOLVE(pFrame);
+#endif
                     }
                     break;
 
@@ -1809,6 +1843,9 @@ void ProcessComplexMenuOam(u8 length, struct MenuOamData* pOam, const struct Oam
                         pOam->oamId--;
                         pOam->currentAnimationFrame = 0;
                         pFrame = pOamData[pOam->oamId].pOam;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+                        pFrame = GBA_RESOLVE(pFrame);
+#endif
                     }
                     break;
 
@@ -1848,6 +1885,9 @@ void ProcessComplexMenuOam(u8 length, struct MenuOamData* pOam, const struct Oam
                         pOam->oamId--;
                         pOam->currentAnimationFrame = 0;
                         pFrame = pOamData[pOam->oamId].pOam;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+                        pFrame = GBA_RESOLVE(pFrame);
+#endif
                     }
                     break;
             }
@@ -1897,6 +1937,12 @@ void ProcessComplexMenuOam(u8 length, struct MenuOamData* pOam, const struct Oam
 
         // Get raw data pointer
         src = pFrame->pFrame;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+        /* pFrame->pFrame is a raw GBA ROM address baked into the frame
+         * table data (like sLanguageSelectGfx, see soft_reset.c section
+         * 5.1/5.2), not translated when pFrame itself was resolved. */
+        src = GBA_RESOLVE(src);
+#endif
 
         // Check for buffer overflow
         if (nextSlot + *src > 0x7F)
@@ -1997,6 +2043,9 @@ void ProcessCutsceneOam(u8 length, struct CutsceneOamData* pOam, const struct Oa
 
         // Get frame data
         pFrame = pOamData[pOam->oamId].pOam;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+                        pFrame = GBA_RESOLVE(pFrame);
+#endif
 
         if (pOam->animationDurationCounter >= pFrame[pOam->currentAnimationFrame].timer)
         {
@@ -2076,6 +2125,9 @@ void ProcessCutsceneOam(u8 length, struct CutsceneOamData* pOam, const struct Oa
                         pOam->oamId++;
                         pOam->currentAnimationFrame = 0;
                         pFrame = pOamData[pOam->oamId].pOam;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+                        pFrame = GBA_RESOLVE(pFrame);
+#endif
                     }
                     break;
 
@@ -2092,6 +2144,9 @@ void ProcessCutsceneOam(u8 length, struct CutsceneOamData* pOam, const struct Oa
                         // Lock on last frame, pretty unsafe as the number of frames need to be the same
                         pOam->currentAnimationFrame--;
                         pFrame = pOamData[pOam->oamId].pOam;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+                        pFrame = GBA_RESOLVE(pFrame);
+#endif
                     }
                     break;
 
@@ -2107,6 +2162,9 @@ void ProcessCutsceneOam(u8 length, struct CutsceneOamData* pOam, const struct Oa
                         pOam->oamId--;
                         pOam->currentAnimationFrame = 0;
                         pFrame = pOamData[pOam->oamId].pOam;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+                        pFrame = GBA_RESOLVE(pFrame);
+#endif
                     }
                     break;
 
@@ -2146,6 +2204,9 @@ void ProcessCutsceneOam(u8 length, struct CutsceneOamData* pOam, const struct Oa
                         pOam->oamId--;
                         pOam->currentAnimationFrame = 0;
                         pFrame = pOamData[pOam->oamId].pOam;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+                        pFrame = GBA_RESOLVE(pFrame);
+#endif
                     }
                     break;
             }
@@ -2195,6 +2256,12 @@ void ProcessCutsceneOam(u8 length, struct CutsceneOamData* pOam, const struct Oa
 
         // Get raw data pointer
         src = pFrame->pFrame;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+        /* pFrame->pFrame is a raw GBA ROM address baked into the frame
+         * table data (like sLanguageSelectGfx, see soft_reset.c section
+         * 5.1/5.2), not translated when pFrame itself was resolved. */
+        src = GBA_RESOLVE(src);
+#endif
 
         // Check for buffer overflow
         if (nextSlot + *src > 0x7F)
@@ -2824,6 +2891,9 @@ void PauseScreenUpdateBottomVisorOverlay(u8 param_1, u8 param_2)
     u16* src;
 
     dst = VRAM_BASE + 0xCC40;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+    dst = GBA_RESOLVE(dst);
+#endif
     src = &PAUSE_SCREEN_EWRAM.visorOverlayTilemap[0x380];
     idx1 = -1;
     idx0 = -1;

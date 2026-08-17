@@ -3,6 +3,10 @@
 #include "menus/status_screen.h"
 #include "dma.h"
 
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#include "port_gba_mem.h"
+#endif
+
 #include "data/shortcut_pointers.h"
 #include "data/block_data.h"
 #include "data/menus/pause_screen_data.h"
@@ -310,6 +314,10 @@ void PauseScreenInitMapDownload(void)
     {
         ptr_1 = VRAM_BASE + 0xE000;
         ptr_2 = VRAM_BASE + 0xD800;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+        ptr_1 = GBA_RESOLVE(ptr_1);
+        ptr_2 = GBA_RESOLVE(ptr_2);
+#endif
         for (i = 0; i < MINIMAP_SIZE * MINIMAP_SIZE; i++, ptr_2++, ptr_1++)
         {
             if ((*ptr_1 & 0x3FF) != 0xA0)
@@ -390,7 +398,11 @@ u32 PauseScreenMapDownloadInstant_Unused(void)
                 if (offset >= ARRAY_SIZE(sPauseScreen_7602b0))
                     offset = ARRAY_SIZE(sPauseScreen_7602b0) - 1;
 
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+                GBA_RESOLVE(sPauseScreen_7602a8)[j] = ptr[j] & sPauseScreen_7602b0[offset];
+#else
                 sPauseScreen_7602a8[j] = ptr[j] & sPauseScreen_7602b0[offset];
+#endif
 
                 i--;
                 j++;
@@ -446,7 +458,11 @@ u32 PauseScreenMapDownloadInstantWithLine_Unused(void)
             // Check on screen
             if (PAUSE_SCREEN_DATA.miscOam[2].yPosition >= -QUARTER_BLOCK_SIZE)
             {
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+                GBA_RESOLVE(sPauseScreen_7602a8)[PAUSE_SCREEN_DATA.currentDownloadedLine] = 0;
+#else
                 sPauseScreen_7602a8[PAUSE_SCREEN_DATA.currentDownloadedLine] = 0;
+#endif
                 PAUSE_SCREEN_DATA.currentDownloadedLine++;
             }
 

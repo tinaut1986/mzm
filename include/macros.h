@@ -88,7 +88,17 @@
  * @param sizes Array sizes
  * @param ptr Address
  */
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+/* All current callers pass a raw EWRAM_BASE-relative GBA address; this port
+ * doesn't map real GBA memory, so it needs translating to the emulated
+ * EWRAM buffer (gEwram, see port_gba_mem.h) before use. See GBA_RESOLVE and
+ * docs/3ds-port-status-2026-08-17.md section 6b for the bug class this
+ * fixes (found via SramWrite_FileInfo -> gSram, which has the same issue
+ * via its own hand-written macro right below). */
+#define CAST_TO_ARRAY(type, sizes, ptr) (*((type (*)sizes)(gba_MemPtr((uintptr_t)(ptr)))))
+#else
 #define CAST_TO_ARRAY(type, sizes, ptr) (*((type (*)sizes)((ptr))))
+#endif
 
 /**
  * @brief Gets the offset, in bytes, of an element in a struct

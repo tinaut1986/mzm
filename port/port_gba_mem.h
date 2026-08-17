@@ -91,6 +91,18 @@ static inline void* gba_MemPtr(uint32_t addr) {
     fprintf(stderr, "FATAL: gba_MemPtr: invalid address 0x%08X\n", addr);
 #endif
     fflush(stderr);
+#ifdef TMC_3DS
+    /* stderr isn't visible on real hardware -- mirror the fatal message to
+     * the file log (see port_debug_log.h) so it survives past the "Fatal
+     * error" screen the 3DS shows on abort(). Always on regardless of
+     * PORT_VERBOSE_FRAME_LOG since this fires at most once. */
+    {
+        extern void Port_DebugLog(const char* msg);
+        char msg[128];
+        __builtin_snprintf(msg, sizeof(msg), "FATAL: gba_MemPtr: invalid address 0x%08X (called from %p)", addr, __builtin_return_address(0));
+        Port_DebugLog(msg);
+    }
+#endif
 #if defined(_MSC_VER)
     __debugbreak();
 #elif defined(__GNUC__) && (defined(__i386__) || defined(__x86_64__))
@@ -100,6 +112,17 @@ static inline void* gba_MemPtr(uint32_t addr) {
     return NULL;
 #endif
 }
+
+/* Many engine functions build a pointer from a raw *_BASE macro
+ * (VRAM_BASE/PALRAM_BASE/EWRAM_BASE/OAM_BASE, see include/gba/memory.h) plus
+ * an offset and then dereference it directly, bypassing the WRITE_16/READ_16
+ * translation macros in io.h entirely. On real GBA hardware that "just
+ * works" because those addresses are memory-mapped; here they need explicit
+ * translation before use. Wrap the pointer in this right after the
+ * assignment: `dst = GBA_RESOLVE(VRAM_BASE + offset);`. See
+ * docs/3ds-port-status-2026-08-17.md section 6 for the bug class this
+ * fixes (first found in LanguageSelectChangeHighlight / soft_reset.c). */
+#define GBA_RESOLVE(p) ((__typeof__(p))gba_MemPtr((uintptr_t)(p)))
 
 /* Resolve a GBA address or an already-native pointer for reads. */
 #ifdef __cplusplus

@@ -3,6 +3,10 @@
 #include "gba.h"
 #include "macros.h"
 
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#include "port_gba_mem.h"
+#endif
+
 #include "data/text_data.h"
 #include "data/shortcut_pointers.h"
 #include "data/menus/pause_screen_data.h"
@@ -165,6 +169,11 @@ void TextDrawCharacter(u16 charId, u32* dst, u16 indent, u8 color)
     u8 width;
     u32 value;
     s32 i;
+
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+    /* See GBA_RESOLVE comment in TextDrawMessageCharacter above. */
+    dst = GBA_RESOLVE(dst);
+#endif
 
     BitFill(3, 0, gCurrentCharacterGfx, sizeof(gCurrentCharacterGfx), 16);
     width = TextGetCharacterWidth(charId);
@@ -437,6 +446,13 @@ void TextDrawMessageCharacter(u16 charId, u32* dst, u16 indent, u8 color)
     u8 width;
     u32 value;
     s32 i;
+
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+    /* Callers pass a raw EWRAM_BASE-relative GBA address; this function
+     * dereferences it directly below via dstGfx. See GBA_RESOLVE in
+     * port_gba_mem.h. */
+    dst = GBA_RESOLVE(dst);
+#endif
 
     BitFill(3, 0, gCurrentCharacterGfx, sizeof(gCurrentCharacterGfx), 16);
     width = TextGetCharacterWidth(charId);

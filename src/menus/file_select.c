@@ -8,6 +8,10 @@
 #include "color_effects.h"
 #include "time_attack.h"
 
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#include "port_gba_mem.h"
+#endif
+
 #include "data/shortcut_pointers.h"
 #include "data/text_data.h"
 #include "data/nes_metroid.h"
@@ -3966,6 +3970,9 @@ static void OptionsTimeAttackLoadRecord(u8 id)
     // HH:MM:SS
 
     dst = VRAM_BASE + 0xE108;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+    dst = GBA_RESOLVE(dst);
+#endif
     // Palette 5
     baseTile = 5 << 12;
 

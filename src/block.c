@@ -4,6 +4,10 @@
 #include "gba.h"
 #include "bg_clip.h"
 
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#include "port_gba_mem.h"
+#endif
+
 #include "data/block_data.h"
 
 #include "constants/audio.h"
@@ -434,6 +438,9 @@ void BlockShiftNeverReformBlocks(void)
         return;
 
     dst = EWRAM_BASE;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+    dst = GBA_RESOLVE(dst);
+#endif
     DmaTransfer(3, src, dst, NEVER_REFORM_BLOCKS_SIZE, 16);
     BitFill(3, USHORT_MAX, src, NEVER_REFORM_BLOCKS_SIZE, 16);
 
@@ -459,6 +466,9 @@ void BlockShiftNeverReformBlocks(void)
         else if (var_0 == 10)
         {
             dst = EWRAM_BASE + gNumberOfNeverReformBlocks[gAreaBeforeTransition] * 2;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+            dst = GBA_RESOLVE(dst);
+#endif
             while (*dst != UCHAR_MAX)
             {
                 src[i++] = *dst++;
@@ -467,6 +477,9 @@ void BlockShiftNeverReformBlocks(void)
 
             var_0 = 2;
             dst = EWRAM_BASE;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+            dst = GBA_RESOLVE(dst);
+#endif
         }
     }
 
@@ -479,6 +492,9 @@ void BlockShiftNeverReformBlocks(void)
         }
 
         dst = EWRAM_BASE + gNumberOfNeverReformBlocks[gAreaBeforeTransition] * NEVER_REFORM_BLOCK_INFO_SIZE;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+        dst = GBA_RESOLVE(dst);
+#endif
         while (*dst != UCHAR_MAX)
         {
             src[i++] = *dst++;
@@ -955,6 +971,9 @@ void BlockUpdateBrokenBlockAnimation(struct BrokenBlock* pBlock)
     dst = VRAM_BASE + 0x1000;
     if (pBlock->xPosition & 0x10)
         dst = VRAM_BASE + 0x1800;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+    dst = GBA_RESOLVE(dst);
+#endif
 
     offset = (pBlock->xPosition & 0xF) * 2;
     dst += (pBlock->yPosition & 0xF) * 64 + offset;
@@ -1453,6 +1472,9 @@ void BlockBrokenBlockRemoveCollision(u16 yPosition, u16 xPosition)
     dst = VRAM_BASE + 0x1000;
     if (xPosition & 0x10)
         dst = VRAM_BASE + 0x1800;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+    dst = GBA_RESOLVE(dst);
+#endif
 
     dst += (yPosition & 0xF) * BLOCK_SIZE + (xPosition & 0xF) * 2;
 

@@ -944,6 +944,13 @@ static u8 ChozodiaEscapeShipBlowingUp(void)
         }
 
         CHOZODIA_ESCAPE_DATA.oamPointers[i] = pOam->pFrame;
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+        /* pOam->pFrame is a raw GBA ROM address baked into frame table
+         * data, not a top-level symbol the ROM shim system can translate.
+         * Resolved once here since oamPointers[] gets dereferenced
+         * directly at several read sites below. */
+        CHOZODIA_ESCAPE_DATA.oamPointers[i] = GBA_RESOLVE(CHOZODIA_ESCAPE_DATA.oamPointers[i]);
+#endif
     }
 
     ChozodiaEscapeProcessOam_1();
