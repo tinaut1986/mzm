@@ -484,12 +484,21 @@ void InitAndLoadGenerics(void)
     gDebugMode = FALSE;
 #endif // !DEBUG
     DMA3_COPY_16(sCommonSpritesPal, PALRAM_BASE + 0x240, sizeof(sCommonSpritesPal) / 2);
+#ifdef TMC_3DS
+    Port_DebugLog("InGame: before SamusInit");
+#endif
     SamusInit();
+#ifdef TMC_3DS
+    Port_DebugLog("InGame: SamusInit done, before RoomLoad");
+#endif
 
     do {
     } while ((u16)(READ_16(REG_VCOUNT) - 21) < 140); // READ_16(REG_VCOUNT) <= SCREEN_SIZE_Y
 
     RoomLoad();
+#ifdef TMC_3DS
+    Port_DebugLog("InGame: RoomLoad done");
+#endif
 
     do {
     } while ((u16)(READ_16(REG_VCOUNT) - 21) < 140); // READ_16(REG_VCOUNT) <= SCREEN_SIZE_Y
@@ -503,13 +512,25 @@ void InitAndLoadGenerics(void)
     SamusCallGfxFunctions();
     DMA3_COPY_16(gSamusPalette, PALRAM_OBJ, gSamusPaletteSize / sizeof(u16));
 
+#ifdef TMC_3DS
+    Port_DebugLog("InGame: before TransferSamusAndBgGraphics");
+#endif
     TransferSamusAndBgGraphics();
+#ifdef TMC_3DS
+    Port_DebugLog("InGame: TransferSamusAndBgGraphics done");
+#endif
 
     do {
     } while ((u16)(READ_16(REG_VCOUNT) - 21) < 140); // READ_16(REG_VCOUNT) <= SCREEN_SIZE_Y
 
     HudGenericResetHudData();
+#ifdef TMC_3DS
+    Port_DebugLog("InGame: before SpriteLoadAllData");
+#endif
     SpriteLoadAllData();
+#ifdef TMC_3DS
+    Port_DebugLog("InGame: SpriteLoadAllData done");
+#endif
     ProjectileCallLoadGraphicsAndClearProjectiles();
 
     if (gPauseScreenFlag != PAUSE_SCREEN_NONE)
@@ -532,6 +553,10 @@ void InitAndLoadGenerics(void)
 
     do {
     } while ((u16)(READ_16(REG_VCOUNT) - 21) < 140); // READ_16(REG_VCOUNT) <= SCREEN_SIZE_Y
+
+#ifdef TMC_3DS
+    Port_DebugLog("InGame: InitAndLoadGenerics finished");
+#endif
 
 
 #ifdef REGION_EU_BETA

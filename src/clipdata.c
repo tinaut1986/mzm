@@ -22,12 +22,17 @@
  */
 void ClipdataSetupCode(void)
 {
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+    gClipdataCodePointer = ClipdataConvertToCollision;
+#else
     // Copy code to RAM
     DMA3_COPY_16(ClipdataConvertToCollision + 1, gNonGameplayRam.inGame.clipdataCode, sizeof(gNonGameplayRam.inGame.clipdataCode) / 2);
 
     // Set pointer
     gClipdataCodePointer = (ClipFunc_T)(gNonGameplayRam.inGame.clipdataCode + 1);
+#endif
 }
+
 
 /**
  * @brief 57df8 | 84 | Gets information on the clipdata block at the position in parameters, only used for samus
