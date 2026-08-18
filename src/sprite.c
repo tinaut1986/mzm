@@ -1651,7 +1651,7 @@ void SpriteUpdate(void)
                     if (gSpriteData[j].spriteId == PSPRITE_DEOREM_FIRST_LOCATION && (gSpriteData[j].status & SPRITE_STATUS_EXISTS))
                     {
                         found = 1;
-                        if ((sTick % 3) == 0)
+                        if ((sTick % 30) == 0)
                         {
                             extern void Port_DebugLog(const char* msg);
                             char msg2[160];

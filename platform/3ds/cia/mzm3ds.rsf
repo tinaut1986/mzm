@@ -1,6 +1,6 @@
 BasicInfo:
-  Title: "Metroid Zero Mission 3DS"
-  ProductCode: "CTR-P-BMXP"
+  Title: "MZM 3DS [PPU/Sprite dbg]"
+  ProductCode: "CTR-P-BMXQ"
   Logo: Homebrew
 
 RomFs:
@@ -8,7 +8,7 @@ RomFs:
 
 TitleInfo:
   Category: Application
-  UniqueId: 0x01986
+  UniqueId: 0x01987
 
 Option:
   UseOnSD: true

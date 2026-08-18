@@ -406,6 +406,21 @@ void SpriteDebrisInit(u8 cloudType, u8 debrisType, u16 yPosition, u16 xPosition)
         }
         if (prev_counter == UCHAR_MAX)
             return;
+
+#if defined(TMC_3DS) || defined(PORT_NATIVE)
+        /* The loop above always exits with pDebris one element PAST the end
+         * of gSpriteDebris (gSpriteDebris + MAX_AMOUNT_OF_SPRITE_DEBRIS), not
+         * pointing at prev_counter's slot as the comment above assumes -- a
+         * for-loop with no break always overshoots by one on completion.
+         * This writes out of bounds. On GBA this lands on inert padding, so
+         * it's invisible there; in this port gCurrentSprite is placed
+         * immediately after gSpriteDebris in the iwram_data section (no
+         * gap), so the out-of-bounds write silently clobbers whichever
+         * sprite is currently being processed (confirmed via `nm` on the
+         * built ELF: gSpriteDebris + sizeof(gSpriteDebris) == &gCurrentSprite
+         * exactly). Point pDebris at the actual slot to overwrite. */
+        pDebris = &gSpriteDebris[prev_counter];
+#endif
     }
 
     pDebris->pOam = sSpriteDebrisOam;

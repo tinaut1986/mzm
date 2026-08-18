@@ -621,7 +621,7 @@ static void DeoremWaitingForFight(void)
         SpriteSpawnSecondary(SSPRITE_DEOREM_SEGMENT, DEOREM_SEGMENT_DOWN_2, gfxRow, ramSlot, yPosition, xPosition, 0);
         SpriteSpawnSecondary(SSPRITE_DEOREM_SEGMENT, DEOREM_SEGMENT_DOWN_1, gfxRow, ramSlot, yPosition, xPosition, 0);
         SpriteSpawnSecondary(SSPRITE_DEOREM_SEGMENT, DEOREM_SEGMENT_DOWN_JUNCTION, gfxRow, ramSlot, yPosition, xPosition, 0);
-        
+
         ScreenShakeStartVertical(TWO_THIRD_SECOND, 0x80 | 1);
         SoundPlay(SOUND_DEOREM_MOVING);
         
@@ -664,9 +664,6 @@ static void DeoremSpawnGoingDown(void)
 #endif
             // First frame of going down
             ParticleSet(yPosition + BLOCK_SIZE, xPosition, PE_TWO_MEDIUM_DUST);
-#if defined(TMC_3DS) && defined(TMC_3DS_DIAG_DISABLE_DEOREM_AUDIO)
-            Port_DebugLog("DeoremSpawnGoingDown: audio calls SKIPPED for diagnosis");
-#else
 #ifdef TMC_3DS
             Port_DebugLog("DeoremSpawnGoingDown: before SoundPlay(SPAWN_GOING_DOWN)");
 #endif
@@ -681,7 +678,6 @@ static void DeoremSpawnGoingDown(void)
             PlayMusic(MUSIC_WORMS_BATTLE, 0);
 #ifdef TMC_3DS
             Port_DebugLog("DeoremSpawnGoingDown: after PlayMusic(WORMS_BATTLE)");
-#endif
 #endif
         }
     }
@@ -833,7 +829,22 @@ static void DeoremSpawnDelayBeforeHead(void)
             yPosition - DEOREM_EYE_Y_OFFSET, xPosition - DEOREM_EYE_X_OFFSET, 0);
 
         if (eyeSlot == UCHAR_MAX)
+        {
+#ifdef TMC_3DS
+            {
+                u8 usedSlots = 0, i;
+                for (i = 0; i < MAX_AMOUNT_OF_SPRITES; i++)
+                    if (gSpriteData[i].status & SPRITE_STATUS_EXISTS)
+                        usedSlots++;
+                char _msg[128];
+                __builtin_snprintf(_msg, sizeof(_msg),
+                    "DeoremSpawnDelayBeforeHead: eyeSlot FAILED (no free slot), usedSlots=%u/%u -> killing gCurrentSprite.status",
+                    (unsigned)usedSlots, (unsigned)MAX_AMOUNT_OF_SPRITES);
+                Port_DebugLog(_msg);
+            }
+#endif
             gCurrentSprite.status = 0;
+        }
         else
             gCurrentSprite.work3 = eyeSlot;
     }
