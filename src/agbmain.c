@@ -11,6 +11,9 @@
 #include "structs/demo.h"
 #include "structs/game_state.h"
 #include "structs/display.h"
+#ifdef PORT_LINUX_DIAG_WARP_TO_DEOREM
+#include "structs/samus.h"
+#endif
 
 /**
  * @brief 23c | 464 | Main loop of the game
@@ -68,6 +71,60 @@ void agbmain(void)
 #if defined(TMC_3DS) && defined(PORT_VERBOSE_FRAME_LOG)
         Port_DebugLog("agbmain: SoftResetCheck() done");
 #endif
+
+#ifdef PORT_LINUX_DIAG_WARP_TO_DEOREM
+        /* Two-stage debug warp, bypassing menu navigation entirely (test
+         * mode's scripted KEY_A pulse isn't enough to get through file
+         * select). Stage 1: force straight into a fresh GM_INGAME after a
+         * short settle delay, skipping intro/title/file-select. Stage 2:
+         * once that fresh game has finished booting into normal gameplay
+         * (SUB_GAME_MODE_PLAYING), force-jump to Brinstar room 12 with the
+         * first missile tank already collected and Samus standing directly
+         * under Deorem, to reproduce the "boss never appears" scenario. See
+         * docs/3ds-port-status-2026-08-17.md 6j. */
+        {
+            extern u8 gCurrentArea;
+            extern u8 gCurrentRoom;
+            extern void Port_DebugLog(const char* msg);
+            static u32 sFrameCount = 0;
+            static bool sStage1Done = false;
+            static bool sStage2Done = false;
+            sFrameCount++;
+
+            if (!sStage1Done && sFrameCount >= 30)
+            {
+                gMainGameMode = GM_INGAME;
+                gSubGameMode1 = 0;
+                gSubGameMode2 = 0;
+                gSubGameMode3 = 0;
+                gIsLoadingFile = FALSE;
+                /* Deliberately NOT setting gCurrentArea/gCurrentRoom here:
+                 * RoomReset() (room.c:639-641) recomputes gCurrentRoom from
+                 * gLastDoorUsed/sAreaDoorsPointers regardless, so any value
+                 * set here gets clobbered immediately. Let a real cold boot
+                 * (gLastDoorUsed defaults to its BSS-zero value, same as on
+                 * real hardware) land wherever it lands; stage 2 below
+                 * overrides both area and room properly once we're truly in
+                 * gameplay. */
+                sStage1Done = true;
+                Port_DebugLog("PORT_LINUX_DIAG_WARP_TO_DEOREM: stage 1, forcing GM_INGAME (skipping menus)");
+            }
+
+            if (sStage1Done && !sStage2Done && gMainGameMode == GM_INGAME && gSubGameMode1 == SUB_GAME_MODE_PLAYING)
+            {
+                gCurrentArea = 0; /* AREA_BRINSTAR */
+                gCurrentRoom = 12;
+                gEquipment.maxMissiles = 5;
+                gEquipment.currentMissiles = 5;
+                gSamusData.xPosition = 1280; /* centered under Deorem, see deorem.c DeoremWaitingForFight */
+                gSamusData.yPosition = 3800; /* room floor, adjust if Samus spawns inside geometry */
+                gSubGameMode1 = 0; /* re-enter InitAndLoadGenerics -> forces RoomLoad into room 12 */
+                sStage2Done = true;
+                Port_DebugLog("PORT_LINUX_DIAG_WARP_TO_DEOREM: stage 2, warped to Brinstar room 12 with maxMissiles=5");
+            }
+        }
+#endif
+
         // Increment frame counters
         APPLY_DELTA_TIME_INC(gFrameCounter8Bit);
         APPLY_DELTA_TIME_INC(gFrameCounter16Bit);

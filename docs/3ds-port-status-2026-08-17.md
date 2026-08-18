@@ -623,13 +623,55 @@ Secuencia observada de forma consistente y reproducible en varias partidas:
 3. Probar el mismo experimento de aislar-por-desactivación con `DeoremSpriteDebrisSpawn`/`ParticleSet`/`SpriteDebrisInit` (los únicos efectos que quedan sin descartar dentro del primer frame de `DeoremSpawnGoingDown`), ya que el audio queda descartado pero esas llamadas no se han aislado todavía.
 4. Considerar log/verificación de `SpriteUtilSamusAndSpriteCollision` (colisión Samus-sprites, se llama una vez por frame en `SpriteUpdate` antes del bucle principal) como sospechoso de "matar" a Deorem por una colisión mal calculada, aunque no se ha visto pasar por ninguna pose de muerte — comprobar si existe algún camino que ponga `status = 0` directamente sin pasar por el pose de destrucción.
 
+## 6k. Verificación contra la ROM comercial real (mGBA + Lua) — CONFIRMA que el diagnóstico anterior es correcto (2026-08-18)
+
+Ante la duda de si estábamos persiguiendo un malentendido del código en vez del bug real, se verificó el comportamiento esperado directamente contra `mzm_eu.gba` (la ROM comercial, no un build propio) usando `mgba-qt` (tiene scripting Lua, `liblua5.4`) y un script nuevo: [`tools/gba_ref_deorem_trace.lua`](tools/gba_ref_deorem_trace.lua). Lee memoria directamente por dirección absoluta (sacadas de `mzm_eu.map`, que ya existía en el repo de un build previo) — es decir, verdad de referencia independiente de cualquier lectura del código C.
+
+**Cómo usarlo:** abrir `mzm-qt` con `mzm_eu.gba`, Tools → Scripting → cargar el `.lua`. Escribe a la consola de scripting y a `gba_ref_deorem_trace.log` (junto al binario de mGBA) si el sandbox de Lua permite `io.open`. Importante: cerrar cualquier instancia/script anterior antes de recargarlo, o las líneas de distintas ejecuciones se entremezclan en el log.
+
+**Resultado (partida real jugada por el usuario, con seguimiento de `maxMissiles`, pose/estado de Deorem, `gPauseScreenFlag`, `gCollectingTank`, `gLockScreen`, `gCurrentItemBeingAcquired`, `gDisablePause`, `gPreventMovementTimer`):**
+
+```
+f=1652  maxMissiles 0→5, collectingTank=1, pmt=1000       (tocas el tanque)
+f=1669  itemBeingAcquired=3                                (banner del ítem)
+f=1786  collectingTank=0, pmt=999                          (termina de recogerlo)
+f=1801  pauseFlag=6 (ITEM_ACQUISITION), pmt=0               (banner activo; pmt reseteado por message_banner.c:335)
+f=2026  pauseFlag=0                                         (vuelve al juego normal)
+f=2314  lockScreen=1  Y  Deorem pose 8→9  (mismo frame)     (se dispara el ataque)
+f=2360  pose=34 (0x22)   ← 46 frames después, cuadra con work0=46
+f=2370  pose=35 (0x23)   ← 10 frames después, cuadra con work0=10
+f=2420  pose=36 (0x24)   ← 50 frames después, cuadra con work0=50
+f=2480  pose=37 (0x25)   ← visible de nuevo (status=0x0003, NOT_DRAWN limpio)
+```
+
+**Conclusión: no hay ninguna sorpresa.** Cada variable y cada duración de timer coincide exactamente con lo que predice la lectura del código decomp (`deorem.c`). En la ROM real, Deorem baja, se oculta un instante a propósito mientras se reposiciona (truco de diseño intencionado, no un bug), y reaparece limpio ~166 frames después de empezar a bajar. **Esto descarta definitivamente que estemos malinterpretando el código** — el bug de la sección 6j está 100% confinado al port de 3DS, en algún punto de esos primeros frames donde en la ROM real no pasa nada especial.
+
+## 6l. Intento de reproducir el bug en el port nativo de Linux (2026-08-18) — PAUSADO, sin reproducir el bug de Deorem todavía, pero con hallazgos importantes por el camino
+
+Motivación: cazar la causa exacta con `gdb`/sanitizers en el PC en vez de iterar por FTP contra la 3DS real (mucho más lento). El port de Linux (`platform/linux/`) comparte el mismo `port_gba_mem.c`/mecanismo de traducción de direcciones GBA↔host que la 3DS (compila con `-DTMC_3DS` también), así que un bug de esa capa debería reproducirse ahí igual.
+
+**Bugs reales encontrados y corregidos en el Makefile/infraestructura de Linux (quedan arreglados, independientemente de si se retoma esta vía):**
+1. Faltaba `-I$(ROOT)` en `CPPFLAGS` — sin él, `#include "port/generated/empty_datatypes_rom.h"` (con ese prefijo de ruta) no se encontraba. El Makefile de 3DS sí lo tenía.
+2. Faltaban 4 archivos fuente que sí compila 3DS: `src/data/color_fading_data.c`, `src/data/cutscenes/cutscenes_data.c`, `src/data/in_game_cutscene_data.c`, `src/data/empty_datatypes.c` (este último es el origen de varios símbolos `*_Compiled` que faltaban al enlazar).
+3. Faltaba el equivalente de `ewram_symbols.ld` (que en 3DS asigna símbolos como `gDecompBg0Map`, `gTilemap`, etc. como offsets dentro de `gEwram`, vía `-T` en el linker). En un ELF normal de Linux, pasar `-T` con un script que no tiene `SECTIONS` **reemplaza** el script por defecto y rompe el layout de segmentos (`PHDR segment not covered by LOAD segment`). Solución: mismo fichero (copiado a `platform/linux/ewram_symbols.ld`), pero inyectado como una lista de `-Wl,--defsym,sym=expr` generada con `sed` desde ese `.ld`, que sí es aditivo. Se quitó de esa lista `gEventsTriggered` porque `src/event.c` ya lo declara como array C real (`u32 gEventsTriggered[8];`) sin guardas — la doble definición no rompía el link de 3DS (tolerado) pero sí el de Linux (símbolo duplicado).
+4. **Bug de arquitectura, más interesante:** con `-m64` (por defecto), el juego compilaba y enlazaba pero **crasheaba en el primer frame** (`QueueSound`, `music_wrappers.c:895`, leyendo un `pHeader` completamente basura desde `sSoundDataEntries[sound].pHeader`). Causa: `struct SoundEntry` (`include/structs/audio.h`) se lee **directamente como bytes crudos de la ROM** (vía `Port_ResolveRomData`), y tiene un campo puntero (`const u8* pHeader`) pensado para el tamaño de puntero de 4 bytes de GBA/3DS (ambos de 32 bits). En un binario de 64 bits ese campo pasa a ocupar 8 bytes, desalineando toda la struct respecto a los bytes reales de la ROM. **Fix: compilar el port de Linux en 32 bits (`-m32` en vez de `-m64`)**, requiere `gcc-multilib` instalado. Con eso el layout vuelve a coincidir con el de la ROM, igual que en 3DS (ARM de 32 bits), y el crash desaparece. **Posible implicación más amplia:** cualquier otra struct en el proyecto que se lea igual (bytes crudos de ROM) y tenga un campo puntero podría tener el mismo problema si alguna vez se compila para un target de 64 bits — no se ha auditado exhaustivamente cuáles más existen.
+
+**Instrumentación añadida para intentar llegar al escenario sin control interactivo real (`src/agbmain.c`, macro `PORT_LINUX_DIAG_WARP_TO_DEOREM`, desactivada por defecto — NO está en el `CPPFLAGS` del Makefile actualmente):** un "warp" en dos fases que se salta la navegación de menús (el modo `--test` del binario solo pulsa A automáticamente, insuficiente para pasar de la selección de archivo) forzando directamente `gMainGameMode = GM_INGAME`. **Con bugs sin resolver, dejado documentado para quien lo retome:**
+- Intentar fijar `gCurrentArea`/`gCurrentRoom` a mano en la fase 1 no sirve de nada: `RoomReset()` (`room.c:639-641`) los recalcula siempre a partir de `gLastDoorUsed`/`sAreaDoorsPointers`, así que cualquier valor puesto a mano se pierde inmediatamente.
+- Sin pasar por el flujo real de intro/título/selección de archivo, `gLastDoorUsed` (u otro estado previo no identificado) da una combinación de área/puerta inválida, y `ScrollLoad()` (`scroll.c:540`) crashea leyendo un puntero basura al iterar `sAreaScrollPointers[gCurrentArea]` — pendiente de averiguar qué estado exacto falta replicar de un arranque "de verdad".
+- Alternativa no explorada del todo: el modo `--test` con solo pulsos de A se queda parado indefinidamente en la selección de archivo (`FileSelectMenuHandler` case 5, `file_select.c:3525`, un simple `if (timer > 0.5s) avanzar` que en teoría no debería necesitar ningún input) — no se ha diagnosticado por qué no avanza solo.
+
+**Estado del renderizado:** el port de Linux tiene ventana y teclado X11 completamente escritos (`platform_linux.c`, con mapeo real de teclas), pero el framebuffer (`sFb32`) nunca se pinta en la ventana (no hay ningún `XPutImage` ni función de "present" en todo el archivo) — a día de hoy **no es jugable visualmente** aunque se compile con `HAVE_X11` (que tampoco está activado ahora mismo ni se ha instalado `libx11-dev`). Para que el usuario pudiera jugarlo a mano haría falta cablear eso primero.
+
+**Decisión (2026-08-18):** pausado por esta noche. El objetivo (reproducir el bug de Deorem con herramientas de PC) no se llegó a cumplir, pero los fixes de Makefile/32-bit son reales y quedan aplicados. **Se vuelve al ciclo de iteración por 3DS + FTP** para seguir con el bug de la sección 6j.
+
 ## 7. Pendientes y Siguientes Pasos
 
 **Bugs abiertos pendientes de investigar (reportados por el usuario, aún SIN resolver):**
 - **Deorem (el "monstruo del techo" de la sala del primer tanque de misiles, Brinstar sala 12) desaparece a los pocos frames de empezar a bajar del techo** (2026-08-18, EN INVESTIGACIÓN ACTIVA, sin resolver tras ~10 iteraciones de diagnóstico en hardware real). **No es un jefe "Ruins Test"** (esa sala es de Chozodia, mucho más tarde en el juego) — es el enemigo Deorem, ya presente en la sala desde el inicio. Su ataque se dispara correctamente (`DeoremWaitingForFight`, `deorem.c:539`, confirmado con `maxMissiles != 0` + posición de Samus) y comienza a bajar con normalidad (visible, sano, `SPRITE_STATUS_EXISTS`), pero entre el 3er y el 8º frame de la caída el sprite desaparece por completo del array de sprites SIN pasar por ninguna pose de muerte, SIN crash y SIN colgar el resto del juego. Se ha descartado `gPauseScreenFlag`, `gPreventMovementTimer`, un cuelgue del hilo principal, y el audio/música (con un build de diagnóstico que desactivaba `SoundPlay`/`PlayMusic` por completo — desapareció igualmente). El frame exacto de desaparición varía entre partidas, lo que apunta a una condición de carrera entre hilos en vez de un bug determinista. Ver diagnóstico completo, hipótesis descartadas e instrumentación dejada en el código en la sección 6j.
 - **Franja vertical "gelatina" desincronizada a la derecha** (bug 3): franja del ancho de la vista previa del minimapa en el borde derecho que se desincroniza al subir/bajar la cámara. Pendiente de investigar (sospecha de scroll de un BG / window).
 
-**Resueltos en esta sesión (2026-08-18):** guardado (6i), indicadores Chozo (6i, efecto secundario), tanque de misiles (6j).
+**Resueltos en esta sesión (2026-08-18):** guardado (6i), indicadores Chozo (6i, efecto secundario), tanque de misiles (6j). También: comportamiento esperado de Deorem confirmado al 100% contra la ROM comercial real (6k), y varios bugs reales de infraestructura en el Makefile del port de Linux, incluido uno de arquitectura 32 vs 64 bits (6l) — aunque el objetivo de esa vía (reproducir el bug con gdb) quedó pausado sin conseguirse.
 
 **Siguientes tareas recomendadas:**
 

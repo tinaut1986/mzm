@@ -1,4 +1,14 @@
-# Makefile for Metroid Zero Mission Native Linux Port (x86_64)
+# Makefile for Metroid Zero Mission Native Linux Port (x86, 32-bit)
+#
+# Deliberately -m32, not -m64: several structs (e.g. struct SoundEntry in
+# include/structs/audio.h) are overlaid directly on raw GBA ROM bytes and
+# contain pointer-typed fields sized for a 32-bit target (GBA/3DS ARM are
+# both 32-bit). On a 64-bit build those fields double in size and desync
+# the whole struct layout from the ROM, corrupting every field after the
+# first pointer (confirmed via a QueueSound segfault reading garbage
+# pHeader from sSoundDataEntries at boot). Building 32-bit keeps pointer
+# width consistent with the ROM layout, matching the 3DS (ARM32) build,
+# without having to retrofit every such struct.
 
 CC ?= gcc
 TARGET := mzm-linux
@@ -6,7 +16,7 @@ TARGET := mzm-linux
 ROOT ?= $(abspath $(CURDIR)/../..)
 BUILD := $(CURDIR)/build
 
-CFLAGS := -m64 -O1 -g -std=gnu89 -fcommon \
+CFLAGS := -m32 -O1 -g -std=gnu89 -fcommon \
 	-Wall -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function \
 	-Wno-format-overflow -Wno-array-bounds -Wno-address-of-packed-member \
 	-Wno-comment -Wno-strict-aliasing -Wno-implicit-function-declaration \
@@ -19,13 +29,19 @@ CPPFLAGS := \
 	-DPLATFORM_LINUX \
 	-DTMC_3DS \
 	-DPORT_NATIVE_AUDIO_STUBS \
+	-I$(ROOT) \
 	-I$(ROOT)/port \
 	-I$(ROOT)/port/generated/shadow \
 	-I$(ROOT)/port/generated \
 	-I$(ROOT)/include \
 	-I$(CURDIR)/source
 
-LDFLAGS := -lrt -lm -lpthread
+# Extra EWRAM-offset symbols (see ewram_symbols.ld) injected additively via
+# --defsym instead of -T, since a bare -T script (no SECTIONS/INSERT) replaces
+# the default Linux ELF script wholesale and breaks PT_PHDR/PIE layout.
+EWRAM_DEFSYMS := $(shell sed -n 's/^\([A-Za-z0-9_]*\) = \(.*\);$$/-Wl,--defsym,\1=\2/p' $(CURDIR)/ewram_symbols.ld | tr -d ' ')
+
+LDFLAGS := -no-pie $(EWRAM_DEFSYMS) -lrt -lm -lpthread
 
 # Fuentes C
 SRCS_ROOT := \
@@ -37,6 +53,10 @@ SRCS_ROOT := \
 	$(ROOT)/src/data/shortcut_pointers.c \
 	$(ROOT)/src/data/music_track_data.c \
 	$(ROOT)/src/data/audio.c \
+	$(ROOT)/src/data/color_fading_data.c \
+	$(ROOT)/src/data/cutscenes/cutscenes_data.c \
+	$(ROOT)/src/data/in_game_cutscene_data.c \
+	$(ROOT)/src/data/empty_datatypes.c \
 	$(ROOT)/port/port_gba_symbols.c \
 	$(ROOT)/port/port_rom.c \
 	$(ROOT)/port/port_gba_mem.c \
