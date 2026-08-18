@@ -65,6 +65,16 @@ void agbmain(void)
             extern void Port_MzmAudio_InstallSoundCodeCHook(void);
             Port_MzmAudio_InstallSoundCodeCHook();
             UpdateAudio();
+            /* Safety net: normally the dedicated NDSP consumer thread
+             * (port_mzm_audio_3ds.c) drains the ring on its own via the
+             * ndsp callback. If that thread failed to start (e.g. thread
+             * creation rejected for a core not in the exheader's
+             * AffinityMask), nothing would ever call FillBuffer() and
+             * audio would be silently dead with no error -- Pump() is a
+             * no-op when the thread is alive, and does the draining
+             * itself otherwise. */
+            extern void Port_MzmAudio_Pump(void);
+            Port_MzmAudio_Pump();
         }
 #else
         UpdateAudio();

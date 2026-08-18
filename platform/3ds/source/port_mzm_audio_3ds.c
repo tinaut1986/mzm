@@ -7,6 +7,7 @@
 #include <stdio.h>
 
 extern void Port_DebugLog(const char* msg);
+extern bool Platform3DS_CanUseCore1(void);
 
 /*
  * NDSP consumer for the mzm port's real audio engine.
@@ -23,7 +24,6 @@ extern void Port_DebugLog(const char* msg);
 #define BUFFER_FRAMES 256
 #define BUFFER_COUNT 12
 #define AUDIO_THREAD_STACK (64u * 1024u)
-#define AUDIO_THREAD_CORE 0
 
 /* Safety floor: the consumer never drains the ring below this many frames,
  * so the producer (driven at the game's ~60 Hz frame cadence) always has one
@@ -160,8 +160,18 @@ bool Port_MzmAudio_Init(void) {
     s32 priority = 0x30;
     svcGetThreadPriority(&priority, CUR_THREAD_HANDLE);
     if (priority > 0x18) --priority;
+    /* Core 0 (APPCORE) already hosts the main game loop and the GBA timing
+     * thread (which wakes every ~73us, see platform_3ds_minimal.c). Putting
+     * this thread there too means it competes for CPU time with both,
+     * especially when it wakes to refill several NDSP buffers back to back
+     * on an underrun -- a real slowdown, not just an audio glitch. On
+     * New3DS the port already claims a CPU budget on Core 1 (SYSCORE) via
+     * APT_SetAppCpuTimeLimit (see Platform3DS_CanUseCore1/Core1TimeLimit)
+     * but nothing was using it yet. Old3DS has no such budget, so it must
+     * stay on core 0 there. */
+    const int audioThreadCore = Platform3DS_CanUseCore1() ? 1 : 0;
     __atomic_store_n(&sAudioThreadRunning, true, __ATOMIC_RELEASE);
-    sAudioThread = threadCreate(AudioThreadMain, NULL, AUDIO_THREAD_STACK, priority, AUDIO_THREAD_CORE, false);
+    sAudioThread = threadCreate(AudioThreadMain, NULL, AUDIO_THREAD_STACK, priority, audioThreadCore, false);
     if (!sAudioThread) {
         __atomic_store_n(&sAudioThreadRunning, false, __ATOMIC_RELEASE);
     }

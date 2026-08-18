@@ -30,7 +30,7 @@ AccessControlInfo:
   MemoryType: Application
   SystemMode: 64MB
   IdealProcessor: 0
-  AffinityMask: 1
+  AffinityMask: 3
   Priority: 16
   MaxCpu: 0x9E
   HandleTableSize: 0x200
