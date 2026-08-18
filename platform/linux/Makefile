@@ -54,7 +54,9 @@ OBJS_ROOT  := $(patsubst $(ROOT)/%.c, $(BUILD)/root/%.o, $(SRCS_ROOT))
 OBJS_LINUX := $(patsubst $(CURDIR)/%.c, $(BUILD)/linux/%.o, $(SRCS_LINUX))
 OBJS := $(OBJS_ROOT) $(OBJS_LINUX)
 
-.PHONY: all clean test
+UNIT_TEST_TARGET := port_gba_mem_test
+
+.PHONY: all clean test test-unit
 
 all: $(TARGET)
 
@@ -76,6 +78,18 @@ $(BUILD)/linux/%.o: $(CURDIR)/%.c
 test: $(TARGET)
 	@echo "Running headless automated test..."
 	./$(TARGET) --test 300
+
+# Fast unit tests for the port translation layer (address resolvers, etc.),
+# independent of the game engine -- no ROM needed. See
+# port/port_gba_mem_test.c for what this covers and why.
+$(BUILD)/$(UNIT_TEST_TARGET): $(ROOT)/port/port_gba_mem_test.c $(ROOT)/port/port_gba_mem.c
+	@mkdir -p $(BUILD)
+	@echo "CC (unit test) $@"
+	@$(CC) $(CFLAGS) $(CPPFLAGS) -o $@ $^ -lm
+
+test-unit: $(BUILD)/$(UNIT_TEST_TARGET)
+	@echo "Running port translation layer unit tests..."
+	@$(BUILD)/$(UNIT_TEST_TARGET)
 
 clean:
 	@rm -rf $(BUILD) $(TARGET)
