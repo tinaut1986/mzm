@@ -10,9 +10,22 @@
     thumb_func_start InitTrack
 InitTrack: @ 0x08004b50
     push {r4, r5, r6, r7, lr}
-    sub sp, #4
+    sub sp, #12
     adds r4, r0, #0
     adds r5, r1, #0
+    @ [PORT] r1/pHeader is a raw GBA ROM address: sSoundDataEntries[].pHeader
+    @ (src/music_wrappers.c, src/audio_wrappers.c) is read straight out of the
+    @ loaded ROM bytes and never translated at the C call sites -- same bug
+    @ class as pVoice/pRawData below, just one level higher (this function
+    @ dereferences the header pointer itself via ldr [r5, ...] several times).
+    @ Stash the RAW value on the stack (needed later for TrackData.pHeader,
+    @ which C code compares by identity against fresh untranslated rereads of
+    @ sSoundDataEntries[].pHeader -- must stay raw on both sides) and keep
+    @ only a RESOLVED copy in r5 for this function's own dereferences.
+    str r5, [sp, #4]
+    movs r0, r5
+    bl port_resolve_addr
+    adds r5, r0, #0
     ldrb r6, [r4, o_TrackData_occupied]
     cmp r6, #0
     bne lbl_08004c04
@@ -64,7 +77,8 @@ lbl_08004ba2:
     bl port_resolve_addr
     pop {r3}
     str r0, [r4, o_TrackData_pVoice]
-    str r5, [r4, o_TrackData_pHeader]
+    ldr r1, [sp, #4]
+    str r1, [r4, o_TrackData_pHeader]
     lsls r3, r3, #7
     strh r3, [r4, o_TrackData_unk_C]
     lsrs r2, r6, #0x1f
@@ -122,7 +136,7 @@ lbl_08004c00:
     strb r6, [r4, o_TrackData_occupied]
 lbl_08004c04:
     movs r0, #0
-    add sp, #4
+    add sp, #12
     pop {r4, r5, r6, r7}
     pop {r1}
     bx r1
@@ -130,7 +144,7 @@ lbl_08004c0e:
     movs r6, #0
     strb r6, [r4, o_TrackData_occupied]
     movs r0, #1
-    add sp, #4
+    add sp, #12
     pop {r4, r5, r6, r7}
     pop {r1}
     bx r1
