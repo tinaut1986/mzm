@@ -21,6 +21,10 @@
 #include "structs/scroll.h"
 #include "structs/sprite.h"
 
+#ifdef TMC_3DS
+#include "port_debug_log.h"
+#endif
+
 // Spawn health of deorem
 #define DEOREM_MAX_HEALTH (MISSILE_DAMAGE * 3)
 
@@ -655,11 +659,30 @@ static void DeoremSpawnGoingDown(void)
         DeoremSpriteDebrisSpawn(yPosition + BLOCK_SIZE, xPosition, timer);
         if (timer == 0)
         {
+#ifdef TMC_3DS
+            Port_DebugLog("DeoremSpawnGoingDown: first frame, before ParticleSet");
+#endif
             // First frame of going down
             ParticleSet(yPosition + BLOCK_SIZE, xPosition, PE_TWO_MEDIUM_DUST);
+#if defined(TMC_3DS) && defined(TMC_3DS_DIAG_DISABLE_DEOREM_AUDIO)
+            Port_DebugLog("DeoremSpawnGoingDown: audio calls SKIPPED for diagnosis");
+#else
+#ifdef TMC_3DS
+            Port_DebugLog("DeoremSpawnGoingDown: before SoundPlay(SPAWN_GOING_DOWN)");
+#endif
             SoundPlay(SOUND_DEOREM_SPAWN_GOING_DOWN);
+#ifdef TMC_3DS
+            Port_DebugLog("DeoremSpawnGoingDown: before SoundPlay(SCREAMING)");
+#endif
             SoundPlay(SOUND_DEOREM_SCREAMING);
+#ifdef TMC_3DS
+            Port_DebugLog("DeoremSpawnGoingDown: before PlayMusic(WORMS_BATTLE)");
+#endif
             PlayMusic(MUSIC_WORMS_BATTLE, 0);
+#ifdef TMC_3DS
+            Port_DebugLog("DeoremSpawnGoingDown: after PlayMusic(WORMS_BATTLE)");
+#endif
+#endif
         }
     }
 
@@ -2778,6 +2801,44 @@ static void DeoremThornMovement(void)
  */
 void Deorem(void)
 {
+#ifdef TMC_3DS
+    {
+        static u16 sLastPose = 0xFFFF;
+        static u16 sLastSlot = 0xFFFF;
+        u16 slot = gCurrentSprite.primarySpriteRamSlot;
+        if (gCurrentSprite.pose != sLastPose || slot != sLastSlot)
+        {
+            char msg[176];
+            __builtin_snprintf(msg, sizeof(msg),
+                "Deorem: slot=%u pose=%u->%u spriteId=%u maxMissiles=%u samusX=%u x=%u y=%u work0=%u",
+                (unsigned)slot, (unsigned)sLastPose, (unsigned)gCurrentSprite.pose,
+                (unsigned)gCurrentSprite.spriteId, (unsigned)gEquipment.maxMissiles,
+                (unsigned)gSamusData.xPosition, (unsigned)gCurrentSprite.xPosition,
+                (unsigned)gCurrentSprite.yPosition, (unsigned)gCurrentSprite.work0);
+            Port_DebugLog(msg);
+            sLastPose = gCurrentSprite.pose;
+            sLastSlot = slot;
+        }
+        else if (gCurrentSprite.pose == DEOREM_POSE_SPAWN_GOING_DOWN)
+        {
+            static u16 sTick = 0;
+            sTick++;
+            if ((sTick % 5) == 0)
+            {
+                char msg[176];
+                __builtin_snprintf(msg, sizeof(msg),
+                    "Deorem: tick pose=9 status=0x%04x properties=0x%02x y=%u x=%u work0=%u onscreen=%u notdrawn=%u exists=%u",
+                    (unsigned)gCurrentSprite.status, (unsigned)gCurrentSprite.properties,
+                    (unsigned)gCurrentSprite.yPosition, (unsigned)gCurrentSprite.xPosition,
+                    (unsigned)gCurrentSprite.work0,
+                    (unsigned)((gCurrentSprite.status & SPRITE_STATUS_ONSCREEN) != 0),
+                    (unsigned)((gCurrentSprite.status & SPRITE_STATUS_NOT_DRAWN) != 0),
+                    (unsigned)((gCurrentSprite.status & SPRITE_STATUS_EXISTS) != 0));
+                Port_DebugLog(msg);
+            }
+        }
+    }
+#endif
     switch (gCurrentSprite.pose)
     {
         case SPRITE_POSE_UNINITIALIZED:
@@ -2855,6 +2916,22 @@ void Deorem(void)
         case DEOREM_POSE_CALL_SPAWN_CHARGE_BEAM:
             DeoremCallSpawnChargeBeam();
     }
+#ifdef TMC_3DS
+    {
+        static u8 sLoggedOnce = 0;
+        if (!sLoggedOnce && gCurrentSprite.pose == DEOREM_POSE_SPAWN_GOING_DOWN)
+        {
+            char msg[160];
+            __builtin_snprintf(msg, sizeof(msg),
+                "Deorem: end-of-dispatch status=0x%04x spriteId=%u pose=%u y=%u ramSlot=%u",
+                (unsigned)gCurrentSprite.status, (unsigned)gCurrentSprite.spriteId,
+                (unsigned)gCurrentSprite.pose, (unsigned)gCurrentSprite.yPosition,
+                (unsigned)gCurrentSprite.primarySpriteRamSlot);
+            Port_DebugLog(msg);
+            sLoggedOnce = 1;
+        }
+    }
+#endif
 }
 
 /**

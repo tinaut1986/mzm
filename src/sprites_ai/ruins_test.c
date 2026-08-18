@@ -27,6 +27,10 @@
 #include "structs/sprite.h"
 #include "structs/projectile.h"
 
+#ifdef TMC_3DS
+#include "port_debug_log.h"
+#endif
+
 #define RUINS_TEST_POSE_SPAWNING 0x1
 #define RUINS_TEST_POSE_TURNING_INTO_REFLECTION 0x2
 #define RUINS_TEST_POSE_FREE_SAMUS 0x3
@@ -589,6 +593,20 @@ static void RuinsTestInit(void)
     gSubSpriteData1.work3 = RUINS_TEST_FIGHT_STAGE_ON_GOING;
     gSubSpriteData1.health = 0;
     gSubSpriteData1.work1 = 0;
+
+#ifdef TMC_3DS
+    {
+        char msg[160];
+        __builtin_snprintf(msg, sizeof(msg),
+            "RuinsTestInit: spriteId=%u gfxSlot=%u pOam=%p y=%u x=%u",
+            (unsigned)gCurrentSprite.spriteId,
+            (unsigned)gCurrentSprite.spritesetGfxSlot,
+            (void*)gCurrentSprite.pOam,
+            (unsigned)gCurrentSprite.yPosition,
+            (unsigned)gCurrentSprite.xPosition);
+        Port_DebugLog(msg);
+    }
+#endif
 
     RuinsTestCalculateDelay(CONVERT_SECONDS(2.f));
 
@@ -1566,6 +1584,19 @@ static void RuinsTestGhostSymbolDelayBeforePlacingAtEndOfFight(void)
  */
 void RuinsTest(void)
 {
+#ifdef TMC_3DS
+    {
+        static u16 sLastPose = 0xFFFF;
+        if (gCurrentSprite.pose != sLastPose)
+        {
+            char msg[128];
+            __builtin_snprintf(msg, sizeof(msg), "RuinsTest: pose=%u gfxSlot=%u",
+                (unsigned)gCurrentSprite.pose, (unsigned)gCurrentSprite.spritesetGfxSlot);
+            Port_DebugLog(msg);
+            sLastPose = gCurrentSprite.pose;
+        }
+    }
+#endif
     switch (gCurrentSprite.pose)
     {
         case SPRITE_POSE_UNINITIALIZED:
