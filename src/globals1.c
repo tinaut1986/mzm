@@ -296,7 +296,19 @@ IWRAM_DATA struct MusicInfo gMusicInfo = {};
 IWRAM_DATA u8 gUnk_3003760[12] = {};
 #endif
 
-IWRAM_DATA struct PsgSoundData gUnk_300376C[1] = {};
+// [PORT] Declared [1] in the decomp, but src/audio.c indexes it with
+// `pVariables->channel & 7` (0-7). On real hardware this is harmless: the
+// GBA ROM's fixed IWRAM layout (see mzm_eu.map) places this immediately
+// before gPsgSounds[4], so indices 1-4 silently alias into gPsgSounds and
+// the whole thing behaves like an undocumented 5-slot array -- not a real
+// bug there. The 3DS/native linker doesn't reproduce that exact adjacency
+// (globals get reordered), so the same out-of-bounds index instead landed
+// on unrelated memory and crashed on a NULL pVariables dereference in
+// unk_2030 (src/audio.c) -- confirmed via crash dump + arm-none-eabi-nm on
+// the port's own ELF, where gUnk_300376C and gPsgSounds are nowhere near
+// each other. Sized for the full 0-7 range actually used so every channel
+// gets its own real, non-overlapping slot.
+IWRAM_DATA struct PsgSoundData gUnk_300376C[8] = {};
 
 IWRAM_DATA struct PsgSoundData gPsgSounds[4] = {};
 IWRAM_DATA struct SoundChannelBackup gSoundChannelBackup[7] = {};
