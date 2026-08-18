@@ -3,6 +3,7 @@
 #include "gba.h"
 #include "syscalls.h"
 #include "audio/track_internal.h"
+#include "port_gba_mem.h"
 
 #include "data/audio.h"
 
@@ -1303,7 +1304,16 @@ static void unk_2030(struct PsgSoundData* pSound, struct TrackVariables* pVariab
         var_0 = 0;
 
     pSound->maybe_noteDelay = GetNoteDelay(pVariables, var_0, pVariables->unk_18);
-    pSound->pVariables->pSoundPsg = NULL;
+    // [PORT] On real GBA hardware, a write through a NULL pSound->pVariables
+    // (a freshly-unused PSG slot, zero-initialized) lands at a low address
+    // that's silently discarded by the hardware bus -- effectively a no-op,
+    // not a crash. ResetTrack/StopMusicOrSound (asm/audio_internal.s) guard
+    // the equivalent operation with an explicit null check; this decompiled
+    // C function doesn't, because on GBA it didn't need to. On the 3DS this
+    // is a real host pointer dereference and NULL is not writable, so the
+    // guard has to be explicit here to reproduce the same (no-op) behavior.
+    if (pSound->pVariables != NULL)
+        pSound->pVariables->pSoundPsg = NULL;
     pSound->pVariables = pVariables;
     pSound->unk_F |= 2;
     pSound->unk_0 = 1;
@@ -1550,12 +1560,17 @@ void AudioCommand_Voice(struct TrackData* pTrack, struct TrackVariables* pVariab
         if (pVariables->channel == 0x80)
         {
             pVariables->unk_0 |= 0x80;
-            pVariables->pSample2 = pVoice->pSample;
+            // [PORT] pVoice->pSample is a raw GBA ROM address baked into the
+            // voice table data (pVoice itself is host-resolved, but this
+            // field inside it is not) -- dereferenced directly afterward via
+            // *pVariables->pSample2 in unk_4e10 (asm/audio_internal.s). See
+            // port_resolve_addr() in port_gba_mem.c.
+            pVariables->pSample2 = GBA_RESOLVE(pVoice->pSample);
         }
         else if (pVariables->channel == 0x40)
         {
             pVariables->unk_0 |= 0x40;
-            pVariables->pSample2 = pVoice->pSample;
+            pVariables->pSample2 = GBA_RESOLVE(pVoice->pSample);
             pVariables->envelope2 = pVoice->envelope;
         }
     }
@@ -1568,7 +1583,13 @@ void AudioCommand_Voice(struct TrackData* pTrack, struct TrackVariables* pVariab
 
         if (channel == 0)
         {
-            pVariables->pSample1 = pVoice->pSample;
+            // [PORT] same raw-ROM-pointer issue as pSample2 above: pVoice->pSample
+            // is a real sample pointer for this instrument type, dereferenced
+            // later via SoundChannel.pSample/pData/pSize (unk_4f8c in
+            // asm/audio_internal.s). The channel<3/channel==4 branches below
+            // deliberately do NOT resolve -- they extract a small packed value
+            // from the raw pointer's bit pattern, not a real address.
+            pVariables->pSample1 = GBA_RESOLVE(pVoice->pSample);
         }
         else if (channel < 3)
         {
@@ -1581,7 +1602,10 @@ void AudioCommand_Voice(struct TrackData* pTrack, struct TrackVariables* pVariab
         }
         else if (channel == 3)
         {
-            UploadSampleToWaveRam(pVoice->pSample);
+            // [PORT] real pointer to 16 bytes of programmable-wave sample
+            // data in ROM, dereferenced directly by UploadSampleToWaveRam
+            // (asm/audio_internal.s). Same class as pSample1/pSample2 above.
+            UploadSampleToWaveRam(GBA_RESOLVE(pVoice->pSample));
         }
         else if (channel == 4)
         {
