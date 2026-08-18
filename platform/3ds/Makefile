@@ -21,10 +21,10 @@ SMDHTOOL  := $(DEVKITPRO)/tools/bin/smdhtool
 
 ROOT      := $(abspath $(CURDIR)/../..)
 BUILD     := $(CURDIR)/build
-TARGET    := $(CURDIR)/mzm-3ds-ppudbg
+TARGET    := $(CURDIR)/mzm-3ds
 
-APP_TITLE       := MZM 3DS [PPU/Sprite dbg]
-APP_DESCRIPTION := Native 3DS port of Metroid Zero Mission (sprite/PPU debug build)
+APP_TITLE       := Metroid Zero Mission 3DS
+APP_DESCRIPTION := Native 3DS port of Metroid Zero Mission
 APP_AUTHOR      := metroidret + community
 APP_ICON        := $(CURDIR)/assets/icon-48.png
 ifeq ($(wildcard $(APP_ICON)),)

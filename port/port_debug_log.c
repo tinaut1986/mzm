@@ -5,7 +5,7 @@
 #ifdef PLATFORM_LINUX
 #define PORT_DEBUG_LOG_PATH "/tmp/mzm-debug.log"
 #else
-#define PORT_DEBUG_LOG_PATH "sdmc:/3ds/mzm-debug-ppu.log"
+#define PORT_DEBUG_LOG_PATH "sdmc:/3ds/mzm-debug.log"
 #endif
 
 void Port_DebugLog(const char* msg) {
