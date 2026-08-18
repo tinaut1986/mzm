@@ -119,8 +119,16 @@ static u8* Port_MzmAudio_SoundCodeC(u32* dest, u32* src, u8 count) {
             DumpRaw(left, right, n);
             unsigned int wIdx = sRingWriteIndex;
             for (unsigned int i = 0; i < n; ++i) {
-                const int lv = (int)left[i] - 128;
-                const int rv = (int)right[i] - 128;
+                /* [PORT] soundRawData is fed straight to REG_DMA1_SRC/DMA2_SRC
+                 * (src/audio_wrappers.c), i.e. it's real GBA Direct Sound FIFO
+                 * data -- the GBA hardware FIFO_A/FIFO_B consume SIGNED 8-bit
+                 * PCM (GBATek), not unsigned/centered-at-128. Reinterpreting
+                 * the byte as signed directly (no -128 bias) is the correct
+                 * conversion; the previous bias turned a clean signed
+                 * waveform into near-random amplitude swings, which is what
+                 * was heard as crackling/static. */
+                const int lv = (signed char)left[i];
+                const int rv = (signed char)right[i];
                 const unsigned int idx = (wIdx % MZM_AUDIO_RING_FRAMES) * 2;
                 gMzmAudioRing[idx] = (short)(lv << 8);
                 gMzmAudioRing[idx + 1] = (short)(rv << 8);
@@ -139,12 +147,13 @@ static u8* Port_MzmAudio_SoundCodeC(u32* dest, u32* src, u8 count) {
             unsigned int wholePeak = 0, wholeNonz = 0;
             const unsigned char* wb = gMusicInfo.soundRawData;
             for (unsigned int i = 0; i < 3072u; i += 2) {
-                int lv = (int)wb[i] - 128; if (lv < 0) lv = -lv;
-                int rv = (int)wb[i + 1] - 128; if (rv < 0) rv = -rv;
+                /* Signed PCM (see the conversion above): silence is 0, not 128. */
+                int lv = (signed char)wb[i]; if (lv < 0) lv = -lv;
+                int rv = (signed char)wb[i + 1]; if (rv < 0) rv = -rv;
                 if ((unsigned)lv > wholePeak) wholePeak = (unsigned)lv;
                 if ((unsigned)rv > wholePeak) wholePeak = (unsigned)rv;
-                if (wb[i] != 128) ++wholeNonz;
-                if (wb[i + 1] != 128) ++wholeNonz;
+                if (wb[i] != 0) ++wholeNonz;
+                if (wb[i + 1] != 0) ++wholeNonz;
             }
             const unsigned char* left = (const unsigned char*)dest;
             const unsigned char* right = left + PCM_DMA_BUF_SIZE;
