@@ -4,6 +4,7 @@
 #include "syscalls.h"
 #include "gba.h"
 #include "macros.h"
+#include "port_gba_mem.h"
 
 #include "data/audio.h"
 
@@ -876,10 +877,15 @@ void QueueSound(u16 sound, u16 timer)
     u8 trackGroup;
     const u8* pHeader;
 
-    trackGroup = sSoundDataEntries[sound].trackGroundNumber; 
+    trackGroup = sSoundDataEntries[sound].trackGroundNumber;
     pHeader = sSoundDataEntries[sound].pHeader;
 
-    if (sArray_808cee2[trackGroup] == 0 || !(gSoundQueue[trackGroup].exists & 3) || gSoundQueue[trackGroup].priority <= pHeader[2])
+    // [PORT] pHeader is a raw GBA ROM address (see StopOrFadeSound below,
+    // which compares it by identity against a fresh untranslated reread of
+    // sSoundDataEntries[].pHeader -- it must stay raw when stored into
+    // gSoundQueue[].pHeader). Only the byte reads of the header's own
+    // "priority" field need a resolved pointer.
+    if (sArray_808cee2[trackGroup] == 0 || !(gSoundQueue[trackGroup].exists & 3) || gSoundQueue[trackGroup].priority <= GBA_RESOLVE(pHeader)[2])
     {
         if (timer == 0)
         {
@@ -892,7 +898,7 @@ void QueueSound(u16 sound, u16 timer)
             gSoundQueue[trackGroup].fadingTimer = timer;
         }
 
-        gSoundQueue[trackGroup].priority = pHeader[2];
+        gSoundQueue[trackGroup].priority = GBA_RESOLVE(pHeader)[2];
         gSoundQueue[trackGroup].pHeader = pHeader;
     }
 }

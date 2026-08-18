@@ -3,6 +3,7 @@
 
 #include "gba.h"
 #include "macros.h"
+#include "port_gba_mem.h"
 
 /**
  * @brief 2564 | 294 | Initializes the audio
@@ -666,16 +667,21 @@ void unk_2f00(u16 musicTrack1, u16 musicTrack2, u16 timer)
             if (!(pTrack2->flags & 0xF8))
             {
                 pHeader = sSoundDataEntries[musicTrack1].pHeader;
-        
+
+                // [PORT] pHeader is a raw GBA ROM address, kept raw here
+                // because it's passed to InitTrack() below (which resolves
+                // it internally, see asm/audio_internal.s) -- only the
+                // direct byte reads of the header's own fields need a
+                // resolved pointer.
                 // Amount of tracks
-                if (pHeader[0] == 0)
+                if (GBA_RESOLVE(pHeader)[0] == 0)
                     ResetTrack(pTrack1);
                 else
                 {
                     if (pTrack1->flags & 2)
                     {
                         // Priority
-                        if (pTrack1->unk_3 > pHeader[2])
+                        if (pTrack1->unk_3 > GBA_RESOLVE(pHeader)[2])
                         {
                             //pTrack1->occupied = FALSE;
                             //pTrack2->occupied = FALSE;
