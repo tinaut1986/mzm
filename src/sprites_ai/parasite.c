@@ -714,7 +714,7 @@ static void ParasiteIdleInit(struct SpriteData* pSprite)
         velocity = PIXEL_SIZE + PIXEL_SIZE / 2;
 
     pSprite->work2 = velocity;
-    pSprite->work0 = MOD_AND((MOD_AND(pSprite->xPosition / HALF_BLOCK_SIZE, SPRITE_RNG_MAX) + gSpriteRng), SPRITE_RNG_MAX);
+    pSprite->work0 = MOD_AND((MOD_AND(pSprite->xPosition / HALF_BLOCK_SIZE, SPRITE_RNG_COUNT) + gSpriteRng), SPRITE_RNG_COUNT);
 }
 
 /**
@@ -748,7 +748,7 @@ static void ParasiteIdle(struct SpriteData* pSprite)
     }
 
     timer = pSprite->work0;
-    if (gFrameCounter8Bit / SPRITE_RNG_MAX == timer)
+    if (gFrameCounter8Bit / SPRITE_RNG_COUNT == timer)
     {
         pSprite->pOam = sParasiteOam_LandingAfterFalling;
         pSprite->currentAnimationFrame = 0;
@@ -757,7 +757,7 @@ static void ParasiteIdle(struct SpriteData* pSprite)
         pSprite->work0 = gSpriteRng * 3;
         pSprite->pose = PARASITE_POSE_LANDING;
     }
-    else if (gFrameCounter8Bit / SPRITE_RNG_MAX == timer + 1 || gFrameCounter8Bit / SPRITE_RNG_MAX == timer - 1)
+    else if (gFrameCounter8Bit / SPRITE_RNG_COUNT == timer + 1 || gFrameCounter8Bit / SPRITE_RNG_COUNT == timer - 1)
     {
         pSprite->pose = PARASITE_POSE_JUMPING_UP;
 
@@ -867,7 +867,7 @@ static void ParasiteMultipleIdle(struct SpriteData* pSprite)
     }
 
     timer = pSprite->work0;
-    rng = gFrameCounter8Bit / SPRITE_RNG_MAX;
+    rng = gFrameCounter8Bit / SPRITE_RNG_COUNT;
     if (rng == timer)
     {
         pSprite->pOam = sParasiteOam_LandingAfterFalling;

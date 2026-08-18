@@ -467,10 +467,10 @@ MAKE_ENUM(u8, SpritePose) {
 
 #define SPRITE_FREEZE_TIMER (CONVERT_SECONDS(4.f))
 
-// Maximum value for a sprite rng
-#define SPRITE_RNG_MAX (16)
-// Computes a probability for the sprite rng value [0;16[
-#define SPRITE_RNG_PROB(prob) ((s32)((prob) * SPRITE_RNG_MAX))
+// Number of possible values for sprite rng
+#define SPRITE_RNG_COUNT (16)
+// Computes a probability for the sprite rng value (ranges from 0-15)
+#define SPRITE_RNG_PROB(prob) ((s32)((prob) * SPRITE_RNG_COUNT))
 
 #define SPRITESET_IDX(idx) (16 + idx + 1)
 
