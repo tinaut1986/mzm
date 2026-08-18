@@ -52,31 +52,33 @@ SRCS_ROOT := \
 	$(ROOT)/port/port_gba_timing.c \
 	$(ROOT)/port/port_debug_log.c \
 	$(ROOT)/port/port_constructor_init.c \
-	$(ROOT)/port/port_audio_stubs.c \
+	$(ROOT)/port/port_mzm_audio_glue.c \
 	$(ROOT)/port/ppu/src/virtuappu.c \
 	$(ROOT)/port/ppu/src/mode1.c \
 	$(filter-out %_selftest.c %_test.c, $(wildcard $(ROOT)/port/generated/*.c))
 
 
 
-# asm/audio_internal.s y asm/soundcode.s (motor de audio real, sin
-# descompilar todavia, ARM Thumb tal cual de la ROM) se dejan fuera y se
-# sustituyen por los stubs de port_audio_stubs.c (PORT_NATIVE_AUDIO_STUBS
-# abajo), igual que ya hace platform/linux. Motivo: un bug de corrupcion de
-# memoria sin resolver en ese motor (ver docs/3ds-port-status-2026-08-17.md
-# seccion 6) crashea el juego nada mas interactuar con el menu de idioma, y
-# el audio real todavia no suena (no esta conectado a NDSP), asi que de
-# momento no aporta nada dejarlo activo. Revertir esto en cuanto se arregle
-# el bug o se conecte NDSP de verdad.
+# Motor de audio real de mzm: UpdateAudio/InitTrack/UpdateTrack viven en
+# asm/audio_internal.s (ARM Thumb sin descompilar) y el mezclador PCM en
+# asm/soundcode.s. Ya incluyen el fix de port_resolve_addr() en InitTrack
+# (docs/3ds-port-status-2026-08-17.md seccion 6). Se enlazan en el build 3DS
+# para que el sonido use el engine propio de mzm (no M4A/TMC); el PCM se
+# consume desde gMusicInfo.soundRawData por el pegamento NDSP
+# (port_audio_3ds.c). port_audio_stubs.c queda fuera (ver PORT_NATIVE_AUDIO_STUBS
+# arriba) igual que en el resto de builds.
 SRCS_ASM := \
 	$(ROOT)/asm/intr_main.s \
-	$(ROOT)/asm/linker_symbols.s
+	$(ROOT)/asm/linker_symbols.s \
+	$(ROOT)/asm/audio_internal.s \
+	$(ROOT)/asm/soundcode.s
 
 SRCS_3DS := \
 	$(CURDIR)/source/main_3ds.c \
 	$(CURDIR)/source/platform_3ds_minimal.c \
 	$(CURDIR)/source/platform_gpu_3ds.c \
-	$(CURDIR)/source/port_ppu_mzm.c
+	$(CURDIR)/source/port_ppu_mzm.c \
+	$(CURDIR)/source/port_mzm_audio_3ds.c
 
 # Generar objetos
 OBJS_ROOT := $(patsubst $(ROOT)/%.c, $(BUILD)/root/%.o, $(SRCS_ROOT))
@@ -89,7 +91,6 @@ ARCH    := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
 CFLAGS  := -g -Wall -O2 -mword-relocations -ffunction-sections -fdata-sections \
            -DREGION_EU -DMZM_PORT_VERSION='"0.0-dev"' -D__3DS__ -DTMC_3DS \
            -DNON_MATCHING=1 \
-           -DPORT_NATIVE_AUDIO_STUBS \
            -Wno-implicit-function-declaration -Wno-implicit-int -Wno-builtin-declaration-mismatch \
            -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function \
            -Wno-return-mismatch -Wno-stringop-overflow -Wno-strict-aliasing -Wno-parentheses \

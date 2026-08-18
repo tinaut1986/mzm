@@ -150,7 +150,21 @@ int main(int argc, char** argv) {
     extern void Port_LoadSram(void);
     Port_LoadSram();
 
-    printf("Starting engine (no audio yet)...\n");
+    /* NDSP audio consumer: drains the mzm engine's PCM ring into the DSP.
+     * Init'd before agbmain() so the per-frame capture in agbmain has a
+     * consumer ready. Requires a working 3DS DSP firmware (Luma3DS Rosalina:
+     * "Dump DSP firmware", produces sdmc:/3ds/dspfirm.cdc) or ndspInit()
+     * fails and only the visual game runs -- see platform/3ds/README.md. */
+    extern bool Port_MzmAudio_Init(void);
+    Port_DebugLog("main: before Port_MzmAudio_Init");
+    if (!Port_MzmAudio_Init()) {
+        Port_DebugLog("main: Port_MzmAudio_Init failed (no DSP firmware?) -- audio disabled");
+        printf("Warning: audio unavailable (ndspInit failed). Check DSP firmware dump.\n");
+    } else {
+        Port_DebugLog("main: Port_MzmAudio_Init done");
+    }
+
+    printf("Starting engine...\n");
     Platform3DS_EnterGameplayDisplay();
     Port_DebugLog("main: before agbmain()");
     agbmain();

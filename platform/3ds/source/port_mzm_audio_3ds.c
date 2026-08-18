@@ -1,0 +1,199 @@
+#include "port_mzm_audio_glue.h"
+
+#include <3ds.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <string.h>
+#include <stdio.h>
+
+extern void Port_DebugLog(const char* msg);
+
+/*
+ * NDSP consumer for the mzm port's real audio engine.
+ *
+ * port_mzm_audio_glue.c (producer, main thread) converts the engine's
+ * gMusicInfo.soundRawData u8 mono PCM into interleaved s16 stereo at
+ * MZM_AUDIO_OUT_RATE and appends it to a lock-free ring. This file runs a
+ * dedicated audio thread that drains that ring into NDSP wave buffers on
+ * channel 0, mirroring the buffer-management pattern of the (TMC-coupled)
+ * port_audio_3ds.c but sourcing samples from the mzm ring instead of the
+ * agbplay/M4A backend.
+ */
+
+#define BUFFER_FRAMES 256
+#define BUFFER_COUNT 12
+#define AUDIO_THREAD_STACK (64u * 1024u)
+#define AUDIO_THREAD_CORE 0
+
+/* Safety floor: the consumer never drains the ring below this many frames,
+ * so the producer (driven at the game's ~60 Hz frame cadence) always has one
+ * full NDSP buffer worth of backlog to land into. Without this, a buffer
+ * request arriving just after the last capture empties the ring and the
+ * consumer pads with silence -- the "clicks". */
+#define RING_FLOOR BUFFER_FRAMES
+
+static ndspWaveBuf sWave[BUFFER_COUNT];
+static int16_t* sSamples;
+static bool sInitialized;
+static bool sPaused;
+static volatile bool sAudioThreadRunning;
+static Thread sAudioThread;
+static LightEvent sAudioWake;
+
+/* Rate the NDSP channel is currently configured at. Defaults to
+ * MZM_AUDIO_OUT_RATE until the engine's real rate is reported via the rate
+ * hook (agbmain -> InitializeGame -> SetupSoundTransfer). */
+static unsigned int sOutRate = MZM_AUDIO_OUT_RATE;
+
+static void OnEngineRate(unsigned int engineRate) {
+    if (!sInitialized || engineRate == 0 || engineRate == sOutRate) return;
+    sOutRate = engineRate;
+    ndspChnSetRate(0, engineRate);
+}
+
+static void FillBuffer(int index) {
+    int16_t* dst = sSamples + index * BUFFER_FRAMES * 2;
+    memset(dst, 0, BUFFER_FRAMES * 2 * sizeof(int16_t));
+
+    /* Drain as much of the ring as the buffer holds, consuming contiguous
+     * frames. The ring is circular; copy in up to two linear segments. */
+    unsigned int readIdx = Port_MzmAudio_RingReadIndex();
+    const unsigned int writeIdx = Port_MzmAudio_RingWriteIndex();
+    const unsigned int available = writeIdx - readIdx;
+
+    /* Leave at least RING_FLOOR frames in the ring as a backlog cushion. */
+    const unsigned int availForUse =
+        (available > RING_FLOOR) ? (available - RING_FLOOR) : 0;
+    const unsigned int toRead =
+        (availForUse < BUFFER_FRAMES) ? availForUse : BUFFER_FRAMES;
+
+    unsigned int consumed = 0;
+    while (consumed < toRead) {
+        const unsigned int linear = MZM_AUDIO_RING_FRAMES - (readIdx % MZM_AUDIO_RING_FRAMES);
+        const unsigned int chunk = (toRead - consumed < linear) ? (toRead - consumed) : linear;
+        memcpy(dst + consumed * 2, gMzmAudioRing + (readIdx % MZM_AUDIO_RING_FRAMES) * 2,
+               chunk * 2 * sizeof(int16_t));
+        readIdx += chunk;
+        consumed += chunk;
+    }
+
+    /* Publish how many frames we consumed back to the producer. */
+    Port_MzmAudio_AdvanceReadIndex(readIdx);
+    DSP_FlushDataCache(dst, BUFFER_FRAMES * 2 * sizeof(int16_t));
+    sWave[index].data_pcm16 = dst;
+    sWave[index].nsamples = BUFFER_FRAMES;
+    sWave[index].status = NDSP_WBUF_FREE;
+    ndspChnWaveBufAdd(0, &sWave[index]);
+
+    /* Throttled diagnostic: how much of each NDSP buffer actually held audio
+     * (toRead < BUFFER_FRAMES means we under-ran the ring and had to pad with
+     * silence, which is exactly what the "clicks" would sound like). */
+    static unsigned int sDiagCount;
+    if ((++sDiagCount & 0x1F) == 0) {
+        char msg[96];
+        __builtin_snprintf(msg, sizeof(msg), "ndsp: toRead=%u/%u rate=%u",
+            toRead, BUFFER_FRAMES, sOutRate);
+        Port_DebugLog(msg);
+    }
+}
+
+static uint32_t CountDoneBuffers(void) {
+    uint32_t done = 0;
+    for (int i = 0; i < BUFFER_COUNT; ++i) {
+        if (sWave[i].status == NDSP_WBUF_DONE) ++done;
+    }
+    return done;
+}
+
+static int FindDoneBuffer(void) {
+    for (int i = 0; i < BUFFER_COUNT; ++i) {
+        if (sWave[i].status == NDSP_WBUF_DONE) return i;
+    }
+    return -1;
+}
+
+static void AudioFrameFinished(void* data) {
+    (void)data;
+    if (CountDoneBuffers() == 0) return;
+    LightEvent_Signal(&sAudioWake);
+}
+
+static void AudioThreadMain(void* argument) {
+    (void)argument;
+    while (__atomic_load_n(&sAudioThreadRunning, __ATOMIC_ACQUIRE)) {
+        LightEvent_Wait(&sAudioWake);
+        if (!__atomic_load_n(&sAudioThreadRunning, __ATOMIC_ACQUIRE)) break;
+        int bufferIndex;
+        while ((bufferIndex = FindDoneBuffer()) >= 0) {
+            FillBuffer(bufferIndex);
+        }
+    }
+}
+
+bool Port_MzmAudio_Init(void) {
+    if (sInitialized) return true;
+    if (ndspInit() != 0) return false;
+    ndspSetOutputMode(NDSP_OUTPUT_STEREO);
+    ndspChnReset(0);
+    ndspChnSetInterp(0, NDSP_INTERP_LINEAR);
+    ndspChnSetRate(0, MZM_AUDIO_OUT_RATE);
+    ndspChnSetFormat(0, NDSP_FORMAT_STEREO_PCM16);
+    float mix[12] = { 1.0f, 0.0f, 0.0f, 1.0f };
+    ndspChnSetMix(0, mix);
+
+    sSamples = (int16_t*)linearAlloc(BUFFER_COUNT * BUFFER_FRAMES * 2 * sizeof(int16_t));
+    if (!sSamples) {
+        ndspExit();
+        return false;
+    }
+    sOutRate = MZM_AUDIO_OUT_RATE;
+    Port_MzmAudio_InitGlue();
+    Port_MzmAudio_SetRateHook(OnEngineRate);
+    memset(sWave, 0, sizeof(sWave));
+    memset(sSamples, 0, BUFFER_COUNT * BUFFER_FRAMES * 2 * sizeof(int16_t));
+    LightEvent_Init(&sAudioWake, RESET_ONESHOT);
+    sInitialized = true;
+    sPaused = false;
+    ndspSetCallback(AudioFrameFinished, NULL);
+    for (int i = 0; i < BUFFER_COUNT; ++i) FillBuffer(i);
+
+    s32 priority = 0x30;
+    svcGetThreadPriority(&priority, CUR_THREAD_HANDLE);
+    if (priority > 0x18) --priority;
+    __atomic_store_n(&sAudioThreadRunning, true, __ATOMIC_RELEASE);
+    sAudioThread = threadCreate(AudioThreadMain, NULL, AUDIO_THREAD_STACK, priority, AUDIO_THREAD_CORE, false);
+    if (!sAudioThread) {
+        __atomic_store_n(&sAudioThreadRunning, false, __ATOMIC_RELEASE);
+    }
+    return true;
+}
+
+void Port_MzmAudio_Pump(void) {
+    if (!sInitialized) return;
+    if (sPaused) return;
+    if (CountDoneBuffers() > 0) LightEvent_Signal(&sAudioWake);
+    if (!sAudioThread) {
+        int bufferIndex;
+        while ((bufferIndex = FindDoneBuffer()) >= 0) {
+            FillBuffer(bufferIndex);
+        }
+    }
+}
+
+void Port_MzmAudio_Shutdown(void) {
+    if (!sInitialized) return;
+    ndspSetCallback(NULL, NULL);
+    __atomic_store_n(&sAudioThreadRunning, false, __ATOMIC_RELEASE);
+    LightEvent_Signal(&sAudioWake);
+    if (sAudioThread) {
+        threadJoin(sAudioThread, U64_MAX);
+        threadFree(sAudioThread);
+        sAudioThread = NULL;
+    }
+    ndspChnWaveBufClear(0);
+    linearFree(sSamples);
+    sSamples = NULL;
+    ndspExit();
+    sInitialized = false;
+    sPaused = false;
+}

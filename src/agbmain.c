@@ -52,9 +52,22 @@ void agbmain(void)
 #if defined(TMC_3DS) && defined(PORT_VERBOSE_FRAME_LOG)
         Port_DebugLog("agbmain: before UpdateAudio()");
 #endif
+#if defined(TMC_3DS) && defined(__3DS__)
+        {
+            /* Bridge the real mzm audio engine to NDSP by intercepting the
+             * engine's final mixdown. gSoundCodeCPointer points at
+             * CallSoundCodeC (the only function that writes into
+             * gMusicInfo.soundRawData); Port_MzmAudio_InstallSoundCodeCHook()
+             * substitutes a wrapper that runs inside that call and copies out
+             * exactly the PCM the engine just produced (left slot + the
+             * +0x600 right slot), so we never need to know the engine's
+             * internal write window. Install must precede UpdateAudio(). */
+            extern void Port_MzmAudio_InstallSoundCodeCHook(void);
+            Port_MzmAudio_InstallSoundCodeCHook();
+            UpdateAudio();
+        }
+#else
         UpdateAudio();
-#if defined(TMC_3DS) && defined(PORT_VERBOSE_FRAME_LOG)
-        Port_DebugLog("agbmain: UpdateAudio() done");
 #endif
 
         if (gResetGame)
