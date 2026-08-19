@@ -3,6 +3,7 @@
 
 #include "gba.h"
 #include "macros.h"
+#include "port_gba_mem.h"
 
 /**
  * @brief 2564 | 294 | Initializes the audio
@@ -50,7 +51,13 @@ void InitializeAudio(void)
 
     DMA3_FILL_16(0, &gMusicInfo, 28);
 
+#if defined(PORT_NATIVE) || defined(TMC_3DS)
+    // On native platforms with fast CPUs and asynchronous timing, disable
+    // the GBA scanline budget cutoff so all active sound channels are always mixed.
+    gMusicInfo.unk_9 = 0;
+#else
     gMusicInfo.unk_9 = (u8)gUnk_Audio0x64;
+#endif
 
     for (i = 0; i < ARRAY_SIZE(gPsgSounds); i++)
     {
@@ -111,7 +118,7 @@ void DoSoundAction(u32 action)
     if (action & SOUND_ACTION_MAX_CHANNELS_FLAG)
     {
         gMusicInfo.maxSoundChannels = (action & SOUND_ACTION_MAX_CHANNELS_FLAG) >> SOUND_ACTION_MAX_CHANNELS_SHIFT;
-        for (i = ARRAY_SIZE(gMusicInfo.soundChannels); i >= 0 ; i--)
+        for (i = ARRAY_SIZE(gMusicInfo.soundChannels) - 1; i >= 0 ; i--)
         {
             gMusicInfo.soundChannels[i].unk_0 = 0;
         }
@@ -201,9 +208,11 @@ void SetupSoundTransfer(void)
     WRITE_16(REG_TM0CNT_H, 0);
     WRITE_16(REG_TM0CNT_L, -((u32)FRAME_DRAW_CYCLES / samplesPerFrame)); // cycle time to play each sample
 
+#if !defined(TMC_3DS) && !defined(PORT_NATIVE)
     // Wait for VBLANK
     while (READ_8(REG_VCOUNT) == (SCREEN_SIZE_Y - 1)) {}
     while (READ_8(REG_VCOUNT) != (SCREEN_SIZE_Y - 1)) {}
+#endif
 
     WRITE_16(REG_TM0CNT_H, 0x80); // start timer 0
 }
@@ -666,16 +675,21 @@ void unk_2f00(u16 musicTrack1, u16 musicTrack2, u16 timer)
             if (!(pTrack2->flags & 0xF8))
             {
                 pHeader = sSoundDataEntries[musicTrack1].pHeader;
-        
+
+                // [PORT] pHeader is a raw GBA ROM address, kept raw here
+                // because it's passed to InitTrack() below (which resolves
+                // it internally, see asm/audio_internal.s) -- only the
+                // direct byte reads of the header's own fields need a
+                // resolved pointer.
                 // Amount of tracks
-                if (pHeader[0] == 0)
+                if (GBA_RESOLVE(pHeader)[0] == 0)
                     ResetTrack(pTrack1);
                 else
                 {
                     if (pTrack1->flags & 2)
                     {
                         // Priority
-                        if (pTrack1->unk_3 > pHeader[2])
+                        if (pTrack1->unk_3 > GBA_RESOLVE(pHeader)[2])
                         {
                             //pTrack1->occupied = FALSE;
                             //pTrack2->occupied = FALSE;

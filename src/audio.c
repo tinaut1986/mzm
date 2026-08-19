@@ -3,6 +3,7 @@
 #include "gba.h"
 #include "syscalls.h"
 #include "audio/track_internal.h"
+#include "port_gba_mem.h"
 
 #include "data/audio.h"
 
@@ -147,36 +148,43 @@ void UpdateMusic(void)
         gMusicInfo.currentSoundChannel++;
         pVariables = pChannel->pVariables;
 
-        while (pChannel->unk_13 != 0)
+        if (pVariables != NULL)
         {
-            if (pChannel->unk_13 & 0x2)
+            while (pChannel->unk_13 != 0)
             {
-                if (pChannel->unk_1 == 0x20)
-                    pChannel->unk_18 = pChannel->pSample[3] << 14;
-                else
-                    pChannel->unk_18 = 0;
-
-                pChannel->unk_10 = 0;
-                pChannel->unk_13 &= ~0x2;
-                pChannel->unk_13 |= 0x10;
-            }
-            else if (pChannel->unk_13 & 0x4)
-            {
-                pChannel->unk_13 &= ~0x4;
-            }
-            else if (pChannel->unk_13 & 0x10)
-            {
-                if (pVariables->unk_0 & 0x80)
+                if (pChannel->unk_13 & 0x2)
                 {
-                    pVariables->unk_6 = pChannel->unk_3;
-                    unk_4f10(pVariables);
+                    if (pChannel->unk_1 == 0x20)
+                        pChannel->unk_18 = pChannel->pSample[3] << 14;
+                    else
+                        pChannel->unk_18 = 0;
+
+                    pChannel->unk_10 = 0;
+                    pChannel->unk_13 &= ~0x2;
+                    pChannel->unk_13 |= 0x10;
                 }
+                else if (pChannel->unk_13 & 0x4)
+                {
+                    pChannel->unk_13 &= ~0x4;
+                }
+                else if (pChannel->unk_13 & 0x10)
+                {
+                    if (pVariables->unk_0 & 0x80)
+                    {
+                        pVariables->unk_6 = pChannel->unk_3;
+                        unk_4f10(pVariables);
+                    }
 
-                pChannel->unk_4 = (pVariables->unk_8 * (pChannel->unk_F + 1)) >> 7;
-                pChannel->unk_5 = (pVariables->unk_9 * (pChannel->unk_F + 1)) >> 7;
+                    pChannel->unk_4 = (pVariables->unk_8 * (pChannel->unk_F + 1)) >> 7;
+                    pChannel->unk_5 = (pVariables->unk_9 * (pChannel->unk_F + 1)) >> 7;
 
-                pChannel->unk_13 &= ~0x10;
+                    pChannel->unk_13 &= ~0x10;
+                }
             }
+        }
+        else
+        {
+            pChannel->unk_13 = 0;
         }
 
         var_1 = pChannel->unk_10;
@@ -1227,6 +1235,42 @@ static void unk_1f3c(struct TrackData* pTrack, struct TrackVariables* pVariables
  * @param pTrack Track data pointer
  * @param pVariables Track variables pointer
  */
+/*
+ * [PORT] Resolve the PSG voice slot a track's channel refers to.
+ *
+ * The decomp writes `&gUnk_300376C[pVariables->channel & 7]`, with
+ * gUnk_300376C declared as a single PsgSoundData. That is only meaningful
+ * because of the GBA ROM's fixed IWRAM layout (mzm_eu.map), where
+ * gUnk_300376C sits immediately before gPsgSounds[4]: indices 1-4 land
+ * exactly on gPsgSounds[0-3]. That aliasing is not incidental -- it is the
+ * ONLY path by which a started note reaches the array UpdatePsgSounds()
+ * actually scans, since UpdatePsgSounds() iterates gPsgSounds and nothing
+ * ever reads gUnk_300376C.
+ *
+ * A previous port session read the out-of-bounds index as a plain bug and
+ * "fixed" it by sizing gUnk_300376C to [8] so every channel got its own
+ * slot (see the comment in src/globals1.c and section 6k point 5). That
+ * silenced every PSG voice: notes were written into an array no one reads,
+ * so the engine never drove the sound registers -- confirmed by dumping the
+ * PSG register block at runtime, which stayed frozen at volume 0, frequency
+ * 0 and panning 0x00 for an entire run. It is the reason the user heard
+ * "some music tracks play and others are omitted" (section 6t).
+ *
+ * Express the real intent instead of relying on memory layout: channels 1-4
+ * are PSG hardware channels 1-4, i.e. gPsgSounds[0-3] (UpdatePsgSounds uses
+ * its loop index as the hardware channel number for panning and for
+ * ClearRegistersForPsg). Anything else keeps a real scratch slot, matching
+ * the hardware behaviour that such a value goes somewhere harmless rather
+ * than into a live voice.
+ */
+static struct PsgSoundData* PortPsgSlotForChannel(u8 channel)
+{
+    const u32 ch = channel & 7;
+    if (ch >= 1 && ch <= ARRAY_SIZE(gPsgSounds))
+        return &gPsgSounds[ch - 1];
+    return &gUnk_300376C[ch];
+}
+
 static void unk_1f90(struct TrackData* pTrack, struct TrackVariables* pVariables)
 {
     u8 var_0;
@@ -1237,7 +1281,7 @@ static void unk_1f90(struct TrackData* pTrack, struct TrackVariables* pVariables
     else
         var_0 = pTrack->unk_3 + pVariables->priority;
 
-    pSound = &gUnk_300376C[pVariables->channel & 7];
+    pSound = PortPsgSlotForChannel(pVariables->channel);
     if (pSound->unk_0 == 0 ||
         (var_0 >= pSound->unk_16 &&
         (var_0 != pSound->unk_16 ||
@@ -1263,7 +1307,7 @@ static void unk_1fe0(struct TrackData* pTrack, struct TrackVariables* pVariables
     else
         var_0 = pTrack->unk_3 + pVariables->priority;
 
-    pSound = &gUnk_300376C[pVariables->channel & 7];
+    pSound = PortPsgSlotForChannel(pVariables->channel);
     if (pSound->unk_0 == 0 ||
         (var_0 >= pSound->unk_16 &&
         (var_0 != pSound->unk_16 ||
@@ -1303,7 +1347,16 @@ static void unk_2030(struct PsgSoundData* pSound, struct TrackVariables* pVariab
         var_0 = 0;
 
     pSound->maybe_noteDelay = GetNoteDelay(pVariables, var_0, pVariables->unk_18);
-    pSound->pVariables->pSoundPsg = NULL;
+    // [PORT] On real GBA hardware, a write through a NULL pSound->pVariables
+    // (a freshly-unused PSG slot, zero-initialized) lands at a low address
+    // that's silently discarded by the hardware bus -- effectively a no-op,
+    // not a crash. ResetTrack/StopMusicOrSound (asm/audio_internal.s) guard
+    // the equivalent operation with an explicit null check; this decompiled
+    // C function doesn't, because on GBA it didn't need to. On the 3DS this
+    // is a real host pointer dereference and NULL is not writable, so the
+    // guard has to be explicit here to reproduce the same (no-op) behavior.
+    if (pSound->pVariables != NULL)
+        pSound->pVariables->pSoundPsg = NULL;
     pSound->pVariables = pVariables;
     pSound->unk_F |= 2;
     pSound->unk_0 = 1;
@@ -1550,13 +1603,27 @@ void AudioCommand_Voice(struct TrackData* pTrack, struct TrackVariables* pVariab
         if (pVariables->channel == 0x80)
         {
             pVariables->unk_0 |= 0x80;
-            pVariables->pSample2 = pVoice->pSample;
+            // [PORT] pVoice->pSample is a raw GBA ROM address baked into the
+            // voice table data (pVoice itself is host-resolved, but this
+            // field inside it is not) -- dereferenced directly afterward via
+            // *pVariables->pSample2 in unk_4e10 (asm/audio_internal.s). See
+            // port_resolve_addr() in port_gba_mem.c.
+            pVariables->pSample2 = GBA_RESOLVE(pVoice->pSample);
         }
         else if (pVariables->channel == 0x40)
         {
+            uintptr_t rawKeymapPtr;
+            uintptr_t resolvedKeymap;
+
             pVariables->unk_0 |= 0x40;
-            pVariables->pSample2 = pVoice->pSample;
-            pVariables->envelope2 = pVoice->envelope;
+            pVariables->pSample2 = GBA_RESOLVE(pVoice->pSample);
+            // [PORT] For multi-sample / keysplit instruments (channel == 0x40),
+            // pVoice->envelope is a raw GBA ROM pointer (u8*) to a 128-byte
+            // keymap table, dereferenced directly in unk_4e10 (asm/audio_internal.s)
+            // via ldrb [envelope2 + note]. Must be resolved through GBA_RESOLVE.
+            rawKeymapPtr = *(const uintptr_t*)&pVoice->envelope;
+            resolvedKeymap = (uintptr_t)GBA_RESOLVE((const void*)rawKeymapPtr);
+            pVariables->envelope2 = *(const struct Envelope*)&resolvedKeymap;
         }
     }
     else
@@ -1568,7 +1635,13 @@ void AudioCommand_Voice(struct TrackData* pTrack, struct TrackVariables* pVariab
 
         if (channel == 0)
         {
-            pVariables->pSample1 = pVoice->pSample;
+            // [PORT] same raw-ROM-pointer issue as pSample2 above: pVoice->pSample
+            // is a real sample pointer for this instrument type, dereferenced
+            // later via SoundChannel.pSample/pData/pSize (unk_4f8c in
+            // asm/audio_internal.s). The channel<3/channel==4 branches below
+            // deliberately do NOT resolve -- they extract a small packed value
+            // from the raw pointer's bit pattern, not a real address.
+            pVariables->pSample1 = GBA_RESOLVE(pVoice->pSample);
         }
         else if (channel < 3)
         {
@@ -1581,7 +1654,10 @@ void AudioCommand_Voice(struct TrackData* pTrack, struct TrackVariables* pVariab
         }
         else if (channel == 3)
         {
-            UploadSampleToWaveRam(pVoice->pSample);
+            // [PORT] real pointer to 16 bytes of programmable-wave sample
+            // data in ROM, dereferenced directly by UploadSampleToWaveRam
+            // (asm/audio_internal.s). Same class as pSample1/pSample2 above.
+            UploadSampleToWaveRam(GBA_RESOLVE(pVoice->pSample));
         }
         else if (channel == 4)
         {

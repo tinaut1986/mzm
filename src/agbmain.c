@@ -55,9 +55,23 @@ void agbmain(void)
 #if defined(TMC_3DS) && defined(PORT_VERBOSE_FRAME_LOG)
         Port_DebugLog("agbmain: before UpdateAudio()");
 #endif
+#if defined(TMC_3DS) && defined(__3DS__)
+        {
+            if (gMusicInfo.unk_E != 0) {
+                gMusicInfo.unk_10 += gMusicInfo.unk_C;
+                if (gMusicInfo.unk_10 >= gMusicInfo.unk_E)
+                    gMusicInfo.unk_10 -= gMusicInfo.unk_E;
+            }
+
+            extern void Port_MzmAudio_InstallSoundCodeCHook(void);
+            Port_MzmAudio_InstallSoundCodeCHook();
+            UpdateAudio();
+
+            extern void Port_MzmAudio_Pump(void);
+            Port_MzmAudio_Pump();
+        }
+#else
         UpdateAudio();
-#if defined(TMC_3DS) && defined(PORT_VERBOSE_FRAME_LOG)
-        Port_DebugLog("agbmain: UpdateAudio() done");
 #endif
 
         if (gResetGame)
@@ -477,7 +491,9 @@ void agbmain(void)
                     }
                 }
 #else // !DEBUG
-                while (TRUE);
+                gMainGameMode = GM_INTRO;
+                gSubGameMode1 = 0;
+                break;
 #endif // DEBUG
                 break;
         }
