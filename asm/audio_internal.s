@@ -778,11 +778,22 @@ lbl_0800506a:
     @ [PORT] r2 is a raw GBA ROM address (loop/goto target) just read out
     @ of the track's raw data stream -- needs translation before it's
     @ stored back into pRawData, same issue as InitTrack above.
-    push {r0}
+    @ [PORT] This function is entered via bl (lr = caller's return address)
+    @ and returns via bx lr, but never saved lr before -- the original GBA
+    @ code never called anything internally, so lr was never at risk. The
+    @ bl port_resolve_addr call added by the port clobbers lr as a normal
+    @ side effect of bl, so lr must be saved/restored around it or bx lr
+    @ below returns into the middle of this function instead of the real
+    @ caller (confirmed on hardware/Azahar: UndefinedInstruction/NoExecuteFault
+    @ shortly after a music track hits GOTO or PATT, see
+    @ docs/3ds-port-status-2026-08-17.md section 6l).
+    push {r0, r4}
+    mov r4, lr
     movs r0, r2
     bl port_resolve_addr
     movs r2, r0
-    pop {r0}
+    mov lr, r4
+    pop {r0, r4}
     str r2, [r0, o_TrackVariables_pRawData]
     bx lr
     .align 2, 0
@@ -828,11 +839,16 @@ lbl_080050b0:
     @ [PORT] r2 is a raw GBA ROM address (pattern jump target) just read
     @ out of the track's raw data stream -- needs translation before it's
     @ stored back into pRawData, same issue as InitTrack/AudioCommand_Goto.
-    push {r0, r1}
+    @ [PORT] Same lr-clobber bug as AudioCommand_Goto above: this function
+    @ returns via bx lr but never saved lr, and bl port_resolve_addr
+    @ overwrites it as a side effect. Save/restore it here too.
+    push {r0, r1, r4}
+    mov r4, lr
     movs r0, r2
     bl port_resolve_addr
     movs r2, r0
-    pop {r0, r1}
+    mov lr, r4
+    pop {r0, r1, r4}
     str r2, [r0, o_TrackVariables_pRawData]
     adds r0, o_TrackVariables_patternStartPointers
     ldr r2, [r0]
