@@ -21,6 +21,8 @@
 #include <stdint.h>
 #include <string.h>
 
+extern void Port_DebugLog(const char* msg);
+
 // #define PORT_VERBOSE_FRAME_LOG
 
 
