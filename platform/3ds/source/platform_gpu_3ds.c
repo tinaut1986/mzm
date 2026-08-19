@@ -7,6 +7,7 @@
 #include <string.h>
 
 static C3D_RenderTarget* sTopTarget;
+static C3D_RenderTarget* sTopRightTarget;
 static C3D_RenderTarget* sBottomTarget;
 static C3D_Tex sTopTexture;
 static C3D_Tex sBottomTexture;
@@ -181,7 +182,9 @@ bool PlatformGpu3DS_Init(bool old3dsProfile) {
     C3D_TexSetWrap(&sTopTexture, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
     C3D_TexSetWrap(&sBottomTexture, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
 
+    gfxSet3D(true);
     sTopTarget = C3D_RenderTargetCreate(240, 400, GPU_RB_RGBA8, GPU_RB_DEPTH16);
+    sTopRightTarget = C3D_RenderTargetCreate(240, 400, GPU_RB_RGBA8, GPU_RB_DEPTH16);
     sBottomTarget = C3D_RenderTargetCreate(240, 320, GPU_RB_RGBA8, GPU_RB_DEPTH16);
     if (!sTopTarget || !sBottomTarget) goto fail_targets;
     const u32 output = GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(0) |
@@ -189,12 +192,14 @@ bool PlatformGpu3DS_Init(bool old3dsProfile) {
                        GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGB565) |
                        GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO);
     C3D_RenderTargetSetOutput(sTopTarget, GFX_TOP, GFX_LEFT, output);
+    if (sTopRightTarget) C3D_RenderTargetSetOutput(sTopRightTarget, GFX_TOP, GFX_RIGHT, output);
     C3D_RenderTargetSetOutput(sBottomTarget, GFX_BOTTOM, GFX_LEFT, output);
     sReady = true;
     return true;
 
 fail_targets:
     if (sBottomTarget) C3D_RenderTargetDelete(sBottomTarget);
+    if (sTopRightTarget) C3D_RenderTargetDelete(sTopRightTarget);
     if (sTopTarget) C3D_RenderTargetDelete(sTopTarget);
     C3D_TexDelete(&sBottomTexture);
 fail_top_texture:
@@ -258,9 +263,14 @@ static void DrawTopImage(const uint32_t* pixels, unsigned width) {
                  .w = drawW, .h = drawH },
         .center = { 0.0f, 0.0f }, .depth = 0.0f, .angle = 0.0f,
     };
+    float slider3d = osGet3DSliderState();
+    float eyeOffset = slider3d * 4.0f;
+
+    C2D_DrawParams paramsLeft = params;
+    paramsLeft.pos.x -= eyeOffset;
     C2D_TargetClear(sTopTarget, C2D_Color32(0, 0, 0, 255));
     C2D_SceneBegin(sTopTarget);
-    C2D_DrawImage(image, &params, NULL);
+    C2D_DrawImage(image, &paramsLeft, NULL);
     ConfigureAbgrTextureEnv();
     if (Port_Config_GetShowFps()) {
         char label[20];
@@ -270,6 +280,24 @@ static void DrawTopImage(const uint32_t* pixels, unsigned width) {
         snprintf(label, sizeof(label), "FPS %u", rounded);
         C2D_DrawRectSolid(5.0f, 216.0f, 0.7f, 100.0f, 20.0f, C2D_Color32(0, 0, 0, 210));
         DrawStatusText(10.0f, 219.0f, 2.0f, label);
+    }
+
+    if (slider3d > 0.001f && sTopRightTarget) {
+        C2D_DrawParams paramsRight = params;
+        paramsRight.pos.x += eyeOffset;
+        C2D_TargetClear(sTopRightTarget, C2D_Color32(0, 0, 0, 255));
+        C2D_SceneBegin(sTopRightTarget);
+        C2D_DrawImage(image, &paramsRight, NULL);
+        ConfigureAbgrTextureEnv();
+        if (Port_Config_GetShowFps()) {
+            char label[20];
+            double fps = Port_PPU_3DS_CurrentFps();
+            unsigned rounded = fps > 0.0 ? (unsigned)(fps + 0.5) : 0u;
+            if (rounded > 999u) rounded = 999u;
+            snprintf(label, sizeof(label), "FPS %u", rounded);
+            C2D_DrawRectSolid(5.0f, 216.0f, 0.7f, 100.0f, 20.0f, C2D_Color32(0, 0, 0, 210));
+            DrawStatusText(10.0f, 219.0f, 2.0f, label);
+        }
     }
 }
 

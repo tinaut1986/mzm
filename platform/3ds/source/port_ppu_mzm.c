@@ -173,14 +173,6 @@ void Port_PPU_PresentFrame(void) {
     ++sPresentFrameCount;
     UpdateFpsWindow();
 
-    extern bool Port_GpuRenderer_IsActive(void);
-    extern void Port_GpuRenderer_RenderFrame(void);
-
-    if (Port_GpuRenderer_IsActive()) {
-        Port_GpuRenderer_RenderFrame();
-        return;
-    }
-
 #if defined(PORT_VERBOSE_FRAME_LOG)
     Port_DebugLog("Port_PPU_PresentFrame: before BeginTop");
 #endif
