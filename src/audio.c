@@ -1235,6 +1235,42 @@ static void unk_1f3c(struct TrackData* pTrack, struct TrackVariables* pVariables
  * @param pTrack Track data pointer
  * @param pVariables Track variables pointer
  */
+/*
+ * [PORT] Resolve the PSG voice slot a track's channel refers to.
+ *
+ * The decomp writes `&gUnk_300376C[pVariables->channel & 7]`, with
+ * gUnk_300376C declared as a single PsgSoundData. That is only meaningful
+ * because of the GBA ROM's fixed IWRAM layout (mzm_eu.map), where
+ * gUnk_300376C sits immediately before gPsgSounds[4]: indices 1-4 land
+ * exactly on gPsgSounds[0-3]. That aliasing is not incidental -- it is the
+ * ONLY path by which a started note reaches the array UpdatePsgSounds()
+ * actually scans, since UpdatePsgSounds() iterates gPsgSounds and nothing
+ * ever reads gUnk_300376C.
+ *
+ * A previous port session read the out-of-bounds index as a plain bug and
+ * "fixed" it by sizing gUnk_300376C to [8] so every channel got its own
+ * slot (see the comment in src/globals1.c and section 6k point 5). That
+ * silenced every PSG voice: notes were written into an array no one reads,
+ * so the engine never drove the sound registers -- confirmed by dumping the
+ * PSG register block at runtime, which stayed frozen at volume 0, frequency
+ * 0 and panning 0x00 for an entire run. It is the reason the user heard
+ * "some music tracks play and others are omitted" (section 6t).
+ *
+ * Express the real intent instead of relying on memory layout: channels 1-4
+ * are PSG hardware channels 1-4, i.e. gPsgSounds[0-3] (UpdatePsgSounds uses
+ * its loop index as the hardware channel number for panning and for
+ * ClearRegistersForPsg). Anything else keeps a real scratch slot, matching
+ * the hardware behaviour that such a value goes somewhere harmless rather
+ * than into a live voice.
+ */
+static struct PsgSoundData* PortPsgSlotForChannel(u8 channel)
+{
+    const u32 ch = channel & 7;
+    if (ch >= 1 && ch <= ARRAY_SIZE(gPsgSounds))
+        return &gPsgSounds[ch - 1];
+    return &gUnk_300376C[ch];
+}
+
 static void unk_1f90(struct TrackData* pTrack, struct TrackVariables* pVariables)
 {
     u8 var_0;
@@ -1245,7 +1281,7 @@ static void unk_1f90(struct TrackData* pTrack, struct TrackVariables* pVariables
     else
         var_0 = pTrack->unk_3 + pVariables->priority;
 
-    pSound = &gUnk_300376C[pVariables->channel & 7];
+    pSound = PortPsgSlotForChannel(pVariables->channel);
     if (pSound->unk_0 == 0 ||
         (var_0 >= pSound->unk_16 &&
         (var_0 != pSound->unk_16 ||
@@ -1271,7 +1307,7 @@ static void unk_1fe0(struct TrackData* pTrack, struct TrackVariables* pVariables
     else
         var_0 = pTrack->unk_3 + pVariables->priority;
 
-    pSound = &gUnk_300376C[pVariables->channel & 7];
+    pSound = PortPsgSlotForChannel(pVariables->channel);
     if (pSound->unk_0 == 0 ||
         (var_0 >= pSound->unk_16 &&
         (var_0 != pSound->unk_16 ||

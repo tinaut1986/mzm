@@ -296,18 +296,23 @@ IWRAM_DATA struct MusicInfo gMusicInfo = {};
 IWRAM_DATA u8 gUnk_3003760[12] = {};
 #endif
 
-// [PORT] Declared [1] in the decomp, but src/audio.c indexes it with
-// `pVariables->channel & 7` (0-7). On real hardware this is harmless: the
-// GBA ROM's fixed IWRAM layout (see mzm_eu.map) places this immediately
-// before gPsgSounds[4], so indices 1-4 silently alias into gPsgSounds and
-// the whole thing behaves like an undocumented 5-slot array -- not a real
-// bug there. The 3DS/native linker doesn't reproduce that exact adjacency
-// (globals get reordered), so the same out-of-bounds index instead landed
-// on unrelated memory and crashed on a NULL pVariables dereference in
-// unk_2030 (src/audio.c) -- confirmed via crash dump + arm-none-eabi-nm on
-// the port's own ELF, where gUnk_300376C and gPsgSounds are nowhere near
-// each other. Sized for the full 0-7 range actually used so every channel
-// gets its own real, non-overlapping slot.
+// [PORT] Declared [1] in the decomp, but src/audio.c indexed it with
+// `pVariables->channel & 7` (0-7). On real hardware the GBA ROM's fixed IWRAM
+// layout (see mzm_eu.map) places this immediately before gPsgSounds[4], so
+// indices 1-4 land exactly on gPsgSounds[0-3].
+//
+// That aliasing is LOAD-BEARING, not incidental: it is the only path by which
+// a started PSG note reaches the array UpdatePsgSounds() actually scans.
+// Sizing this array up so each channel got its own slot (the earlier reading
+// of the out-of-bounds index as a plain bug, section 6k point 5) therefore
+// silenced every PSG voice -- notes went into storage nothing reads. See the
+// comment on PortPsgSlotForChannel() in src/audio.c for the full story and
+// the runtime evidence.
+//
+// The two call sites now resolve channels 1-4 to gPsgSounds explicitly, so
+// this array is only a scratch destination for any other channel value and no
+// longer depends on being adjacent to anything. Kept at [8] so the full 0-7
+// index range stays in bounds.
 IWRAM_DATA struct PsgSoundData gUnk_300376C[8] = {};
 
 IWRAM_DATA struct PsgSoundData gPsgSounds[4] = {};
