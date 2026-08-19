@@ -35,7 +35,7 @@ extern void Port_GbaTiming_ThreadMain(void* arg);
 
 int Platform3DS_Init(void) {
     gfxInitDefault();
-    consoleInit(GFX_TOP, NULL);
+    consoleInit(GFX_BOTTOM, NULL);
 
     APT_CheckNew3DS(&sIsNew3DS);
     if (sIsNew3DS) {
@@ -101,6 +101,7 @@ void Platform3DS_ShowSplash(void) {
 }
 
 void Platform3DS_EnterGameplayDisplay(void) {
+    printf("\x1b[2J"); /* clear bottom console */
     sGameplayDisplayActive = true;
 }
 
