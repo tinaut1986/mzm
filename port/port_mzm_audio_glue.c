@@ -132,48 +132,37 @@ static u8* Port_MzmAudio_SoundCodeC(u32* dest, u32* src, u8 count) {
             if (sRateHook) sRateHook(engineRate);
         }
 
-        const unsigned int readIdx = __atomic_load_n(&sRingReadIndex, __ATOMIC_ACQUIRE);
         const unsigned int n = (unsigned int)count * 4u;
-        if (sRingWriteIndex - readIdx + n < MZM_AUDIO_RING_FRAMES) {
-            const unsigned char* left = (const unsigned char*)dest;
-            const unsigned char* right = left + PCM_DMA_BUF_SIZE;
-            DumpRaw(left, right, n);
-            /* Latch the PSG register state once for this block. The engine has
-             * already run UpdatePsgSounds() by the time SoundCodeC is called
-             * (see the UpdateAudio sequence in asm/audio_internal.s), so the
-             * registers describe the notes that belong to exactly these
-             * samples. Without this the four PSG voices are silent and the
-             * music loses whichever tracks are assigned to them -- section 6t. */
-            PortPsg_BeginBlock(engineRate);
-            unsigned int wIdx = sRingWriteIndex;
-            for (unsigned int i = 0; i < n; ++i) {
-                /* [PORT] soundRawData is fed straight to REG_DMA1_SRC/DMA2_SRC
-                 * (src/audio_wrappers.c), i.e. it's real GBA Direct Sound FIFO
-                 * data -- the GBA hardware FIFO_A/FIFO_B consume SIGNED 8-bit
-                 * PCM (GBATek), not unsigned/centered-at-128. Reinterpreting
-                 * the byte as signed directly (no -128 bias) is the correct
-                 * conversion; the previous bias turned a clean signed
-                 * waveform into near-random amplitude swings, which is what
-                 * was heard as crackling/static. */
-                const int lv = (signed char)left[i];
-                const int rv = (signed char)right[i];
-                /* Mix the four software-synthesised PSG voices on top of the
-                 * Direct Sound PCM, saturating rather than wrapping (a wrap
-                 * here would be a full-scale discontinuity, i.e. exactly the
-                 * click the sections 6o-6q work chased). */
-                int psgL, psgR;
-                PortPsg_NextSample(&psgL, &psgR);
-                int mixL = (lv << 8) + psgL;
-                int mixR = (rv << 8) + psgR;
-                if (mixL > 32767) mixL = 32767; else if (mixL < -32768) mixL = -32768;
-                if (mixR > 32767) mixR = 32767; else if (mixR < -32768) mixR = -32768;
-                const unsigned int idx = (wIdx % MZM_AUDIO_RING_FRAMES) * 2;
-                gMzmAudioRing[idx] = (short)mixL;
-                gMzmAudioRing[idx + 1] = (short)mixR;
-                ++wIdx;
-            }
-            __atomic_store_n(&sRingWriteIndex, wIdx, __ATOMIC_RELEASE);
+        unsigned int readIdx = __atomic_load_n(&sRingReadIndex, __ATOMIC_ACQUIRE);
+        unsigned int wIdx = sRingWriteIndex;
+
+        /* Keep producer-to-consumer delay strictly capped at <= 512 samples (~38ms)
+         * to prevent multi-second lag buildup. */
+        if (wIdx - readIdx > 512u) {
+            readIdx = wIdx - 384u;
+            __atomic_store_n(&sRingReadIndex, readIdx, __ATOMIC_RELEASE);
         }
+
+        const unsigned char* left = (const unsigned char*)dest;
+        const unsigned char* right = left + PCM_DMA_BUF_SIZE;
+        DumpRaw(left, right, n);
+
+        PortPsg_BeginBlock(engineRate);
+        for (unsigned int i = 0; i < n; ++i) {
+            const int lv = (signed char)left[i];
+            const int rv = (signed char)right[i];
+            int psgL, psgR;
+            PortPsg_NextSample(&psgL, &psgR);
+            int mixL = (lv << 8) + psgL;
+            int mixR = (rv << 8) + psgR;
+            if (mixL > 32767) mixL = 32767; else if (mixL < -32768) mixL = -32768;
+            if (mixR > 32767) mixR = 32767; else if (mixR < -32768) mixR = -32768;
+            const unsigned int idx = (wIdx % MZM_AUDIO_RING_FRAMES) * 2;
+            gMzmAudioRing[idx] = (short)mixL;
+            gMzmAudioRing[idx + 1] = (short)mixR;
+            ++wIdx;
+        }
+        __atomic_store_n(&sRingWriteIndex, wIdx, __ATOMIC_RELEASE);
 
         /* Throttled diagnostic: engine rate, samples written by this call,
          * ring fill, peak amplitude, nonzero-sample count and a few raw

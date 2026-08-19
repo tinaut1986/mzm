@@ -11,7 +11,7 @@
  */
 
 #define MZM_AUDIO_OUT_RATE 16364u
-#define MZM_AUDIO_RING_FRAMES 16384u
+#define MZM_AUDIO_RING_FRAMES 2048u
 
 extern short gMzmAudioRing[MZM_AUDIO_RING_FRAMES * 2];
 

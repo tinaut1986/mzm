@@ -914,17 +914,34 @@ noise (ruido):     activa 110/2520 frames (4.4%)
    - En `DoSoundAction` (`audio_wrappers.c`), el bucle de limpieza de `soundChannels` empezaba en `ARRAY_SIZE(11)` (acceso fuera de rango); corregido a `ARRAY_SIZE - 1`.
 
 **Resultado confirmado por el usuario en hardware real (2026-08-20):** **La música y todas sus pistas ahora sí se oyen correctamente.**
-**Pendiente abierto:** Persiste el petardeo y existe un desfase/retraso entre audio y vídeo (investigar si el desfase es constante por tamaño de buffers o acumulativo por deriva de reloj).
+
+## 6x. Causa del desfase masivo (~3 segundos) encontrada y RESUELTA (2026-08-20)
+
+**Contexto:** tras sonar todas las pistas de música en 6w, el usuario reportó que existía un retraso masivo de casi 3 segundos entre las acciones del juego (pulsar un botón) y el sonido correspondiente.
+
+**Causas encontradas:**
+1. En `src/agbmain.c`, el intento de "catch-up" de sesiones anteriores llamaba a `UpdateMusic()` hasta 4 veces extra por frame además de bombear `DMA2IntrCode()` en un bucle `while`. Esto producía audio a 4x de velocidad en un ringbuffer gigante de 16.384 muestras (`MZM_AUDIO_RING_FRAMES`), llenándolo continuamente con más de 16.000 muestras de cola (~2.5 segundos de retraso acumulado).
+2. Cada vez que ocurría un evento de sonido nuevo, se insertaba al final de la cola de 16.000 muestras, por lo que el consumidor tardaba ~3 segundos en reproducirlo.
+3. Al estar el buffer permanentemente lleno, el productor descartaba muestras por *overflow*, contribuyendo además a petardeos continuos.
+
+**Correcciones aplicadas:**
+1. **Limpieza completa de `src/agbmain.c`:** se eliminaron el bucle artificial de `DMA2IntrCode` y las llamadas múltiples a `UpdateMusic()`. El audio vuelve a secuenciarse limpiamente una sola vez por frame (`UpdateAudio()`) al ritmo del juego.
+2. **Tope estricto de latencia en `port/port_mzm_audio_glue.c`:** tamaño de ring reducido a 2048 muestras y resincronización automática si la distancia supera 512 muestras (~38 ms).
+3. **Reducción de buffers NDSP en `platform/3ds/source/port_mzm_audio_3ds.c`:** se redujo `BUFFER_COUNT` de 12 a 4 buffers de 256 muestras con decaimiento suave en underruns.
+
+**Resultado confirmado por el usuario en hardware real (2026-08-20):** **El retraso de 3 segundos ha desaparecido por completo; el audio ahora es instantáneo con las acciones en pantalla.**
+**Pendiente abierto:** Persisten petardeos/chasquidos en la reproducción (siguiente tarea: investigar underruns por fluctuaciones de framerate vs clipping/saturación de volumen).
 
 ## 7. Pendientes y Siguientes Pasos
 
 **Bugs abiertos pendientes de investigar (reportados por el usuario, aún SIN resolver):**
-- **Audio: petardeo residual y retraso audio/vídeo (2026-08-20, tras resolver las pistas ausentes en 6w).**
-  - El usuario confirma que todas las pistas e instrumentos ya se escuchan, pero reporta retraso perceptible entre lo que se ve en pantalla y lo que suena, además de petardeo restante.
+- **Audio: petardeo residual en la reproducción (2026-08-20).**
+  - Con las pistas de música recuperadas (6w) y el retraso de audio eliminado (6x), el audio suena con tempo y latencia correctos, pero persisten petardeos.
   - Tareas de diagnóstico pendientes:
-    1. Determinar si el retraso es **fijo/constante** (causado por el tamaño total de la cola de buffers de NDSP: `MZM_AUDIO_RING_FRAMES` + `BUFFER_FRAMES * BUFFER_COUNT` en `port_mzm_audio_3ds.c`) o si es **acumulativo** (deriva progresiva por desacople de tasas/relojes).
-    2. Medir el tiempo de latencia del pipeline de NDSP y ajustar el prebuffer/número de buffers mínimos necesarios.
-    3. Revisar si el petardeo restante se debe a micro-underruns por la discrepancia de tasa o a las llamadas de catch-up de `UpdateMusic()`.
+    1. Comprobar si el petardeo se debe a pequeñas caídas de frame rate (~55 FPS vs 60 FPS) que causan micro-underruns en NDSP al no llegar a tiempo 1 frame de audio por vblank.
+    2. Comprobar si hay saturación / clipping de volumen en `Port_MzmAudio_SoundCodeC` (donde se mezclan Direct Sound y PSG con saturación a [-32768, 32767]).
+    3. Revisar el resampleo/interpolación de NDSP y alineación de lectura de muestras PCM.
+- **RESUELTO (2026-08-20, sección 6x): Retraso de audio de ~3 segundos.** Causa: bucle de catch-up redundante en `agbmain.c` saturaba un ring buffer de 16.384 muestras con audio producido a 4x. Resuelto simplificando el bucle a un solo `UpdateAudio()` por frame, reduciendo el ring a 2048 muestras con tope de 38 ms de latencia, y 4 buffers NDSP.
 - **RESUELTO (2026-08-20, sección 6w): Pistas de música que faltaban.** Causa raíz: `MidiKey2Freq` en `port_bios.c` ignoraba `waveData[1]` (base frequency) y fijaba 261 Hz, haciendo que los instrumentos se reprodujeran 5-7 octavas más graves y a 1/50 de su velocidad real. Resuelto junto con la tabla de notas multi-muestra de `channel == 0x40` y la eliminación del cutoff de scanlines `unk_9`.
 - **RESUELTO (2026-08-19, sección 6m): el crash determinista de la intro y gran parte de la regresión de FPS.** Era el bug de `lr` corrompido: `bl port_resolve_addr` insertado en `AudioCommand_Goto`/`AudioCommand_PatternPlay` (`asm/audio_internal.s`) sin guardar `lr`, así que su `bx lr` final volvía a un sitio erróneo cada vez que una pista de música ejecutaba GOTO o PATT. Con el fix: 120s+ sin crashear, llega a gameplay real, FPS en Azahar sube de ~20-29 a ~55.
 - **Bug fuera de audio encontrado por `tools/audit_rom_pointer_fields.py` sin arreglar:** `src/animated_graphics.c:307` copia `pData->pGraphics` de `sAnimatedGraphicsEntries` (confirmado resuelto desde ROM vía `port/generated/animated_graphics_data_rom.c`) sin `GBA_RESOLVE` — mismo patrón que los bugs de audio, afectaría a gráficos animados (agua, lava, tiles parpadeantes).

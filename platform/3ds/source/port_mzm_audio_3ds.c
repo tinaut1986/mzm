@@ -22,39 +22,13 @@ extern bool Platform3DS_CanUseCore1(void);
  */
 
 #define BUFFER_FRAMES 256
-#define BUFFER_COUNT 12
+#define BUFFER_COUNT 4
 #define AUDIO_THREAD_STACK (64u * 1024u)
 
 /* Safety floor: the consumer never drains the ring below this many frames,
- * so the producer (driven at the game's ~60 Hz frame cadence) always has one
- * full NDSP buffer worth of backlog to land into. Without this, a buffer
- * request arriving just after the last capture empties the ring and the
- * consumer pads with silence -- the "clicks".
- *
- * [PORT] 2026-08-19: tried raising this to 2048 (~150ms) on the theory that
- * the ring was starving because production arrives in lumps (once per
- * game-loop iteration, 33-67ms apart on this dev machine, measured via the
- * new agbmain.c "audioPace:" log) while NDSP drains continuously -- i.e. a
- * jitter-absorption problem a bigger floor should smooth over. Verified with
- * a live PulseAudio capture of Azahar's actual output (same method as the
- * mgba reference recording): NO improvement (69.0% of samples near-silent
- * vs 66.6% before, 47.2% of NDSP buffers fully empty vs 43.4% before -- both
- * within noise of "no change", not a fix). Reverted, matching the project's
- * standing rule of not keeping a buffering change the objective measurement
- * doesn't confirm (same as the section 6l buffer tuning revert). Root cause
- * turned out NOT to be jitter: the "audioPace: owed=" log shows the ring
- * consumes more per iteration (~440-670 frames, derived from dt vs NDSP's
- * fixed 256-frames/~19ms drain rate) than the engine produces (owed avg
- * ~400) -- a genuine average THROUGHPUT deficit tracking this dev machine's
- * FPS (only ~22-27 on this loaded box, confirmed on-screen), not a
- * buffering shape problem. No ring size fixes a sustained
- * production-below-consumption imbalance -- see
- * docs/3ds-port-status-2026-08-17.md section 6r. Real fix requires either
- * getting the render loop closer to 60Hz, or decoupling audio production
- * from render cadence entirely; both need real-hardware measurement (this
- * dev machine's Azahar performance is not representative) before touching
- * this again. */
-#define RING_FLOOR BUFFER_FRAMES
+ * so the producer (driven at the game's ~60 Hz frame cadence) always has
+ * backlog cushion. */
+#define RING_FLOOR 128
 
 static ndspWaveBuf sWave[BUFFER_COUNT];
 static int16_t* sSamples;
@@ -77,7 +51,6 @@ static void OnEngineRate(unsigned int engineRate) {
 
 static void FillBuffer(int index) {
     int16_t* dst = sSamples + index * BUFFER_FRAMES * 2;
-    memset(dst, 0, BUFFER_FRAMES * 2 * sizeof(int16_t));
 
     /* Drain as much of the ring as the buffer holds, consuming contiguous
      * frames. The ring is circular; copy in up to two linear segments. */
@@ -99,6 +72,22 @@ static void FillBuffer(int index) {
                chunk * 2 * sizeof(int16_t));
         readIdx += chunk;
         consumed += chunk;
+    }
+
+    if (toRead < BUFFER_FRAMES) {
+        if (toRead > 0) {
+            /* Smoothly fade out the last few samples to eliminate harsh pop/click on underrun */
+            const unsigned int fadeLen = (toRead >= 8) ? 8 : toRead;
+            for (unsigned int f = 0; f < fadeLen; ++f) {
+                const unsigned int idx = (toRead - fadeLen + f) * 2;
+                const int factor = (int)(fadeLen - 1 - f);
+                dst[idx] = (int16_t)(((int)dst[idx] * factor) / (int)fadeLen);
+                dst[idx + 1] = (int16_t)(((int)dst[idx + 1] * factor) / (int)fadeLen);
+            }
+            memset(dst + toRead * 2, 0, (BUFFER_FRAMES - toRead) * 2 * sizeof(int16_t));
+        } else {
+            memset(dst, 0, BUFFER_FRAMES * 2 * sizeof(int16_t));
+        }
     }
 
     /* Publish how many frames we consumed back to the producer. */
