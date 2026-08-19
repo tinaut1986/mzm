@@ -85,16 +85,6 @@ bool Port_PPU_Init(void) {
 
     virtuappu_mode1_set_output_buffer(sTopBuffer, TOP_PITCH);
     sReady = true;
-
-#if defined(PORT_USE_GPU_RENDERER)
-    extern bool Port_GpuRenderer_Init(void);
-    if (Port_GpuRenderer_Init()) {
-        Port_DebugLog("Port_GpuRenderer_Init: Native Citro3D GPU renderer active");
-    } else {
-        Port_DebugLog("Port_GpuRenderer_Init failed: Falling back to software PPU");
-    }
-#endif
-
     return true;
 }
 
