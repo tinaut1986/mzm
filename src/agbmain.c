@@ -54,6 +54,45 @@ void agbmain(void)
 #endif
 #if defined(TMC_3DS) && defined(__3DS__)
         {
+            /* [PORT] Section 6q: gMusicInfo.unk_10 (the "how far real DMA
+             * hardware has consumed" position UpdateMusic() uses to decide
+             * how much audio to mix per call, src/audio.c:32-116) is only
+             * ever advanced by DMA2IntrCode() (src/music_wrappers.c) -- the
+             * ISR real hardware fires each time DMA2 finishes streaming a
+             * PCM_DMA_BUF_SIZE/2-byte half-buffer to FIFO_B. Nothing on this
+             * port ever calls it (no real DMA2 hardware), so unk_10 sits
+             * frozen at its SetupSoundTransfer initial value all game,
+             * decoupling UpdateMusic()'s chunk-size math from actual
+             * playback progress. Sample-level analysis against a known-good
+             * mgba reference found the port's audio has real, measurable
+             * discontinuities (739 large jumps vs 0) clustered almost
+             * exactly at PCM_DMA_BUF_SIZE/4 = 384 samples into each output
+             * chunk -- precisely where that missing interrupt should fire.
+             * Drive it here instead, based on how many samples the NDSP
+             * ring has actually had consumed since the last frame (real
+             * playback progress, not simulated time), firing once per real
+             * half-buffer's worth. Deliberately NOT verified by ear (see
+             * docs/3ds-port-status-2026-08-17.md section 6q) -- only
+             * checked with the section 6o/6p sample-jump counter. Revert
+             * this block if that count gets worse, the same way the
+             * section 6l buffer tuning was reverted for making things
+             * worse. */
+            extern unsigned int Port_MzmAudio_RingReadIndex(void);
+            extern void DMA2IntrCode(void);
+            static unsigned int sLastRingReadIdx;
+            static unsigned int sConsumedAccum;
+            static int sHaveLastRingReadIdx;
+            const unsigned int curReadIdx = Port_MzmAudio_RingReadIndex();
+            if (sHaveLastRingReadIdx) {
+                sConsumedAccum += curReadIdx - sLastRingReadIdx;
+                while (sConsumedAccum >= 384u) {
+                    DMA2IntrCode();
+                    sConsumedAccum -= 384u;
+                }
+            }
+            sLastRingReadIdx = curReadIdx;
+            sHaveLastRingReadIdx = 1;
+
             /* Bridge the real mzm audio engine to NDSP by intercepting the
              * engine's final mixdown. gSoundCodeCPointer points at
              * CallSoundCodeC (the only function that writes into
