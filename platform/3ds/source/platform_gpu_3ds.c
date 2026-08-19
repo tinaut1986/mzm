@@ -282,7 +282,7 @@ static void DrawTopImage(const uint32_t* pixels, unsigned width) {
         DrawStatusText(10.0f, 219.0f, 2.0f, label);
     }
 
-    if (slider3d > 0.001f && sTopRightTarget) {
+    if (sTopRightTarget) {
         C2D_DrawParams paramsRight = params;
         paramsRight.pos.x += eyeOffset;
         C2D_TargetClear(sTopRightTarget, C2D_Color32(0, 0, 0, 255));
