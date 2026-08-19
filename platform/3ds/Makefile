@@ -53,6 +53,7 @@ SRCS_ROOT := \
 	$(ROOT)/port/port_debug_log.c \
 	$(ROOT)/port/port_constructor_init.c \
 	$(ROOT)/port/port_mzm_audio_glue.c \
+	$(ROOT)/port/port_psg_synth.c \
 	$(ROOT)/port/ppu/src/virtuappu.c \
 	$(ROOT)/port/ppu/src/mode1.c \
 	$(filter-out %_selftest.c %_test.c, $(wildcard $(ROOT)/port/generated/*.c))
@@ -97,6 +98,14 @@ CFLAGS  := -g -Wall -O2 -mword-relocations -ffunction-sections -fdata-sections \
            -Wno-int-conversion -Wno-pointer-to-int-cast -Wno-int-to-pointer-cast \
            $(ARCH)
 
+
+# Extra flags from the command line, e.g. to turn on the audio diagnostics that
+# are off by default (they do SD I/O on the audio path and cost real frame rate,
+# see docs/3ds-port-status-2026-08-17.md section 6s):
+#   make clean && make EXTRA_CFLAGS=-DPORT_AUDIO_DIAG_LOG
+# The clean matters: changing flags alone does not invalidate existing objects,
+# which is exactly the stale-.o trap documented in section 6l.
+CFLAGS  += $(EXTRA_CFLAGS)
 
 INCLUDES := \
 	-I$(ROOT)/port/generated/shadow \
