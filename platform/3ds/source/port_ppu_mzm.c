@@ -83,6 +83,16 @@ bool Port_PPU_Init(void) {
 
     virtuappu_mode1_set_output_buffer(sTopBuffer, TOP_PITCH);
     sReady = true;
+
+#if defined(PORT_USE_GPU_RENDERER)
+    extern bool Port_GpuRenderer_Init(void);
+    if (Port_GpuRenderer_Init()) {
+        Port_DebugLog("Port_GpuRenderer_Init: Native Citro3D GPU renderer active");
+    } else {
+        Port_DebugLog("Port_GpuRenderer_Init failed: Falling back to software PPU");
+    }
+#endif
+
     return true;
 }
 
@@ -160,6 +170,14 @@ void Port_PPU_PresentFrame(void) {
 #endif
     ++sPresentFrameCount;
     UpdateFpsWindow();
+
+    extern bool Port_GpuRenderer_IsActive(void);
+    extern void Port_GpuRenderer_RenderFrame(void);
+
+    if (Port_GpuRenderer_IsActive()) {
+        Port_GpuRenderer_RenderFrame();
+        return;
+    }
 
 #if defined(PORT_VERBOSE_FRAME_LOG)
     Port_DebugLog("Port_PPU_PresentFrame: before BeginTop");
