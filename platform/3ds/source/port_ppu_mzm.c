@@ -21,7 +21,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#define PORT_VERBOSE_FRAME_LOG
+// #define PORT_VERBOSE_FRAME_LOG
 
 
 /* Must match platform_gpu_3ds.c's TOP_TEXTURE_WIDTH -- the buffer
@@ -161,18 +161,15 @@ void Port_PPU_PresentFrame(void) {
     ++sPresentFrameCount;
     UpdateFpsWindow();
 
+#if defined(PORT_VERBOSE_FRAME_LOG)
+    Port_DebugLog("Port_PPU_PresentFrame: before BeginTop");
+#endif
     PlatformGpu3DS_BeginTop(sTopBuffer, TOP_NATIVE_W);
-    /* changed=true: PlatformGpu3DS_EndBottom() only actually uploads
-     * sBottomBuffer to the GPU texture when changed is true. Passing false
-     * unconditionally (as this did originally) meant the bottom screen's
-     * C3D_TexInitVRAM-allocated texture -- never zero-initialized by
-     * libctru, left holding whatever was in VRAM before (another app's
-     * leftover framebuffer content) -- was what actually displayed, never
-     * our black buffer. Seen on hardware as a fixed diagonal-line pattern
-     * on the bottom screen from frame 0, unrelated to the top-screen
-     * renderer (confirmed clean separately). No real second-screen content
-     * yet, so this re-uploads a static black buffer every frame -- wasteful
-     * but correct; revisit once there's real bottom-screen content to only
-     * re-upload when it actually changes. */
+#if defined(PORT_VERBOSE_FRAME_LOG)
+    Port_DebugLog("Port_PPU_PresentFrame: before EndBottom");
+#endif
     PlatformGpu3DS_EndBottom(sBottomBuffer, true);
+#if defined(PORT_VERBOSE_FRAME_LOG)
+    Port_DebugLog("Port_PPU_PresentFrame: done");
+#endif
 }

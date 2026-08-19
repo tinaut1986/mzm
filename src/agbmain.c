@@ -443,7 +443,9 @@ void agbmain(void)
                     }
                 }
 #else // !DEBUG
-                while (TRUE);
+                gMainGameMode = GM_INTRO;
+                gSubGameMode1 = 0;
+                break;
 #endif // DEBUG
                 break;
         }

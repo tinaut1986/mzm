@@ -543,8 +543,7 @@ static void RecordBottomWorkerTiming(void) {
     if (sBottomWorkerLastTicks > sPerfBottomMaxTicks) sPerfBottomMaxTicks = sBottomWorkerLastTicks;
 }
 
-void Port_PPU_Init(SDL_Window* window) {
-    (void)window;
+bool Port_PPU_Init(void) {
     VirtuaPPUMode1GbaMemory memory = { gIoMem, gVram, gBgPltt, gObjPltt, gOamMem };
     virtuappu_mode1_bind_gba_memory(&memory);
     virtuappu_mode1_set_old3ds_profile(!Platform3DS_IsNew3DS());
@@ -598,6 +597,7 @@ void Port_PPU_Init(SDL_Window* window) {
     sBottomUploads[1] = PlatformGpu3DS_BottomBuffer(1);
     sInitialized = sGpuPresenterReady && sTopUpload && sBottomUploads[0] && sBottomUploads[1];
     virtuappu_mode1_set_output_buffer(sInitialized ? sTopUpload : NULL, TOP_PITCH);
+    return sInitialized;
 }
 
 void Port_PPU_PresentFrame(void) {

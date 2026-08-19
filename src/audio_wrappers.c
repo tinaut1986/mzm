@@ -202,9 +202,11 @@ void SetupSoundTransfer(void)
     WRITE_16(REG_TM0CNT_H, 0);
     WRITE_16(REG_TM0CNT_L, -((u32)FRAME_DRAW_CYCLES / samplesPerFrame)); // cycle time to play each sample
 
+#if !defined(TMC_3DS) && !defined(PORT_NATIVE)
     // Wait for VBLANK
     while (READ_8(REG_VCOUNT) == (SCREEN_SIZE_Y - 1)) {}
     while (READ_8(REG_VCOUNT) != (SCREEN_SIZE_Y - 1)) {}
+#endif
 
     WRITE_16(REG_TM0CNT_H, 0x80); // start timer 0
 }

@@ -148,36 +148,43 @@ void UpdateMusic(void)
         gMusicInfo.currentSoundChannel++;
         pVariables = pChannel->pVariables;
 
-        while (pChannel->unk_13 != 0)
+        if (pVariables != NULL)
         {
-            if (pChannel->unk_13 & 0x2)
+            while (pChannel->unk_13 != 0)
             {
-                if (pChannel->unk_1 == 0x20)
-                    pChannel->unk_18 = pChannel->pSample[3] << 14;
-                else
-                    pChannel->unk_18 = 0;
-
-                pChannel->unk_10 = 0;
-                pChannel->unk_13 &= ~0x2;
-                pChannel->unk_13 |= 0x10;
-            }
-            else if (pChannel->unk_13 & 0x4)
-            {
-                pChannel->unk_13 &= ~0x4;
-            }
-            else if (pChannel->unk_13 & 0x10)
-            {
-                if (pVariables->unk_0 & 0x80)
+                if (pChannel->unk_13 & 0x2)
                 {
-                    pVariables->unk_6 = pChannel->unk_3;
-                    unk_4f10(pVariables);
+                    if (pChannel->unk_1 == 0x20)
+                        pChannel->unk_18 = pChannel->pSample[3] << 14;
+                    else
+                        pChannel->unk_18 = 0;
+
+                    pChannel->unk_10 = 0;
+                    pChannel->unk_13 &= ~0x2;
+                    pChannel->unk_13 |= 0x10;
                 }
+                else if (pChannel->unk_13 & 0x4)
+                {
+                    pChannel->unk_13 &= ~0x4;
+                }
+                else if (pChannel->unk_13 & 0x10)
+                {
+                    if (pVariables->unk_0 & 0x80)
+                    {
+                        pVariables->unk_6 = pChannel->unk_3;
+                        unk_4f10(pVariables);
+                    }
 
-                pChannel->unk_4 = (pVariables->unk_8 * (pChannel->unk_F + 1)) >> 7;
-                pChannel->unk_5 = (pVariables->unk_9 * (pChannel->unk_F + 1)) >> 7;
+                    pChannel->unk_4 = (pVariables->unk_8 * (pChannel->unk_F + 1)) >> 7;
+                    pChannel->unk_5 = (pVariables->unk_9 * (pChannel->unk_F + 1)) >> 7;
 
-                pChannel->unk_13 &= ~0x10;
+                    pChannel->unk_13 &= ~0x10;
+                }
             }
+        }
+        else
+        {
+            pChannel->unk_13 = 0;
         }
 
         var_1 = pChannel->unk_10;
