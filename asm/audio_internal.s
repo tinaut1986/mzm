@@ -481,7 +481,19 @@ lbl_08004e4c:
     movs r4, #7
     ands r3, r4
     bne lbl_08004e6a
+    @ [PORT] r3 is a raw GBA ROM address (sample pointer) read straight out
+    @ of the voice table entry -- same bug class as AudioCommand_Voice's
+    @ pVoice->pSample (see docs/3ds-port-status-2026-08-17.md section 6k
+    @ point 2), just reached from note-on processing instead of voice
+    @ setup. lr is safe here (unk_4e10 saves it at entry via
+    @ push {r4, r5, lr} and restores it through r0/bx r0 below), unlike
+    @ the AudioCommand_Goto/PatternPlay bug in section 6m.
     ldr r3, [r1, #4]
+    push {r0, r1, r2}
+    movs r0, r3
+    bl port_resolve_addr
+    movs r3, r0
+    pop {r0, r1, r2}
     str r3, [r0, o_TrackVariables_pSample1]
     b lbl_08004eaa
 lbl_08004e6a:
@@ -507,7 +519,15 @@ lbl_08004e88:
     bne lbl_08004e9c
     adds r4, r0, #0
     adds r5, r1, #0
+    @ [PORT] r0 is a raw GBA ROM address (GB channel 3 waveform sample)
+    @ read straight out of the voice table entry, same bug class as the
+    @ pSample1 fix just above -- passed on to UploadSampleToWaveRam
+    @ unresolved. r4/r5 are safe across this call (callee-saved, and
+    @ unk_4e10 saved the real lr on the stack at entry rather than relying
+    @ on a live bx lr, so clobbering lr here is harmless -- unlike section
+    @ 6m's AudioCommand_Goto/PatternPlay bug).
     ldr r0, [r5, #4]
+    bl port_resolve_addr
     bl UploadSampleToWaveRam
     adds r0, r4, #0
     adds r1, r5, #0

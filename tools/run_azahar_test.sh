@@ -113,11 +113,15 @@ fi
 if [[ "$DO_AUDIO_DUMP" == "1" && -f "$SDMC/3ds/mzm_audio_dump.bin" ]]; then
     echo
     echo "==> Converting audio dump to WAV + spectrogram"
-    # Raw dump is interleaved u8 stereo PCM at the engine's native rate
-    # (see MZM_AUDIO_OUT_RATE in port/port_mzm_audio_glue.h) as captured
-    # right before it's handed to NDSP.
+    # Raw dump is interleaved SIGNED 8-bit stereo PCM (GBA Direct Sound FIFO
+    # format, see the sign-conversion fix in port_mzm_audio_glue.c and
+    # docs/3ds-port-status-2026-08-17.md section 6k point 6 -- decoding this
+    # as u8 instead of s8 silently DC-shifts every sample and was giving
+    # misleadingly noisy-looking spectrograms for a long stretch of 2026-08-19)
+    # at the engine's native rate (see MZM_AUDIO_OUT_RATE in
+    # port/port_mzm_audio_glue.h) as captured right before it's handed to NDSP.
     RATE="$(grep -oP '(?<=#define MZM_AUDIO_OUT_RATE )\d+' "$REPO_ROOT/port/port_mzm_audio_glue.h" || echo 16364)"
-    ffmpeg -y -f u8 -ar "$RATE" -ac 2 -i "$SDMC/3ds/mzm_audio_dump.bin" \
+    ffmpeg -y -f s8 -ar "$RATE" -ac 2 -i "$SDMC/3ds/mzm_audio_dump.bin" \
         /tmp/azahar_test_dump.wav >/tmp/azahar_test_ffmpeg.log 2>&1 || true
     ffmpeg -y -i /tmp/azahar_test_dump.wav -lavfi showspectrumpic=s=1024x512 \
         /tmp/azahar_test_spectrogram.png >>/tmp/azahar_test_ffmpeg.log 2>&1 || true
