@@ -51,7 +51,13 @@ void InitializeAudio(void)
 
     DMA3_FILL_16(0, &gMusicInfo, 28);
 
+#if defined(PORT_NATIVE) || defined(TMC_3DS)
+    // On native platforms with fast CPUs and asynchronous timing, disable
+    // the GBA scanline budget cutoff so all active sound channels are always mixed.
+    gMusicInfo.unk_9 = 0;
+#else
     gMusicInfo.unk_9 = (u8)gUnk_Audio0x64;
+#endif
 
     for (i = 0; i < ARRAY_SIZE(gPsgSounds); i++)
     {
@@ -112,7 +118,7 @@ void DoSoundAction(u32 action)
     if (action & SOUND_ACTION_MAX_CHANNELS_FLAG)
     {
         gMusicInfo.maxSoundChannels = (action & SOUND_ACTION_MAX_CHANNELS_FLAG) >> SOUND_ACTION_MAX_CHANNELS_SHIFT;
-        for (i = ARRAY_SIZE(gMusicInfo.soundChannels); i >= 0 ; i--)
+        for (i = ARRAY_SIZE(gMusicInfo.soundChannels) - 1; i >= 0 ; i--)
         {
             gMusicInfo.soundChannels[i].unk_0 = 0;
         }

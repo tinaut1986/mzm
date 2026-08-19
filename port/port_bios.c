@@ -162,19 +162,22 @@ s32 Multiboot(void* mbp) {
 void SoundBias0(void) {}
 void SoundBias200(void) {}
 
-/* Real MidiKey2Freq semantics use a lookup table baked into the BIOS ROM
- * (per-waveform pitch table) that isn't available here. Placeholder until
- * the real audio backend (UpdateMusic/TrackVariables, see
- * docs/3ds-port-rom-loading.md's audio-engine note) is wired up: standard
- * 12-tone equal temperament from MIDI key 60 = middle C, ignoring
- * waveData's per-sample base frequency. Revisit once audio is being tested
- * for real -- getting this exactly right matters for pitch accuracy, not
- * for anything currently being verified. */
+/* Real MidiKey2Freq semantics: calculates sample playback frequency in Hz
+ * given a ToneData/WaveData pointer, MIDI key (0-127, 60=middle C), and
+ * fine tune adjust (0-255). waveData[1] is the base frequency stored in
+ * the sample header in 1024ths of a Hz (i.e. Hz * 1024). */
 u32 MidiKey2Freq(u32* waveData, u8 midiKey, u8 fineAdjust) {
-    (void)waveData;
+    if (!waveData)
+        return 0;
+
+    const u32* wd = (const u32*)GBA_RESOLVE((const void*)waveData);
+    u32 baseFreq = wd[1]; // base frequency stored as (Hz * 1024)
+    if (baseFreq == 0)
+        return 0;
+
     double semitones = (double)(midiKey - 60) + (double)fineAdjust / 256.0;
-    double freq = 261.626 /* middle C, Hz */ * __builtin_exp2(semitones / 12.0);
-    return (u32)freq;
+    double freq = ((double)baseFreq * __builtin_exp2(semitones / 12.0)) / 1024.0;
+    return (u32)(freq + 0.5);
 }
 
 extern void CallbackCallVblank(void);

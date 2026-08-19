@@ -122,9 +122,9 @@ void agbmain(void)
                 }
                 sLastPaceMs = nowMs;
 #endif
-                while (sConsumedAccum >= 384u) {
+                while (sConsumedAccum >= 16u) {
                     DMA2IntrCode();
-                    sConsumedAccum -= 384u;
+                    sConsumedAccum -= 16u;
                 }
             }
 #ifdef PORT_AUDIO_DIAG_LOG
