@@ -81,9 +81,26 @@ void Port_MzmAudio_SetRateHook(void (*hook)(unsigned int engineRate)) {
  * produced. Each iteration of SoundCodeC writes 4 left bytes (from src) then 4
  * right bytes; so count*4 left samples and count*4 right samples are written.
  */
-/* Capture the raw u8 samples to a file on the SD so we can inspect the exact
+/*
+ * Capture the raw u8 samples to a file on the SD so we can inspect the exact
  * bytes the engine produces (center offset, scale, and whether it is real
- * audio or DC). Writes interleaved L/R u8, capped at ~2 MiB. */
+ * audio or DC). Writes interleaved L/R u8, capped at ~2 MiB.
+ *
+ * [PORT] 2026-08-19: OFF by default (build with -DPORT_AUDIO_DUMP_RAW to get
+ * it back). This runs INSIDE the engine's mixdown, i.e. once per audio frame,
+ * and each call does fopen("ab") + ~2*n fputc + fclose against the SD card --
+ * on real hardware that is ~1400 byte-at-a-time stdio calls plus an open and
+ * a close, every frame, on the critical path that produces the audio. Section
+ * 6p already warned that per-sample file I/O here cost the entire frame rate
+ * ("FPS 0") and said to batch the I/O; batching it into one open per call was
+ * not enough on real hardware. Leaving this on was actively CAUSING the
+ * starvation that section 6r then measured -- the engine could not produce
+ * audio fast enough because it was blocked writing the diagnostic that was
+ * measuring how little audio it produced. Do not enable this on real hardware
+ * while also drawing conclusions about frame rate or ring fill; use it only
+ * to inspect sample VALUES, and prefer capturing system audio output instead
+ * (section 6r methodology). */
+#ifdef PORT_AUDIO_DUMP_RAW
 #define MZM_DUMP_PATH "sdmc:/3ds/mzm_audio_dump.bin"
 #define MZM_DUMP_MAX (2u * 1024u * 1024u)
 static unsigned int sDumpBytes;
@@ -100,6 +117,9 @@ static void DumpRaw(const unsigned char* left, const unsigned char* right, unsig
     sDumpBytes += take * 2u;
     fclose(f);
 }
+#else
+#define DumpRaw(left, right, n) ((void)0)
+#endif
 
 static u8* Port_MzmAudio_SoundCodeC(u32* dest, u32* src, u8 count) {
     u8* ret = sRealSoundCodeC(dest, src, count);
@@ -139,7 +159,14 @@ static u8* Port_MzmAudio_SoundCodeC(u32* dest, u32* src, u8 count) {
 
         /* Throttled diagnostic: engine rate, samples written by this call,
          * ring fill, peak amplitude, nonzero-sample count and a few raw
-         * bytes. peak==0 with all-zero capture => reading silence. */
+         * bytes. peak==0 with all-zero capture => reading silence.
+         *
+         * [PORT] 2026-08-19: gated OFF by default (-DPORT_AUDIO_DIAG_LOG to
+         * re-enable), same reason as DumpRaw above -- Port_DebugLog is an
+         * fopen+fprintf+fclose to the SD (port/port_debug_log.c) and this one
+         * additionally scans the whole 3072-byte buffer first. Even throttled
+         * to 1-in-64 it is real SD I/O inside the audio production path. */
+#ifdef PORT_AUDIO_DIAG_LOG
         static unsigned int sDiagCount;
         if ((++sDiagCount & 0x3F) == 0) {
             /* Scan the WHOLE soundRawData buffer to see if the engine wrote
@@ -166,6 +193,7 @@ static u8* Port_MzmAudio_SoundCodeC(u32* dest, u32* src, u8 count) {
                 left[0], left[1], left[2], (void*)dest);
             Port_DebugLog(msg);
         }
+#endif /* PORT_AUDIO_DIAG_LOG */
     }
 
     return ret;

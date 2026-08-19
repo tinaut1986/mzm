@@ -78,18 +78,60 @@ void agbmain(void)
              * section 6l buffer tuning was reverted for making things
              * worse. */
             extern unsigned int Port_MzmAudio_RingReadIndex(void);
+            extern unsigned int Port_MzmAudio_RingWriteIndex(void);
             extern void DMA2IntrCode(void);
             static unsigned int sLastRingReadIdx;
             static unsigned int sConsumedAccum;
             static int sHaveLastRingReadIdx;
             const unsigned int curReadIdx = Port_MzmAudio_RingReadIndex();
+            /* [PORT] Diagnostic added 2026-08-19 while chasing the crackling
+             * that survived the section 6q fix: a live PulseAudio capture of
+             * Azahar's actual output (not the pre-NDSP dump the 6o-6q
+             * analysis used) showed the ring starved ~65% of the time on
+             * this dev machine (avg NDSP buffer fill 34.9%, see
+             * docs/3ds-port-status-2026-08-17.md section 6r). This logs, per
+             * agbmain iteration, how many real samples were "owed" (ring
+             * consumption since the last iteration, i.e. how far behind
+             * production the loop fell) against wall-clock ms elapsed, so a
+             * future session can correlate stutters directly from the log
+             * instead of guessing from FPS text on a screenshot. unk_E (the
+             * decomp's emulated DMA double-buffer capacity, see
+             * SetupSoundTransfer in audio_wrappers.c) is 1536 samples -- if
+             * "owed" ever exceeds that between iterations, that iteration's
+             * catch-up is provably clipped and the lost audio is
+             * unrecoverable, regardless of how large the NDSP ring is. */
+#ifdef PORT_AUDIO_DIAG_LOG
+            extern u64 osGetTime(void);
+            extern void Port_DebugLog(const char* msg);
+            static u64 sLastPaceMs;
+            static unsigned int sPaceDiagCount;
+#endif
             if (sHaveLastRingReadIdx) {
                 sConsumedAccum += curReadIdx - sLastRingReadIdx;
+#ifdef PORT_AUDIO_DIAG_LOG
+                const unsigned int owed = sConsumedAccum;
+                const u64 nowMs = osGetTime();
+                if ((++sPaceDiagCount & 0x1F) == 0) {
+                    const unsigned int ringFill =
+                        Port_MzmAudio_RingWriteIndex() - curReadIdx;
+                    char msg[96];
+                    __builtin_snprintf(msg, sizeof(msg),
+                        "audioPace: dt=%ums owed=%u ringFill=%u",
+                        (unsigned int)(nowMs - sLastPaceMs), owed, ringFill);
+                    Port_DebugLog(msg);
+                }
+                sLastPaceMs = nowMs;
+#endif
                 while (sConsumedAccum >= 384u) {
                     DMA2IntrCode();
                     sConsumedAccum -= 384u;
                 }
             }
+#ifdef PORT_AUDIO_DIAG_LOG
+            else {
+                sLastPaceMs = osGetTime();
+            }
+#endif
             sLastRingReadIdx = curReadIdx;
             sHaveLastRingReadIdx = 1;
 

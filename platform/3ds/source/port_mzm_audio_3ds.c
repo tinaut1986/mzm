@@ -29,7 +29,31 @@ extern bool Platform3DS_CanUseCore1(void);
  * so the producer (driven at the game's ~60 Hz frame cadence) always has one
  * full NDSP buffer worth of backlog to land into. Without this, a buffer
  * request arriving just after the last capture empties the ring and the
- * consumer pads with silence -- the "clicks". */
+ * consumer pads with silence -- the "clicks".
+ *
+ * [PORT] 2026-08-19: tried raising this to 2048 (~150ms) on the theory that
+ * the ring was starving because production arrives in lumps (once per
+ * game-loop iteration, 33-67ms apart on this dev machine, measured via the
+ * new agbmain.c "audioPace:" log) while NDSP drains continuously -- i.e. a
+ * jitter-absorption problem a bigger floor should smooth over. Verified with
+ * a live PulseAudio capture of Azahar's actual output (same method as the
+ * mgba reference recording): NO improvement (69.0% of samples near-silent
+ * vs 66.6% before, 47.2% of NDSP buffers fully empty vs 43.4% before -- both
+ * within noise of "no change", not a fix). Reverted, matching the project's
+ * standing rule of not keeping a buffering change the objective measurement
+ * doesn't confirm (same as the section 6l buffer tuning revert). Root cause
+ * turned out NOT to be jitter: the "audioPace: owed=" log shows the ring
+ * consumes more per iteration (~440-670 frames, derived from dt vs NDSP's
+ * fixed 256-frames/~19ms drain rate) than the engine produces (owed avg
+ * ~400) -- a genuine average THROUGHPUT deficit tracking this dev machine's
+ * FPS (only ~22-27 on this loaded box, confirmed on-screen), not a
+ * buffering shape problem. No ring size fixes a sustained
+ * production-below-consumption imbalance -- see
+ * docs/3ds-port-status-2026-08-17.md section 6r. Real fix requires either
+ * getting the render loop closer to 60Hz, or decoupling audio production
+ * from render cadence entirely; both need real-hardware measurement (this
+ * dev machine's Azahar performance is not representative) before touching
+ * this again. */
 #define RING_FLOOR BUFFER_FRAMES
 
 static ndspWaveBuf sWave[BUFFER_COUNT];
@@ -87,7 +111,13 @@ static void FillBuffer(int index) {
 
     /* Throttled diagnostic: how much of each NDSP buffer actually held audio
      * (toRead < BUFFER_FRAMES means we under-ran the ring and had to pad with
-     * silence, which is exactly what the "clicks" would sound like). */
+     * silence, which is exactly what the "clicks" would sound like).
+     *
+     * [PORT] 2026-08-19: gated OFF by default (-DPORT_AUDIO_DIAG_LOG), see
+     * port_mzm_audio_glue.c. This one runs on the AUDIO THREAD, so its SD
+     * write (Port_DebugLog = fopen+fprintf+fclose) blocks the very thread
+     * that is supposed to be feeding NDSP on time. */
+#ifdef PORT_AUDIO_DIAG_LOG
     static unsigned int sDiagCount;
     if ((++sDiagCount & 0x1F) == 0) {
         char msg[96];
@@ -95,6 +125,7 @@ static void FillBuffer(int index) {
             toRead, BUFFER_FRAMES, sOutRate);
         Port_DebugLog(msg);
     }
+#endif
 }
 
 static uint32_t CountDoneBuffers(void) {
