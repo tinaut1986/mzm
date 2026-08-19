@@ -146,6 +146,46 @@ void agbmain(void)
             extern void Port_MzmAudio_InstallSoundCodeCHook(void);
             Port_MzmAudio_InstallSoundCodeCHook();
             UpdateAudio();
+
+            /* [PORT] Decouple how much audio gets MIXED from the frame rate.
+             *
+             * UpdateAudio() mixes one frame's worth per call, because on a GBA
+             * it is called exactly 60 times a second. This port does not hold
+             * 60 FPS (~55 on real hardware, less under load), so it produced
+             * ~8% less audio per second than NDSP consumes -- a permanent
+             * deficit that empties the ring no matter how it is buffered, and
+             * comes out as periodic dropouts. Section 6r measured the ring
+             * pinned at its floor for entire runs because of exactly this.
+             *
+             * UpdateMusic() already computes how much to mix from the gap
+             * between what hardware has consumed (gMusicInfo.unk_10, which the
+             * block above advances from real NDSP ring consumption, section
+             * 6q) and what has been produced (unk_11). So calling it again
+             * while a gap remains mixes precisely the shortfall and nothing
+             * more: once caught up it takes the `var_6 == 0` early return in
+             * src/audio.c, before any mixing or envelope stepping, so the
+             * extra calls are free no-ops rather than a second frame of sound.
+             *
+             * That early return is also why this does not distort envelopes:
+             * a call only steps them when it actually mixes, so envelope rate
+             * stays tied to audio produced rather than to frames drawn, which
+             * is what the hardware behaviour amounts to. The note SEQUENCER
+             * (UpdateTrack, inside UpdateAudio) deliberately still runs once
+             * per frame -- calling it more often would speed the music's
+             * tempo. Tempo therefore still drifts slightly slow when frames
+             * are slow; that is a separate, much less audible problem than
+             * dropouts, and fixing it needs a real fixed-timestep loop.
+             *
+             * Bounded so a pathological stall cannot spin here for long. */
+            {
+                extern void UpdateMusic(void);
+                for (int catchUp = 0; catchUp < 4; ++catchUp) {
+                    const unsigned int producedBefore = Port_MzmAudio_RingWriteIndex();
+                    UpdateMusic();
+                    if (Port_MzmAudio_RingWriteIndex() == producedBefore)
+                        break; /* nothing left owed */
+                }
+            }
             /* Safety net: normally the dedicated NDSP consumer thread
              * (port_mzm_audio_3ds.c) drains the ring on its own via the
              * ndsp callback. If that thread failed to start (e.g. thread
