@@ -54,6 +54,12 @@ void agbmain(void)
 #endif
 #if defined(TMC_3DS) && defined(__3DS__)
         {
+            if (gMusicInfo.unk_E != 0) {
+                gMusicInfo.unk_10 += gMusicInfo.unk_C;
+                if (gMusicInfo.unk_10 >= gMusicInfo.unk_E)
+                    gMusicInfo.unk_10 -= gMusicInfo.unk_E;
+            }
+
             extern void Port_MzmAudio_InstallSoundCodeCHook(void);
             Port_MzmAudio_InstallSoundCodeCHook();
             UpdateAudio();

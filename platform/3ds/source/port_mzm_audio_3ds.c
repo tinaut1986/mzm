@@ -21,14 +21,11 @@ extern bool Platform3DS_CanUseCore1(void);
  * agbplay/M4A backend.
  */
 
-#define BUFFER_FRAMES 256
+#define BUFFER_FRAMES 224
 #define BUFFER_COUNT 4
 #define AUDIO_THREAD_STACK (64u * 1024u)
 
-/* Safety floor: the consumer never drains the ring below this many frames,
- * so the producer (driven at the game's ~60 Hz frame cadence) always has
- * backlog cushion. */
-#define RING_FLOOR 128
+#define RING_FLOOR 0
 
 static ndspWaveBuf sWave[BUFFER_COUNT];
 static int16_t* sSamples;

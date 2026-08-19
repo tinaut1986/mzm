@@ -133,21 +133,12 @@ static u8* Port_MzmAudio_SoundCodeC(u32* dest, u32* src, u8 count) {
         }
 
         const unsigned int n = (unsigned int)count * 4u;
-        unsigned int readIdx = __atomic_load_n(&sRingReadIndex, __ATOMIC_ACQUIRE);
-        unsigned int wIdx = sRingWriteIndex;
-
-        /* Keep producer-to-consumer delay strictly capped at <= 512 samples (~38ms)
-         * to prevent multi-second lag buildup. */
-        if (wIdx - readIdx > 512u) {
-            readIdx = wIdx - 384u;
-            __atomic_store_n(&sRingReadIndex, readIdx, __ATOMIC_RELEASE);
-        }
-
         const unsigned char* left = (const unsigned char*)dest;
         const unsigned char* right = left + PCM_DMA_BUF_SIZE;
         DumpRaw(left, right, n);
 
         PortPsg_BeginBlock(engineRate);
+        unsigned int wIdx = sRingWriteIndex;
         for (unsigned int i = 0; i < n; ++i) {
             const int lv = (signed char)left[i];
             const int rv = (signed char)right[i];

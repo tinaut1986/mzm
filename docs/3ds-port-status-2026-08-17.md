@@ -930,17 +930,39 @@ noise (ruido):     activa 110/2520 frames (4.4%)
 3. **Reducción de buffers NDSP en `platform/3ds/source/port_mzm_audio_3ds.c`:** se redujo `BUFFER_COUNT` de 12 a 4 buffers de 256 muestras con decaimiento suave en underruns.
 
 **Resultado confirmado por el usuario en hardware real (2026-08-20):** **El retraso de 3 segundos ha desaparecido por completo; el audio ahora es instantáneo con las acciones en pantalla.**
-**Pendiente abierto:** Persisten petardeos/chasquidos en la reproducción (siguiente tarea: investigar underruns por fluctuaciones de framerate vs clipping/saturación de volumen).
+
+## 6y. Causa raíz del petardeo/chasquido continuo encontrada y RESUELTA (~98% limpio) (2026-08-20)
+
+**Contexto:** tras resolver las pistas ausentes (6w) y el retraso de 3 segundos (6x), el audio presentaba un petardeo/chasquido continuo y rítmico.
+
+**Causa raíz matemática en el motor `UpdateMusic`:**
+1. En GBA real, el DMA avanza `gMusicInfo.unk_10` (puntero de consumo) en `unk_C = 14` bloques (224 muestras = 1 frame) cada ciclo de vblank.
+2. En 3DS no existe DMA de hardware, por lo que `gMusicInfo.unk_10` quedaba **congelado permanentemente en su valor inicial (83)** durante toda la partida.
+3. Con `unk_10` congelado, la aritmética de cálculo de fragmento en `UpdateMusic` (`src/audio.c:66-120`) entraba en una condición de error constante creyendo que el buffer estaba retrasado y mezclaba **432 muestras (casi 2 frames completos) en cada frame de vídeo**, sobreescribiendo el buffer circular y generando saltos en la muestra 383 (exactamente la cifra que documentaron los análisis de las secciones 6o/6p).
+4. Además, se producían muestras al doble de velocidad real, provocando saltos de fase en las envolventes de las notas y saturación del audio.
+
+**Correcciones aplicadas:**
+1. **Avance exacto de 1 frame de DMA en `src/agbmain.c`:**
+   ```c
+   if (gMusicInfo.unk_E != 0) {
+       gMusicInfo.unk_10 += gMusicInfo.unk_C;
+       if (gMusicInfo.unk_10 >= gMusicInfo.unk_E)
+           gMusicInfo.unk_10 -= gMusicInfo.unk_E;
+   }
+   ```
+   Con esto, `UpdateMusic()` genera **exactamente 224 muestras por frame de forma limpia y continua**, sin sobreescrituras ni saltos de fase.
+2. **Buffer de NDSP ajustado a 224 muestras (`BUFFER_FRAMES 224`)** en `platform/3ds/source/port_mzm_audio_3ds.c`, sincronizando la producción y consumo muestra a muestra a 13379 Hz.
+3. **Eliminación de saltos de índice en `port/port_mzm_audio_glue.c`**, asegurando que el stream de audio se concatene de forma 100% continua.
+
+**Resultado confirmado por el usuario en hardware real (2026-08-20):** **El audio ahora funciona correctamente al ~98% (sin el petardeo continuo ni retrasos).**
+**Pendiente:** Monitorear durante el gameplay completo algún posible error sonoro puntual o aislado.
 
 ## 7. Pendientes y Siguientes Pasos
 
-**Bugs abiertos pendientes de investigar (reportados por el usuario, aún SIN resolver):**
-- **Audio: petardeo residual en la reproducción (2026-08-20).**
-  - Con las pistas de música recuperadas (6w) y el retraso de audio eliminado (6x), el audio suena con tempo y latencia correctos, pero persisten petardeos.
-  - Tareas de diagnóstico pendientes:
-    1. Comprobar si el petardeo se debe a pequeñas caídas de frame rate (~55 FPS vs 60 FPS) que causan micro-underruns en NDSP al no llegar a tiempo 1 frame de audio por vblank.
-    2. Comprobar si hay saturación / clipping de volumen en `Port_MzmAudio_SoundCodeC` (donde se mezclan Direct Sound y PSG con saturación a [-32768, 32767]).
-    3. Revisar el resampleo/interpolación de NDSP y alineación de lectura de muestras PCM.
+**Bugs abiertos pendientes de investigar:**
+- **Audio: supervisión de errores sonoros aislados (2026-08-20).**
+  - Con las pistas de música recuperadas (6w), el retraso de audio eliminado (6x) y el petardeo continuo solucionado (6y, ~98% funcional), resta monitorear si en zonas específicas o transiciones muy cargadas aparece algún glitch menor aislado.
+- **RESUELTO (2026-08-20, sección 6y): Petardeo continuo de audio (~98% resuelto).** Causa: `unk_10` congelado en 83 forzaba a `UpdateMusic()` a mezclar 432 muestras por frame en vez de 224, sobreescribiendo el buffer circular y saltando fases de notas. Resuelto avanzando `unk_10` por `unk_C` cada frame en `agbmain.c` y dimensionando buffers NDSP a 224 muestras.
 - **RESUELTO (2026-08-20, sección 6x): Retraso de audio de ~3 segundos.** Causa: bucle de catch-up redundante en `agbmain.c` saturaba un ring buffer de 16.384 muestras con audio producido a 4x. Resuelto simplificando el bucle a un solo `UpdateAudio()` por frame, reduciendo el ring a 2048 muestras con tope de 38 ms de latencia, y 4 buffers NDSP.
 - **RESUELTO (2026-08-20, sección 6w): Pistas de música que faltaban.** Causa raíz: `MidiKey2Freq` en `port_bios.c` ignoraba `waveData[1]` (base frequency) y fijaba 261 Hz, haciendo que los instrumentos se reprodujeran 5-7 octavas más graves y a 1/50 de su velocidad real. Resuelto junto con la tabla de notas multi-muestra de `channel == 0x40` y la eliminación del cutoff de scanlines `unk_9`.
 - **RESUELTO (2026-08-19, sección 6m): el crash determinista de la intro y gran parte de la regresión de FPS.** Era el bug de `lr` corrompido: `bl port_resolve_addr` insertado en `AudioCommand_Goto`/`AudioCommand_PatternPlay` (`asm/audio_internal.s`) sin guardar `lr`, así que su `bx lr` final volvía a un sitio erróneo cada vez que una pista de música ejecutaba GOTO o PATT. Con el fix: 120s+ sin crashear, llega a gameplay real, FPS en Azahar sube de ~20-29 a ~55.
