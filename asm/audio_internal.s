@@ -913,8 +913,23 @@ UploadSampleToWaveRam: @ 0x080050d0
     strb r2, [r3]
     bx lr
     .align 2, 0
-lbl_080050fc: .4byte REG_SOUND3CNT_L
-lbl_08005100: .4byte REG_WAVE_RAM0_L
+@ [PORT] These were the raw GBA MMIO addresses (REG_SOUND3CNT_L = 0x04000070,
+@ REG_WAVE_RAM0_L = 0x04000090). Nothing maps that range on the 3DS, so the
+@ strb/str through them was a data abort the instant a sound actually used the
+@ PSG wave channel -- confirmed from a real-hardware Luma3DS crash dump
+@ (2026-08-19): type=3 (data abort), FAR=0x04000070, pc inside
+@ UploadSampleToWaveRam, lr in AudioCommand_Voice (src/audio.c:1625). Same bug
+@ class as sections 5.1/6b ("raw _BASE macro dereferenced without going
+@ through the WRITE_*/gba_MemPtr translation"), just reached from asm the C-side
+@ sweeps could not see. Point them at the emulated I/O block instead
+@ (gIoMem, port/port_gba_mem.h, covers 0x04000000-0x040003FF at the same
+@ offsets) -- a plain relocated symbol+addend, so no bl and therefore none of
+@ the clobbered-lr risk of section 6m. NOTE: writes here now land in emulated
+@ I/O memory and are inert -- PSG/wave channels produce no audible sound on
+@ this port (the engine's software mixer only covers the Direct Sound path).
+@ That is a pre-existing gap, not a regression; this fix only stops the crash.
+lbl_080050fc: .4byte gIoMem + 0x70
+lbl_08005100: .4byte gIoMem + 0x90
 
 @ Signature: void unk_5104(struct PSGSoundData* pSound)
     thumb_func_start unk_5104
@@ -927,10 +942,12 @@ unk_5104: @ 0x08005104
     ldrb r1, [r1, r2]
     cmp r1, #8
     ble lbl_0800513e
-    movs r2, #4
-    movs r3, #0x89
-    lsls r2, r2, #0x18
-    orrs r2, r3
+    @ [PORT] Was building the raw MMIO address 0x04000089 (SOUNDBIAS high byte)
+    @ with movs/lsls/orrs and reading through it -- same unmapped-address fault
+    @ as UploadSampleToWaveRam above. Load the emulated I/O address instead.
+    @ r3 held only the 0x89 addend and is overwritten just below, so dropping
+    @ it changes nothing.
+    ldr r2, lbl_port_gIoMem_89
     ldrb r2, [r2]
     lsrs r2, r2, #6
     lsls r2, r2, #6
@@ -951,10 +968,10 @@ lbl_08005134:
     orrs r2, r3
     ands r5, r2
 lbl_0800513e:
-    movs r2, #4
-    movs r3, #0x60
-    lsls r2, r2, #0x18
-    orrs r2, r3
+    @ [PORT] Was building raw MMIO 0x04000060 (REG_SOUND1CNT_L, base of the PSG
+    @ channel register block written through r2 below). Same fix as above; r3
+    @ held only the 0x60 addend and is reloaded with 7 on the next line.
+    ldr r2, lbl_port_gIoMem_60
     movs r3, #7
     ands r1, r3
     lsls r3, r4, #8
@@ -997,4 +1014,7 @@ lbl_08005184:
     pop {r4, r5}
     bx lr
     .align 2, 0
-    
+@ [PORT] Literal pool for the two emulated-I/O addresses unk_5104 now uses
+@ instead of building raw 0x040000xx MMIO addresses inline (see comments above).
+lbl_port_gIoMem_89: .4byte gIoMem + 0x89
+lbl_port_gIoMem_60: .4byte gIoMem + 0x60
