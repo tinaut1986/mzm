@@ -19,6 +19,10 @@ void Port_GpuRenderer_RenderFrame(void);
 void Port_GpuRenderer_Shutdown(void);
 bool Port_GpuRenderer_IsActive(void);
 void Port_GpuRenderer_SetActive(bool active);
+/* Item counts from the most recently rendered GPU frame, for the debug
+ * overlay -- see the definition in port_gpu_renderer.c. Any output pointer
+ * may be NULL. */
+void Port_GpuRenderer_GetLastFrameStats(int* outItems, int* outObjItems, int* outCacheSlots);
 
 #ifdef __cplusplus
 }

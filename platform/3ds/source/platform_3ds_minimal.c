@@ -129,9 +129,23 @@ extern void gba_write16(uint32_t addr, uint16_t v);
 #define MZM_REG_KEY_INPUT 0x04000130u
 #define MZM_KEY_MASK 0x3FFu
 
+/* KEY_X (bit 10) falls outside MZM_KEY_MASK (bits 0-9, GBA's own button
+ * set), so it never reaches the game and is free to repurpose as a
+ * diagnostic hotkey: dump the actual GPU-rendered content of the left/right/
+ * bottom render targets to the SD card (PlatformGpu3DS_DumpScreens, in
+ * platform_gpu_3ds.c) -- added to inspect what the right-eye stereo target
+ * really contains when the 3D slider is on, since the CPU-side debug log
+ * alone couldn't explain reported content missing there. Declared extern
+ * rather than #include "platform_gpu_3ds.h" purely out of consistency with
+ * this file's existing style of narrow forward declarations. */
+extern void PlatformGpu3DS_DumpScreens(void);
+
 void Platform3DS_PollKeysIntoGba(void) {
     const uint16_t held = Platform3DS_ReadKeyInput() & MZM_KEY_MASK;
     gba_write16(MZM_REG_KEY_INPUT, (uint16_t)(~held & MZM_KEY_MASK));
+    if (hidKeysDown() & KEY_X) {
+        PlatformGpu3DS_DumpScreens();
+    }
 }
 
 uint16_t Platform3DS_ReadKeyDownInput(void) {

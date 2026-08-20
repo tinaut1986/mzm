@@ -66,6 +66,7 @@ struct C3D_RenderTarget_tag* PlatformGpu3DS_GetTopRightTarget(void);
  * per-texture, so it doesn't happen automatically. */
 void PlatformGpu3DS_ConfigureAbgrTextureEnv(void);
 void PlatformGpu3DS_ShowDumpSavedOverlay(void);
+void PlatformGpu3DS_DumpScreens(void);
 void PlatformGpu3DS_GetStats(PlatformGpu3DSStats* stats);
 void PlatformGpu3DS_InvalidateBottomTarget(void);
 void PlatformGpu3DS_Shutdown(void);

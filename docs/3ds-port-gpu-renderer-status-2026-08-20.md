@@ -273,3 +273,218 @@ reales** (instrumentar `Port_GpuRenderer_CanRenderFrame()` para loguear
    se confirme la causa (filtro de textura vs. escalado no entero).
 4. Root-causear 3.2 y 3.4 con datos reales de hardware/Azahar con input antes
    de intentar arreglarlos a ciegas otra vez.
+
+## 5. Continuación misma sesión (2026-08-20, tarde): objetivo principal cumplido
+
+Sesión de seguimiento directo, con el usuario jugando en hardware real y
+mandando capturas/logs por FTP entre iteraciones (`192.168.1.133:5000`, FBI).
+Se siguió al pie la recomendación de la sección 4 — instrumentar antes de
+arreglar — y esta vez sí se pudo alcanzar gameplay real con input. Resultado:
+**el objetivo principal de la rama (gameplay real usando el renderer de GPU)
+se cumple ya**, con varios bugs de correctness reales encontrados y
+arreglados por el camino. Todo en `platform/3ds/source/port_gpu_renderer.c`
+salvo que se indique lo contrario.
+
+### 5.1 — Instrumentación añadida (recomendación 1 de la sección 4, hecha)
+
+- `Port_GpuRenderer_CanRenderFrame()` ahora loguea (detrás de
+  `PORT_GPU_RENDERER_DIAG_LOG`, throttled 1/30 rechazos) **cuál** condición
+  rechazó el frame: `GPU_REJECT: forced blank / mode != 0 / WIN0 / WIN1 /
+  OBJWIN / mosaic BG / affine OBJ`.
+- `GPUDIAG` ampliado con `bldcnt`/`eff`/`eva`/`evb`/`blend` (nº de items
+  marcados para el segundo pase de alpha-blend).
+- Nuevo log `STEREO slider=... left=... right=...` y `EYE0/EYE1
+  drawCount=... reasserted=...` por ojo (cuidado: un contador compartido con
+  módulo par entre los dos ojos hace que uno de los dos nunca se loguee —
+  usar contadores separados por ojo, ver `sEyeDrawLogCounter[2]`).
+- `CMDBUF usage=%` (uso del command buffer de C3D) logueado en
+  `PlatformGpu3DS_EndBottom`.
+- **Overlay de debug en pantalla inferior**, siempre visible
+  independientemente del path de render (a diferencia del "FPS NN" de la
+  pantalla superior, que **solo** dibuja el path de CPU — ver
+  `DrawTopImageStereo`): línea 1 `FPS<n> GPU`/`FPS<n> CPU`, línea 2 (solo
+  GPU) `<items> <obj> <cache>`. Requirió añadir los glifos `C`/`G` al font
+  bitmap 5x7 de `platform_gpu_3ds.c` (antes solo tenía A,D,E,F,M,P,S,U,V).
+- **`KEY_X` como hotkey de diagnóstico** (`Platform3DS_PollKeysIntoGba` en
+  `platform_3ds_minimal.c`, cae fuera de `MZM_KEY_MASK` así que no interfiere
+  con el juego): vuelca los tres render targets reales (ojo izq., ojo dcha.,
+  pantalla inferior) tal cual los produce la PICA200 a
+  `sdmc:/3ds/mzm-dump-{left,right,bottom}.rgb` (crudo, sin cabecera, RGB8,
+  dimensiones nativas sin rotar — 240x400 los de arriba, 240x320 el de
+  abajo; rotar 90° al visualizar). Ver `PlatformGpu3DS_DumpScreens()`. No se
+  acumulan: cada pulsación sobreescribe los mismos tres ficheros. **Esta
+  herramienta fue decisiva** — permitió ver directamente que el contenido
+  del ojo derecho realmente faltaba en el framebuffer (no era un artefacto
+  de captura/ventana), cosa que ningún log por sí solo hubiera podido
+  demostrar con la misma certeza.
+
+### 5.2 — Bug real, el gordo: orden de prioridad de capas invertido (causa raíz de 3.4)
+
+`CollectBgLayer`/`CollectSprite` calculaban el `sortKey` de dibujado
+(orden ascendente = se dibuja antes = queda más al fondo) usando
+`priority` directamente. En GBA, **prioridad 0 = se dibuja encima,
+prioridad 3 = va al fondo** — justo al revés de lo que asumía el código.
+Cualquier capa con prioridad 3 (típicamente la decoración de fondo) se
+pintaba la última, tapando BG0-2 y todos los sprites/OBJ (incluida Samus).
+Confirmado con `GPUDIAG` en gameplay real: la única capa visible era
+`bg3[cnt=060b...]` (prioridad 3).
+
+**Arreglo:** invertir a `(3 - priority) * 10 + tiebreak` en ambos sitios.
+Con esto **el gameplay real pasó de verse solo fondo a verse completo**
+(suelo, paredes, Samus) por primera vez en esta rama.
+
+### 5.3 — Bug real: WIN1 rechazaba casi todo el gameplay por un falso positivo
+
+`src/transparency.c` activa `WIN1` en prácticamente cualquier sala normal
+(`TransparencySetRoomEffectsTransparency`), pero como mecanismo para
+habilitar efectos BLDCNT por capa vía `WININ`, no para recortar pantalla: la
+ventana cubre las 240x160 completas y `WININ_H=0x3F` dentro (todas las capas
+habilitadas, sin restricción). `CanRenderFrame()` rechazaba el frame con solo
+ver el bit de WIN1 activo, sin comprobar si realmente recortaba algo —
+confirmado con diagnóstico que **WIN1 era el motivo de rechazo dominante en
+gameplay real** (20 de 22 rechazos en una sesión de prueba).
+
+**Arreglo:** `WindowCoversFullScreen()` — si WIN0/WIN1 están activas pero
+cubren la pantalla completa y `WININ` no restringe ninguna capa (`== 0x3F`),
+se permite el frame (es un no-op real). Si de verdad recorta algo (p.ej. el
+efecto de flash del traje, que sí encoge el rectángulo), sigue cayendo a CPU
+correctamente. OBJ window sigue sin aproximarse (no se ha visto que haga
+falta).
+
+### 5.4 — Bug real: `depthTier` de paralaje estéreo desalineado con la tabla
+
+`kTierEyeOffsetPx` está comentada como `{BG3, BG2, BG1, BG0, OBJ}` (de más
+lejano a más cercano), pero `CollectBgLayer` pasaba `bgIndex` directamente
+como `depthTier` (0=BG0..3=BG3) — el índice contrario al que la tabla espera.
+BG0 (pensado para desplazamiento 0, al ser HUD/primer plano) leía en
+realidad el valor de BG3 (-3.5px, pensado para el fondo lejano), y viceversa.
+
+**Arreglo:** `PushItem(..., 3 - bgIndex, ...)`. Por sí solo el efecto era
+pequeño (máx. ±3.5px) y no explicaba el bug grande de la sección 5.6 (el
+contenido no aparecía en absoluto, no solo desplazado) — pero es un bug real
+e independiente, ya corregido.
+
+### 5.5 — Bug real: signo del paralaje estéreo invertido
+
+`eyeSign` era `-1` para el ojo izquierdo y `+1` para el derecho. Combinado
+con que `kTierEyeOffsetPx` son todos `<= 0`, esto hacía que el ojo
+*izquierdo* se desplazara hacia la derecha y el *derecho* hacia la
+izquierda para las capas de fondo — paralaje cruzado/negativo, que se
+percibe como que el fondo **sale disparado hacia el jugador** en vez de
+hundirse en la pantalla. Confirmado por el usuario en hardware ("los fondos
+parecen estar por delante que el frente").
+
+**Arreglo:** invertir `eyeSign` (`+1` izquierda, `-1` derecha). Confirmado
+arreglado por el usuario tras el cambio.
+
+### 5.6 — Bug real, el gordo #2: contenido del ojo derecho ausente con el 3D activado
+
+Con el 3D activado, el ojo derecho perdía contenido de forma sistemática: el
+menú de "¿guardar?" y la barra de HUD desaparecían **por completo** (no
+desplazados, ausentes), mientras el fondo se veía bien en ambos ojos. El
+overlay de FPS de la pantalla inferior también desaparecía por completo con
+el 3D activado. El recuento de draw calls (`EYE0`/`EYE1 drawCount=...`) era
+**idéntico** entre ambos ojos — se estaban emitiendo los mismos
+`C2D_DrawImage`, así que no era un bug de "saltarse" items.
+
+Se descartaron por datos, en este orden, antes de dar con la causa:
+- Agotamiento del command buffer de C3D (`C3D_GetCmdBufUsage()`): 0.1-0.2%
+  de uso incluso en el ojo con más carga. No era esto.
+- Invocación doble de `Port_PPU_PresentFrame()`/`PlatformGpu3DS_EndBottom()`
+  por frame real (había una vía plausible vía `VBlankIntrWait()` en
+  `src/transfer.c`): instrumentado, **0 casos** de re-entrada en cientos de
+  frames. No era esto.
+- Depth-test de la GPU dejado en su valor por defecto de citro2d en vez de
+  desactivado explícitamente: se desactivó explícitamente
+  (`C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_ALL)`) como higiene general
+  (2D por orden de dibujado no debería depender de él), pero no cambió nada
+  observable — no era la causa, aunque el cambio se mantiene por ser
+  correcto.
+
+**Causa real, confirmada con las capturas de `KEY_X`:** el buffer de
+vértices interno de citro2d (`C2D_Init`, **distinto** del command buffer de
+C3D ya descartado) estaba dimensionado a `4096` — pensado para el peor caso
+de **un solo ojo** (`MAX_DRAW_ITEMS`). Con el 3D activado, los draws de
+ambos ojos caen en ese mismo buffer dentro de un único frame de C3D antes de
+que se libere del todo, así que lo que se dibuja al final (justo el
+contenido del segundo ojo procesado, en la capa más alta del z-order) se
+pierde en silencio — el mismo patrón de fallo que el bug original de la
+sección 2.5 (buffer de citro2d agotado a las 128 primeras quads), esta vez
+disparado por la suma de draws de los dos ojos en vez de por uno solo muy
+cargado.
+
+**Arreglo:** `C2D_Init(4096 * 3)`. Confirmado arreglado por el usuario — ya
+se ve todo en ambos ojos.
+
+### 5.7 — Bug introducido y arreglado en la misma sesión: colores invertidos al añadir el overlay
+
+Al añadir el overlay de debug de la pantalla inferior (dibujo "sólido",
+`C2D_DrawRectSolid`/texto) resucitó el bug de canales de color invertidos de
+la sección 2.1 (pantalla roja/magenta) — pero solo *después* de que el
+renderer de GPU empezara a usarse de verdad en gameplay real (gracias al fix
+de la sección 5.2). Causa: citro2d reprograma internamente el TEV (unidad 0)
+cada vez que cambia entre dibujo "con textura" (`C2D_DrawImage`) y "sólido"
+— no tiene ni idea de que `ConfigureAtlasTextureEnv()`/
+`ConfigureAbgrTextureEnv()` tocan esos registros a mano por fuera de su
+propio tracking. Como el overlay dibuja "sólido" todos los frames, el modo
+queda en "sólido" al final de cada frame; el primer `C2D_DrawImage` del
+atlas del frame siguiente dispara el cambio de modo y citro2d pisa la
+configuración manual con su valor por defecto (que no invierte el orden de
+canales del PICA200).
+
+**Arreglo:** reafirmar `ConfigureAtlasTextureEnv()` justo después del primer
+`C2D_DrawImage` de cada pase (no antes — volvería a pisarse por ese mismo
+draw), tanto en el pase normal como en el de blend. Ver el flag
+`reassertedTexEnv` en `Port_GpuRenderer_RenderFrame`.
+
+### 5.8 — No son bugs: casos que siguen (correctamente) cayendo a CPU
+
+Confirmado con el log `GPU_REJECT` que en el tramo de intro el único motivo
+de caída a CPU es `affine OBJ`:
+
+- **La nave acercándose en la intro** usa un sprite afín (rotado/escalado)
+  para el efecto de zoom — los OBJ afines están fuera de alcance del
+  renderer de GPU desde el diseño original (documentado desde el principio,
+  nunca implementado). Cae a CPU correctamente.
+- **El instante justo al pulsar seleccionar partida** cae a CPU un frame y
+  vuelve — coincide con el cursor de selección activando una ventana
+  (WIN0/WIN1) *real* y recortada (no a pantalla completa) para resaltar la
+  opción, que sigue sin aproximarse (ver 5.3: solo se aproxima el caso
+  no-op de pantalla completa).
+
+Ninguno de los dos es una regresión de esta sesión ni necesita arreglo
+urgente — es la salvaguarda de "cae a CPU en vez de dibujar mal"
+funcionando como se diseñó. Implementar soporte de OBJ afín y de ventanas
+reales sería trabajo nuevo, no un bug fix.
+
+### 5.9 — Sigue sin resolver: rendimiento (~20-30 FPS con GPU, lejos de los 60 objetivo)
+
+Confirmado con el overlay de FPS de la pantalla inferior (sección 5.1): la
+intro (~650 items/frame) va a ~38-40 FPS; gameplay real (~2500-2700
+items/frame) a ~20-30 FPS. **No se ha investigado esta sesión** — todo el
+tiempo se fue en los bugs de correctness de arriba, que eran prerequisito
+(no tenía sentido perfilar rendimiento de un renderer que aún pintaba mal o
+se caía a CPU la mayor parte del tiempo). `PORT_PPU_PERF_LOG` ya existe en
+el código para esto (ver Makefile) pero no se ha usado todavía sobre el
+renderer de GPU en esta rama.
+
+## 6. Recomendación concreta para la próxima sesión
+
+1. **Rendimiento** (sección 5.9) es ahora el bloqueante principal para dar
+   la Fase 1 del roadmap por cerca de terminar — el renderer ya es correcto
+   en 2D y 3D, pero a 20-30 FPS no cumple el objetivo de la rama (60 FPS
+   estables). Usar `PORT_PPU_PERF_LOG` + el overlay de FPS/items de la
+   pantalla inferior (sección 5.1) para correlacionar FPS con nº de items y
+   encontrar el cuello de botella real (¿CPU decodificando/cacheando tiles?
+   ¿GPU con demasiadas texturas pequeñas por draw call en vez de atlas
+   compartido de verdad? ¿flush innecesarios?).
+2. Las líneas horizontales finas (sección 3.1 original) siguen sin
+   confirmar/arreglar — no se ha vuelto a mirar esta sesión.
+3. Si se quiere que la nave de la intro y el instante de selección de
+   partida (sección 5.8) también usen GPU, sería trabajo nuevo: soporte de
+   OBJ afín y de ventanas (WIN0/WIN1) reales, no aproximaciones ya
+   existentes.
+4. La herramienta de `KEY_X` (sección 5.1) es reutilizable para cualquier
+   futuro "¿qué hay REALMENTE en este render target?" — usarla antes de
+   especular por logs solos cuando el contenido visual no cuadre con los
+   contadores.

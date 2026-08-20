@@ -90,3 +90,77 @@ platform/3ds/build.sh
 
 The universal packages are written under `build-3ds/game/`. No ROM, extracted
 asset package or save data is included in either package.
+
+## Building for local development (devkitPro Makefile)
+
+The `build.sh` above wraps the CMake/CIA packaging path used for releases.
+For day-to-day dev iteration (compiling, testing a single flag change) use
+the plain Makefile directly instead — it is what every debugging session on
+this port has actually used:
+
+```sh
+cd platform/3ds
+make clean && make -j$(nproc)
+```
+
+`make clean` matters whenever you change `EXTRA_CFLAGS` between builds: the
+Makefile does not track flag changes as a dependency, so stale `.o` files
+from a previous flag combination will silently survive an incremental
+`make`. Always `clean` before rebuilding with different flags.
+
+### Optional debug flags (`EXTRA_CFLAGS`)
+
+None of these are on by default — the normal build a player runs has none of
+this instrumentation compiled in. Pass one or more via `EXTRA_CFLAGS` (space-
+separated `-D` list):
+
+```sh
+make clean && make EXTRA_CFLAGS="-DPORT_GPU_TILE_RENDERER -DPORT_GPU_RENDERER_DIAG_LOG" -j$(nproc)
+```
+
+| Flag | What it does |
+| --- | --- |
+| `PORT_GPU_TILE_RENDERER` | Enables the experimental native-GPU (PICA200) tile/sprite renderer (`source/port_gpu_renderer.c`), currently in development on `feat/native-gpu-renderer`. Without it the build only has the CPU renderer (`port/ppu/src/mode1.c`), which is the correctness-verified baseline. See `docs/3ds-port-gpu-renderer-status-2026-08-20.md` before touching this code — it documents bugs already found and fixed once. |
+| `PORT_GPU_RENDERER_DIAG_LOG` | Requires `PORT_GPU_TILE_RENDERER`. Logs GPU-renderer frame stats (item/cache counts, BG scroll, y-range) every 5 frames, and — since 2026-08-20 — logs *why* a frame was rejected and fell back to the CPU renderer (`GPU_REJECT: <reason>`, one of `forced blank`, `mode != 0`, `WIN0`, `WIN1`, `OBJWIN`, `mosaic BG`, `affine OBJ`), throttled to 1 in 30 rejections. This is the flag to use when chasing "why does gameplay stay on the CPU path" issues. |
+| `PORT_AUDIO_DIAG_LOG` | Logs audio pipeline diagnostics. Does real SD-card I/O on the audio path and costs real frame rate — only for audio debugging sessions, not general use. |
+| `PORT_PPU_PERF_LOG` | Logs CPU-renderer (`mode1.c`) per-frame timing, used to measure the ~18-20ms/frame cost that motivated writing the GPU renderer in the first place. |
+| `PORT_VERBOSE_FRAME_LOG` | Very chatty per-frame CPU-renderer logging (`port_ppu_mzm.c`) — noisy, only for deep single-frame debugging. |
+
+All of the above write to `Port_DebugLog()`, which appends to
+`mzm-debug.log` on the SD card root (`sdmc:/mzm-debug.log` on real hardware,
+or the Azahar virtual SD path below).
+
+### Testing without hardware (Azahar, local machine)
+
+`tools/run_azahar_test.sh` builds, installs into the Azahar flatpak, and runs
+it headlessly — much faster than the FTP-to-real-3DS cycle, but **cannot
+send button input** (no `xdotool`/`wtype` installed in this environment), so
+it can only observe screens reachable without pressing anything (intro,
+title screen). Anything past that (file select once a button is pressed,
+real gameplay) needs the real console.
+
+```sh
+tools/run_azahar_test.sh <seconds> [--no-build] [--no-audio-dump]
+```
+
+- Rebuilds with whatever `EXTRA_CFLAGS` you last built the CIA with unless
+  `--no-build` is passed (it just calls `make` in `platform/3ds`, so set
+  `EXTRA_CFLAGS` via the Makefile invocation beforehand, then re-run with
+  `--no-build` to iterate on the emulator side only).
+- Debug log: `~/.var/app/org.azahar_emu.Azahar/data/azahar-emu/sdmc/3ds/mzm-debug.log`
+  (opened in append mode by the port — the script clears stale logs from
+  previous runs before launching).
+- Screenshot: `/tmp/azahar_test_screenshot_full.png` (full desktop; crop to
+  the Azahar window region) and `/tmp/azahar_test_screenshot.png`.
+- Quick way to tell GPU vs CPU render path from a screenshot alone: the
+  on-screen "FPS NN" text overlay is only drawn by the CPU path
+  (`platform_gpu_3ds.c`'s `DrawTopImageStereo`); the GPU path
+  (`Port_GpuRenderer_RenderFrame`) does not draw it.
+
+### Testing on real hardware (FTP)
+
+For anything requiring button input (file select, real gameplay) — install
+the built CIA via FTP to the console as usual, play, then pull
+`sdmc:/mzm-debug.log` back over FTP to read the diagnostics logged during
+that session. This is currently the only way to exercise `PORT_GPU_RENDERER_DIAG_LOG`
+during actual gameplay.

@@ -127,6 +127,7 @@ static int sCacheCount;
 static DrawItem sDrawItems[MAX_DRAW_ITEMS];
 static int sDrawItemCount;
 static bool sAnyDirtySlot;
+static int sLastObjItemCount;
 
 /* GBA sprite shape/size -> pixel dimensions (attr0 bits14-15 = shape,
  * attr1 bits14-15 = size). Same table as port/ppu/src/mode1.c's
@@ -405,11 +406,27 @@ static void CollectBgLayer(int bgIndex) {
             float drawY = (float)(ty * 8 - fineY);
             if (drawY <= -8.0f || drawY >= 160.0f || drawX <= -8.0f || drawX >= 240.0f) continue;
 
-            /* Same-priority tiebreak: lower BG index draws later (on top),
-             * matching GBA hardware (BG0 > BG1 > BG2 > BG3 at equal
-             * priority). */
-            int sortKey = priority * 10 + (3 - bgIndex);
-            PushItem(slot, drawX, drawY, sortKey, bgIndex, blendAlpha);
+            /* GBA BGCNT priority is 0=highest (drawn on top), 3=lowest
+             * (drawn furthest back) -- the inverse of sortKey's own
+             * ascending-draws-first-i.e.-furthest-back convention, so it
+             * must be inverted here. Getting this backwards (using
+             * `priority` directly) meant a BG with priority 3 -- meant to
+             * be the backmost layer -- was instead drawn last/on top,
+             * painting over every other BG and every OBJ; confirmed via
+             * GPUDIAG logs during real gameplay where the priority-3 BG
+             * layer was the only thing visible on screen. Same-priority
+             * tiebreak: lower BG index draws later (on top), matching GBA
+             * hardware (BG0 > BG1 > BG2 > BG3 at equal priority). */
+            int sortKey = (3 - priority) * 10 + (3 - bgIndex);
+            /* depthTier indexes kTierEyeOffsetPx, which is laid out
+             * BG3,BG2,BG1,BG0,OBJ (far to near) -- the inverse of bgIndex
+             * (BG0..BG3). Passing bgIndex directly here meant BG0 (meant
+             * to get 0.0f/no stereo offset, being the HUD/foreground
+             * plane) was instead reading kTierEyeOffsetPx[0] == -3.5f (the
+             * far-background BG3 offset), and BG3 read index 3 == 0.0f --
+             * silently swapping stereo depth between the nearest and
+             * farthest layers. */
+            PushItem(slot, drawX, drawY, sortKey, 3 - bgIndex, blendAlpha);
         }
     }
 }
@@ -488,12 +505,13 @@ static void CollectSprite(int oamIndex, bool obj1D) {
 
             float drawX = (float)(x + tx * 8);
             float drawY = (float)(y + ty * 8);
-            /* OBJ draws above any BG of equal priority (tiebreak=4, higher
-             * than any BG's 0-3), and lower OAM index draws above higher
-             * index at equal priority -- callers iterate OAM back-to-front
-             * (127..0) so a stable sort already preserves that via
-             * insertion order. */
-            int sortKey = priority * 10 + 4;
+            /* Priority inverted for the same reason as CollectBgLayer above
+             * (0=highest/on top, 3=lowest/backmost). OBJ draws above any BG
+             * of equal priority (tiebreak=4, higher than any BG's 0-3), and
+             * lower OAM index draws above higher index at equal priority --
+             * callers iterate OAM back-to-front (127..0) so a stable sort
+             * already preserves that via insertion order. */
+            int sortKey = (3 - priority) * 10 + 4;
             PushItem(slot, drawX, drawY, sortKey, 4, blendAlpha);
         }
     }
@@ -513,8 +531,10 @@ static int CompareDrawItems(const void* a, const void* b) {
  * whatever half-updated VRAM content existed at the exact moment a
  * transition hit, which lines up with "the image was cut/corrupted right as
  * a scene changed" from testing), affine BG (GBA mode != 0, the Tourian
- * self-destruct sequence per docs/3ds-port-ppu-audit.md), any window
- * (WIN0/WIN1/OBJ window -- not approximated, unlike BLDCNT below), BG or OBJ
+ * self-destruct sequence per docs/3ds-port-ppu-audit.md), any window that
+ * actually clips the screen (a full-screen no-op WIN0/WIN1 -- the common
+ * case in ordinary gameplay, see the WindowCoversFullScreen check below --
+ * is allowed through; OBJ window is not approximated at all), BG or OBJ
  * mosaic, or any affine OBJ (attr0 bit8 set, rare -- rotated items/enemies).
  * BLDCNT (alpha blend/brighten/darken) is NOT excluded here anymore --
  * transparency.c sets it routinely for ordinary rooms (water overlays,
@@ -522,28 +542,80 @@ static int CompareDrawItems(const void* a, const void* b) {
  * never used this renderer at all. See Port_GpuRenderer_RenderFrame for the
  * approximation (brighten/darken applied at tile-decode time, alpha blend
  * via a second GPU-blended draw pass). */
+#ifdef PORT_GPU_RENDERER_DIAG_LOG
+/* Throttled to avoid flooding mzm-debug.log at 60Hz -- one line every 30
+ * *rejected* frames is enough to see the pattern during gameplay without
+ * drowning the log. */
+static void LogRejectReason(const char* reason) {
+    static unsigned sRejectCounter;
+    if ((sRejectCounter++ % 30u) == 0u) {
+        char buf[96];
+        snprintf(buf, sizeof(buf), "GPU_REJECT: %s", reason);
+        Port_DebugLog(buf);
+    }
+}
+#define REJECT(reason) do { LogRejectReason(reason); return false; } while (0)
+#else
+#define REJECT(reason) return false
+#endif
+
+/* WIN0H/WIN1H pack left in the high byte, right in the low byte (GBATEK);
+ * WIN0V/WIN1V pack top high, bottom low. A window that spans the full
+ * 240x160 screen clips nothing -- it is only being used as the vehicle for
+ * WININ's per-layer enable bits, not for actual rectangle clipping. */
+static bool WindowCoversFullScreen(uint16_t h, uint16_t v) {
+    return (h == 0x00F0u /* left=0 right=240 */) && (v == 0x00A0u /* top=0 bottom=160 */);
+}
+
 bool Port_GpuRenderer_CanRenderFrame(void) {
     uint16_t dispcnt = (uint16_t)(gIoMem[0] | (gIoMem[1] << 8));
-    if (dispcnt & (1u << 7)) return false; /* forced blank */
-    if ((dispcnt & 7u) != 0u) return false; /* not GBA mode 0 */
-    if (dispcnt & (7u << 13)) return false; /* WIN0/WIN1/OBJWIN enabled */
+    if (dispcnt & (1u << 7)) REJECT("forced blank"); /* forced blank */
+    if ((dispcnt & 7u) != 0u) REJECT("mode != 0"); /* not GBA mode 0 */
+
+    /* src/transparency.c's TransparencySetRoomEffectsTransparency() enables
+     * WIN1 unconditionally for essentially every normal room, but sizes it
+     * to the full screen (WIN1H=SCREEN_SIZE_X, WIN1V=SCREEN_SIZE_Y) and sets
+     * WININ_H to 0x3F (every BG/OBJ/effect layer enabled inside it) -- it is
+     * using the window purely as GBA's mechanism for gating BLDCNT special
+     * effects per layer, not to clip any region of the screen. Rejecting
+     * every frame with DCNT_WIN1 set meant gameplay (which is in this state
+     * almost all the time -- confirmed via GPU_REJECT diagnostics logged
+     * during real play) never reached the GPU renderer at all. Real
+     * clipping use (e.g. gSuitFlashEffect's shrunk WIN1 rect during the suit
+     * flash) still shrinks the rect below full-screen, so it still falls
+     * back correctly below. WININ != 0x3F while covering the full screen
+     * would mean a layer is being selectively disabled -- still rejected,
+     * conservatively, since that path isn't approximated. */
+    uint16_t win1h = (uint16_t)(gIoMem[0x42] | (gIoMem[0x43] << 8));
+    uint16_t win1v = (uint16_t)(gIoMem[0x46] | (gIoMem[0x47] << 8));
+    uint16_t winin = (uint16_t)(gIoMem[0x48] | (gIoMem[0x49] << 8));
+    if (dispcnt & (1u << 13)) { /* WIN0 */
+        uint16_t win0h = (uint16_t)(gIoMem[0x40] | (gIoMem[0x41] << 8));
+        uint16_t win0v = (uint16_t)(gIoMem[0x44] | (gIoMem[0x45] << 8));
+        if (!WindowCoversFullScreen(win0h, win0v) || (winin & 0x3Fu) != 0x3Fu) REJECT("WIN0");
+    }
+    if (dispcnt & (1u << 14)) { /* WIN1 */
+        if (!WindowCoversFullScreen(win1h, win1v) || ((winin >> 8) & 0x3Fu) != 0x3Fu) REJECT("WIN1");
+    }
+    if (dispcnt & (1u << 15)) REJECT("OBJWIN");
 
     uint16_t mosaic = (uint16_t)(gIoMem[0x4C] | (gIoMem[0x4D] << 8));
     if (mosaic != 0) {
         for (int bg = 0; bg < 4; ++bg) {
             uint16_t bgcnt = (uint16_t)(gIoMem[0x08 + bg * 2] | (gIoMem[0x09 + bg * 2] << 8));
-            if ((dispcnt & (1u << (8 + bg))) && ((bgcnt >> 6) & 1u)) return false;
+            if ((dispcnt & (1u << (8 + bg))) && ((bgcnt >> 6) & 1u)) REJECT("mosaic BG");
         }
     }
     if (dispcnt & (1u << 12)) { /* OBJ layer enabled: reject if any affine OBJ is live */
         const uint16_t* oam = (const uint16_t*)gOamMem;
         for (int i = 0; i < 128; ++i) {
             uint16_t attr0 = oam[i * 4 + 0];
-            if ((attr0 >> 8) & 1u) return false; /* affine flag set */
+            if ((attr0 >> 8) & 1u) REJECT("affine OBJ"); /* affine flag set */
         }
     }
     return true;
 }
+#undef REJECT
 
 /* Renders the current GBA frame's tiles/sprites into both stereo top
  * targets (or just the left one when the 3D slider is off). Must run
@@ -584,21 +656,32 @@ void Port_GpuRenderer_RenderFrame(void) {
     }
     if (sDrawItemCount > 1) qsort(sDrawItems, (size_t)sDrawItemCount, sizeof(DrawItem), CompareDrawItems);
 
+    {
+        int objItems = 0;
+        for (int i = 0; i < sDrawItemCount; ++i) {
+            if (sDrawItems[i].depthTier == 4) ++objItems;
+        }
+        sLastObjItemCount = objItems;
+    }
+
 #ifdef PORT_GPU_RENDERER_DIAG_LOG
     {
         static unsigned sFrameCounter;
         if ((sFrameCounter++ % 5u) == 0u) {
             float minY = 1e9f, maxY = -1e9f;
-            int objItems = 0, cacheSlots = sCacheCount;
+            int objItems = 0, cacheSlots = sCacheCount, blendItems = 0;
             for (int i = 0; i < sDrawItemCount; ++i) {
                 if (sDrawItems[i].y < minY) minY = sDrawItems[i].y;
                 if (sDrawItems[i].y > maxY) maxY = sDrawItems[i].y;
                 if (sDrawItems[i].depthTier == 4) ++objItems;
+                if (sDrawItems[i].blendAlpha) ++blendItems;
             }
             char msg[240];
             int off = __builtin_snprintf(msg, sizeof(msg),
-                                         "GPUDIAG dispcnt=%04x items=%d obj=%d cache=%d yrange=[%.0f,%.0f]", dispcnt,
-                                         sDrawItemCount, objItems, cacheSlots, (double)minY, (double)maxY);
+                                         "GPUDIAG dispcnt=%04x items=%d obj=%d cache=%d yrange=[%.0f,%.0f] "
+                                         "bldcnt=%04x eff=%d eva=%d evb=%d blend=%d",
+                                         dispcnt, sDrawItemCount, objItems, cacheSlots, (double)minY, (double)maxY,
+                                         sIoBldcnt, sBldEffect, sBldEva, sBldEvb, blendItems);
             for (int bg = 0; bg < 4; ++bg) {
                 if (!(dispcnt & (1u << (8 + bg)))) continue;
                 uint16_t bgcnt = (uint16_t)(gIoMem[0x08 + bg * 2] | (gIoMem[0x09 + bg * 2] << 8));
@@ -636,14 +719,55 @@ void Port_GpuRenderer_RenderFrame(void) {
     C3D_RenderTarget* leftTarget = PlatformGpu3DS_GetTopLeftTarget();
     C3D_RenderTarget* rightTarget = (slider3d > 0.01f) ? PlatformGpu3DS_GetTopRightTarget() : NULL;
 
+#ifdef PORT_GPU_RENDERER_DIAG_LOG
+    {
+        static unsigned sEyeLogCounter;
+        if ((sEyeLogCounter++ % 30u) == 0u) {
+            char msg[96];
+            snprintf(msg, sizeof(msg), "STEREO slider=%.3f left=%p right=%p", (double)slider3d,
+                     (void*)leftTarget, (void*)rightTarget);
+            Port_DebugLog(msg);
+        }
+    }
+#endif
+
     for (int eye = 0; eye < 2; ++eye) {
         C3D_RenderTarget* target = (eye == 0) ? leftTarget : rightTarget;
         if (!target) continue;
-        float eyeSign = (eye == 0) ? -1.0f : 1.0f;
+        /* kTierEyeOffsetPx is all <=0, scaled larger in magnitude for
+         * farther layers (BG3 furthest, -3.5px; BG0/HUD nearest, 0px).
+         * Correct stereo convention for something behind the screen plane
+         * (the common case here) is "uncrossed"/positive parallax: the
+         * right eye's copy sits further RIGHT on-screen than the left
+         * eye's, so the viewer's eyes diverge slightly and the object
+         * reads as receding. This was backwards (eye0/left=-1,
+         * eye1/right=+1): with a negative per-tier offset that shifts the
+         * LEFT eye's far background right and the RIGHT eye's left --
+         * right-x < left-x, crossed/negative parallax -- which reads as
+         * the background popping out IN FRONT of the screen instead of
+         * receding into it. Confirmed on hardware: backgrounds appeared to
+         * sit in front of the foreground/gameplay layers once the right
+         * eye's content was actually visible (fixed separately, see the
+         * C2D_Init sizing above). */
+        float eyeSign = (eye == 0) ? 1.0f : -1.0f;
 
         C2D_TargetClear(target, C2D_Color32(0, 0, 0, 255));
         C2D_SceneBegin(target);
         ConfigureAtlasTextureEnv();
+        /* Explicit, rather than trusting citro2d's own default: this is 2D
+         * tile/sprite compositing purely by draw order (painter's
+         * algorithm, same z=0.5 on every item, see C2D_DrawParams below),
+         * with no legitimate use for depth testing. Defensive against the
+         * right-eye target (the second one processed in a frame with the
+         * 3D slider on) somehow inheriting an enabled depth test/compare
+         * state that the first (left) target's own citro2d draws happened
+         * to satisfy by coincidence of clear order, while the right
+         * target's identical-Z overlapping quads (BG0/menu tiles drawn
+         * over floor tiles at the same screen position) get compare-
+         * rejected -- reported as "floor/menu tiles missing, right eye
+         * only, 3D on only" and not explained by draw-call counts (which
+         * are identical between eyes, see the EYE0/EYE1 diag log below). */
+        C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_ALL);
         /* GBA palette transparency is binary (index 0 = fully transparent),
          * so alpha-test discard handles it regardless of blend pass -- both
          * passes below keep this enabled. */
@@ -657,6 +781,7 @@ void Port_GpuRenderer_RenderFrame(void) {
                        GPU_ONE_MINUS_SRC_ALPHA);
 
         int drawCount = 0;
+        bool reassertedTexEnv = false;
         for (int i = 0; i < sDrawItemCount; ++i) {
             const DrawItem* item = &sDrawItems[i];
             if (item->blendAlpha) continue; /* second pass, below */
@@ -669,6 +794,28 @@ void Port_GpuRenderer_RenderFrame(void) {
                 .angle = 0.0f,
             };
             C2D_DrawImage(item->img, &params, NULL);
+            /* citro2d silently reprograms TEV unit 0 to its own default
+             * whenever it switches between "solid" (C2D_DrawRectSolid,
+             * used by the bottom-screen debug overlay in
+             * platform_gpu_3ds.c, drawn every frame now) and "textured"
+             * (C2D_DrawImage) draws -- it has no idea we hand-configured
+             * TEV0 above via ConfigureAtlasTextureEnv() for the PICA200's
+             * reversed RGBA8 byte order (see the big comment at the top of
+             * this file), so the very first textured draw after a solid
+             * draw clobbers it back to citro2d's default, which reads
+             * texture channels in the wrong order -- exactly the red/
+             * magenta-tinted screen from section 2.1 of
+             * docs/3ds-port-gpu-renderer-status-2026-08-20.md, now
+             * resurfacing every frame because the debug overlay guarantees
+             * the mode ends each frame as "solid". Reassert once right
+             * after the first draw of this loop (whether or not a clobber
+             * actually happened) rather than before it, since re-running
+             * it before would just get clobbered again by this same draw
+             * call. */
+            if (!reassertedTexEnv) {
+                ConfigureAtlasTextureEnv();
+                reassertedTexEnv = true;
+            }
             /* Defensive: PlatformGpu3DS_Init sizes citro2d's shared vertex
              * buffer for this renderer's documented worst case
              * (MAX_DRAW_ITEMS), but a periodic flush here means a scene that
@@ -714,6 +861,13 @@ void Port_GpuRenderer_RenderFrame(void) {
                     .angle = 0.0f,
                 };
                 C2D_DrawImage(item->img, &params, NULL);
+                /* Same TEV-clobber concern as the pass-1 loop above -- only
+                 * relevant here if pass 1 drew zero items (mode could still
+                 * be "solid" entering this loop). */
+                if (!reassertedTexEnv) {
+                    ConfigureAtlasTextureEnv();
+                    reassertedTexEnv = true;
+                }
                 if ((++drawCount % 512) == 0) C2D_Flush();
             }
             if (flushedForBlend) {
@@ -722,5 +876,37 @@ void Port_GpuRenderer_RenderFrame(void) {
                                GPU_ONE_MINUS_SRC_ALPHA);
             }
         }
+#ifdef PORT_GPU_RENDERER_DIAG_LOG
+        {
+            /* One counter per eye -- a single shared counter with an even
+             * modulo (30) always lands on the same eye's turn every time
+             * (eye0 calls fall on even indices, eye1 on odd, so
+             * counter%30==0 only ever coincides with eye0), silently never
+             * logging EYE1 at all despite it running every frame. Cost a
+             * whole round of "why is eye1 never reaching this line"
+             * confusion before the parity was noticed. */
+            static unsigned sEyeDrawLogCounter[2];
+            if ((sEyeDrawLogCounter[eye]++ % 30u) == 0u) {
+                char msg[64];
+                snprintf(msg, sizeof(msg), "EYE%d drawCount=%d reasserted=%d", eye, drawCount,
+                         (int)reassertedTexEnv);
+                Port_DebugLog(msg);
+            }
+        }
+#endif
     }
+}
+
+/* Snapshot of the most recently rendered frame's item counts, for the
+ * bottom-screen debug overlay in platform_gpu_3ds.c (PlatformGpu3DS_EndBottom)
+ * -- lets a dev tell at a glance whether the GPU path is drawing a
+ * reasonable scene or something degenerate (e.g. way too many items, which
+ * was the tell for the citro2d buffer-exhaustion bug in section 2.5 of
+ * docs/3ds-port-gpu-renderer-status-2026-08-20.md). Values hold their last
+ * value between RenderFrame calls, which is fine since the overlay is only
+ * read once per presented frame anyway. */
+void Port_GpuRenderer_GetLastFrameStats(int* outItems, int* outObjItems, int* outCacheSlots) {
+    if (outItems) *outItems = sDrawItemCount;
+    if (outObjItems) *outObjItems = sLastObjItemCount;
+    if (outCacheSlots) *outCacheSlots = sCacheCount;
 }

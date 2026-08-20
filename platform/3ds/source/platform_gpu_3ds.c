@@ -37,6 +37,8 @@ extern bool Port_Config_GetShowFps(void);
 extern int Port_Config_Get3DSAspectRatio(void);
 extern int Port_Config_Get3DSDisplayStyle(void);
 extern double Port_PPU_3DS_CurrentFps(void);
+extern bool Port_PPU_3DS_LastFrameUsedGpu(void);
+extern void Port_GpuRenderer_GetLastFrameStats(int* outItems, int* outObjItems, int* outCacheSlots);
 
 enum {
     TOP_ASPECT_WIDE = 0,
@@ -58,7 +60,7 @@ static const uint8_t* StatusGlyph(char c) {
         { 14, 16, 16, 30, 17, 17, 14 }, { 31, 1, 2, 4, 8, 8, 8 },
         { 14, 17, 17, 14, 17, 17, 14 }, { 14, 17, 17, 15, 1, 1, 14 },
     };
-    static const uint8_t letters[9][7] = {
+    static const uint8_t letters[11][7] = {
         { 14, 17, 17, 31, 17, 17, 17 }, /* A */
         { 30, 17, 17, 17, 17, 17, 30 }, /* D */
         { 31, 16, 16, 30, 16, 16, 31 }, /* E */
@@ -68,9 +70,11 @@ static const uint8_t* StatusGlyph(char c) {
         { 15, 16, 16, 14, 1, 1, 30 },   /* S */
         { 17, 17, 17, 17, 17, 17, 14 }, /* U */
         { 17, 17, 17, 17, 17, 10, 4 },  /* V */
+        { 31, 16, 16, 16, 16, 16, 31 }, /* C -- added for the GPU/CPU debug overlay */
+        { 14, 17, 16, 23, 17, 17, 14 }, /* G -- added for the GPU/CPU debug overlay */
     };
     static const uint8_t letterIds[26] = {
-        0, 255, 255, 1, 2, 3, 255, 255, 255, 255, 255, 255, 4,
+        0, 255, 9, 1, 2, 3, 10, 255, 255, 255, 255, 255, 4,
         255, 255, 5, 255, 255, 6, 255, 7, 8, 255, 255, 255, 255,
     };
     if (c >= '0' && c <= '9') return digits[c - '0'];
@@ -153,7 +157,26 @@ bool PlatformGpu3DS_Init(bool old3dsProfile) {
     GSPGPU_FlushDataCache(sTopRightUpload, TOP_TEXTURE_WIDTH * TOP_TEXTURE_HEIGHT * sizeof(uint32_t));
     GSPGPU_FlushDataCache(sBottomUploads[0], 512u * 256u * sizeof(uint32_t));
     GSPGPU_FlushDataCache(sBottomUploads[1], 512u * 256u * sizeof(uint32_t));
-    if (!C3D_Init(C3D_DEFAULT_CMDBUF_SIZE)) goto fail_linear;
+    /* C3D_DEFAULT_CMDBUF_SIZE (256KB) is sized for typical homebrew scenes
+     * (a handful of draws/frame). The GPU tile renderer draws 600-2500+
+     * C2D_DrawImage calls per eye, and with the 3D slider on that doubles
+     * (both eyes queue into the same one GPU command list before
+     * C3D_FrameEnd) plus the bottom-screen composite and debug overlay on
+     * top -- once *this* buffer (distinct from citro2d's own vertex buffer,
+     * sized separately via C2D_Init below) fills up mid-frame, every GPU
+     * command queued after that point is silently dropped for the rest of
+     * the frame, with no error. That reads as exactly what turned up
+     * testing with the 3D slider on: parts of the right eye missing
+     * (queued after the left eye already used a large chunk of the buffer)
+     * and the bottom-screen overlay (queued last, after both eyes) entirely
+     * absent -- the same "silently drops everything past a fixed capacity"
+     * failure mode as the citro2d vertex-buffer exhaustion bug fixed
+     * earlier (see the C2D_Init comment below), just a different buffer.
+     * 4x default gives real headroom for the worst case (2 eyes x
+     * MAX_DRAW_ITEMS-ish); PORT_GPU_RENDERER_DIAG_LOG logs
+     * C3D_GetCmdBufUsage() each frame to confirm this empirically instead
+     * of guessing at a size. */
+    if (!C3D_Init(C3D_DEFAULT_CMDBUF_SIZE * 4)) goto fail_linear;
     /* 128 was sized for this module's own original use case (a couple of
      * big background quads plus the small FPS-text overlay, well under
      * 100 quads/frame). port_gpu_renderer.c's tile/sprite compositor draws
@@ -165,7 +188,19 @@ bool PlatformGpu3DS_Init(bool old3dsProfile) {
      * showed up testing the GPU renderer. 4096 covers the GPU renderer's
      * documented worst case (port_gpu_renderer.c's MAX_DRAW_ITEMS) with
      * headroom. */
-    if (!C2D_Init(4096)) {
+    /* Bumped from 4096: that covered one eye's worst case (MAX_DRAW_ITEMS)
+     * alone, but with the 3D slider on, both eyes' draws land in this same
+     * buffer within one C3D frame before it's fully consumed -- confirmed
+     * via a real-hardware screenshot (KEY_X dump, PlatformGpu3DS_DumpScreens)
+     * showing the topmost BG layer (menu box, HUD) completely absent from
+     * the right eye's target specifically while the same item COUNT was
+     * submitted for both eyes (see the EYE0/EYE1 diag log in
+     * port_gpu_renderer.c) -- i.e. late-in-the-frame content silently not
+     * rendering, the same failure signature as the original citro2d
+     * buffer-exhaustion bug (see the comment below), just triggered by
+     * cumulative draws across both eyes instead of within a single one. 3x
+     * covers two full eyes' worth of MAX_DRAW_ITEMS with headroom. */
+    if (!C2D_Init(4096 * 3)) {
         C3D_Fini();
         goto fail_linear;
     }
@@ -385,6 +420,33 @@ bool PlatformGpu3DS_EndBottom(const uint32_t* pixels, bool changed) {
         C2D_SceneBegin(sBottomTarget);
         C2D_DrawImage(image, &params, NULL);
         PlatformGpu3DS_ConfigureAbgrTextureEnv();
+        if (Port_Config_GetShowFps()) {
+            /* Bottom-screen debug overlay: unlike the top-screen "FPS NN"
+             * box (only ever drawn by the CPU path, see DrawTopImageStereo
+             * -- that's deliberate, it's the visual tell for which path
+             * rendered a frame), this one is drawn every frame regardless
+             * of path, so FPS stays visible even while the GPU renderer is
+             * active and the top-screen counter is absent. GPU/CPU line
+             * only appears once PORT_GPU_TILE_RENDERER is actually wired
+             * up server-side (Port_PPU_3DS_LastFrameUsedGpu always returns
+             * false in a CPU-only build, so it never prints "GPU"). */
+            char label[48];
+            double fps = Port_PPU_3DS_CurrentFps();
+            unsigned rounded = fps > 0.0 ? (unsigned)(fps + 0.5) : 0u;
+            if (rounded > 999u) rounded = 999u;
+            const bool usedGpu = Port_PPU_3DS_LastFrameUsedGpu();
+            snprintf(label, sizeof(label), "FPS%u %s", rounded, usedGpu ? "GPU" : "CPU");
+            C2D_DrawRectSolid(5.0f, 5.0f, 0.7f, 130.0f, 20.0f, C2D_Color32(0, 0, 0, 210));
+            DrawStatusText(9.0f, 8.0f, 2.0f, label);
+            if (usedGpu) {
+                int items = 0, objItems = 0, cacheSlots = 0;
+                Port_GpuRenderer_GetLastFrameStats(&items, &objItems, &cacheSlots);
+                snprintf(label, sizeof(label), "%u %u %u", (unsigned)items, (unsigned)objItems,
+                         (unsigned)cacheSlots);
+                C2D_DrawRectSolid(5.0f, 27.0f, 0.7f, 130.0f, 14.0f, C2D_Color32(0, 0, 0, 210));
+                DrawStatusText(9.0f, 29.0f, 1.5f, label);
+            }
+        }
         sBottomTargetValid = true;
         ++sStats.bottomTargetDraws;
     } else {
@@ -399,6 +461,17 @@ bool PlatformGpu3DS_EndBottom(const uint32_t* pixels, bool changed) {
         GSPGPU_FlushDataCache(sC2dFlushBase, sC2dFlushSize);
         sStats.boundedFlushBytes += sC2dFlushSize;
     }
+#ifdef PORT_GPU_RENDERER_DIAG_LOG
+    {
+        static unsigned sCmdBufLogCounter;
+        if ((sCmdBufLogCounter++ % 30u) == 0u) {
+            char msg[64];
+            snprintf(msg, sizeof(msg), "CMDBUF usage=%.1f%%", (double)(C3D_GetCmdBufUsage() * 100.0f));
+            extern void Port_DebugLog(const char* msg);
+            Port_DebugLog(msg);
+        }
+    }
+#endif
     C3D_FrameEnd(0);
     /* Cap presentation to the LCD refresh rate. Without this, nothing paces
      * the main loop to VBlank and it free-runs as fast as the CPU/GPU allow
@@ -478,4 +551,50 @@ void PlatformGpu3DS_Shutdown(void) {
     sReady = false;
     sOld3DSProfile = false;
     sBottomTargetValid = false;
+}
+
+/* Diagnostic screenshot: reads back the actual GPU-rendered content of all
+ * three render targets (left eye, right eye if stereo is active, bottom)
+ * straight from VRAM and writes each as a headerless raw RGB8 file to the
+ * SD card -- unlike any CPU-side source buffer, this shows exactly what the
+ * PICA200 actually produced, which is the only way to see what's really in
+ * the right-eye target for the "menu/floor invisible in right eye with 3D
+ * on" bug (docs/3ds-port-gpu-renderer-status-2026-08-20.md is being updated
+ * with the investigation). Files are raw top-to-bottom RGB8, no header, at
+ * each target's native (portrait, unrotated) dimensions -- rotate 90
+ * degrees when viewing. Triggered by KEY_X (see Platform3DS_PollKeysIntoGba
+ * in platform_3ds_minimal.c). Not gated behind any diag flag since it does
+ * nothing unless the player actually presses X. */
+static void DumpOneTarget(C3D_RenderTarget* target, const char* path) {
+    if (!target || !target->frameBuf.colorBuf) return;
+    const u16 w = target->frameBuf.width;
+    const u16 h = target->frameBuf.height;
+    const size_t sz = (size_t)w * h * 3u;
+    u32* buf = (u32*)linearAlloc(sz);
+    if (!buf) return;
+    const u32 flags = GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(0) | GX_TRANSFER_RAW_COPY(0) |
+                       GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGB8) |
+                       GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO);
+    C3D_SyncDisplayTransfer((u32*)target->frameBuf.colorBuf, GX_BUFFER_DIM(w, h), buf, GX_BUFFER_DIM(w, h), flags);
+    GSPGPU_FlushDataCache(buf, sz);
+    FILE* f = fopen(path, "wb");
+    if (f) {
+        fwrite(buf, 1, sz, f);
+        fclose(f);
+    }
+    linearFree(buf);
+}
+
+void PlatformGpu3DS_DumpScreens(void) {
+    if (!sReady) return;
+    DumpOneTarget(sTopTarget, "sdmc:/3ds/mzm-dump-left.rgb");
+    DumpOneTarget(sTopRightTarget, "sdmc:/3ds/mzm-dump-right.rgb");
+    DumpOneTarget(sBottomTarget, "sdmc:/3ds/mzm-dump-bottom.rgb");
+    char msg[128];
+    snprintf(msg, sizeof(msg), "DUMP: left=%ux%u right=%ux%u bottom=%ux%u", sTopTarget->frameBuf.width,
+             sTopTarget->frameBuf.height, sTopRightTarget ? sTopRightTarget->frameBuf.width : 0u,
+             sTopRightTarget ? sTopRightTarget->frameBuf.height : 0u, sBottomTarget->frameBuf.width,
+             sBottomTarget->frameBuf.height);
+    extern void Port_DebugLog(const char* msg);
+    Port_DebugLog(msg);
 }

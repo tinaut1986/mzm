@@ -85,6 +85,14 @@ int Port_Config_Get3DSAspectRatio(void) { return 0; /* TOP_ASPECT_WIDE */ }
 int Port_Config_Get3DSDisplayStyle(void) { return 0; /* TOP_DISPLAY_PIXEL_PERFECT */ }
 double Port_PPU_3DS_CurrentFps(void) { return sCurrentFps; }
 
+/* Which path actually rendered the most recently presented frame -- the
+ * top-screen "FPS NN" overlay only ever gets drawn by the CPU path
+ * (DrawTopImageStereo), so it can't tell you the GPU path's real cadence;
+ * this backs the bottom-screen debug overlay in platform_gpu_3ds.c instead,
+ * which is drawn regardless of which path rendered. */
+static bool sLastFrameUsedGpu;
+bool Port_PPU_3DS_LastFrameUsedGpu(void) { return sLastFrameUsedGpu; }
+
 bool Port_PPU_Init(void) {
     VirtuaPPUMode1GbaMemory memory = { gIoMem, gVram, gBgPltt, gObjPltt, gOamMem };
     virtuappu_mode1_bind_gba_memory(&memory);
@@ -126,6 +134,33 @@ extern void Port_DebugLog(const char* msg);
 
 void Port_PPU_PresentFrame(void) {
     if (!sReady) return;
+
+#ifdef PORT_GPU_RENDERER_DIAG_LOG
+    /* Chasing a reported bottom-screen debug-overlay duplication (2 copies
+     * of the same FPS/stat text stacked vertically, seen both in Azahar and
+     * on real hardware, unconditionally -- not tied to scene load). One
+     * hypothesis: src/transfer.c calls VBlankIntrWait() directly (separate
+     * from agbmain's own per-frame Halt loop), so this function -- and
+     * thus PlatformGpu3DS_EndBottom's overlay draw -- may run more than
+     * once per real ~16.67ms display refresh whenever a VRAM transfer
+     * spans multiple calls. Logging the gap between consecutive calls
+     * (throttled to suspicious gaps only, <8ms = under half a refresh
+     * period) confirms or rules this out empirically instead of guessing
+     * further. */
+    {
+        static uint64_t sLastPresentMs;
+        uint64_t nowMs = osGetTime();
+        if (sLastPresentMs != 0) {
+            uint64_t deltaMs = nowMs - sLastPresentMs;
+            if (deltaMs < 8u) {
+                char msg[64];
+                __builtin_snprintf(msg, sizeof(msg), "PRESENT gap=%lums (re-entrant?)", (unsigned long)deltaMs);
+                Port_DebugLog(msg);
+            }
+        }
+        sLastPresentMs = nowMs;
+    }
+#endif
 
     const uint16_t dispcnt = (uint16_t)(gIoMem[0] | (gIoMem[1] << 8));
     const uint8_t gbaMode = (uint8_t)(dispcnt & 7);
@@ -217,15 +252,20 @@ void Port_PPU_PresentFrame(void) {
     if (useGpuRenderer) {
         if (PlatformGpu3DS_BeginTopSceneGpu()) {
             Port_GpuRenderer_RenderFrame();
+            sLastFrameUsedGpu = true;
         } else {
             /* Frame-begin failed (GPU busy/queue full) -- nothing was drawn
              * this frame; EndBottom below no-ops on !sFrameActive, so this
              * frame is silently skipped rather than shown corrupt. */
+            sLastFrameUsedGpu = false;
         }
     } else
 #endif
     {
         PlatformGpu3DS_BeginTopStereo(sTopBuffer, sTopRightBuffer, TOP_NATIVE_W);
+#ifdef PORT_GPU_TILE_RENDERER
+        sLastFrameUsedGpu = false;
+#endif
     }
 #if defined(PORT_VERBOSE_FRAME_LOG)
     Port_DebugLog("Port_PPU_PresentFrame: before EndBottom");
