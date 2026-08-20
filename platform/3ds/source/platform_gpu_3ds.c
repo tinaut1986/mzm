@@ -374,8 +374,7 @@ bool PlatformGpu3DS_EndBottom(const uint32_t* pixels, bool changed) {
         GSPGPU_FlushDataCache(sC2dFlushBase, sC2dFlushSize);
         sStats.boundedFlushBytes += sC2dFlushSize;
     }
-    C3D_FrameEnd(GX_CMDLIST_FLUSH);
-    C3D_FrameSync();
+    C3D_FrameEnd(0);
     ++sStats.frames;
     sStats.drawingTime = C3D_GetDrawingTime();
     sStats.processingTime = C3D_GetProcessingTime();
