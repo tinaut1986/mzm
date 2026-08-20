@@ -1737,6 +1737,140 @@ void virtuappu_mode1_composite_line(int line, uint32_t bg_layers[MODE1_GBA_BG_CO
  * where its per-pixel priority wins (OBJ wins ties on GBA). This keeps every
  * tile/palette/OAM rule identical while removing the four-plane compositor
  * from the overwhelmingly common indoor and menu frames. */
+static bool mode1_render_stereo_direct_line(int line, uint16_t dispcnt, int frame_width) {
+    if (!MODE1_NATIVE_FAST_PATHS_ENABLED() ||
+        (dispcnt & (MODE1_DISP_WIN0_ON | MODE1_DISP_WIN1_ON | MODE1_DISP_OBJWIN_ON)) != 0u) {
+        return false;
+    }
+
+    const uint16_t bldcnt = virtuappu_mode1_io_read16(MODE1_IO_BLDCNT);
+    if (((bldcnt >> 6u) & 3u) != MODE1_BLEND_NONE || (bldcnt & 0x3F00u) != 0u) {
+        return false;
+    }
+
+    uint32_t* const out_left = mode1_output_row(line);
+    uint32_t* const out_right = mode1_output_row_right(line);
+    if (!out_left) return false;
+
+    bool bg_enabled[MODE1_GBA_BG_COUNT];
+    uint16_t bgcnt[MODE1_GBA_BG_COUNT];
+    uint8_t bg_order[MODE1_GBA_BG_COUNT] = { 0u, 1u, 2u, 3u };
+    uint8_t bg_priority[MODE1_GBA_BG_COUNT];
+    for (int bg = 0; bg < MODE1_GBA_BG_COUNT; ++bg) {
+        bg_enabled[bg] = (dispcnt & (uint16_t)(MODE1_DISP_BG0_ON << bg)) != 0u;
+        bgcnt[bg] = virtuappu_mode1_io_read16((uint16_t)(MODE1_IO_BG0CNT + bg * 2));
+        bg_priority[bg] = (uint8_t)(bgcnt[bg] & 3u);
+    }
+
+    for (int i = 1; i < MODE1_GBA_BG_COUNT; ++i) {
+        const uint8_t key = bg_order[i];
+        const uint8_t key_priority = bg_priority[key];
+        int j = i - 1;
+        while (j >= 0 && bg_priority[bg_order[j]] > key_priority) {
+            bg_order[j + 1] = bg_order[j];
+            --j;
+        }
+        bg_order[j + 1] = key;
+    }
+
+    int shifts_left[5];
+    int shifts_right[5];
+    mode1_get_layer_shifts(mode1_3d_slider, -1, shifts_left);
+    mode1_get_layer_shifts(mode1_3d_slider, +1, shifts_right);
+
+    const uint32_t backdrop = mode1_bg_abgr_lut[0];
+    for (int x = 0; x < frame_width; ++x) {
+        out_left[x] = backdrop;
+        if (out_right) out_right[x] = backdrop;
+    }
+
+    uint8_t win_pri_left[MODE1_GBA_WIDTH];
+    uint8_t win_pri_right[MODE1_GBA_WIDTH];
+    memset(win_pri_left, 0xFF, (size_t)frame_width);
+    if (out_right) memset(win_pri_right, 0xFF, (size_t)frame_width);
+
+    uint32_t temp_bg[MODE1_GBA_WIDTH];
+    uint8_t temp_pri[MODE1_GBA_WIDTH];
+
+    for (int order_index = MODE1_GBA_BG_COUNT - 1; order_index >= 0; --order_index) {
+        const int bg = bg_order[order_index];
+        if (!bg_enabled[bg]) continue;
+
+        int sh_l = shifts_left[bg];
+        int sh_r = shifts_right[bg];
+
+        if (sh_l == 0 && sh_r == 0) {
+            virtuappu_mode1_render_text_bg_line(bg, line, out_left, win_pri_left);
+            if (out_right) {
+                for (int x = 0; x < frame_width; ++x) {
+                    if (win_pri_left[x] == bg_priority[bg]) {
+                        out_right[x] = out_left[x];
+                        win_pri_right[x] = win_pri_left[x];
+                    }
+                }
+            }
+        } else {
+            memset(temp_bg, 0, (size_t)frame_width * sizeof(uint32_t));
+            memset(temp_pri, 0xFF, (size_t)frame_width);
+            virtuappu_mode1_render_text_bg_line(bg, line, temp_bg, temp_pri);
+
+            for (int x = 0; x < frame_width; ++x) {
+                int sx = x + sh_l;
+                if (sx >= 0 && sx < frame_width && temp_bg[sx] != 0u) {
+                    out_left[x] = temp_bg[sx];
+                    win_pri_left[x] = temp_pri[sx];
+                }
+            }
+            if (out_right) {
+                for (int x = 0; x < frame_width; ++x) {
+                    int sx = x + sh_r;
+                    if (sx >= 0 && sx < frame_width && temp_bg[sx] != 0u) {
+                        out_right[x] = temp_bg[sx];
+                        win_pri_right[x] = temp_pri[sx];
+                    }
+                }
+            }
+        }
+    }
+
+    if ((dispcnt & MODE1_DISP_OBJ_ON) != 0u) {
+        uint32_t obj_layer[MODE1_GBA_WIDTH];
+        uint8_t obj_priority[MODE1_GBA_WIDTH];
+        memset(obj_layer, 0, (size_t)frame_width * sizeof(uint32_t));
+        memset(obj_priority, 0xFF, (size_t)frame_width);
+        virtuappu_mode1_render_obj_line(line, (dispcnt & MODE1_DISP_OBJ_1D) != 0u, obj_layer, obj_priority);
+
+        int sh_l = shifts_left[4];
+        int sh_r = shifts_right[4];
+
+        for (int x = 0; x < frame_width; ++x) {
+            int cur_sh_l = (line < 26 && (x <= 115 || x >= 185)) ? 0 : sh_l;
+            int sx_l = x + cur_sh_l;
+            if (sx_l >= 0 && sx_l < frame_width && obj_layer[sx_l] != 0u && obj_priority[sx_l] <= win_pri_left[x]) {
+                out_left[x] = obj_layer[sx_l];
+            }
+
+            if (out_right) {
+                int cur_sh_r = (line < 26 && (x <= 115 || x >= 185)) ? 0 : sh_r;
+                int sx_r = x + cur_sh_r;
+                if (sx_r >= 0 && sx_r < frame_width && obj_layer[sx_r] != 0u && obj_priority[sx_r] <= win_pri_right[x]) {
+                    out_right[x] = obj_layer[sx_r];
+                }
+            }
+        }
+    } else {
+        memset(virtuappu_mode1_obj_window, 0, (size_t)frame_width);
+        memset(virtuappu_mode1_obj_semitrans, 0, (size_t)frame_width);
+    }
+
+    for (int x = MODE1_GBA_BG_CLIP_X; x < frame_width; ++x) {
+        if (win_pri_left[x] == 0xFFu) out_left[x] = 0xFF000000u;
+        if (out_right && win_pri_right[x] == 0xFFu) out_right[x] = 0xFF000000u;
+    }
+
+    return true;
+}
+
 static bool mode1_render_native_direct_no_effect_line(int line, uint16_t dispcnt, int frame_width) {
     if (!MODE1_NATIVE_FAST_PATHS_ENABLED() ||
         (dispcnt & (MODE1_DISP_WIN0_ON | MODE1_DISP_WIN1_ON | MODE1_DISP_OBJWIN_ON)) != 0u) {
@@ -2507,21 +2641,29 @@ static void mode1_render_lines(const Mode1RenderLinesContext* context, int first
         virtuappu_mode1_io_thread_override =
             context->per_line_io ? context->io_snapshots[line] : mode1_memory.io_mem;
 
-        if (!context->affine && mode1_3d_slider <= 0.001f) {
+        if (!context->affine) {
             int old_path = -1;
-            if (mode1_render_native_direct_no_effect_line(line, line_dispcnt, context->frame_width)) {
-                old_path = MODE1_OLD_PATH_DIRECT;
-            } else if (mode1_old3ds_profile &&
-                       mode1_render_old3ds_field_alpha_line(line, line_dispcnt, context->frame_width)) {
-                old_path = MODE1_OLD_PATH_FIELD_ALPHA;
-            } else if (mode1_render_native_compact_line(line, line_dispcnt, context->frame_width)) {
-                old_path = MODE1_OLD_PATH_COMPACT;
+            if (mode1_3d_slider > 0.001f) {
+                if (mode1_render_stereo_direct_line(line, line_dispcnt, context->frame_width)) {
+                    old_path = MODE1_OLD_PATH_DIRECT;
+                }
+            } else {
+                if (mode1_render_native_direct_no_effect_line(line, line_dispcnt, context->frame_width)) {
+                    old_path = MODE1_OLD_PATH_DIRECT;
+                } else if (mode1_old3ds_profile &&
+                           mode1_render_old3ds_field_alpha_line(line, line_dispcnt, context->frame_width)) {
+                    old_path = MODE1_OLD_PATH_FIELD_ALPHA;
+                } else if (mode1_render_native_compact_line(line, line_dispcnt, context->frame_width)) {
+                    old_path = MODE1_OLD_PATH_COMPACT;
+                }
+                if (old_path >= 0) {
+                    uint32_t* r_row = mode1_output_row_right(line);
+                    if (r_row != NULL) {
+                        memcpy(r_row, mode1_output_row(line), (size_t)context->frame_width * sizeof(uint32_t));
+                    }
+                }
             }
             if (old_path >= 0) {
-                uint32_t* r_row = mode1_output_row_right(line);
-                if (r_row != NULL) {
-                    memcpy(r_row, mode1_output_row(line), (size_t)context->frame_width * sizeof(uint32_t));
-                }
                 if (mode1_old3ds_profile && old_path_lines != NULL) ++old_path_lines[old_path];
                 virtuappu_mode1_io_thread_override = prev_override;
                 continue;
