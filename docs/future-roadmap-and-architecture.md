@@ -39,6 +39,23 @@ La modernización del port se realiza de forma **estrictamente modular** para pe
 
 ### Fase 1: Renderer GPU Nativo con `citro3d` / `citro2d` y 3D Estereoscópico (EN PROGRESO)
 
+**Estado real a 2026-08-20 (noche): ver `docs/3ds-port-gpu-renderer-status-2026-08-20.md`
+para el detalle completo, léelo antes de tocar `port_gpu_renderer.c`.** Resumen:
+sigue detrás del flag `PORT_GPU_TILE_RENDERER` (apagado por defecto, no afecta
+al build normal). Se encontraron y arreglaron varios bugs reales serios esta
+sesión (canales de color invertidos, transparencia rota, forced blank no
+gestionado, mapeo 2D de sprites 8bpp, y el más importante: el buffer de
+citro2d se agotaba a las 128 primeras quads, causando que cualquier escena
+grande se viera cortada en una franja superior) y se implementó soporte de
+blending (BLDCNT) que antes se rechazaba por completo. **Pero el objetivo
+principal —que el gameplay real pase por GPU y llegue a 60 FPS— sigue sin
+cumplirse**: el gameplay, una vez cargada la partida, se sigue renderizando
+por CPU. Quedan además sin diagnosticar: líneas horizontales finas en toda
+imagen (sospecha de escalado 1.5x no entero + filtro `GPU_NEAREST`), y el
+menú de selección de partida que solo muestra el fondo hasta pulsar un botón
+(momento en el que además cae a CPU). Ver el documento de estado para el plan
+concreto de la próxima sesión.
+
 * **Objetivo:** Sustituir la PPU por software en CPU (`port_ppu_mzm.c` / `mode1.c`) por renderizado en la GPU PICA200 de la 3DS.
 * **Beneficios:**
   * Libera el ~90% del uso de CPU (60 FPS garantizados en Old 3DS y New 3DS).

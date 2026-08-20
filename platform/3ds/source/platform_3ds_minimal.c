@@ -24,6 +24,8 @@
 static bool sIsNew3DS;
 static bool sRunning;
 static bool sGameplayDisplayActive;
+static bool sCore1Available;
+static unsigned sCore1TimeLimit;
 
 /* Body lives in port/port_gba_timing.c (plain C, no <3ds.h> -- see that
  * file's header comment for why). Spawned here because this file is the
@@ -40,9 +42,28 @@ int Platform3DS_Init(void) {
     APT_CheckNew3DS(&sIsNew3DS);
     if (sIsNew3DS) {
         osSetSpeedupEnable(true);
-        APT_SetAppCpuTimeLimit(80);
-    } else {
-        APT_SetAppCpuTimeLimit(30);
+    }
+
+    /* APT_SetAppCpuTimeLimit grants userland time on Core 1 (the syscore,
+     * normally reserved for system services) -- it can fail silently
+     * depending on the exheader/access-control the CIA was built with, so
+     * the return value must actually be checked and the grant re-verified
+     * with APT_GetAppCpuTimeLimit. Getting this wrong previously meant
+     * Platform3DS_CanUseCore1() unconditionally trusted sIsNew3DS, mode1.c's
+     * render worker for Core 1 tried to spawn there anyway, silently failed
+     * threadCreate, and the port permanently rendered with one fewer worker
+     * thread than intended -- lost ~1/3 of the CPU render's parallelism
+     * without any visible error. Try decreasing candidate percentages since
+     * a lower ask is more likely to be granted than a fixed 80/30. */
+    static const u32 core1Candidates[] = { 80, 70, 50, 30 };
+    for (size_t i = 0; i < sizeof(core1Candidates) / sizeof(core1Candidates[0]); ++i) {
+        if (R_FAILED(APT_SetAppCpuTimeLimit(core1Candidates[i]))) continue;
+        u32 actual = 0;
+        if (R_SUCCEEDED(APT_GetAppCpuTimeLimit(&actual)) && actual > 0) {
+            sCore1Available = true;
+            sCore1TimeLimit = actual;
+            break;
+        }
     }
 
     threadCreate(Port_GbaTiming_ThreadMain, NULL, 4096, 0x20, -1, true);
@@ -66,11 +87,11 @@ bool Platform3DS_IsNew3DS(void) {
 }
 
 bool Platform3DS_CanUseCore1(void) {
-    return sIsNew3DS;
+    return sCore1Available;
 }
 
 unsigned Platform3DS_Core1TimeLimit(void) {
-    return sIsNew3DS ? 80u : 30u;
+    return sCore1TimeLimit;
 }
 
 void Platform3DS_ShowSplash(void) {

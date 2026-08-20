@@ -17,6 +17,19 @@
 #include "port_gba_mem.h"
 #include "platform_gpu_3ds.h"
 
+#ifdef PORT_GPU_TILE_RENDERER
+#include "port_gpu_renderer.h"
+#endif
+
+#ifdef PORT_PPU_PERF_LOG
+/* Deliberately not <3ds.h> here -- it redeclares u32/s32/etc. incompatibly
+ * with this project's own include/types.h (already pulled in transitively
+ * above), which is a hard conflicting-types error. CPU_TICKS_PER_MSEC's
+ * value (3ds/os.h: SYSCLOCK_ARM11 / 1000.0, SYSCLOCK_ARM11 = 268111856*2)
+ * is a stable libctru constant, safe to inline instead of the header. */
+#define PORT_PPU_PERF_CPU_TICKS_PER_MSEC (268111856.0 / 1000.0)
+#endif
+
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
@@ -91,6 +104,20 @@ bool Port_PPU_Init(void) {
     if (sTopRightBuffer) {
         virtuappu_mode1_set_right_output_buffer(sTopRightBuffer, TOP_PITCH);
     }
+
+#ifdef PORT_GPU_TILE_RENDERER
+    /* Experimental (EXTRA_CFLAGS=-DPORT_GPU_TILE_RENDERER, off by default):
+     * offloads mode-0 tile/sprite compositing to the PICA200 instead of the
+     * CPU scanline renderer. Falls back to the CPU path per-frame whenever
+     * Port_GpuRenderer_CanRenderFrame() says the frame uses something it
+     * doesn't support yet (affine BG, blend, windows, mosaic, affine OBJ) --
+     * see port_gpu_renderer.c. Init failure here just means every frame
+     * takes the CPU fallback, not a hard error. */
+    if (Port_GpuRenderer_Init()) {
+        Port_GpuRenderer_SetActive(true);
+    }
+#endif
+
     sReady = true;
     return true;
 }
@@ -114,20 +141,30 @@ void Port_PPU_PresentFrame(void) {
     float slider3d = PlatformGpu3DS_Get3DSlider();
     virtuappu_mode1_set_3d_slider(slider3d);
 
+#ifdef PORT_GPU_TILE_RENDERER
+    const bool useGpuRenderer = Port_GpuRenderer_IsActive() && Port_GpuRenderer_CanRenderFrame();
+#else
+    const bool useGpuRenderer = false;
+#endif
+
 #ifdef PORT_PPU_TEST_PATTERN
     /* Diagnostic: bypass virtuappu entirely and write a known-good pattern
      * (solid alternating 8px-tall horizontal bars) straight into the output
      * buffer. If this still shows up sheared/diagonal on real hardware, the
      * bug is in the GPU presentation pipeline (platform_gpu_3ds.c) or the
-     * buffer geometry (TOP_PITCH/width) below, not in virtuappu/mode1.c. */
+     * buffer geometry (TOP_PITCH/width) below, not in virtuappu/mode1.c.
+     * Mutually exclusive with the GPU tile renderer -- both are diagnostic/
+     * experimental paths, never built together. */
     for (int row = 0; row < 160; ++row) {
         uint32_t color = ((row / 8) % 2 == 0) ? 0xFFFFFFFFu : 0xFF000000u;
         uint32_t* r = sTopBuffer + (size_t)row * TOP_PITCH;
         for (int col = 0; col < TOP_NATIVE_W; ++col) r[col] = color;
     }
 #else
-    virtuappu_mode1_set_frame_geometry(&ppu);
-    virtuappu_mode1_render_frame(&ppu);
+    if (!useGpuRenderer) {
+        virtuappu_mode1_set_frame_geometry(&ppu);
+        virtuappu_mode1_render_frame(&ppu);
+    }
 #endif
 
     /* Log the first few frames unconditionally, then only when DISPCNT
@@ -176,12 +213,52 @@ void Port_PPU_PresentFrame(void) {
 #if defined(PORT_VERBOSE_FRAME_LOG)
     Port_DebugLog("Port_PPU_PresentFrame: before BeginTop");
 #endif
-    PlatformGpu3DS_BeginTopStereo(sTopBuffer, sTopRightBuffer, TOP_NATIVE_W);
+#ifdef PORT_GPU_TILE_RENDERER
+    if (useGpuRenderer) {
+        if (PlatformGpu3DS_BeginTopSceneGpu()) {
+            Port_GpuRenderer_RenderFrame();
+        } else {
+            /* Frame-begin failed (GPU busy/queue full) -- nothing was drawn
+             * this frame; EndBottom below no-ops on !sFrameActive, so this
+             * frame is silently skipped rather than shown corrupt. */
+        }
+    } else
+#endif
+    {
+        PlatformGpu3DS_BeginTopStereo(sTopBuffer, sTopRightBuffer, TOP_NATIVE_W);
+    }
 #if defined(PORT_VERBOSE_FRAME_LOG)
     Port_DebugLog("Port_PPU_PresentFrame: before EndBottom");
 #endif
     PlatformGpu3DS_EndBottom(sBottomBuffer, true);
 #if defined(PORT_VERBOSE_FRAME_LOG)
     Port_DebugLog("Port_PPU_PresentFrame: done");
+#endif
+
+#ifdef PORT_PPU_PERF_LOG
+    /* Every ~2s (at the target 60Hz): where is frame time actually going?
+     * mode1's main/worker ticks cover the CPU scanline render (per-thread,
+     * so on New3DS 3 threads run it in parallel -- main plus 2 workers, one
+     * of which shares Core 1 with the audio thread); GPU drawing/processing
+     * times come from citro3d's own counters and cover texture upload +
+     * compositing on the PICA200. Adding all three CPU-side numbers doesn't
+     * give total frame time (they overlap across threads); compare each one
+     * individually against the 16.67ms/frame budget for 60 FPS. */
+    if ((sPresentFrameCount % 120u) == 0u) {
+        VirtuaPPUMode13DSStats mode1Stats;
+        virtuappu_mode1_get_3ds_stats(&mode1Stats);
+        PlatformGpu3DSStats gpuStats;
+        PlatformGpu3DS_GetStats(&gpuStats);
+        char msg[220];
+        __builtin_snprintf(msg, sizeof(msg),
+            "PERF[%u]: fps=%.1f main=%.2fms w0=%.2fms w1=%.2fms(workers=%lu) gpuDraw=%.2fms gpuProc=%.2fms",
+            sPresentFrameCount, sCurrentFps,
+            (double)mode1Stats.mainLastTicks / PORT_PPU_PERF_CPU_TICKS_PER_MSEC,
+            (double)mode1Stats.workerLastTicks[0] / PORT_PPU_PERF_CPU_TICKS_PER_MSEC,
+            (double)mode1Stats.workerLastTicks[1] / PORT_PPU_PERF_CPU_TICKS_PER_MSEC,
+            (unsigned long)mode1Stats.workerCount,
+            (double)gpuStats.drawingTime, (double)gpuStats.processingTime);
+        Port_DebugLog(msg);
+    }
 #endif
 }

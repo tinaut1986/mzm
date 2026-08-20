@@ -109,7 +109,7 @@ static u32 TextureTransfer(void) {
            GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO);
 }
 
-static void ConfigureAbgrTextureEnv(void) {
+void PlatformGpu3DS_ConfigureAbgrTextureEnv(void) {
     C3D_TexEnv* env = C3D_GetTexEnv(0);
     C3D_TexEnvInit(env);
     C3D_TexEnvSrc(env, C3D_RGB, GPU_TEXTURE0, GPU_CONSTANT, GPU_PREVIOUS);
@@ -154,7 +154,18 @@ bool PlatformGpu3DS_Init(bool old3dsProfile) {
     GSPGPU_FlushDataCache(sBottomUploads[0], 512u * 256u * sizeof(uint32_t));
     GSPGPU_FlushDataCache(sBottomUploads[1], 512u * 256u * sizeof(uint32_t));
     if (!C3D_Init(C3D_DEFAULT_CMDBUF_SIZE)) goto fail_linear;
-    if (!C2D_Init(128)) {
+    /* 128 was sized for this module's own original use case (a couple of
+     * big background quads plus the small FPS-text overlay, well under
+     * 100 quads/frame). port_gpu_renderer.c's tile/sprite compositor draws
+     * 600-1200+ C2D_DrawImage calls in a single scene for a full-screen BG
+     * -- once that exceeds citro2d's internal vertex buffer capacity here,
+     * everything past the limit silently doesn't render, which reads as
+     * "only the first few rows/top of the screen show, the rest is black"
+     * regardless of what the scene actually contains. Matches exactly what
+     * showed up testing the GPU renderer. 4096 covers the GPU renderer's
+     * documented worst case (port_gpu_renderer.c's MAX_DRAW_ITEMS) with
+     * headroom. */
+    if (!C2D_Init(4096)) {
         C3D_Fini();
         goto fail_linear;
     }
@@ -294,7 +305,7 @@ static void DrawTopImageStereo(const uint32_t* leftPixels, const uint32_t* right
     C2D_TargetClear(sTopTarget, C2D_Color32(0, 0, 0, 255));
     C2D_SceneBegin(sTopTarget);
     C2D_DrawImage(imageLeft, &params, NULL);
-    ConfigureAbgrTextureEnv();
+    PlatformGpu3DS_ConfigureAbgrTextureEnv();
     if (Port_Config_GetShowFps()) {
         char label[20];
         double fps = Port_PPU_3DS_CurrentFps();
@@ -309,7 +320,7 @@ static void DrawTopImageStereo(const uint32_t* leftPixels, const uint32_t* right
         C2D_TargetClear(sTopRightTarget, C2D_Color32(0, 0, 0, 255));
         C2D_SceneBegin(sTopRightTarget);
         C2D_DrawImage(imageRight, &params, NULL);
-        ConfigureAbgrTextureEnv();
+        PlatformGpu3DS_ConfigureAbgrTextureEnv();
         if (Port_Config_GetShowFps()) {
             char label[20];
             double fps = Port_PPU_3DS_CurrentFps();
@@ -337,6 +348,20 @@ void PlatformGpu3DS_BeginTopStereo(const uint32_t* leftPixels, const uint32_t* r
     ++sStats.topTransfers;
 }
 
+bool PlatformGpu3DS_BeginTopSceneGpu(void) {
+    if (!sReady) return false;
+    if (!C3D_FrameBegin(0)) {
+        ++sStats.frameBeginFailures;
+        return false;
+    }
+    sFrameActive = true;
+    ++sStats.topTransfers;
+    return true;
+}
+
+C3D_RenderTarget* PlatformGpu3DS_GetTopLeftTarget(void) { return sTopTarget; }
+C3D_RenderTarget* PlatformGpu3DS_GetTopRightTarget(void) { return sTopRightTarget; }
+
 bool PlatformGpu3DS_EndBottom(const uint32_t* pixels, bool changed) {
     if (!sFrameActive || !pixels) return false;
     if (changed) {
@@ -359,7 +384,7 @@ bool PlatformGpu3DS_EndBottom(const uint32_t* pixels, bool changed) {
         C2D_TargetClear(sBottomTarget, C2D_Color32(0, 0, 0, 255));
         C2D_SceneBegin(sBottomTarget);
         C2D_DrawImage(image, &params, NULL);
-        ConfigureAbgrTextureEnv();
+        PlatformGpu3DS_ConfigureAbgrTextureEnv();
         sBottomTargetValid = true;
         ++sStats.bottomTargetDraws;
     } else {
@@ -375,6 +400,12 @@ bool PlatformGpu3DS_EndBottom(const uint32_t* pixels, bool changed) {
         sStats.boundedFlushBytes += sC2dFlushSize;
     }
     C3D_FrameEnd(0);
+    /* Cap presentation to the LCD refresh rate. Without this, nothing paces
+     * the main loop to VBlank and it free-runs as fast as the CPU/GPU allow
+     * (60-120+ FPS depending on scene load), speeding up game logic and
+     * audio with it. Regressed by 1dae106c, which dropped this call thinking
+     * it was redundant with C3D_FrameEnd's flags. */
+    C3D_FrameSync();
     ++sStats.frames;
     sStats.drawingTime = C3D_GetDrawingTime();
     sStats.processingTime = C3D_GetProcessingTime();
@@ -401,7 +432,7 @@ void PlatformGpu3DS_ShowDumpSavedOverlay(void) {
     };
     C2D_SceneBegin(sBottomTarget);
     C2D_DrawImage(bottomImage, &bottomParams, NULL);
-    ConfigureAbgrTextureEnv();
+    PlatformGpu3DS_ConfigureAbgrTextureEnv();
     C2D_Flush();
     if (sC2dFlushBase && sC2dFlushSize) GSPGPU_FlushDataCache(sC2dFlushBase, sC2dFlushSize);
     C3D_FrameEnd(GX_CMDLIST_FLUSH);
