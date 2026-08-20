@@ -1468,16 +1468,16 @@ static inline void mode1_get_layer_shifts(float slider, int sign, int shifts[5])
         return;
     }
     float s = slider * (float)sign;
-    /* BG0: Foreground arches / fog (+1.5px) */
-    shifts[0] = (int)( 1.5f * s + (s >= 0.0f ? 0.5f : -0.5f));
-    /* BG1: Platform front lip (0.0px) */
+    /* BG0: Foreground arches / fog (+2.0px pop-out towards player) */
+    shifts[0] = (int)( 2.0f * s + (s >= 0.0f ? 0.5f : -0.5f));
+    /* BG1: Platforms / floor (0.0px screen plane) */
     shifts[1] = 0;
-    /* BG2: Mid cave backdrop (-2.5px) */
-    shifts[2] = (int)(-2.5f * s + (s >= 0.0f ? 0.5f : -0.5f));
-    /* BG3: Distant sky / stars (-4.0px) */
-    shifts[3] = (int)(-4.0f * s + (s >= 0.0f ? 0.5f : -0.5f));
-    /* OBJ: Samus / enemies (-1.0px) */
-    shifts[4] = (int)(-1.0f * s + (s >= 0.0f ? 0.5f : -0.5f));
+    /* BG2: Mid cave backdrop (-3.0px) */
+    shifts[2] = (int)(-3.0f * s + (s >= 0.0f ? 0.5f : -0.5f));
+    /* BG3: Distant sky / stars (-5.0px) */
+    shifts[3] = (int)(-5.0f * s + (s >= 0.0f ? 0.5f : -0.5f));
+    /* OBJ: Samus / enemies (-1.5px into the ledge) */
+    shifts[4] = (int)(-1.5f * s + (s >= 0.0f ? 0.5f : -0.5f));
 }
 
 static void mode1_composite_line_pass(int line, uint32_t* out_row,
@@ -1556,6 +1556,40 @@ static void mode1_composite_line_pass(int line, uint32_t* out_row,
     int shifts[5];
     mode1_get_layer_shifts(mode1_3d_slider, sign, shifts);
 
+    const bool native_no_effect = (frame_width <= MODE1_GBA_BG_CLIP_X && !any_window && effect == MODE1_BLEND_NONE);
+    if (native_no_effect) {
+        for (int x = 0; x < frame_width; ++x) {
+            uint32_t top_color = backdrop_color;
+            int obj_shift = (line < 26 && (x <= 115 || x >= 185)) ? 0 : shifts[4];
+            unsigned obj_p = 0xFF;
+            bool obj_semi = false;
+            uint32_t s_obj = mode1_sample_obj_shifted(obj_layer, obj_priority, x, obj_shift, frame_width, &obj_p, &obj_semi);
+            bool obj_candidate = obj_enabled && (s_obj != 0u);
+
+            uint32_t s_bg[MODE1_GBA_BG_COUNT] = {
+                mode1_sample_bg_shifted(bg_layers[0], x, shifts[0], frame_width),
+                mode1_sample_bg_shifted(bg_layers[1], x, shifts[1], frame_width),
+                mode1_sample_bg_shifted(bg_layers[2], x, shifts[2], frame_width),
+                mode1_sample_bg_shifted(bg_layers[3], x, shifts[3], frame_width),
+            };
+
+            for (int order_index = 0; order_index < MODE1_GBA_BG_COUNT; ++order_index) {
+                int bg = bg_order[order_index];
+                if (obj_candidate && bg_order_priority[bg] >= obj_p) {
+                    top_color = s_obj;
+                    break;
+                }
+                if (bg_enabled[bg] && s_bg[bg] != 0u) {
+                    top_color = s_bg[bg];
+                    break;
+                }
+            }
+            if (top_color == backdrop_color && obj_candidate) top_color = s_obj;
+            out_row[x] = top_color;
+        }
+        return;
+    }
+
     for (int x = 0; x < frame_width; ++x) {
         uint8_t win_ctrl = 0x3Fu;
         uint32_t top_color = backdrop_color;
@@ -1585,6 +1619,7 @@ static void mode1_composite_line_pass(int line, uint32_t* out_row,
         bool visible_obj = (win_ctrl & 0x10u) != 0u;
         bool allow_sfx = (win_ctrl & 0x20u) != 0u;
 
+        int obj_shift = (line < 26 && (x <= 115 || x >= 185)) ? 0 : shifts[4];
         uint32_t s_bg[MODE1_GBA_BG_COUNT] = {
             mode1_sample_bg_shifted(bg_layers[0], x, shifts[0], frame_width),
             mode1_sample_bg_shifted(bg_layers[1], x, shifts[1], frame_width),
@@ -1593,7 +1628,7 @@ static void mode1_composite_line_pass(int line, uint32_t* out_row,
         };
         unsigned obj_p = 0xFF;
         bool obj_semi = false;
-        uint32_t s_obj = mode1_sample_obj_shifted(obj_layer, obj_priority, x, shifts[4], frame_width, &obj_p, &obj_semi);
+        uint32_t s_obj = mode1_sample_obj_shifted(obj_layer, obj_priority, x, obj_shift, frame_width, &obj_p, &obj_semi);
         bool obj_candidate = obj_enabled && visible_obj && (s_obj != 0u);
         bool obj_emitted = false;
 
@@ -2467,7 +2502,7 @@ static void mode1_render_lines(const Mode1RenderLinesContext* context, int first
         virtuappu_mode1_io_thread_override =
             context->per_line_io ? context->io_snapshots[line] : mode1_memory.io_mem;
 
-        if (!context->affine) {
+        if (!context->affine && mode1_3d_slider <= 0.001f) {
             int old_path = -1;
             if (mode1_render_native_direct_no_effect_line(line, line_dispcnt, context->frame_width)) {
                 old_path = MODE1_OLD_PATH_DIRECT;
@@ -2478,6 +2513,10 @@ static void mode1_render_lines(const Mode1RenderLinesContext* context, int first
                 old_path = MODE1_OLD_PATH_COMPACT;
             }
             if (old_path >= 0) {
+                uint32_t* r_row = mode1_output_row_right(line);
+                if (r_row != NULL) {
+                    memcpy(r_row, mode1_output_row(line), (size_t)context->frame_width * sizeof(uint32_t));
+                }
                 if (mode1_old3ds_profile && old_path_lines != NULL) ++old_path_lines[old_path];
                 virtuappu_mode1_io_thread_override = prev_override;
                 continue;
@@ -2704,6 +2743,8 @@ void virtuappu_mode1_render_frame(const PPUMemory* ppu) {
     if ((dispcnt & MODE1_DISP_FORCED_BLANK) != 0u) {
         for (line = 0; line < MODE1_GBA_HEIGHT; ++line) {
             memset(mode1_output_row(line), 0xFF, (size_t)mode1_frame_width * sizeof(uint32_t));
+            uint32_t* r_row = mode1_output_row_right(line);
+            if (r_row) memset(r_row, 0xFF, (size_t)mode1_frame_width * sizeof(uint32_t));
         }
         return;
     }

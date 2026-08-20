@@ -141,13 +141,16 @@ bool PlatformGpu3DS_Init(bool old3dsProfile) {
     sC2dFlushBase = NULL;
     sC2dFlushSize = 0;
     sTopUpload = (uint32_t*)linearMemAlign(TOP_TEXTURE_WIDTH * TOP_TEXTURE_HEIGHT * sizeof(uint32_t), 0x80);
+    sTopRightUpload = (uint32_t*)linearMemAlign(TOP_TEXTURE_WIDTH * TOP_TEXTURE_HEIGHT * sizeof(uint32_t), 0x80);
     sBottomUploads[0] = (uint32_t*)linearMemAlign(512u * 256u * sizeof(uint32_t), 0x80);
     sBottomUploads[1] = (uint32_t*)linearMemAlign(512u * 256u * sizeof(uint32_t), 0x80);
-    if (!sTopUpload || !sBottomUploads[0] || !sBottomUploads[1]) goto fail_linear;
+    if (!sTopUpload || !sTopRightUpload || !sBottomUploads[0] || !sBottomUploads[1]) goto fail_linear;
     memset(sTopUpload, 0, TOP_TEXTURE_WIDTH * TOP_TEXTURE_HEIGHT * sizeof(uint32_t));
+    memset(sTopRightUpload, 0, TOP_TEXTURE_WIDTH * TOP_TEXTURE_HEIGHT * sizeof(uint32_t));
     memset(sBottomUploads[0], 0, 512u * 256u * sizeof(uint32_t));
     memset(sBottomUploads[1], 0, 512u * 256u * sizeof(uint32_t));
     GSPGPU_FlushDataCache(sTopUpload, TOP_TEXTURE_WIDTH * TOP_TEXTURE_HEIGHT * sizeof(uint32_t));
+    GSPGPU_FlushDataCache(sTopRightUpload, TOP_TEXTURE_WIDTH * TOP_TEXTURE_HEIGHT * sizeof(uint32_t));
     GSPGPU_FlushDataCache(sBottomUploads[0], 512u * 256u * sizeof(uint32_t));
     GSPGPU_FlushDataCache(sBottomUploads[1], 512u * 256u * sizeof(uint32_t));
     if (!C3D_Init(C3D_DEFAULT_CMDBUF_SIZE)) goto fail_linear;

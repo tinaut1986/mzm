@@ -111,7 +111,10 @@ void Port_PPU_PresentFrame(void) {
      * Zero Mission only ever uses GBA modes 0 and 1 (docs/3ds-port-ppu-audit.md). */
     ppu.mode = (gbaMode == 1 || gbaMode == 2) ? 2 : 1;
 
-    float slider3d = PlatformGpu3DS_Get3DSlider();
+    extern uint8_t gMainGameMode;
+    extern uint8_t gSubGameMode1;
+    const bool isIngame = (gMainGameMode == 4 && gSubGameMode1 == 2);
+    float slider3d = isIngame ? PlatformGpu3DS_Get3DSlider() : 0.0f;
     virtuappu_mode1_set_3d_slider(slider3d);
 
 #ifdef PORT_PPU_TEST_PATTERN
