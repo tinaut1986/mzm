@@ -41,29 +41,13 @@ int Platform3DS_Init(void) {
     if (sIsNew3DS) {
         osSetSpeedupEnable(true);
         APT_SetAppCpuTimeLimit(80);
+    } else {
+        APT_SetAppCpuTimeLimit(30);
     }
 
-
-    /* Without this, every busy-wait on REG_VCOUNT (e.g.
-     * src/audio_wrappers.c:205-206) spins forever -- see
-     * port_gba_timing.c's header comment. Must start before agbmain() runs
-     * (main_3ds.c calls it right after this).
-     *
-     * Priority: needs to be above the main thread's default 0x30 (lower
-     * number = higher priority in Horizon OS) to actually get scheduled
-     * roughly every 73us -- but NOT above libctru's own internal GSP event
-     * thread (gspEventThreadMain, created by gspInit() at priority 0x1A,
-     * confirmed by disassembling libctru.a's gspgpu.o). That thread is what
-     * processes the VBlank interrupt relay queue and signals the event
-     * gspWaitForEvent() blocks on in port_bios.c's Port_Bios_Halt(). On a
-     * single application core, this thread waking every ~73us at a HIGHER
-     * priority (0x18 < 0x1A) than the GSP thread starves it indefinitely --
-     * this was the exact cause of the port hanging forever at "before
-     * gspWaitForEvent" on real hardware (confirmed via
-     * sdmc:/3ds/mzm-debug.log bisection). 0x20 sits strictly between the
-     * two: still preempts the main thread (0x30), but yields to GSP's
-     * thread (0x1A) whenever it's ready to run. */
-    threadCreate(Port_GbaTiming_ThreadMain, NULL, 4096, 0x20, -1, true);
+    /* Core 1 (SYSCORE) hosts the timing and audio threads so Core 0 (APPCORE)
+     * is 100% dedicated to game logic and rendering without constant context switching. */
+    threadCreate(Port_GbaTiming_ThreadMain, NULL, 4096, 0x24, 1, true);
 
     sRunning = true;
     return 1;
@@ -84,15 +68,11 @@ bool Platform3DS_IsNew3DS(void) {
 }
 
 bool Platform3DS_CanUseCore1(void) {
-    return sIsNew3DS;
+    return true;
 }
 
 unsigned Platform3DS_Core1TimeLimit(void) {
-    /* APT_SetAppCpuTimeLimit's percentage of core 1 available to the app on
-     * New3DS; TMC's port used 80 as a conservative default leaving headroom
-     * for system processes. Not yet wired to APT_SetAppCpuTimeLimit itself
-     * -- nothing on this build spawns a second-core worker yet. */
-    return sIsNew3DS ? 80u : 0u;
+    return sIsNew3DS ? 80u : 30u;
 }
 
 void Platform3DS_ShowSplash(void) {
