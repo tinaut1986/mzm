@@ -23,6 +23,12 @@ void Port_GpuRenderer_SetActive(bool active);
  * overlay -- see the definition in port_gpu_renderer.c. Any output pointer
  * may be NULL. */
 void Port_GpuRenderer_GetLastFrameStats(int* outItems, int* outObjItems, int* outCacheSlots);
+/* CPU time (ms) spent in the most recent Port_GpuRenderer_RenderFrame call:
+ * collectMs = VRAM reads + tile cache lookup/decode + sort, drawMs = atlas
+ * upload + draw-call submission for both eyes. Neither PORT_PPU_PERF_LOG's
+ * mode1 stats (stale when the GPU renderer is active) nor citro3d's own
+ * gpuDraw/gpuProc counters (GPU-side only) cover this. */
+void Port_GpuRenderer_GetLastFrameTimingMs(float* outCollectMs, float* outDrawMs);
 
 #ifdef __cplusplus
 }

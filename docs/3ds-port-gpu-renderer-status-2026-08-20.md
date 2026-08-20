@@ -488,3 +488,363 @@ renderer de GPU en esta rama.
    futuro "¿qué hay REALMENTE en este render target?" — usarla antes de
    especular por logs solos cuando el contenido visual no cuadre con los
    contadores.
+
+## 7. Continuación misma sesión (2026-08-20, noche): primera ronda de optimización de rendimiento (punto 1 de la sección 6)
+
+Sin poder aún medir en hardware real dentro de esta sesión (solo Azahar sin
+input disponible), se atacaron por inspección de código los tres cuellos de
+botella de CPU más obvios en `port_gpu_renderer.c`, todos con evidencia
+directa en el propio código (no especulación) y todos verificados por
+compilación limpia (build normal sin flags + build con
+`PORT_GPU_TILE_RENDERER`/`PORT_GPU_RENDERER_DIAG_LOG`) y una pasada de humo
+en Azahar (intro, sin input): sin corrupción visual, FPS de intro subió de
+~38-40 (dato de la sección 5.9) a **45** en esta máquina de desarrollo (dato
+de Azahar, no de hardware real — orientativo, no concluyente).
+
+### 7.1 — `GetOrDecodeTileSlot`: de búsqueda lineal O(n) a hash table O(1) amortizado
+
+Sospecha número uno según la propia sección 5.9 ("¿CPU decodificando/
+cacheando tiles?"): `GetOrDecodeTileSlot` escaneaba linealmente
+`sCacheKeys[0..sCacheCount)` **por cada referencia a un tile**, no por cada
+tile único — hasta ~2500-2700 referencias/frame en gameplay real, cada una
+comparando contra hasta unos cientos de entradas de caché ya pobladas ese
+frame. Sustituido por una tabla hash de encadenamiento abierto
+(`sHashBucketHead`/`sHashChainNext`, 8192 buckets), "vaciada" con un
+contador de generación por bucket en vez de poner a cero las 8192 entradas
+cada frame (un bucket se trata como vacío si su generación guardada no
+coincide con la del frame actual).
+
+### 7.2 — `qsort()` de hasta 3200 items → counting/bucket sort O(n)
+
+`sortKey` solo toma 35 valores posibles (`(3-priority)*10 + tiebreak`,
+tiebreak en [0,4]) — un rango perfecto para bucket sort en vez de la
+comparación genérica de `qsort` (coste de llamada indirecta por
+comparación, especialmente caro en ARM11). Cada `PushItem` encadena el
+nuevo item directamente en la lista enlazada de su bucket
+(`sBucketHead`/`sBucketTail`/`sBucketNext`); al final de la recolección se
+vuelca en `sSortedOrder` con una sola pasada por los 35 buckets. Efecto
+colateral: esto también corrige una suposición de estabilidad que el propio
+comentario original asumía pero `qsort()` de la libc no garantiza (el orden
+de dibujado dentro de un mismo `sortKey` para sprites de igual prioridad
+dependía de que el orden de iteración de OAM se preservara).
+
+### 7.3 — Transferencia del atlas: de 1MB completo cada frame a solo las filas usadas
+
+El hallazgo más significativo de esta ronda. `sAnyDirtySlot` disparaba un
+`GSPGPU_FlushDataCache` + `C3D_SyncDisplayTransfer` (**síncrono**, bloquea
+la CPU hasta terminar) del atlas **completo** (512x512x4 bytes = 1MB) cada
+frame, aunque una escena típica solo usa unos pocos cientos de los 4096
+slots. Como `GetOrDecodeTileSlot` siempre asigna slots secuencialmente desde
+0 y la caché se resetea cada frame, el conjunto de slots usado en un frame
+dado es **siempre un prefijo contiguo del atlas** (filas de tiles
+`[0, ceil(cacheCount/64))`) — no hace falta transferir nada más allá de esa
+altura. Arreglado calculando `dirtyHeight` a partir de `sCacheCount` y
+pasándolo como alto real a `GSPGPU_FlushDataCache`/`C3D_SyncDisplayTransfer`
+en vez de `ATLAS_DIM` fijo. Con `cache=144-158` en la intro (ver logs de la
+sección 7 más abajo) esto transfiere ~3 filas de tiles (24px) en vez de las
+512px completas — más de 20x menos datos movidos síncronamente por frame.
+
+### 7.4 — Pendiente, sin tocar esta sesión
+
+- **No se ha medido en hardware real ni en gameplay real** (mismo límite de
+  siempre: Azahar sin input en este entorno). Los 45 FPS de intro en Azahar
+  son una señal positiva de que no hay regresión de correctness y de que
+  las tres optimizaciones sí reducen trabajo de CPU, pero **no sustituyen
+  una medición en New3DS/Old3DS real con `PORT_PPU_PERF_LOG` durante
+  gameplay**, que es donde de verdad importa (2500-2700 items/frame, muy
+  por encima de los ~650 de la intro).
+- Posibles cuellos de botella todavía no investigados si el paso anterior
+  no basta: número de draw calls de citro2d en sí (600-1200+ quads de 8x8
+  por ojo en vez de agrupar en quads más grandes cuando hay tiles
+  idénticos contiguos), coste de `DecodeTileIntoSlot` por tile único
+  (loop de 8x8 por tile, sin SIMD), o diferencia real Old3DS vs New3DS
+  (clock de CPU/GPU distinto — el objetivo es 60 FPS en ambos, no solo en
+  New3DS).
+- Recomendación inmediata para la próxima sesión: instalar el CIA de esta
+  build (compilada con `PORT_GPU_TILE_RENDERER`, `PORT_GPU_RENDERER_DIAG_LOG`
+  y `PORT_PPU_PERF_LOG`) en hardware real (Old3DS y New3DS si es posible) y
+  jugar una sesión de gameplay real con el overlay de FPS de la sección 5.1
+  visible, comparando el número contra los ~20-30 FPS de la sección 5.9.
+
+## 8. Continuación misma sesión (2026-08-20, noche): la causa raíz real del rendimiento — caché de tiles no persistente entre frames
+
+Probado en Azahar tras la sección 7 (usuario confirma ~40 FPS en gameplay,
+lejos de los 60 objetivo, y hace la pregunta correcta: **¿por qué el
+renderer de CPU sí llegaba a 60 FPS y este no, si en teoría la GPU rasteriza
+más rápido?**). Respuesta encontrada por inspección de código, no
+especulación: `Port_GpuRenderer_RenderFrame` reseteaba `sCacheCount = 0`
+(y con él, toda la caché de tiles decodificados) **al principio de cada
+frame** — es decir, aunque las secciones 7.1/7.2/7.3 ya habían arreglado
+cómo se *busca* en la caché y cómo se *sube* el atlas a la GPU, el propio
+contenido de la caché se tiraba y se reconstruía desde cero 60 veces por
+segundo. Con unos pocos cientos de tiles únicos por sala (la mayoría
+estáticos frame a frame, solo cambia el scroll) esto significaba
+**redecodificar el mismo contenido una y otra vez sin necesidad** —
+búsqueda de paleta + posible brighten/darken por cada uno de los 64 píxeles
+de cada tile único, repetido en cada frame aunque el tile no hubiera
+cambiado. Este coste de CPU, no el fill-rate de la GPU ni el volumen de
+draw calls, es la explicación real de por qué "usar la GPU" no batía ya de
+entrada al renderer de CPU maduro (que compone directamente a un
+framebuffer lineal, sin esa capa de recodificación repetida).
+
+**Arreglo:** la caché de tiles (`sCacheKeys`/hash table) ahora **persiste
+entre frames** en vez de reiniciarse. `GetOrDecodeTileSlot` guarda en
+`sCacheSourceBytes[slot]` una copia de los bytes fuente (hasta 64B) usados
+en la última decodificación de cada slot; en un acierto de caché, compara
+(`memcmp`) esos bytes contra los actuales de VRAM antes de confiar en el
+contenido cacheado — si coinciden (el caso común), se reutiliza el slot sin
+decodificar nada; si difieren (tile animado: agua, lava...), se redecodifica
+en el mismo slot. Un `memcmp` de ≤64 bytes es mucho más barato que una
+decodificación completa. Efectos colaterales que hubo que resolver:
+- La caché ya no se puede desbordar de forma segura reseteándose cada
+  frame (antes garantizado por el reset periódico) — ahora se reinicia
+  proactivamente cuando le quedan <256 slots libres, pero **solo al
+  principio de un frame** (nunca a mitad de frame, que invalidaría índices
+  de slot ya usados por `DrawItem`s de ese mismo frame vía `SlotToUV`).
+- La subida del atlas a la GPU ya no puede asumir que los slots usados este
+  frame son un prefijo contiguo desde 0 (eso solo era cierto cuando la
+  caché se vaciaba cada frame) — sustituido por un rango de filas sucias
+  real (`sDirtyMinRow`/`sDirtyMaxRow`), actualizado en
+  `DecodeTileIntoSlot`, que en un frame típico (mayoría de aciertos sin
+  redecodificar) puede llegar a no escribir nada en absoluto.
+
+**Sin verificar en hardware ni con gameplay real** (misma limitación de
+Azahar sin input). Probado en Azahar solo con la intro (contenido casi
+estático, así que el beneficio esperado ahí es pequeño por diseño — el caso
+que de verdad se beneficia es gameplay con cientos de tiles reutilizados
+frame a frame): compila limpio, sin corrupción visual, `cache=926-938`
+creciendo con normalidad (encaja con que ahora persiste en vez de resetear
+cada frame a ~144-160).
+
+### Pendiente para la próxima sesión
+
+1. **Medir en hardware real, en gameplay, con este cambio** — es el único
+   dato que falta para saber si esto por fin acerca el renderer a 60 FPS
+   estables en New3DS y, sobre todo, en Old3DS (más lento, el caso más
+   exigente y el que el usuario ha pedido explícitamente que también
+   llegue a 60).
+2. Si sigue sin bastar: el siguiente sospechoso razonable es el número de
+   draw calls de citro2d en sí (miles de quads de 8x8 por frame en vez de
+   fusionar tiles contiguos idénticos en quads más grandes, o dibujar BGs
+   enteros con un único buffer de vértices por capa vía C3D directamente en
+   vez de `C2D_DrawImage` por tile) — no investigado ni tocado esta sesión,
+   ver conversación de esta sesión para el razonamiento.
+
+## 9. Continuación misma sesión (2026-08-20, noche): dos hallazgos importantes -- una regresión de correctness y un agujero en la instrumentación
+
+### 9.1 — Regresión real: caché de tiles persistente sin tener en cuenta EVY
+
+Probado en Azahar y confirmado por el usuario en hardware: tras el cambio de
+la sección 8 (caché persistente entre frames), **escenarios y varios menús
+dejaron de verse**. Causa encontrada por inspección: `TileCacheKey` incluye
+`brightAdjust` (el enum discreto NONE/BRIGHTEN/DARKEN) pero, tal y como
+advertía el propio comentario original ("evy itself is one value for the
+whole frame, doesn't need to be part of the key"), **no incluye el valor
+real de `EVY`**. Esa suposición era cierta mientras la caché se
+reconstruía entera cada frame (sección 7); dejó de serlo en cuanto la
+caché empezó a persistir entre frames (sección 8): un tile decodificado
+una vez con un `EVY` alto durante un fundido a negro queda cacheado con
+esa oscuridad **para siempre**, porque los bytes de origen en VRAM (lo
+único que se compara para invalidar) no cambian durante el fundido, solo
+`EVY` cambia. Esto atascaba escenarios y menús en negro/invisibles
+después de cualquier fundido u otro efecto BLDCNT con `EVY` variable.
+
+**Arreglo:** `EVY` (0-16) añadido como campo más de `TileCacheKey`
+(0 cuando `brightAdjust == NONE`), incluido en el hash y en la comparación
+de igualdad. **Sin verificar aún en hardware** (la intro de Azahar nunca
+activa BLDCNT — `eff=0` en todo el log de pruebas — así que no se pudo
+reproducir el bug ni confirmar el arreglo localmente; pendiente de que el
+usuario lo pruebe).
+
+### 9.2 — Agujero de instrumentación: el log PERF no mide el coste real del renderer de GPU
+
+El usuario preguntó, con razón, cómo se pretende llegar a 60 FPS en
+gameplay si ni siquiera la intro (sin sprites afines, la escena más
+simple posible) pasaba de ~45 FPS en Azahar. Investigando el propio log
+`PERF[N]: main=...ms w0=...ms w1=...ms gpuDraw=...ms gpuProc=...ms`
+(`port_ppu_mzm.c`) se descubrió que **no mide lo que parecía**:
+- `main`/`w0`/`w1` son los contadores internos de `virtuappu_mode1` (el
+  renderer de CPU) — y `port_ppu_mzm.c` línea ~199 solo llama a
+  `virtuappu_mode1_render_frame()` cuando **NO** se usa el renderer de GPU.
+  Con el renderer de GPU activo (el caso de estas pruebas), esos números
+  son **restos obsoletos** de la última vez que corrió el renderer de CPU
+  (típicamente el arranque), no una medición del frame actual. Confirmado
+  viendo el log: el mismo valor exacto (`main=17.15ms w0=18.15ms
+  w1=18.06ms`) se repite idéntico en sucesivas líneas `PERF`, imposible si
+  fueran mediciones frescas de un renderer con más de 900 tiles/frame
+  variando.
+- `gpuDraw`/`gpuProc` son contadores propios de citro3d y solo cubren el
+  envío/espera de la GPU en sí (PICA200) — no el trabajo de CPU de
+  `Port_GpuRenderer_RenderFrame()` (recolección de VRAM, hash/memcmp/
+  decodificación de tiles, bucket sort), que es exactamente el código que
+  se ha estado optimizando en esta rama. **Nadie había medido ese coste.**
+
+**Arreglo:** instrumentación nueva y directa en `port_gpu_renderer.c`
+(`svcGetSystemTick()` alrededor de las dos fases de
+`Port_GpuRenderer_RenderFrame`), expuesta como log
+`GPUTIME collectMs=... drawMs=...` (cada 30 frames, detrás de
+`PORT_GPU_RENDERER_DIAG_LOG`) y como `Port_GpuRenderer_GetLastFrameTimingMs()`
+para quien quiera consumirlo desde otro sitio. `collectMs` cubre recolección
++ caché + decodificación + sort; `drawMs` cubre subida del atlas + envío de
+draw calls de ambos ojos.
+
+**Resultado en Azahar, con una pega importante:** `collectMs≈20ms
+drawMs≈40ms` (total ~60ms/frame reportado) es **inconsistente** con los
+~45 FPS reales medidos (~22ms/frame) — un frame no puede tardar 60ms en
+CPU y presentarse a 45 FPS. La explicación más probable es que el contador
+de ciclos de Azahar (`svcGetSystemTick` bajo emulación) no corresponde a
+tiempo real de hardware de forma fiable. **Conclusión: ni siquiera esta
+instrumentación nueva se puede confiar en Azahar** — solo sirve como señal
+relativa (aquí, `drawMs` ~2x `collectMs`, sugiriendo que el envío de draw
+calls podría pesar más que la recolección/decodificación, pero esto es una
+hipótesis sin confirmar, no una conclusión).
+
+### Pendiente para la próxima sesión (reemplaza la lista de la sección 8)
+
+1. **Instalar este build en hardware real y leer los logs `GPUTIME` durante
+   gameplay** — es la primera vez que existe una forma de medir el coste
+   real (en ciclos de CPU de verdad, no los de un emulador) del renderer de
+   GPU en sí, separado de todo lo demás. Sin esto, cualquier otro cambio en
+   esta rama seguiría siendo a ciegas.
+2. Confirmar en hardware que el arreglo de la sección 9.1 (EVY en la clave
+   de caché) realmente devuelve los escenarios/menús que dejaron de verse.
+3. Con datos reales de `collectMs`/`drawMs` de hardware: si `drawMs`
+   domina, el siguiente paso es reducir el número de draw calls (fusionar
+   tiles en quads más grandes, o un buffer de vértices por capa vía C3D en
+   vez de `C2D_DrawImage` por tile de 8x8); si `collectMs` domina, mirar el
+   propio bucle de decodificación/hash en vez del pipeline de dibujado.
+
+## 10. Continuación misma sesión (2026-08-20, noche): datos reales de hardware + segunda regresión (relacionada) encontrada y arreglada
+
+El usuario instaló el build de la sección 9 en hardware real (FTP a
+`192.168.1.133:5000`, FBI) y jugó una sesión; el log (`mzm-debug.log`,
+descargado también por FTP) por fin da **datos reales, no de emulador**:
+
+```
+GPUTIME collectMs=19-36ms  drawMs=37-53ms   (decenas de muestras, sesión real)
+```
+
+Ambos números superan por sí solos el presupuesto de 16.67ms/frame para 60
+FPS, y `drawMs` es sistemáticamente ~1.5-2x `collectMs` — la primera señal
+fiable (no de Azahar) de dónde está yendo el tiempo. **Pendiente para la
+próxima sesión**, no investigado aún: si `drawMs` domina de verdad, el
+sospechoso es el volumen de draw calls de citro2d (miles de quads de 8x8
+por frame), no la recolección/decodificación de tiles.
+
+### 10.1 — La regresión seguía sin arreglarse: EVY en la clave de caché causaba desbordamiento del atlas completo
+
+El usuario reportó que, tras el build de la sección 9 (que en teoría
+arreglaba el bug de "negro fijo" de la sección 8), **seguían sin verse
+sprites de menús y escenarios**. El propio log de hardware lo explica:
+
+```
+GPUDIAG ... cache=4096 ...   (dos veces en una sesión -- el límite exacto del atlas)
+```
+
+El arreglo de la sección 9.1 (meter `EVY` en la clave de la caché para que
+un tile oscurecido durante un fundido no se quedara fijo) tuvo un efecto
+secundario no anticipado: durante un fundido, `EVY` cambia casi cada frame,
+así que cada tile afectado por brillo/oscurecido reclamaba un **slot nuevo
+del atlas por cada valor distinto de EVY que atravesaba** en vez de
+reutilizar uno — un solo fundido de pantalla completa (confirmado en el
+log: `bldcnt=00ff eff=3 eva=16`, oscurecido de toda la pantalla) podía
+agotar los 4096 slots del atlas en un único frame. Una vez agotado, todo
+tile que no cabía se dibujaba con el contenido (incorrecto) del slot 0 en
+su lugar -- la causa real de "escenarios y menús no se ven".
+
+**Arreglo:** revertido `EVY` a NO formar parte de la clave de hash/caché
+(vuelve a la clave original: offset+bpp+paleta+flips+isObj+brightAdjust).
+En su lugar, `EVY` se guarda por slot (`sCacheEvy[]`) y se comprueba como
+una condición de obsolescencia más -- igual que ya se hacía con
+`memcmp(sCacheSourceBytes[i], ...)` para tiles animados -- que fuerza una
+redecodificación **en el mismo slot** en vez de reservar uno nuevo. Esto
+arregla el bug de "negro fijo" de la sección 8 sin reintroducir el
+desbordamiento de la 10.1: un fundido sigue sin beneficiarse de la caché
+(se redecodifica su tile casi cada frame, igual que antes de que existiera
+la persistencia), pero ya no consume slots nuevos del atlas al hacerlo.
+
+También se subió el margen del reset proactivo de la caché (sección 8) de
+256 a `ATLAS_MAX_SLOTS/2` (2048) -- 256 nunca fue suficiente margen frente
+a un solo frame que introduce cientos/miles de combinaciones de tile
+nuevas (el propio peor caso teórico de un frame de BG a pantalla completa
+son ~2600 referencias).
+
+**Verificado:** compila limpio, sin corrupción visual en Azahar (misma
+limitación de siempre -- la intro de Azahar no activa BLDCNT, así que no
+reproduce ni el bug ni su arreglo). **Pendiente de confirmar en hardware
+real** con gameplay que atraviese fundidos/menús -- CIA ya subido por FTP.
+
+### Pendiente para la próxima sesión
+
+1. Confirmar en hardware que escenarios y menús ya no desaparecen, en una
+   sesión que incluya fundidos/transiciones (no solo gameplay estático).
+2. Con los `GPUTIME` de la sección 10 (reales, de hardware):
+   `drawMs` (~37-53ms) domina sobre `collectMs` (~19-36ms) -- investigar el
+   volumen de draw calls de citro2d como sospechoso principal antes que la
+   recolección/decodificación (que ya se optimizó en las secciones 7-8).
+3. Seguir vigilando el log `GPUDIAG` por si `cache=` se acerca de nuevo a
+   4096 en sesiones largas -- señal de que el margen de 2048 tampoco basta
+   y hace falta revisar de nuevo.
+
+## 11. Continuación misma sesión (2026-08-20, noche): la causa real -- la caché nunca comparó el CONTENIDO de la paleta, solo su número de banda
+
+El arreglo de la sección 10.1 (EVY fuera de la clave, comprobado por
+slot) se subió y probó; el usuario reportó: **sigue igual, pero al salir y
+volver a entrar en la sala de guardado, esa sala concreta se vio bien --
+el resto del mundo seguía en negro.** Esa pista (una sala se arregla sola
+al recargarla, el resto no) es la que llevó a la causa real, distinta de
+las dos anteriores (EVY y desbordamiento de atlas, secciones 8 y 10.1 --
+ambas reales pero no la causa principal de "todo en negro").
+
+**El bug:** `TileCacheKey` guarda `palBank`, un **índice** de banda de
+paleta (0-15), pero la comprobación de "¿sigue siendo válido este slot
+cacheado?" nunca comparaba el **contenido real** de esa banda (los colores
+RGB), solo los bytes de la gráfica del tile en VRAM (`sCacheSourceBytes`).
+Es una práctica muy común en juegos de GBA (y Zero Mission no es
+excepción) reutilizar la misma forma de tile genérica en muchas salas
+distintas, cargando una paleta diferente por sala en la misma banda -- es
+decir, **los bytes de VRAM del tile no cambian entre salas, solo la
+paleta**. Con la caché persistente, la primera sala visitada que usara una
+combinación (offset, banda) quedaba fijada con SUS colores para siempre;
+cualquier otra sala que reutilizara esa misma combinación con una paleta
+distinta heredaba los colores equivocados -- que a menudo eran negros o
+casi negros si la primera sala cacheada tenía una paleta oscura,
+exactamente el síntoma reportado. Salir y volver a entrar en la sala de
+guardado no arregla la clave de caché en sí -- fuerza una recarga de VRAM
+que sí dispara el `memcmp` de bytes de tile existente (sección 8) para esa
+sala, y con eso de rebote también se recalcula todo lo que hace referencia
+a esos bytes -- explica por qué "solo esa sala" se veía bien tras
+recargarla.
+
+**Arreglo:** nuevo snapshot por slot del contenido real de paleta usado en
+la última decodificación (`sCachePalBytes[slot]` -- 32 bytes/16 colores
+para un tile 4bpp con banda, o los 512 bytes/256 colores completos para un
+tile 8bpp, que no usa bandas). Comprobado por `memcmp` en cada acierto de
+caché, igual que ya se hacía con los bytes de VRAM del tile y con `EVY` --
+si la paleta ha cambiado, se redecodifica el mismo slot en el sitio
+(nunca se reserva uno nuevo, por la misma razón que EVY en la sección
+10.1).
+
+**Verificado:** compila limpio, sin corrupción visual en Azahar (misma
+limitación de siempre: la intro no visita varias salas con paletas
+distintas, así que no reproduce el bug ni prueba el arreglo con
+certeza). **Este es el candidato más fuerte hasta ahora para la causa
+real** -- encaja con el patrón exacto reportado (una sala se arregla,
+el resto no) de un modo que ni el bug de EVY ni el desbordamiento de
+atlas explicaban del todo. Subido por FTP, pendiente de que el usuario lo
+confirme en una sesión que visite varias salas distintas.
+
+### Pendiente para la próxima sesión (actualiza la lista de la sección 10)
+
+1. Confirmar en hardware, visitando **varias salas distintas** (no solo
+   entrando/saliendo de la misma), que escenarios y menús ya no se quedan
+   en negro/con colores equivocados.
+2. Si esto lo arregla del todo: retomar el rendimiento (`drawMs` domina
+   sobre `collectMs` en los datos de la sección 10 -- investigar el
+   volumen de draw calls de citro2d).
+3. Nota para el futuro: cualquier otro dato usado para decodificar un tile
+   que pueda variar independientemente de los bytes de VRAM del tile en sí
+   (como pasó con `palBank`→contenido de paleta, y con `brightAdjust`→
+   `EVY`) es un candidato sospechoso a auditar si vuelve a aparecer un
+   patrón de "contenido cacheado incorrecto que se arregla solo al forzar
+   una recarga".
