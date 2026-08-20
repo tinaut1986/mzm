@@ -40,6 +40,10 @@ void PortPsg_BeginBlock(unsigned int rate);
  * once shifted to 16-bit (see PSG_UNIT_SCALE in the implementation). */
 void PortPsg_NextSample(int* outLeft, int* outRight);
 
+/* Returns true if any PSG voice is currently producing sound, used to manage
+ * stream lifecycle. */
+bool PortPsg_IsAnyVoiceActive(void);
+
 /* Clear all synthesis state (phases, envelopes, noise LFSR). Called from the
  * glue's init so a fresh run never starts mid-note. */
 void PortPsg_Reset(void);
