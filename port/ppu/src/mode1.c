@@ -1468,9 +1468,9 @@ static inline void mode1_get_layer_shifts(float slider, int sign, int shifts[5])
         return;
     }
     float s = slider * (float)sign;
-    /* BG0: Foreground arches / fog (+2.0px pop-out towards player) */
-    shifts[0] = (int)( 2.0f * s + (s >= 0.0f ? 0.5f : -0.5f));
-    /* BG1: Platforms / floor (0.0px screen plane) */
+    /* BG0: Water / Lava / Level foreground (0.0px - aligned with platforms so lava integrates with mountains) */
+    shifts[0] = 0;
+    /* BG1: Platforms / solid ground (0.0px - reference screen plane) */
     shifts[1] = 0;
     /* BG2: Mid cave backdrop (-3.0px) */
     shifts[2] = (int)(-3.0f * s + (s >= 0.0f ? 0.5f : -0.5f));
@@ -1558,20 +1558,25 @@ static void mode1_composite_line_pass(int line, uint32_t* out_row,
 
     const bool native_no_effect = (frame_width <= MODE1_GBA_BG_CLIP_X && !any_window && effect == MODE1_BLEND_NONE);
     if (native_no_effect) {
+        const int sh2 = shifts[2];
+        const int sh3 = shifts[3];
+        const int sh_obj = shifts[4];
+
         for (int x = 0; x < frame_width; ++x) {
             uint32_t top_color = backdrop_color;
-            int obj_shift = (line < 26 && (x <= 115 || x >= 185)) ? 0 : shifts[4];
-            unsigned obj_p = 0xFF;
-            bool obj_semi = false;
-            uint32_t s_obj = mode1_sample_obj_shifted(obj_layer, obj_priority, x, obj_shift, frame_width, &obj_p, &obj_semi);
+            int cur_obj_shift = (line < 26 && (x <= 115 || x >= 185)) ? 0 : sh_obj;
+            int sx_obj = x + cur_obj_shift;
+            uint32_t s_obj = (sx_obj >= 0 && sx_obj < frame_width) ? obj_layer[sx_obj] : 0;
+            unsigned obj_p = (sx_obj >= 0 && sx_obj < frame_width) ? obj_priority[sx_obj] : 0xFF;
             bool obj_candidate = obj_enabled && (s_obj != 0u);
 
-            uint32_t s_bg[MODE1_GBA_BG_COUNT] = {
-                mode1_sample_bg_shifted(bg_layers[0], x, shifts[0], frame_width),
-                mode1_sample_bg_shifted(bg_layers[1], x, shifts[1], frame_width),
-                mode1_sample_bg_shifted(bg_layers[2], x, shifts[2], frame_width),
-                mode1_sample_bg_shifted(bg_layers[3], x, shifts[3], frame_width),
-            };
+            int sx2 = x + sh2;
+            int sx3 = x + sh3;
+            uint32_t s_bg0 = bg_layers[0][x];
+            uint32_t s_bg1 = bg_layers[1][x];
+            uint32_t s_bg2 = (sx2 >= 0 && sx2 < frame_width) ? bg_layers[2][sx2] : 0;
+            uint32_t s_bg3 = (sx3 >= 0 && sx3 < frame_width) ? bg_layers[3][sx3] : 0;
+            uint32_t s_bg[4] = { s_bg0, s_bg1, s_bg2, s_bg3 };
 
             for (int order_index = 0; order_index < MODE1_GBA_BG_COUNT; ++order_index) {
                 int bg = bg_order[order_index];
