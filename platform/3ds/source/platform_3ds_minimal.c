@@ -45,9 +45,7 @@ int Platform3DS_Init(void) {
         APT_SetAppCpuTimeLimit(30);
     }
 
-    /* Core 1 (SYSCORE) hosts the timing and audio threads so Core 0 (APPCORE)
-     * is 100% dedicated to game logic and rendering without constant context switching. */
-    threadCreate(Port_GbaTiming_ThreadMain, NULL, 4096, 0x24, 1, true);
+    threadCreate(Port_GbaTiming_ThreadMain, NULL, 4096, 0x20, -1, true);
 
     sRunning = true;
     return 1;
@@ -68,7 +66,7 @@ bool Platform3DS_IsNew3DS(void) {
 }
 
 bool Platform3DS_CanUseCore1(void) {
-    return true;
+    return sIsNew3DS;
 }
 
 unsigned Platform3DS_Core1TimeLimit(void) {

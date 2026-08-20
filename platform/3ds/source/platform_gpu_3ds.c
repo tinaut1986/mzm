@@ -243,14 +243,14 @@ static void DrawTopImageStereo(const uint32_t* leftPixels, const uint32_t* right
     sTopPresentWidth = width;
 
     GSPGPU_FlushDataCache(leftPixels, TOP_TEXTURE_WIDTH * 160u * sizeof(uint32_t));
-    const unsigned sourceHeight = sOld3DSProfile ? 160u : TOP_TEXTURE_HEIGHT;
+    const unsigned sourceHeight = 160u;
     C3D_SyncDisplayTransfer((u32*)leftPixels, GX_BUFFER_DIM(TOP_TEXTURE_WIDTH, sourceHeight),
                             (u32*)sTopTexture.data, GX_BUFFER_DIM(TOP_TEXTURE_WIDTH, TOP_TEXTURE_HEIGHT),
                             TextureTransfer());
 
     const uint32_t* rightSrc = (rightPixels && sTopRightTexture.data) ? rightPixels : leftPixels;
     C3D_Tex* rightTex = (rightPixels && sTopRightTexture.data) ? &sTopRightTexture : &sTopTexture;
-    if (rightPixels && sTopRightTexture.data) {
+    if (rightPixels && rightPixels != leftPixels && sTopRightTexture.data) {
         GSPGPU_FlushDataCache(rightPixels, TOP_TEXTURE_WIDTH * 160u * sizeof(uint32_t));
         C3D_SyncDisplayTransfer((u32*)rightPixels, GX_BUFFER_DIM(TOP_TEXTURE_WIDTH, sourceHeight),
                                 (u32*)sTopRightTexture.data, GX_BUFFER_DIM(TOP_TEXTURE_WIDTH, TOP_TEXTURE_HEIGHT),
