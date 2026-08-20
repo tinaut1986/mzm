@@ -1816,7 +1816,7 @@ static bool mode1_render_stereo_direct_line(int line, uint16_t dispcnt, int fram
 
             for (int x = 0; x < frame_width; ++x) {
                 int sx = x + sh_l;
-                if (sx >= 0 && sx < frame_width && temp_bg[sx] != 0u) {
+                if ((unsigned)sx < (unsigned)frame_width && temp_bg[sx] != 0u) {
                     out_left[x] = temp_bg[sx];
                     win_pri_left[x] = temp_pri[sx];
                 }
@@ -1824,7 +1824,7 @@ static bool mode1_render_stereo_direct_line(int line, uint16_t dispcnt, int fram
             if (out_right) {
                 for (int x = 0; x < frame_width; ++x) {
                     int sx = x + sh_r;
-                    if (sx >= 0 && sx < frame_width && temp_bg[sx] != 0u) {
+                    if ((unsigned)sx < (unsigned)frame_width && temp_bg[sx] != 0u) {
                         out_right[x] = temp_bg[sx];
                         win_pri_right[x] = temp_pri[sx];
                     }
@@ -1846,14 +1846,14 @@ static bool mode1_render_stereo_direct_line(int line, uint16_t dispcnt, int fram
         for (int x = 0; x < frame_width; ++x) {
             int cur_sh_l = (line < 26 && (x <= 115 || x >= 185)) ? 0 : sh_l;
             int sx_l = x + cur_sh_l;
-            if (sx_l >= 0 && sx_l < frame_width && obj_layer[sx_l] != 0u && obj_priority[sx_l] <= win_pri_left[x]) {
+            if ((unsigned)sx_l < (unsigned)frame_width && obj_layer[sx_l] != 0u && obj_priority[sx_l] <= win_pri_left[x]) {
                 out_left[x] = obj_layer[sx_l];
             }
 
             if (out_right) {
                 int cur_sh_r = (line < 26 && (x <= 115 || x >= 185)) ? 0 : sh_r;
                 int sx_r = x + cur_sh_r;
-                if (sx_r >= 0 && sx_r < frame_width && obj_layer[sx_r] != 0u && obj_priority[sx_r] <= win_pri_right[x]) {
+                if ((unsigned)sx_r < (unsigned)frame_width && obj_layer[sx_r] != 0u && obj_priority[sx_r] <= win_pri_right[x]) {
                     out_right[x] = obj_layer[sx_r];
                 }
             }
