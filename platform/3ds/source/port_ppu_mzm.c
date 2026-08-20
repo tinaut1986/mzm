@@ -130,7 +130,14 @@ bool Port_PPU_Init(void) {
     return true;
 }
 
-extern void Port_DebugLog(const char* msg);
+/* Every call site below this point runs from the per-frame present path
+ * (PORT_VERBOSE_FRAME_LOG/PORT_PPU_PERF_LOG diagnostics), never a boot/hang
+ * checkpoint, so redirect to the buffered logger -- see port_debug_log.h's
+ * comment on why the unbuffered version's per-call file I/O is a real cost
+ * here (confirmed dominating "upload" time misattribution for most of this
+ * session -- docs/3ds-port-gpu-renderer-status-2026-08-20.md section 16). */
+extern void Port_DebugLogBuffered(const char* msg);
+#define Port_DebugLog Port_DebugLogBuffered
 
 void Port_PPU_PresentFrame(void) {
     if (!sReady) return;

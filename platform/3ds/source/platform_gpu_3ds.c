@@ -467,8 +467,10 @@ bool PlatformGpu3DS_EndBottom(const uint32_t* pixels, bool changed) {
         if ((sCmdBufLogCounter++ % 30u) == 0u) {
             char msg[64];
             snprintf(msg, sizeof(msg), "CMDBUF usage=%.1f%%", (double)(C3D_GetCmdBufUsage() * 100.0f));
-            extern void Port_DebugLog(const char* msg);
-            Port_DebugLog(msg);
+            /* Buffered: this is per-frame diagnostic logging (throttled),
+             * not a boot/hang checkpoint -- see port_debug_log.h. */
+            extern void Port_DebugLogBuffered(const char* msg);
+            Port_DebugLogBuffered(msg);
         }
     }
 #endif

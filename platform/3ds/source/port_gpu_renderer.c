@@ -24,7 +24,13 @@
 
 #ifdef PORT_GPU_RENDERER_DIAG_LOG
 #include <stdio.h>
-extern void Port_DebugLog(const char* msg);
+/* Buffered, not Port_DebugLog -- this is per-frame diagnostic logging, not
+ * a boot/hang checkpoint. See port_debug_log.h's comment: the unbuffered
+ * version's per-call fopen/fwrite/fclose measured as the actual dominant
+ * cost misattributed to the atlas upload for most of this session (see
+ * docs/3ds-port-gpu-renderer-status-2026-08-20.md section 16). */
+#include "port_debug_log.h"
+#define Port_DebugLog Port_DebugLogBuffered
 #endif
 
 /* Emulated GBA memory buffers (port/port_gba_mem.c). */
@@ -136,7 +142,6 @@ typedef struct DrawItem {
 } DrawItem;
 
 static C3D_Tex sAtlasTexture;
-static u32* sAtlasPixels;
 static TileCacheKey sCacheKeys[ATLAS_MAX_SLOTS];
 static int sCacheCount;
 static DrawItem sDrawItems[MAX_DRAW_ITEMS];
@@ -171,10 +176,10 @@ static int32_t sHashChainNext[ATLAS_MAX_SLOTS];
  * was last decoded. A memcmp of <=64 bytes is far cheaper than a full
  * decode (palette lookup + optional brighten/darken per pixel). */
 static uint8_t sCacheSourceBytes[ATLAS_MAX_SLOTS][64];
-/* Palette bytes actually sampled for this slot's last decode -- 32 bytes
- * (16 colors) for a 4bpp tile's palBank slice, or the full 512-byte
+/* Hash of the palette bytes actually sampled for this slot's last decode --
+ * the bank's 32 bytes (16 colors) for a 4bpp tile, or the full 512-byte
  * palette (256 colors) for an 8bpp tile (which indexes the whole palette
- * directly, no banking). MISSING from the original version of this cache:
+ * directly, no banking). MISSING from an earlier version of this cache:
  * TileCacheKey only stores `palBank`, a numeric index, never the actual
  * RGB content living at that bank -- so a hash hit only proved the same
  * VRAM tile GRAPHIC (pixel indices) was being reused with the same bank
@@ -186,10 +191,23 @@ static uint8_t sCacheSourceBytes[ATLAS_MAX_SLOTS][64];
  * fresh decode with its own palette; every other already-visited room
  * stayed rendered with whichever room's palette had been cached first for
  * that tile+bank combination, appearing black when that first cached
- * palette happened to be a dark one). Compared via memcmp on a cache hit,
- * same as sCacheSourceBytes, and redecoded in place (not a new slot) on
- * mismatch. */
-static uint8_t sCachePalBytes[ATLAS_MAX_SLOTS][512];
+ * palette happened to be a dark one).
+ *
+ * A first fix stored and memcmp'd the raw palette bytes per slot (up to
+ * 512 bytes) on EVERY tile reference (not just unique tiles -- up to
+ * ~2500+ references/frame), which showed up as real cost in
+ * GPUTIME collectMs on hardware. The palette bytes being compared are the
+ * same for every reference sharing a (bpp, bank) this frame (gBgPltt/
+ * gObjPltt don't change mid-frame), so hashing each relevant bank ONCE per
+ * frame (see sBgPalBankHash/sBgPalFullHash/sObjPalBankHash/sObjPalFullHash
+ * in Port_GpuRenderer_RenderFrame) and comparing that 4-byte hash per
+ * reference instead is far cheaper while catching the exact same staleness
+ * condition -- a 32-bit FNV-1a hash collision between two genuinely
+ * different palettes is astronomically unlikely for this program's actual
+ * palette value space, an accepted tradeoff (same one any hash-based cache
+ * makes) for cutting a >100KB/frame memcmp bill down to a few thousand
+ * integer compares. */
+static uint32_t sCachePalHash[ATLAS_MAX_SLOTS];
 /* evy (0..16) used the last time this slot was decoded, only meaningful
  * when the slot's brightAdjust != NONE. NOT part of the hash key (see
  * TileCacheKey's comment) -- checked as a second staleness condition
@@ -197,14 +215,40 @@ static uint8_t sCachePalBytes[ATLAS_MAX_SLOTS][512];
  * SAME slot in place when it no longer matches instead of minting a new
  * one, so a fade (evy changing every frame) can't exhaust the atlas. */
 static uint8_t sCacheEvy[ATLAS_MAX_SLOTS];
-/* Bounding tile-row range actually written to the atlas THIS frame (a
- * cache hit with unchanged source bytes writes nothing) -- lets the upload
- * at the end of RenderFrame transfer only the rows that changed instead of
- * the whole grown-over-time cache. Slots are no longer a contiguous prefix
- * once the cache persists across frames (a hit can redecode an old slot
- * out of sequence), so this replaces the sCacheCount-based prefix height
- * used previously. */
-static int sDirtyMinRow, sDirtyMaxRow;
+/* Bitmask of tile-rows actually written to the atlas THIS frame (a cache
+ * hit with unchanged source bytes writes nothing) -- ATLAS_MAX_SLOTS/
+ * ATLAS_TILES_PER_ROW is exactly 64 rows, so one bit per row fits a single
+ * uint64_t. Lets the upload at the end of RenderFrame transfer only the
+ * rows that actually changed. A single min..max CONTIGUOUS RANGE (an
+ * earlier version of this) looked sufficient but wasn't: once the cache
+ * persists across frames, a frame can touch a low-numbered row (an
+ * in-place redecode of some old, still-referenced slot -- an animated
+ * tile, or a stale palette/evy) and a high-numbered row (a genuinely new
+ * tile, appended at the current sCacheCount) in the SAME frame, and a
+ * min..max range covering both ends up spanning nearly the WHOLE atlas
+ * even though only two 8px rows actually changed. Confirmed on hardware:
+ * GPUTIME's new tile/upload split (see PORT_GPU_RENDERER_CPU_TICKS_PER_MSEC's
+ * comment) showed the tile-collection work itself costing ~1ms/frame while
+ * the "only transfer the dirty rows" atlas upload still cost ~20ms/frame --
+ * the range-based version wasn't actually narrow in practice. A bitmask +
+ * transferring each contiguous RUN of set bits separately fixes this
+ * properly instead of guessing at a better single range. */
+static uint64_t sDirtyRowMask;
+
+/* Per-frame palette hashes (see sCachePalHash's comment): computed ONCE per
+ * frame in Port_GpuRenderer_RenderFrame from gBgPltt/gObjPltt, then reused
+ * by every tile reference that frame instead of re-hashing/re-comparing
+ * palette bytes per reference. Bank hashes cover the 16 four-bit banks (32
+ * bytes/16 colors each); full hashes cover the whole 512-byte/256-color
+ * palette (what an 8bpp tile, which doesn't bank, actually samples from). */
+static uint32_t sBgPalBankHash[16], sObjPalBankHash[16];
+static uint32_t sBgPalFullHash, sObjPalFullHash;
+
+static inline uint32_t HashBytes(const uint8_t* data, size_t len) {
+    uint32_t h = 2166136261u;
+    for (size_t i = 0; i < len; ++i) h = (h ^ data[i]) * 16777619u;
+    return h;
+}
 
 static inline uint32_t HashTileCacheKey(const TileCacheKey* k) {
     uint32_t h = k->byteOffset;
@@ -259,18 +303,46 @@ static const float kTierEyeOffsetPx[5] = {
 bool Port_GpuRenderer_IsActive(void) { return sGpuRendererActive; }
 void Port_GpuRenderer_SetActive(bool active) { sGpuRendererActive = active; }
 
+/* Cache-maintenance for CPU-written texture memory (see
+ * Port_GpuRenderer_Init's comment on why sAtlasTexture is CPU-writable
+ * linear memory now). svcFlushProcessDataCache is a KERNEL SYSCALL --
+ * costs at most a few microseconds for a region this size -- unlike
+ * GSPGPU_FlushDataCache, which despite the similar name is an IPC call to
+ * the gsp::Gpu *service process* (it returns a Result, ctrulib's
+ * convention for service calls): a real round trip through another
+ * process, which is what turned out to still cost ~18-30ms/frame on
+ * hardware even after removing the actual C3D_SyncDisplayTransfer -- the
+ * exact same class of cost this whole change was meant to eliminate,
+ * just hiding behind a deceptively similar-sounding function name.
+ * citro3d's own C3D_TexFlush() (which this could have called instead)
+ * wraps this same syscall but only flushes a whole texture at once; this
+ * wrapper keeps the dirty-row-range granularity from sDirtyRowMask. */
+static inline void FlushAtlasRange(void* addr, size_t size) {
+    svcFlushProcessDataCache(CUR_PROCESS_HANDLE, (u32)addr, (u32)size);
+}
+
 bool Port_GpuRenderer_Init(void) {
     if (sInitialized) return true;
 
-    sAtlasPixels = (u32*)linearMemAlign(ATLAS_DIM * ATLAS_DIM * sizeof(u32), 0x80);
-    if (!sAtlasPixels) return false;
-    memset(sAtlasPixels, 0, ATLAS_DIM * ATLAS_DIM * sizeof(u32));
-
-    if (!C3D_TexInitVRAM(&sAtlasTexture, ATLAS_DIM, ATLAS_DIM, GPU_RGBA8)) {
-        linearFree(sAtlasPixels);
-        sAtlasPixels = NULL;
-        return false;
-    }
+    /* C3D_TexInit (NOT C3D_TexInitVRAM) -- allocates the texture's backing
+     * store in regular linear (FCRAM) memory via linearAlloc internally,
+     * which the CPU can write directly. Deliberate: see
+     * DecodeTileIntoSlot's comment for why this lets tile decoding skip
+     * C3D_SyncDisplayTransfer (the GX/GSP-IPC-bound blocking call that
+     * measured as ~19-20ms/frame on real hardware, dominating collectMs,
+     * independent of how little data actually changed -- see
+     * docs/3ds-port-gpu-renderer-status-2026-08-20.md section 14)
+     * entirely, in favor of writing already-swizzled pixels straight into
+     * the texture and a plain cache-maintenance syscall (see
+     * FlushAtlasRange below) -- no GSP IPC round trip. No separate
+     * CPU-side staging buffer needed either -- sAtlasTexture.data itself
+     * is written directly now. VRAM-backed textures trade this
+     * CPU-writability for a separate memory bus (less FCRAM/GPU
+     * contention), not worth it here given the transfer step's cost
+     * dwarfed any bandwidth benefit. */
+    if (!C3D_TexInit(&sAtlasTexture, ATLAS_DIM, ATLAS_DIM, GPU_RGBA8)) return false;
+    memset(sAtlasTexture.data, 0, ATLAS_DIM * ATLAS_DIM * sizeof(u32));
+    FlushAtlasRange(sAtlasTexture.data, ATLAS_DIM * ATLAS_DIM * sizeof(u32));
     C3D_TexSetFilter(&sAtlasTexture, GPU_NEAREST, GPU_NEAREST);
 
     for (int i = 0; i < HASH_BUCKETS; ++i) sHashBucketHead[i] = -1;
@@ -282,9 +354,7 @@ bool Port_GpuRenderer_Init(void) {
 
 void Port_GpuRenderer_Shutdown(void) {
     if (!sInitialized) return;
-    C3D_TexDelete(&sAtlasTexture);
-    if (sAtlasPixels) linearFree(sAtlasPixels);
-    sAtlasPixels = NULL;
+    C3D_TexDelete(&sAtlasTexture); /* also frees the linearAlloc'd backing store */
     sInitialized = false;
     sGpuRendererActive = false;
 }
@@ -349,52 +419,79 @@ static int sBldEva, sBldEvb, sBldEvy;
 
 static inline bool BldIsFirstTarget(uint16_t bldcnt, int layerId) { return ((bldcnt >> layerId) & 1u) != 0u; }
 
-/* Decodes one 8x8 tile (4bpp or 8bpp, GBA-packed) from `src` into the atlas
- * pixel buffer at `slot`, applying `pal`/`palBank`, flips, and (when this
- * tile's layer is a BLDCNT first-target and the active effect is
- * brighten/darken) the brightness adjustment. Records the raw source bytes
- * into sCacheSourceBytes so a future call can detect via memcmp whether the
- * underlying VRAM tile changed (see GetOrDecodeTileSlot) without redecoding
- * pixel-by-pixel, and widens sDirtyMinRow/sDirtyMaxRow so the end-of-frame
- * upload only transfers the atlas rows actually touched this frame. */
+/* PICA200 8x8-texel tile swizzle (Z-order/Morton within the tile) -- the
+ * exact per-texel reordering that GX_TRANSFER_OUT_TILED(1) used to apply
+ * for us when tile pixels were decoded into a plain linear staging buffer
+ * and then handed to C3D_SyncDisplayTransfer. Now that DecodeTileIntoSlot
+ * writes straight into the (CPU-writable, see Port_GpuRenderer_Init)
+ * texture memory, this table does that reordering by hand instead, so the
+ * GX transfer step (and its ~19-20ms/frame blocking cost, independent of
+ * how little data changed -- see
+ * docs/3ds-port-gpu-renderer-status-2026-08-20.md section 14) isn't
+ * needed at all. Standard table, widely reproduced across 3DS homebuild
+ * texture tooling for exactly this format. */
+static const uint8_t kSwizzleLUT[64] = {
+    0,  1,  4,  5, 16, 17, 20, 21,
+    2,  3,  6,  7, 18, 19, 22, 23,
+    8,  9, 12, 13, 24, 25, 28, 29,
+    10, 11, 14, 15, 26, 27, 30, 31,
+    32, 33, 36, 37, 48, 49, 52, 53,
+    34, 35, 38, 39, 50, 51, 54, 55,
+    40, 41, 44, 45, 56, 57, 60, 61,
+    42, 43, 46, 47, 58, 59, 62, 63,
+};
+
+/* Decodes one 8x8 tile (4bpp or 8bpp, GBA-packed) from `src` directly into
+ * this slot's swizzled position in sAtlasTexture.data (see kSwizzleLUT),
+ * applying `pal`/`palBank`, flips, and (when this tile's layer is a
+ * BLDCNT first-target and the active effect is brighten/darken) the
+ * brightness adjustment. Records the raw source bytes into
+ * sCacheSourceBytes so a future call can detect via memcmp whether the
+ * underlying VRAM tile changed (see GetOrDecodeTileSlot) without
+ * redecoding pixel-by-pixel, and sets this slot's row bit in
+ * sDirtyRowMask so the end-of-frame cache flush only covers the atlas
+ * rows actually touched this frame. */
 static void DecodeTileIntoSlot(int slot, const uint8_t* src, bool bpp8, const uint16_t* pal, int palBank,
-                               bool hflip, bool vflip, BrightAdjust brightAdjust) {
-    int slotX = (slot % ATLAS_TILES_PER_ROW) * 8;
-    int slotY = (slot / ATLAS_TILES_PER_ROW) * 8;
+                               bool hflip, bool vflip, BrightAdjust brightAdjust, uint32_t palHash) {
+    /* Each slot is one 64-texel (8x8) block; blocks are stored row-major
+     * across the atlas (ATLAS_TILES_PER_ROW blocks per block-row), same
+     * layout GX_TRANSFER_OUT_TILED(1) used to produce -- confirmed by the
+     * dirty-row byte-offset math elsewhere in this file (row*8*rowBytes)
+     * already relying on exactly this ordering. */
+    u32* blockBase = (u32*)sAtlasTexture.data + (size_t)slot * 64;
 
     for (int row = 0; row < 8; ++row) {
         int srcRow = vflip ? (7 - row) : row;
-        u32* dst = sAtlasPixels + (size_t)(slotY + row) * ATLAS_DIM + slotX;
+        u32 pixels[8];
         if (!bpp8) {
             const uint8_t* rowSrc = src + srcRow * 4;
             for (int col = 0; col < 8; ++col) {
                 int srcCol = hflip ? (7 - col) : col;
                 uint8_t byte = rowSrc[srcCol / 2];
                 uint8_t idx = (srcCol & 1) ? (byte >> 4) & 0x0Fu : byte & 0x0Fu;
-                dst[col] = Bgr555ToRgba8(pal[palBank * 16 + idx], idx == 0);
+                pixels[col] = Bgr555ToRgba8(pal[palBank * 16 + idx], idx == 0);
             }
         } else {
             const uint8_t* rowSrc = src + srcRow * 8;
             for (int col = 0; col < 8; ++col) {
                 int srcCol = hflip ? (7 - col) : col;
                 uint8_t idx = rowSrc[srcCol];
-                dst[col] = Bgr555ToRgba8(pal[idx], idx == 0);
+                pixels[col] = Bgr555ToRgba8(pal[idx], idx == 0);
             }
         }
         if (brightAdjust == BRIGHT_ADJUST_BRIGHTEN) {
-            for (int col = 0; col < 8; ++col) dst[col] = ApplyBrighten(dst[col], sBldEvy);
+            for (int col = 0; col < 8; ++col) pixels[col] = ApplyBrighten(pixels[col], sBldEvy);
         } else if (brightAdjust == BRIGHT_ADJUST_DARKEN) {
-            for (int col = 0; col < 8; ++col) dst[col] = ApplyDarken(dst[col], sBldEvy);
+            for (int col = 0; col < 8; ++col) pixels[col] = ApplyDarken(pixels[col], sBldEvy);
         }
+        for (int col = 0; col < 8; ++col) blockBase[kSwizzleLUT[row * 8 + col]] = pixels[col];
     }
     memcpy(sCacheSourceBytes[slot], src, bpp8 ? 64u : 32u);
-    memcpy(sCachePalBytes[slot], bpp8 ? (const uint8_t*)pal : (const uint8_t*)(pal + palBank * 16),
-           bpp8 ? 512u : 32u);
+    sCachePalHash[slot] = palHash;
     sCacheEvy[slot] = (brightAdjust != BRIGHT_ADJUST_NONE) ? (uint8_t)sBldEvy : 0;
 
     int tileRow = slot / ATLAS_TILES_PER_ROW;
-    if (tileRow < sDirtyMinRow) sDirtyMinRow = tileRow;
-    if (tileRow > sDirtyMaxRow) sDirtyMaxRow = tileRow;
+    sDirtyRowMask |= (1ull << tileRow);
     sAnyDirtySlot = true;
 }
 
@@ -416,8 +513,11 @@ static int GetOrDecodeTileSlot(uint32_t byteOffset, bool bpp8, const uint16_t* p
     };
     const uint8_t* src = gVram + byteOffset;
     const size_t tileBytes = bpp8 ? 64u : 32u;
-    const uint8_t* palSrc = bpp8 ? (const uint8_t*)pal : (const uint8_t*)(pal + palBank * 16);
-    const size_t palBytes = bpp8 ? 512u : 32u;
+    /* Precomputed once per frame (see sBgPalBankHash/sBgPalFullHash/
+     * sObjPalBankHash/sObjPalFullHash) instead of hashing/comparing
+     * palette bytes per reference -- see sCachePalHash's comment. */
+    const uint32_t palHash =
+        isObj ? (bpp8 ? sObjPalFullHash : sObjPalBankHash[palBank]) : (bpp8 ? sBgPalFullHash : sBgPalBankHash[palBank]);
     const uint8_t curEvy = (brightAdjust != BRIGHT_ADJUST_NONE) ? (uint8_t)sBldEvy : 0;
     uint32_t h = HashTileCacheKey(&key);
     for (int32_t i = sHashBucketHead[h]; i >= 0; i = sHashChainNext[i]) {
@@ -425,17 +525,16 @@ static int GetOrDecodeTileSlot(uint32_t byteOffset, bool bpp8, const uint16_t* p
         /* Stale if the underlying VRAM tile graphic changed (animated
          * tiles), or the palette bank's actual colors changed (rooms
          * commonly reuse the same tile shapes with a different palette
-         * loaded into the same bank -- see sCachePalBytes's comment), or --
+         * loaded into the same bank -- see sCachePalHash's comment), or --
          * for a brighten/darken tile -- evy changed since this exact slot
          * was last decoded (a fade ramping evy frame to frame). Any of the
          * three redecodes IN PLACE (same slot) rather than minting a new
          * one -- see TileCacheKey's comment for why the latter must never
          * allocate a fresh slot. */
-        if (memcmp(sCacheSourceBytes[i], src, tileBytes) == 0 && memcmp(sCachePalBytes[i], palSrc, palBytes) == 0 &&
-            sCacheEvy[i] == curEvy) {
+        if (memcmp(sCacheSourceBytes[i], src, tileBytes) == 0 && sCachePalHash[i] == palHash && sCacheEvy[i] == curEvy) {
             return i;
         }
-        DecodeTileIntoSlot(i, src, bpp8, pal, palBank, hflip, vflip, brightAdjust);
+        DecodeTileIntoSlot(i, src, bpp8, pal, palBank, hflip, vflip, brightAdjust, palHash);
         return i;
     }
     if (sCacheCount >= ATLAS_MAX_SLOTS) {
@@ -452,7 +551,7 @@ static int GetOrDecodeTileSlot(uint32_t byteOffset, bool bpp8, const uint16_t* p
     sCacheKeys[slot] = key;
     sHashChainNext[slot] = sHashBucketHead[h];
     sHashBucketHead[h] = slot;
-    DecodeTileIntoSlot(slot, src, bpp8, pal, palBank, hflip, vflip, brightAdjust);
+    DecodeTileIntoSlot(slot, src, bpp8, pal, palBank, hflip, vflip, brightAdjust, palHash);
     return slot;
 }
 
@@ -776,6 +875,7 @@ bool Port_GpuRenderer_CanRenderFrame(void) {
  * rounds of optimization here were even touching the actual bottleneck. */
 #define PORT_GPU_RENDERER_CPU_TICKS_PER_MSEC (268111856.0 / 1000.0)
 static float sLastCollectMs, sLastDrawMs;
+static float sLastTileCollectMs, sLastAtlasUploadMs; /* collectMs split in two, see below */
 
 void Port_GpuRenderer_GetLastFrameTimingMs(float* outCollectMs, float* outDrawMs) {
     if (outCollectMs) *outCollectMs = sLastCollectMs;
@@ -808,9 +908,20 @@ void Port_GpuRenderer_RenderFrame(void) {
     }
     sDrawItemCount = 0;
     sAnyDirtySlot = false;
-    sDirtyMinRow = ATLAS_TILES_PER_ROW;
-    sDirtyMaxRow = -1;
+    sDirtyRowMask = 0;
     for (int i = 0; i < SORT_KEY_BUCKETS; ++i) sBucketHead[i] = -1;
+
+    /* Palette hashes computed ONCE per frame here rather than per tile
+     * reference -- see sCachePalHash's comment for why (used to be a
+     * per-reference memcmp of up to 512 bytes, a real cost in GPUTIME
+     * collectMs on hardware). gBgPltt/gObjPltt don't change mid-frame, so
+     * every reference this frame can safely reuse these. */
+    for (int b = 0; b < 16; ++b) {
+        sBgPalBankHash[b] = HashBytes(gBgPltt + b * 32, 32);
+        sObjPalBankHash[b] = HashBytes(gObjPltt + b * 32, 32);
+    }
+    sBgPalFullHash = HashBytes(gBgPltt, 512);
+    sObjPalFullHash = HashBytes(gObjPltt, 512);
 
     uint16_t dispcnt = (uint16_t)(gIoMem[0] | (gIoMem[1] << 8));
     bool obj1D = (dispcnt & (1u << 6)) != 0;
@@ -883,36 +994,52 @@ void Port_GpuRenderer_RenderFrame(void) {
     }
 #endif
 
+    /* Split out from the rest of collectMs (see PORT_GPU_RENDERER_CPU_TICKS_PER_MSEC's
+     * comment) so a hardware session can tell apart tile collection/hash/
+     * decode/sort cost from the atlas cache-flush below. Placed AFTER the
+     * GPUDIAG block above, not before it: an earlier version of this
+     * timestamp sat before that block, silently folding its
+     * Port_DebugLog() call (real file I/O to the SD card, on 1-in-5
+     * frames) into "upload" -- which stayed ~18-26ms across two different
+     * flush-primitive fixes (section 15) simply because neither fix
+     * touched the actual cost being measured. Moved here so "upload"
+     * finally isolates just the flush call itself. */
+    u64 tBeforeUpload = svcGetSystemTick();
+    sLastTileCollectMs = (float)((double)(tBeforeUpload - tStart) / PORT_GPU_RENDERER_CPU_TICKS_PER_MSEC);
+
     if (sAnyDirtySlot) {
-        /* Only transfer the tile-row band actually written this frame
-         * (sDirtyMinRow..sDirtyMaxRow, tracked by DecodeTileIntoSlot) rather
-         * than the whole 512x512 (1MB) atlas or even the whole grown-over-
-         * time cache -- now that the cache persists across frames (see
-         * sHashBucketHead's comment) a cache HIT with unchanged source bytes
-         * writes nothing at all, so most frames only touch a handful of
-         * rows (newly-seen tiles this frame, plus any animated tile that
-         * happened to change) regardless of how large sCacheCount has grown
-         * to overall. C3D_SyncDisplayTransfer blocks the CPU until it
-         * completes, so minimizing its size matters. Rows are 8px each
-         * (GX_TRANSFER_SCALE_NO tiling works on 8x8 blocks), and the offset
-         * into both buffers must land on an 8-row boundary for the same
-         * reason -- sDirtyMinRow/Max are tile-row indices so this holds by
-         * construction. */
-        int height = (sDirtyMaxRow - sDirtyMinRow + 1) * 8;
+        /* DecodeTileIntoSlot now writes swizzled texels straight into
+         * sAtlasTexture.data (see its comment and kSwizzleLUT) -- no GX
+         * transfer needed at all, just make sure the GPU sees the CPU's
+         * writes via a plain cache flush. This is what actually removes
+         * the ~19-20ms/frame blocking cost that C3D_SyncDisplayTransfer
+         * had, independent of transferred size (see
+         * docs/3ds-port-gpu-renderer-status-2026-08-20.md section 14) --
+         * flushing each dirty row-run separately (same byte-offset math as
+         * the old transfer-based version) rather than the whole atlas is
+         * still worth doing, just far cheaper to begin with now. */
         size_t rowBytes = (size_t)ATLAS_DIM * sizeof(u32);
-        size_t byteOffset = (size_t)sDirtyMinRow * 8 * rowBytes;
-        u32* srcPtr = (u32*)((uint8_t*)sAtlasPixels + byteOffset);
-        u32* dstPtr = (u32*)((uint8_t*)sAtlasTexture.data + byteOffset);
-        GSPGPU_FlushDataCache(srcPtr, (size_t)height * rowBytes);
-        C3D_SyncDisplayTransfer(srcPtr, GX_BUFFER_DIM(ATLAS_DIM, height), dstPtr, GX_BUFFER_DIM(ATLAS_DIM, height),
-                                GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(1) | GX_TRANSFER_RAW_COPY(0) |
-                                    GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) |
-                                    GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGBA8) |
-                                    GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO));
+        uint64_t mask = sDirtyRowMask;
+        while (mask != 0) {
+            int startRow = __builtin_ctzll(mask);
+            uint64_t shifted = mask >> startRow; /* bit 0 is guaranteed set */
+            /* Run length = index of the first zero bit above startRow.
+             * __builtin_ctzll(~shifted) is undefined for an all-ones input
+             * (~shifted == 0), which happens exactly when every remaining
+             * row from startRow to 63 is dirty -- handled directly instead. */
+            int runLen = (shifted == ~0ull) ? (64 - startRow) : __builtin_ctzll(~shifted);
+            uint64_t clearMask = (runLen >= 64) ? ~0ull : (((1ull << runLen) - 1ull) << startRow);
+            mask &= ~clearMask;
+
+            int height = runLen * 8;
+            size_t byteOffset = (size_t)startRow * 8 * rowBytes;
+            FlushAtlasRange((uint8_t*)sAtlasTexture.data + byteOffset, (size_t)height * rowBytes);
+        }
     }
 
     u64 tAfterCollect = svcGetSystemTick();
     sLastCollectMs = (float)((double)(tAfterCollect - tStart) / PORT_GPU_RENDERER_CPU_TICKS_PER_MSEC);
+    sLastAtlasUploadMs = (float)((double)(tAfterCollect - tBeforeUpload) / PORT_GPU_RENDERER_CPU_TICKS_PER_MSEC);
 
     float slider3d = osGet3DSliderState();
     const float scale = 1.5f;
@@ -1106,15 +1233,18 @@ void Port_GpuRenderer_RenderFrame(void) {
      * renderer's own CPU-side cost -- see the comment on
      * PORT_GPU_RENDERER_CPU_TICKS_PER_MSEC above for why neither the
      * PORT_PPU_PERF_LOG numbers in port_ppu_mzm.c nor citro3d's own
-     * gpuDraw/gpuProc counters cover it. collectMs = VRAM reads + tile
-     * cache hashing/memcmp/decoding + bucket sort; drawMs = atlas upload +
-     * both eyes' C2D_DrawImage submission. Compare each against the
-     * 16.67ms/frame budget for 60 FPS. */
+     * gpuDraw/gpuProc counters cover it. collectMs = tileMs (VRAM reads +
+     * tile cache hashing/memcmp/decoding + bucket sort) + uploadMs (the
+     * atlas GPU transfer, C3D_SyncDisplayTransfer -- blocks the CPU, split
+     * out separately since real DMA/bus latency on hardware isn't
+     * something Azahar models accurately); drawMs = both eyes' C2D_DrawImage
+     * submission. Compare each against the 16.67ms/frame budget for 60 FPS. */
     {
         static unsigned sTimingLogCounter;
         if ((sTimingLogCounter++ % 30u) == 0u) {
-            char msg[80];
-            snprintf(msg, sizeof(msg), "GPUTIME collectMs=%.2f drawMs=%.2f", (double)sLastCollectMs,
+            char msg[112];
+            snprintf(msg, sizeof(msg), "GPUTIME collectMs=%.2f(tile=%.2f upload=%.2f) drawMs=%.2f",
+                     (double)sLastCollectMs, (double)sLastTileCollectMs, (double)sLastAtlasUploadMs,
                      (double)sLastDrawMs);
             Port_DebugLog(msg);
         }

@@ -834,6 +834,402 @@ el resto no) de un modo que ni el bug de EVY ni el desbordamiento de
 atlas explicaban del todo. Subido por FTP, pendiente de que el usuario lo
 confirme en una sesión que visite varias salas distintas.
 
+## 12. Continuación misma sesión (2026-08-20, noche): batching real de draw calls vía shader propio
+
+Con la causa de correctness resuelta (sección 11) y el usuario confirmando
+que ya se ve bien, se retomó el rendimiento (objetivo: 60 FPS estables en
+New3DS **y** Old3DS). Los `GPUTIME` de hardware de la sección 10
+(`drawMs≈37-53ms` dominando sobre `collectMs≈19-36ms`) señalaban el envío
+de draw calls como sospechoso principal: hasta ese momento, cada uno de los
+~2500-2700 tiles/frame se dibujaba con su propia llamada a
+`C2D_DrawImage` (citro2d), **por cada ojo** -- miles de llamadas con
+overhead de biblioteca (matrices, gestión de buffer en modo inmediato) por
+frame.
+
+**Cambio:** shader de vértices propio (`platform/3ds/source/gpu_tile.v.pica`,
+compilado con `picasso` y embebido con `bin2s` -- nuevas reglas en el
+`Makefile`, ver `SHADER_BIN`/`SHADER_OBJ`/`SHADER_HDR`) + un buffer de
+vértices construido en CPU y enviado con **una sola** llamada
+`C3D_DrawArrays` por pase (opaco/blend) por ojo -- 4 llamadas de dibujo por
+frame en vez de miles. `BuildAndDrawBatch()` en `port_gpu_renderer.c`
+escribe 6 vértices (2 triángulos, sin index buffer) por item directamente
+en un buffer de memoria lineal (`sVertexBuf`, reservado una vez en
+`Port_GpuRenderer_Init`), usando exactamente las mismas coordenadas finales
+de pantalla que antes calculaba `C2D_DrawParams` (escala + offset de
+paralaje estéreo), así que el resultado visual debía ser idéntico -- solo
+cambia *cómo* se envía la geometría a la GPU, no qué geometría es. El
+texenv fijo existente (`ConfigureAtlasTextureEnv`, alfa-test, blend) no
+cambia -- es estado de PICA200 independiente del shader de vértices.
+
+### 12.1 — Bug encontrado y arreglado en Azahar antes de tocar hardware: `C2D_Prepare()` que faltaba
+
+Al probar en Azahar, el overlay de depuración de la pantalla inferior
+(sigue dibujado con citro2d normal, sin tocar) salió como **ruido
+vertical ilegible** en vez de texto. Causa: el propio comentario de
+`C2D_Prepare()` en el header de citro2d lo advierte -- "solo hace falta
+una vez en el programa si citro2d es el único que usa la GPU". Al
+empezar a dibujar la pantalla superior con nuestro propio programa/
+`AttrInfo`/`BufInfo` vía C3D directamente (sin pasar por citro2d en
+absoluto), citro2d deja de ser el único usuario, y sus llamadas
+posteriores en el mismo frame (el overlay de la pantalla inferior, ya en
+`PlatformGpu3DS_EndBottom`) ya no reconfiguran su propio layout de
+atributos antes de dibujar -- interpretaba sus propios datos de vértice a
+través de nuestro layout, de ahí el "ruido". **Arreglo:** una llamada a
+`C2D_Prepare()` al final de `Port_GpuRenderer_RenderFrame()`, devolviendo
+la GPU a citro2d en estado conocido antes de que dibuje la pantalla
+inferior. Confirmado en Azahar: overlay legible de nuevo, intro sin
+corrupción.
+
+### 12.2 — También arreglado por el camino: carrera en el `Makefile`
+
+Regla nueva con dos targets (`$(SHADER_OBJ) $(SHADER_HDR): $(SHADER_BIN)`)
+se ejecutaba **dos veces en paralelo** con `make -j`, y en un primer intento
+esto causó un `#include "gpu_tile_shbin.h"` fallido por una dependencia con
+la ruta equivocada (`$(BUILD)/3ds/port_gpu_renderer.o` en vez de
+`$(BUILD)/3ds/source/port_gpu_renderer.o` -- `OBJS_3DS` conserva el
+`source/` del path). Arreglado: dependencia con la ruta correcta, y la
+receta bin2s movida a un único target (`SHADER_OBJ`) del que `SHADER_HDR`
+solo depende, sin receta propia -- evita que `make -j` la invoque dos veces.
+
+**Verificado en Azahar:** build normal (sin flags) y build de diagnóstico
+compilan limpio; sin corrupción visual (intro + overlay de depuración
+correctos) tras el arreglo de `C2D_Prepare()`.
+
+### 12.3 — Probado en hardware real: empeora el rendimiento, revertido
+
+El usuario instaló el CIA en hardware real. Dos problemas confirmados por
+el propio log (`mzm-debug.log`, descargado por FTP -- se verificó primero
+que sí era la build nueva: aparecen líneas `GPUTIME`, que solo existen en
+este código, y el formato de `EYE%d drawCount=%d` ya no lleva
+`reasserted=`, coherente con haber quitado ese hack al eliminar los
+`C2D_DrawImage`):
+
+1. **El ruido en la pantalla inferior seguía apareciendo** pese al arreglo
+   de `C2D_Prepare()` verificado en Azahar -- no reproducido/explicado en
+   esta sesión; posible diferencia real de comportamiento entre Azahar y
+   hardware, sin investigar más a fondo porque el punto 2 ya bastaba para
+   revertir.
+2. **El rendimiento empeoró, no mejoró:** con estéreo 3D activo (slider a
+   fondo) y ~2573 items/frame, `gpuDraw=8.58ms gpuProc=11.68ms` (contadores
+   reales de citro3d, antes ~0.66/2ms) y `GPUTIME collectMs=23.47
+   drawMs=88.19` (antes `drawMs≈37-53ms` -- prácticamente el doble) con
+   `fps=25.0`, peor que el ~40-45 de antes del cambio.
+
+**Sospecha sin confirmar** (no investigada, el cambio se revirtió antes de
+diagnosticar): el coste probablemente esté en
+`GSPGPU_FlushDataCache(sVertexBuf, ...)`, llamado hasta 4 veces por frame
+(2 pases x 2 ojos) sobre un buffer que puede rondar los 300KB cada vez
+(~2573 items x 6 vértices x 20 bytes) -- una sincronización de caché de
+CPU **bloqueante**, del mismo tipo que ya se identificó como problema real
+con la transferencia del atlas de texturas (sección 7.3), esta vez
+reintroducido en un sitio nuevo sin darse cuenta. Consistente con que
+`gpuDraw`/`gpuProc` (contadores de citro3d, que sí incluyen esperas de
+sincronización) subieran tanto.
+
+**Revertido** en la misma sesión (el cambio nunca se había confirmado --
+`git status` lo mostraba sin commitear): `git checkout --
+platform/3ds/Makefile platform/3ds/source/port_gpu_renderer.c` +
+borrado de `gpu_tile.v.pica`. Vuelto a compilar y subir por FTP el build
+de la sección 11 (el último confirmado correcto por el usuario en
+hardware). El shader/Makefile/batching de la sección 12 **no está en el
+repositorio** -- documentado aquí únicamente como intento fallido, para no
+repetirlo sin más la próxima vez.
+
+## 13. Continuación misma sesión (2026-08-20, noche): siguiente intento -- hash de paleta precalculado por frame en vez de memcmp por referencia
+
+Siguiendo la recomendación más segura de la sección 12.3 (optimizar
+`collectMs` en vez de arriesgar otra vez el pipeline de dibujado), se
+atacó un coste identificable e innecesario introducido por el propio
+arreglo de correctness de la sección 11: la comprobación de paleta
+(`memcmp(sCachePalBytes[i], palSrc, palBytes)`) se ejecutaba **en cada
+referencia a un tile** (hasta ~2500+/frame), no solo por tile único, y
+para tiles de 8bpp comparaba hasta **512 bytes** cada vez -- potencialmente
+más de 1MB de `memcmp` por frame en escenas con muchos tiles de 8bpp (el
+propio `cache=938` de la intro, con mucho arte detallado, es sospechoso de
+ser mayormente 8bpp).
+
+**Arreglo:** los bytes de paleta (`gBgPltt`/`gObjPltt`) no cambian a mitad
+de frame, así que la comparación puede basarse en un hash calculado **una
+sola vez por frame** en vez de releer/comparar los bytes en cada
+referencia. `Port_GpuRenderer_RenderFrame` calcula ahora, una vez, un hash
+FNV-1a de cada una de las 16 bandas de 4bpp (`sBgPalBankHash`/
+`sObjPalBankHash`) y de la paleta completa de 8bpp
+(`sBgPalFullHash`/`sObjPalFullHash`); `GetOrDecodeTileSlot` compara ese
+hash de 4 bytes (`sCachePalHash[slot]`, sustituye al array
+`sCachePalBytes[ATLAS_MAX_SLOTS][512]` de 2MB) en vez de hacer memcmp de
+hasta 512 bytes por referencia. Misma condición de obsolescencia que
+antes, mucho más barata de comprobar; además libera ~2MB de RAM estática.
+
+**Riesgo aceptado explícitamente:** una colisión de hash de 32 bits entre
+dos paletas realmente distintas es la única forma en que esto podría
+reintroducir el bug de la sección 11 -- astronómicamente improbable para
+el espacio real de valores de paleta de este juego, pero no es una
+garantía matemática como el memcmp exacto que sustituye. Documentado en el
+propio comentario del código como decisión consciente.
+
+**Verificado:** compila limpio (build normal y de diagnóstico), sin
+corrupción visual en Azahar. **Sin verificar en hardware con `GPUTIME`
+real** -- CIA subido por FTP, pendiente de que el usuario lo pruebe en
+gameplay y compare `collectMs` contra la línea base de la sección 10
+(~19-36ms) para confirmar que de verdad baja, y confirmar que no ha
+reintroducido el bug de paleta de la sección 11 (visitar varias salas con
+paletas distintas).
+
+## 14. Continuación misma sesión (2026-08-21, madrugada): la causa real de por qué ni la intro llega a 60 -- `C3D_SyncDisplayTransfer` es bloqueante, y el tamaño no es el problema
+
+El usuario preguntó, con razón, por qué ni la intro (la escena más simple
+del juego, sin lógica de gameplay) se acercaba a 60 FPS, y si eso no ponía
+en duda que el resto del juego pudiera llegar. Se añadió instrumentación
+más fina dividiendo `collectMs` en dos partes: `tile` (recolección de VRAM
++ hash + decodificación + sort -- todo lo optimizado en las secciones
+7-9-13) y `upload` (la transferencia del atlas a la GPU,
+`C3D_SyncDisplayTransfer`).
+
+**Resultado, incluso en la intro:** `tile≈1ms` (ya muy barato, las
+optimizaciones anteriores sí funcionan) pero **`upload≈19-20ms` --
+prácticamente todo `collectMs`**, y constante independientemente de si se
+transfieren pocas filas o muchas. Se probó además a sustituir el rango
+min-max de filas sucias (sección 7.3/10) por un mapa de bits de 64 filas
+(`sDirtyRowMask`) transfiriendo solo los tramos contiguos realmente
+sucios -- una regresión propia que sí merecía arreglarse (un rango
+min-max puede abarcar casi todo el atlas si se tocan una fila baja y una
+alta en el mismo frame), pero el tiempo de `upload` **no bajó**: seguía
+en ~19-20ms.
+
+**Conclusión:** el coste no es proporcional al tamaño de los datos
+transferidos -- es el propio mecanismo de `C3D_SyncDisplayTransfer`
+(`GX_DisplayTransfer` + espera bloqueante del evento `PPF` vía GSP, un
+viaje de ida y vuelta a través del módulo GSP) el que tiene un coste fijo
+alto por llamada, casi con toda seguridad dominado por la
+latencia de IPC/servicio, no por el DMA en sí. Esto explica por sí solo
+por qué ni la intro llega a 60: ~20ms de esos ~22ms/frame de presupuesto
+para 60 FPS se van en una única llamada bloqueante, independientemente de
+lo demás.
+
+### Por qué no se ha arreglado ya (riesgo real, decisión pendiente del usuario)
+
+`GX_DisplayTransfer` (la función de bajo nivel que `C3D_SyncDisplayTransfer`
+envuelve) es **asíncrona por diseño** -- se puede lanzar sin esperar,
+y solo señala el evento `PPF` al completarse. citro3d **no expone**
+públicamente una variante async, solo la que bloquea, casi con toda
+seguridad a propósito: la GPU real (motor de transferencia + rasterizador)
+procesa sus colas en orden, así que lanzar la transferencia sin esperar y
+dejar que los draw calls posteriores del mismo frame la usen debería ser
+seguro (el hardware no empieza el siguiente trabajo encolado hasta acabar
+el anterior) -- **pero** `sAtlasPixels` (el buffer de origen en CPU) se
+sigue escribiendo en el **frame siguiente** cuando aparece un tile nuevo o
+un tile animado se redecodifica en el mismo slot. Si esa escritura de CPU
+ocurre antes de que el DMA async del frame anterior haya terminado de
+leer ese mismo buffer, es una condición de carrera real -- corrupción
+visual intermitente, del tipo que es fácil que no aparezca en una sesión
+de prueba corta pero sí en una partida larga. Arreglarlo bien
+necesitaría doble buffer del atlas en CPU (escribir en A mientras se
+transfiere B, alternar), más complejidad y memoria.
+
+Dado que esta misma sesión ya tuvo que revertirse un cambio (sección 12,
+el batching de draw calls) por una regresión real detectada solo en
+hardware, **no se ha intentado el cambio async sin consultar** -- es
+justo el tipo de cambio de alto riesgo/alta recompensa que necesita que
+el usuario decida si acepta el riesgo antes de gastar otra ronda de
+iteración por FTP en ello.
+
+**Verificado:** el arreglo del mapa de bits (`sDirtyRowMask`) compila
+limpio y no cambia el comportamiento visual en Azahar -- es una mejora de
+robustez real (evita el caso patológico de rango min-max disparado) pero
+no resuelve el problema de fondo, que es el bloqueo en sí, no el tamaño.
+CIA subido por FTP.
+
+## 15. Continuación misma sesión (2026-08-21, madrugada): eliminar la transferencia GX por completo, en vez de amortiguarla
+
+El usuario hizo la pregunta correcta: si una sola actualización ya cuesta
+~20ms, actualizar con menos frecuencia no reduce el trabajo total, solo lo
+reparte -- cambiaría un coste pequeño y constante por un tirón grande
+ocasional cada N frames, probablemente peor de percibir aunque la media de
+FPS mejorase sobre el papel. Eso descartaba la mitigación "barata" de la
+sección 14 y dejaba dos caminos: la transferencia asíncrona con doble
+buffer (aplazada por riesgo de condición de carrera, ver sección 14), o
+**eliminar la transferencia GX por completo**.
+
+Investigando la API de citro3d/libctru: `C3D_TexInitVRAM` (lo que se
+llevaba usando toda la rama) reserva la textura en un banco de VRAM
+dedicado que la CPU **no puede escribir directamente** -- de ahí la
+necesidad de un paso de transferencia GX intermedio para llevar los
+píxeles desde un buffer de CPU hasta ahí. Pero `C3D_TexInit` (sin
+`VRAM`) reserva la textura en memoria lineal normal (FCRAM) vía
+`linearAlloc`, que la CPU **sí puede escribir directamente** -- el único
+motivo de usar VRAM dedicada es un bus de memoria separado (menos
+contención con la FCRAM), no una limitación de acceso.
+
+El único motivo real por el que hacía falta el paso de transferencia GX
+(más allá de mover los bytes) era el "swizzle": la PICA200 exige que las
+texturas estén almacenadas con los píxeles de cada bloque de 8x8
+reordenados en un patrón Z-order/Morton concreto, que
+`GX_TRANSFER_OUT_TILED(1)` aplicaba por nosotros durante la transferencia.
+Ese reordenado es una tabla fija de 64 entradas, bien documentada y
+reproducida en herramientas de texturizado de homebrew de 3DS -- se puede
+calcular a mano.
+
+**Cambio:** `sAtlasTexture` pasa de `C3D_TexInitVRAM` a `C3D_TexInit`
+(memoria lineal, escribible por CPU). `DecodeTileIntoSlot` ya no escribe a
+un buffer `sAtlasPixels` intermedio -- escribe **directamente** en
+`sAtlasTexture.data`, aplicando la tabla de swizzle (`kSwizzleLUT`) píxel
+a píxel. El bloque de subida al final de `Port_GpuRenderer_RenderFrame`
+ya no llama a `C3D_SyncDisplayTransfer` en absoluto -- solo hace
+`GSPGPU_FlushDataCache` (mantenimiento de caché de CPU local, sin viaje de
+ida y vuelta al módulo GSP) sobre los mismos tramos de filas sucias que ya
+se calculaban con el mapa de bits de la sección 14. `sAtlasPixels` se
+elimina por completo.
+
+**Verificado en Azahar:** la parte que de verdad importaba comprobar sin
+hardware -- que la tabla de swizzle calculada a mano es correcta -- se
+confirma visualmente: intro y overlay de depuración se ven perfectos, sin
+ningún patrón de corrupción/bloques desordenados (que es exactamente lo
+que se vería si el swizzle estuviera mal). El tiempo de `upload` que
+reporta Azahar en esta prueba no bajó, pero **no es una señal fiable**:
+`GSPGPU_FlushDataCache` es una operación completamente distinta a
+`C3D_SyncDisplayTransfer` y ya sabíamos que el reloj de Azahar no
+corresponde a tiempo real de hardware (sección 10). **La medición que de
+verdad importa solo se puede hacer en hardware real.**
+
+**Riesgo de esta sesión, más bajo que el de la sección 12:** a diferencia
+del batching de draw calls (revertido) o de la transferencia async
+(aplazada), este cambio no depende de un mecanismo de sincronización GPU
+sutil -- si el swizzle estuviera mal, se vería inmediatamente como
+texturas corruptas (ya descartado en Azahar), no como un bug intermitente
+dependiente de timing. El riesgo restante es puramente de rendimiento: si
+`C3D_TexInit` (FCRAM) resulta tener peor ancho de banda de muestreo que
+`C3D_TexInitVRAM` en la práctica, podría no ganar tanto como se espera --
+pero no debería empeorar la corrección visual.
+
+CIA subido por FTP (build normal y de diagnóstico, ambos compilan limpio).
+
+## 16. Continuación misma sesión (2026-08-21, madrugada): la causa real era la propia instrumentación de diagnóstico -- objetivo de 60 FPS cumplido
+
+El usuario probó el CIA de la sección 15 en hardware y reportó que no
+cambiaba nada, lo cual no cuadraba: el arreglo (escribir directamente en
+una textura en memoria lineal, sin `C3D_SyncDisplayTransfer`) debería
+haber sido una mejora real. Investigando el propio código de medición se
+encontró un error metodológico propio: el timestamp `tBeforeUpload` se
+capturaba **antes** del bloque de log `GPUDIAG` (que llama a
+`Port_DebugLog`, escritura de fichero real a la tarjeta SD, 1 de cada 5
+frames), así que ese coste de E/S quedaba mal atribuido a "upload" en vez
+de a "tile". Ninguno de los dos arreglos de la sección 15
+(`C3D_SyncDisplayTransfer` → `GSPGPU_FlushDataCache` → `svcFlushProcessDataCache`)
+podía moverse en la medición porque ninguno tocaba lo que de verdad se
+estaba midiendo.
+
+Al mover el timestamp después del bloque de diagnóstico, `upload` cayó a
+**0.00ms** (el arreglo de la sección 15 sí funciona) y el coste se reveló
+donde realmente estaba: `Port_DebugLog()` hace `fopen`+`fwrite`+`fclose`
+**en cada llamada**, y ese ciclo completo de apertura/cierre de fichero en
+la tarjeta SD cuesta esos ~18-20ms -- consistente con el resto de hallazgos
+de la sesión, y **coherente con el propio comentario original del
+fichero** (`port_debug_log.h`), que documentaba el flush inmediato como
+decisión deliberada para poder diagnosticar cuelgues (la última línea
+escrita en disco antes de un cuelgue sin volcado de crash es la pista) --
+nunca pensado para llamarse desde un camino de 60 Hz.
+
+**La prueba definitiva:** se compiló un build con `PORT_GPU_TILE_RENDERER`
+pero **sin ningún flag de log** (`PORT_GPU_RENDERER_DIAG_LOG`/
+`PORT_PPU_PERF_LOG` desactivados) -- el overlay de FPS en pantalla no
+depende de esos flags, así que se podía medir el rendimiento real sin
+ningún coste de E/S de diagnóstico de por medio. Resultado en Azahar:
+**60 FPS** en la intro (framerate del propio contador de frames
+presentados, no de los ticks de CPU poco fiables de la sección 10).
+**Confirmado por el usuario en hardware real: 57-60 FPS incluso en
+gameplay real** -- el objetivo de la rama (60 FPS estables, GPU en vez de
+CPU, tanto en New3DS como en el caso más exigente) se da por cumplido. La
+diferencia entre 57 y 60 encaja con que el propio GBA corre a ~59.7275 Hz
+reales, no exactamente 60 -- no es un problema real, son "decimales".
+
+### 16.1 -- Logging bufferizado (a petición del usuario), preservando la garantía de diagnóstico de cuelgues
+
+El usuario preguntó si se podía bufferizar el log en RAM y volcar a disco
+cada cierto tiempo en vez de en cada llamada. Correcto en el fondo, pero
+`Port_DebugLog` existe **a propósito** con flush inmediato para poder
+diagnosticar cuelgues reales (ver el comentario original del fichero) --
+bufferizarlo sin más perdería exactamente esa garantía justo para el caso
+que lo justificaba. Solución: dos funciones separadas en
+`port/port_debug_log.c`/`.h`:
+
+- `Port_DebugLog()` (sin cambios): flush inmediato, para los checkpoints de
+  arranque/cuelgue (`main_3ds.c`, `port_bios.c`, etc.).
+- `Port_DebugLogBuffered()` (nueva): acumula en un buffer de 4KB en RAM,
+  solo escribe a disco (`fopen`+`fwrite` de todo el buffer +`fclose`, una
+  vez) cuando el buffer se llena. `Port_DebugLogFlush()` fuerza un volcado
+  manual si hiciera falta.
+
+Migrados a la versión bufferizada todos los sitios de log **por frame**
+(nunca checkpoints de arranque): `port_gpu_renderer.c` (GPUDIAG/GPUTIME/
+STEREO/EYE), `port_ppu_mzm.c` (PERF/PPU/verbose-frame), `platform_gpu_3ds.c`
+(CMDBUF) -- vía un `#define Port_DebugLog Port_DebugLogBuffered` local en
+cada fichero (todas sus llamadas ya estaban detrás de flags de diagnóstico
+por frame, ninguna es un checkpoint de arranque). El volcado de pantalla
+por `KEY_X` (evento raro, disparado por el usuario) se deja sin
+bufferizar a propósito.
+
+**Contrapartida esperada, ya observada por el usuario:** el volcado del
+buffer (cuando se llena, cada pocos segundos con logging activo en vez de
+cada frame) sigue costando un tirón puntual -- mucho más raro que antes
+(de 60 veces/segundo a una vez cada varios segundos), pero no
+desaparecido del todo. Aceptable: solo ocurre con los flags de
+diagnóstico activados (el build normal, sin ningún flag, no llama a
+`Port_DebugLog`/`Buffered` en absoluto en estos puntos).
+
+**Verificado:** compila limpio con todos los flags de diagnóstico a la
+vez; probado en Azahar que las líneas bufferizadas llegan íntegras y sin
+corromper al fichero de log, intercaladas correctamente con las líneas de
+flush inmediato de otros ficheros no tocados.
+
+### Estado de la rama tras esta sesión
+
+**Objetivo principal cumplido: 60 FPS (57-60 en la práctica) en gameplay
+real, confirmado en hardware, usando el renderer de GPU en vez del de
+CPU.** Sesión larga con varios callejones sin salida documentados a
+propósito (secciones 8/10.1 -- EVY y desbordamiento de atlas; sección 11
+-- paleta no comparada; sección 12 -- batching de draw calls, revertido;
+sección 14/15/16 -- la cadena completa hasta encontrar que el cuello de
+botella real era, primero, `C3D_SyncDisplayTransfer`, y después, el propio
+logging de diagnóstico malmedido) para que la próxima vez que aparezca un
+patrón parecido ("un arreglo no cambia nada") se mire primero si la propia
+medición es fiable antes de descartar la hipótesis.
+
+### Pendiente para la próxima sesión
+
+1. **Las dos escenas que siguen cayendo a CPU a propósito** (sección 5.8,
+   nunca implementadas, no son bugs): la nave de la intro (usa un sprite
+   OBJ afín -- rotado/escalado -- para el efecto de zoom, fuera de alcance
+   del renderer desde el diseño original) y el instante justo al pulsar
+   seleccionar partida (el cursor activa una ventana real y recortada,
+   no a pantalla completa, para resaltar la opción -- las ventanas reales
+   siguen sin aproximarse, solo el caso no-op de pantalla completa). El
+   usuario ha preguntado por esto para la próxima ronda -- ver sección 5.8
+   para el detalle completo de por qué caen a CPU y qué haría falta
+   (soporte de OBJ afín y de ventanas reales) para llevarlas a GPU
+   también.
+2. Las líneas horizontales finas del "efecto persiana" (sección 3.1
+   original) siguen sin confirmar/arreglar -- no se ha vuelto a mirar en
+   ninguna sesión posterior.
+3. El tirón periódico del volcado del buffer de log (sección 16.1) solo
+   importa con los flags de diagnóstico activados -- no afecta al build
+   normal. Si molesta durante futuras sesiones de depuración, subir el
+   tamaño del buffer o volcar en un momento más oportuno (p.ej. durante
+   VBlank) reduciría su frecuencia aún más.
+4. Con el objetivo de FPS cumplido, empieza a tener sentido revisar
+   rendimiento en Old3DS específicamente (más lento que New3DS, el caso
+   más exigente que el usuario pidió explícitamente) -- toda la validación
+   de esta sesión fue en el hardware disponible, sin distinguir modelo.
+2. El "ruido" en la pantalla inferior con draws C3D directos mezclados con
+   citro2d (sección 12.1/12.3) sigue siendo una incógnita en hardware real
+   aunque `C2D_Prepare()` lo arreglara en Azahar -- señal de que Azahar no
+   es fiable para validar del todo este tipo de interacción de bajo nivel,
+   más allá de lo ya sabido sobre su reloj de ciclos (sección 10).
+3. Alternativa más segura a intentar antes que otra ronda de shaders
+   propios: perfilar si `collectMs` (recolección/decodificación, ya
+   optimizada en las secciones 7-9) tiene margen adicional, ya que es la
+   mitad del problema y no arrastra el riesgo de tocar el pipeline de
+   dibujado de bajo nivel.
+
 ### Pendiente para la próxima sesión (actualiza la lista de la sección 10)
 
 1. Confirmar en hardware, visitando **varias salas distintas** (no solo
