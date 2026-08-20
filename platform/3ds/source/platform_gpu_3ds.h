@@ -22,9 +22,12 @@ typedef struct PlatformGpu3DSStats {
 } PlatformGpu3DSStats;
 
 bool PlatformGpu3DS_Init(bool old3dsProfile);
+float PlatformGpu3DS_Get3DSlider(void);
 uint32_t* PlatformGpu3DS_TopBuffer(void);
+uint32_t* PlatformGpu3DS_TopRightBuffer(void);
 uint32_t* PlatformGpu3DS_BottomBuffer(unsigned index);
 void PlatformGpu3DS_BeginTop(const uint32_t* pixels, unsigned width);
+void PlatformGpu3DS_BeginTopStereo(const uint32_t* leftPixels, const uint32_t* rightPixels, unsigned width);
 /* Returns true only when a Citro3D frame was active and submitted. */
 bool PlatformGpu3DS_EndBottom(const uint32_t* pixels, bool changed);
 void PlatformGpu3DS_ShowDumpSavedOverlay(void);

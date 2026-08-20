@@ -32,6 +32,7 @@ extern void Port_DebugLog(const char* msg);
 #define TOP_NATIVE_W 240
 
 static uint32_t* sTopBuffer;
+static uint32_t* sTopRightBuffer;
 static uint32_t* sBottomBuffer;
 static bool sReady;
 static unsigned sPresentFrameCount;
@@ -40,27 +41,29 @@ static unsigned sPresentFrameCount;
  * config, normally backed by a settings menu that doesn't exist yet). */
 extern bool Platform3DS_IsNew3DS(void);
 extern uint64_t osGetTime(void); /* libctru: milliseconds since epoch */
+extern float osGet3DSliderState(void);
 
 /* Rolling 1-second window: frames presented since sFpsWindowStartMs, turned
  * into a rate once the window closes. sPresentFrameCount alone (a lifetime
  * total) isn't a frame rate -- see UpdateFpsWindow(), called once per
  * presented frame below. */
-static unsigned sFpsWindowFrameCount;
 static uint64_t sFpsWindowStartMs;
+static unsigned sFpsWindowFrames;
 static double sCurrentFps;
 
 static void UpdateFpsWindow(void) {
-    const uint64_t nowMs = osGetTime();
-    ++sFpsWindowFrameCount;
+    const uint64_t now = osGetTime();
     if (sFpsWindowStartMs == 0) {
-        sFpsWindowStartMs = nowMs;
+        sFpsWindowStartMs = now;
+        sFpsWindowFrames = 0;
         return;
     }
-    const uint64_t elapsed = nowMs - sFpsWindowStartMs;
-    if (elapsed >= 1000) {
-        sCurrentFps = (double)sFpsWindowFrameCount * 1000.0 / (double)elapsed;
-        sFpsWindowFrameCount = 0;
-        sFpsWindowStartMs = nowMs;
+    ++sFpsWindowFrames;
+    const uint64_t elapsed = now - sFpsWindowStartMs;
+    if (elapsed >= 1000u) {
+        sCurrentFps = (double)sFpsWindowFrames * 1000.0 / (double)elapsed;
+        sFpsWindowStartMs = now;
+        sFpsWindowFrames = 0;
     }
 }
 
@@ -76,6 +79,7 @@ bool Port_PPU_Init(void) {
 
     if (!PlatformGpu3DS_Init(!Platform3DS_IsNew3DS())) return false;
     sTopBuffer = PlatformGpu3DS_TopBuffer();
+    sTopRightBuffer = PlatformGpu3DS_TopRightBuffer();
     sBottomBuffer = PlatformGpu3DS_BottomBuffer(0);
     if (!sTopBuffer || !sBottomBuffer) return false;
     /* Bottom screen stays solid black -- PlatformGpu3DS_EndBottom() still
@@ -84,6 +88,9 @@ bool Port_PPU_Init(void) {
     memset(sBottomBuffer, 0, 512u * 256u * sizeof(uint32_t));
 
     virtuappu_mode1_set_output_buffer(sTopBuffer, TOP_PITCH);
+    if (sTopRightBuffer) {
+        virtuappu_mode1_set_right_output_buffer(sTopRightBuffer, TOP_PITCH);
+    }
     sReady = true;
     return true;
 }
@@ -103,6 +110,9 @@ void Port_PPU_PresentFrame(void) {
      * modes 1/2) -- see port/ppu/src/virtuappu.c's virtuappu_render_frame.
      * Zero Mission only ever uses GBA modes 0 and 1 (docs/3ds-port-ppu-audit.md). */
     ppu.mode = (gbaMode == 1 || gbaMode == 2) ? 2 : 1;
+
+    float slider3d = PlatformGpu3DS_Get3DSlider();
+    virtuappu_mode1_set_3d_slider(slider3d);
 
 #ifdef PORT_PPU_TEST_PATTERN
     /* Diagnostic: bypass virtuappu entirely and write a known-good pattern
@@ -166,7 +176,7 @@ void Port_PPU_PresentFrame(void) {
 #if defined(PORT_VERBOSE_FRAME_LOG)
     Port_DebugLog("Port_PPU_PresentFrame: before BeginTop");
 #endif
-    PlatformGpu3DS_BeginTop(sTopBuffer, TOP_NATIVE_W);
+    PlatformGpu3DS_BeginTopStereo(sTopBuffer, sTopRightBuffer, TOP_NATIVE_W);
 #if defined(PORT_VERBOSE_FRAME_LOG)
     Port_DebugLog("Port_PPU_PresentFrame: before EndBottom");
 #endif

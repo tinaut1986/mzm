@@ -10,10 +10,12 @@ static C3D_RenderTarget* sTopTarget;
 static C3D_RenderTarget* sTopRightTarget;
 static C3D_RenderTarget* sBottomTarget;
 static C3D_Tex sTopTexture;
+static C3D_Tex sTopRightTexture;
 static C3D_Tex sBottomTexture;
 static Tex3DS_SubTexture sTopSubtexture;
 static Tex3DS_SubTexture sBottomSubtexture;
 static uint32_t* sTopUpload;
+static uint32_t* sTopRightUpload;
 static uint32_t* sBottomUploads[2];
 static void* sC2dFlushBase;
 static size_t sC2dFlushSize;
@@ -175,11 +177,15 @@ bool PlatformGpu3DS_Init(bool old3dsProfile) {
     sStats.topUploadAddress = (uintptr_t)sTopUpload;
     sStats.bottomUploadAddress[0] = (uintptr_t)sBottomUploads[0];
     sStats.bottomUploadAddress[1] = (uintptr_t)sBottomUploads[1];
+    sTopRightUpload = (uint32_t*)linearMemAlign(TOP_TEXTURE_WIDTH * TOP_TEXTURE_HEIGHT * sizeof(uint32_t), 0x80);
     if (!C3D_TexInitVRAM(&sTopTexture, TOP_TEXTURE_WIDTH, TOP_TEXTURE_HEIGHT, GPU_RGBA8)) goto fail;
-    if (!C3D_TexInitVRAM(&sBottomTexture, 512, 256, GPU_RGBA8)) goto fail_top_texture;
+    if (!C3D_TexInitVRAM(&sTopRightTexture, TOP_TEXTURE_WIDTH, TOP_TEXTURE_HEIGHT, GPU_RGBA8)) goto fail_top_texture;
+    if (!C3D_TexInitVRAM(&sBottomTexture, 512, 256, GPU_RGBA8)) goto fail_top_right_texture;
     C3D_TexSetFilter(&sTopTexture, GPU_NEAREST, GPU_NEAREST);
+    C3D_TexSetFilter(&sTopRightTexture, GPU_NEAREST, GPU_NEAREST);
     C3D_TexSetFilter(&sBottomTexture, GPU_NEAREST, GPU_NEAREST);
     C3D_TexSetWrap(&sTopTexture, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
+    C3D_TexSetWrap(&sTopRightTexture, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
     C3D_TexSetWrap(&sBottomTexture, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
 
     gfxSet3D(true);
@@ -202,6 +208,8 @@ fail_targets:
     if (sTopRightTarget) C3D_RenderTargetDelete(sTopRightTarget);
     if (sTopTarget) C3D_RenderTargetDelete(sTopTarget);
     C3D_TexDelete(&sBottomTexture);
+fail_top_right_texture:
+    C3D_TexDelete(&sTopRightTexture);
 fail_top_texture:
     C3D_TexDelete(&sTopTexture);
 fail:
@@ -210,39 +218,55 @@ fail:
 fail_linear:
     if (sBottomUploads[1]) linearFree(sBottomUploads[1]);
     if (sBottomUploads[0]) linearFree(sBottomUploads[0]);
+    if (sTopRightUpload) linearFree(sTopRightUpload);
     if (sTopUpload) linearFree(sTopUpload);
     sBottomUploads[0] = NULL;
     sBottomUploads[1] = NULL;
+    sTopRightUpload = NULL;
     sTopUpload = NULL;
     return false;
 }
 
+float PlatformGpu3DS_Get3DSlider(void) { return osGet3DSliderState(); }
 uint32_t* PlatformGpu3DS_TopBuffer(void) { return sTopUpload; }
+uint32_t* PlatformGpu3DS_TopRightBuffer(void) { return sTopRightUpload; }
 uint32_t* PlatformGpu3DS_BottomBuffer(unsigned index) {
     return index < 2 ? sBottomUploads[index] : NULL;
 }
 
-static void DrawTopImage(const uint32_t* pixels, unsigned width) {
+static void DrawTopImageStereo(const uint32_t* leftPixels, const uint32_t* rightPixels, unsigned width) {
     if (width < 240u) width = 240u;
     if (width > 266u) width = 266u;
     sTopPresentWidth = width;
 
-    GSPGPU_FlushDataCache(pixels, TOP_TEXTURE_WIDTH * 160u * sizeof(uint32_t));
-    /* Old 3DS only: the CPU renderer publishes 160 rows. Describe that exact
-     * source rectangle so the display engine does not read another 96 unused
-     * RGBA rows. New 3DS retains the established transfer dimensions. */
+    GSPGPU_FlushDataCache(leftPixels, TOP_TEXTURE_WIDTH * 160u * sizeof(uint32_t));
     const unsigned sourceHeight = sOld3DSProfile ? 160u : TOP_TEXTURE_HEIGHT;
-    C3D_SyncDisplayTransfer((u32*)pixels, GX_BUFFER_DIM(TOP_TEXTURE_WIDTH, sourceHeight),
+    C3D_SyncDisplayTransfer((u32*)leftPixels, GX_BUFFER_DIM(TOP_TEXTURE_WIDTH, sourceHeight),
                             (u32*)sTopTexture.data, GX_BUFFER_DIM(TOP_TEXTURE_WIDTH, TOP_TEXTURE_HEIGHT),
                             TextureTransfer());
+
+    const uint32_t* rightSrc = (rightPixels && sTopRightTexture.data) ? rightPixels : leftPixels;
+    C3D_Tex* rightTex = (rightPixels && sTopRightTexture.data) ? &sTopRightTexture : &sTopTexture;
+    if (rightPixels && sTopRightTexture.data) {
+        GSPGPU_FlushDataCache(rightPixels, TOP_TEXTURE_WIDTH * 160u * sizeof(uint32_t));
+        C3D_SyncDisplayTransfer((u32*)rightPixels, GX_BUFFER_DIM(TOP_TEXTURE_WIDTH, sourceHeight),
+                                (u32*)sTopRightTexture.data, GX_BUFFER_DIM(TOP_TEXTURE_WIDTH, TOP_TEXTURE_HEIGHT),
+                                TextureTransfer());
+    }
+
     sTopSubtexture = (Tex3DS_SubTexture){
         .width = (u16)width, .height = 160, .left = 0.0f, .top = 1.0f,
         .right = (float)width / TOP_TEXTURE_WIDTH, .bottom = 1.0f - 160.0f / TOP_TEXTURE_HEIGHT,
     };
-    const C2D_Image image = { .tex = &sTopTexture, .subtex = &sTopSubtexture };
+    const C2D_Image imageLeft = { .tex = &sTopTexture, .subtex = &sTopSubtexture };
+    const C2D_Image imageRight = { .tex = rightTex, .subtex = &sTopSubtexture };
     const int style = Port_Config_Get3DSDisplayStyle();
     C3D_TexSetFilter(&sTopTexture, style == TOP_DISPLAY_BLUR ? GPU_LINEAR : GPU_NEAREST,
                      style == TOP_DISPLAY_BLUR ? GPU_LINEAR : GPU_NEAREST);
+    if (sTopRightTexture.data) {
+        C3D_TexSetFilter(&sTopRightTexture, style == TOP_DISPLAY_BLUR ? GPU_LINEAR : GPU_NEAREST,
+                         style == TOP_DISPLAY_BLUR ? GPU_LINEAR : GPU_NEAREST);
+    }
 
     float drawW;
     float drawH;
@@ -263,14 +287,10 @@ static void DrawTopImage(const uint32_t* pixels, unsigned width) {
                  .w = drawW, .h = drawH },
         .center = { 0.0f, 0.0f }, .depth = 0.0f, .angle = 0.0f,
     };
-    float slider3d = osGet3DSliderState();
-    float eyeOffset = slider3d * 4.0f;
 
-    C2D_DrawParams paramsLeft = params;
-    paramsLeft.pos.x -= eyeOffset;
     C2D_TargetClear(sTopTarget, C2D_Color32(0, 0, 0, 255));
     C2D_SceneBegin(sTopTarget);
-    C2D_DrawImage(image, &paramsLeft, NULL);
+    C2D_DrawImage(imageLeft, &params, NULL);
     ConfigureAbgrTextureEnv();
     if (Port_Config_GetShowFps()) {
         char label[20];
@@ -283,11 +303,9 @@ static void DrawTopImage(const uint32_t* pixels, unsigned width) {
     }
 
     if (sTopRightTarget) {
-        C2D_DrawParams paramsRight = params;
-        paramsRight.pos.x += eyeOffset;
         C2D_TargetClear(sTopRightTarget, C2D_Color32(0, 0, 0, 255));
         C2D_SceneBegin(sTopRightTarget);
-        C2D_DrawImage(image, &paramsRight, NULL);
+        C2D_DrawImage(imageRight, &params, NULL);
         ConfigureAbgrTextureEnv();
         if (Port_Config_GetShowFps()) {
             char label[20];
@@ -302,13 +320,17 @@ static void DrawTopImage(const uint32_t* pixels, unsigned width) {
 }
 
 void PlatformGpu3DS_BeginTop(const uint32_t* pixels, unsigned width) {
-    if (!sReady || !pixels) return;
+    PlatformGpu3DS_BeginTopStereo(pixels, NULL, width);
+}
+
+void PlatformGpu3DS_BeginTopStereo(const uint32_t* leftPixels, const uint32_t* rightPixels, unsigned width) {
+    if (!sReady || !leftPixels) return;
     if (!C3D_FrameBegin(0)) {
         ++sStats.frameBeginFailures;
         return;
     }
     sFrameActive = true;
-    DrawTopImage(pixels, width);
+    DrawTopImageStereo(leftPixels, rightPixels, width);
     ++sStats.topTransfers;
 }
 

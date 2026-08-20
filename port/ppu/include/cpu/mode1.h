@@ -178,6 +178,8 @@ void virtuappu_mode1_set_frame_geometry(const PPUMemory* ppu);
 void virtuappu_mode1_set_output_buffer(uint32_t* pixels, int pitch);
 int virtuappu_mode1_frame_width(void);
 int virtuappu_mode1_frame_pitch(void);
+void virtuappu_mode1_set_right_output_buffer(uint32_t* pixels, int pitch);
+void virtuappu_mode1_set_3d_slider(float slider);
 uint16_t virtuappu_mode1_io_read16(uint16_t offset);
 uint32_t virtuappu_mode1_io_read32(uint16_t offset);
 uint32_t virtuappu_mode1_rgb555_to_abgr8888(uint16_t color);
