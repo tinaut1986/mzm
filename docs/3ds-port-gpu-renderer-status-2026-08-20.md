@@ -1194,8 +1194,46 @@ logging de diagnóstico malmedido) para que la próxima vez que aparezca un
 patrón parecido ("un arreglo no cambia nada") se mire primero si la propia
 medición es fiable antes de descartar la hipótesis.
 
+## 17. Continuación misma sesión (2026-08-21, madrugada): "efecto persiana" -- confirmado y arreglado
+
+Con el objetivo de 60 FPS cumplido, se retomó el bug puramente visual
+pendiente desde el principio de la rama (sección 3.1 original, nunca
+vuelto a mirar). El usuario capturó los tres volcados de pantalla reales
+(`KEY_X`, sección 5.1) y se confirmó visualmente: líneas oscuras finas
+verticales (y también horizontales, según el usuario) con un espaciado
+regular de ~12px -- exactamente el tamaño de un tile de 8px escalado al
+1.5x usado para llenar la pantalla.
+
+**Causa confirmada:** los tiles se empaquetan borde con borde en el atlas
+(sin margen/gutter), y `SlotToUV()` calculaba las coordenadas UV usando
+los bordes exactos de cada tile (`sx/ATLAS_DIM` .. `(sx+8)/ATLAS_DIM`).
+Con filtro `GPU_NEAREST` y el escalado no entero (8px origen → 12px
+destino), un valor de UV interpolado que cae exactamente en el borde
+entre dos tiles es ambiguo por precisión de coma flotante -- puede
+redondear al primer texel del tile vecino en el atlas en vez del último
+texel del tile actual, mostrando contenido de un tile completamente
+distinto como una fina línea de "sangrado".
+
+**Arreglo:** `SlotToUV()` ahora usa el **centro** del primer/último texel
+en vez del borde exacto del tile (`(sx+0.5)/ATLAS_DIM` ..
+`(sx+7.5)/ATLAS_DIM`) -- la técnica estándar para atlas de texturas sin
+margen con filtrado por vecino más cercano: mantiene cada punto de
+muestreo interpolado más cerca de su texel correcto que de cualquier
+texel del tile vecino, sin recortar visiblemente el tile (el filtro
+nearest de todas formas redondea al texel más cercano).
+
+**Verificado:** compila limpio, sin regresión visual en Azahar (~59-60
+FPS mantenidos). **Pendiente de confirmar en hardware** con otro volcado
+`KEY_X` de la misma escena para comparar directamente contra la captura
+"antes" de esta sesión. CIA subido por FTP (build normal y con
+`PORT_GPU_TILE_RENDERER`, sin logs de diagnóstico).
+
 ### Pendiente para la próxima sesión
 
+0. Confirmar en hardware con `KEY_X` que las líneas han desaparecido o se
+   han reducido notablemente, comparando contra la captura de esta
+   sesión (`mzm-dump-left.rgb` con el efecto visible, guardada antes del
+   arreglo).
 1. **Las dos escenas que siguen cayendo a CPU a propósito** (sección 5.8,
    nunca implementadas, no son bugs): la nave de la intro (usa un sprite
    OBJ afín -- rotado/escalado -- para el efecto de zoom, fuera de alcance

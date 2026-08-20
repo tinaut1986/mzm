@@ -560,10 +560,24 @@ static inline void SlotToUV(int slot, Tex3DS_SubTexture* out) {
     int sy = (slot / ATLAS_TILES_PER_ROW) * 8;
     out->width = 8;
     out->height = 8;
-    out->left = (float)sx / (float)ATLAS_DIM;
-    out->top = 1.0f - (float)sy / (float)ATLAS_DIM;
-    out->right = (float)(sx + 8) / (float)ATLAS_DIM;
-    out->bottom = 1.0f - (float)(sy + 8) / (float)ATLAS_DIM;
+    /* Inset by half a texel on every edge -- tiles are packed edge-to-edge
+     * in the atlas with no gutter, and with GPU_NEAREST filtering plus the
+     * non-integer 1.5x scale used to fill the screen (8 source px -> 12
+     * destination px), a UV coordinate landing exactly ON a tile boundary
+     * is ambiguous: floating-point rounding during rasterization can pick
+     * the FIRST texel of the next tile instead of the last texel of this
+     * one, sampling unrelated atlas content -- confirmed on hardware via
+     * the KEY_X screen dump (docs/3ds-port-gpu-renderer-status-2026-08-20.md,
+     * "efecto persiana" investigation) as thin dark vertical/horizontal
+     * seam lines at a spacing matching the scaled tile size. Using the
+     * CENTER of the first/last texel instead of the tile's outer edge
+     * keeps every interpolated sample point closer to its intended texel
+     * than to a neighboring tile's, which is the standard fix for
+     * point-sampled, gutter-less texture atlases. */
+    out->left = ((float)sx + 0.5f) / (float)ATLAS_DIM;
+    out->top = 1.0f - ((float)sy + 0.5f) / (float)ATLAS_DIM;
+    out->right = ((float)sx + 7.5f) / (float)ATLAS_DIM;
+    out->bottom = 1.0f - ((float)sy + 7.5f) / (float)ATLAS_DIM;
 }
 
 static inline void PushItem(int slot, float x, float y, int sortKey, int depthTier, bool blendAlpha) {
