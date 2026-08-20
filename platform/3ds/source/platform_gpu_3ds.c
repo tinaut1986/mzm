@@ -189,7 +189,7 @@ bool PlatformGpu3DS_Init(bool old3dsProfile) {
     if (!sTopTarget || !sBottomTarget) goto fail_targets;
     const u32 output = GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(0) |
                        GX_TRANSFER_RAW_COPY(0) | GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) |
-                       GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGB565) |
+                       GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGB8) |
                        GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO);
     C3D_RenderTargetSetOutput(sTopTarget, GFX_TOP, GFX_LEFT, output);
     if (sTopRightTarget) C3D_RenderTargetSetOutput(sTopRightTarget, GFX_TOP, GFX_RIGHT, output);
