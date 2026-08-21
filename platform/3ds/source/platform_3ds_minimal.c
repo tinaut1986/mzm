@@ -35,6 +35,35 @@ static unsigned sCore1TimeLimit;
  * five-parameter signature wrong from a hand-written declaration. */
 extern void Port_GbaTiming_ThreadMain(void* arg);
 
+/* Game-logic thread (agbmain), see Platform3DS_StartLogicThread below. */
+static Thread sLogicThread;
+static void (*sLogicThreadEntry)(void);
+
+static void Platform3DS_LogicThreadTrampoline(void* arg) {
+    (void)arg;
+    sLogicThreadEntry();
+    /* agbmain() never returns in practice -- it's an infinite loop that only
+     * ever leaves the process via exit(0) inside Port_Bios_Halt. Nothing
+     * sensible to do here if it ever does return. */
+}
+
+bool Platform3DS_StartLogicThread(void (*entry)(void)) {
+    sLogicThreadEntry = entry;
+
+    /* Same priority pattern as the NDSP audio thread (port_mzm_audio_3ds.c):
+     * one step above whatever this (main/present) thread's own priority is,
+     * so game logic and audio production aren't starved by the present
+     * thread's GPU-bound loop sharing the same core. Default/-1 core: this
+     * thread replaces exactly what main() used to do directly, so it keeps
+     * main()'s own core budget rather than claiming a new one. */
+    s32 priority = 0x30;
+    svcGetThreadPriority(&priority, CUR_THREAD_HANDLE);
+    if (priority > 0x18) --priority;
+
+    sLogicThread = threadCreate(Platform3DS_LogicThreadTrampoline, NULL, 32 * 1024, priority, -1, false);
+    return sLogicThread != NULL;
+}
+
 int Platform3DS_Init(void) {
     gfxInitDefault();
     consoleInit(GFX_BOTTOM, NULL);

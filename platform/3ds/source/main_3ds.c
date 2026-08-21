@@ -166,11 +166,26 @@ int main(int argc, char** argv) {
 
     printf("Starting engine...\n");
     Platform3DS_EnterGameplayDisplay();
-    Port_DebugLog("main: before agbmain()");
-    agbmain();
 
-    Port_DebugLog("main: agbmain() returned (unexpected -- it should loop forever)");
+    /* agbmain() (game logic + audio production, see port/port_bios.c) now
+     * runs on its own thread, paced by its own real-time deadline instead of
+     * by GPU present. This thread keeps doing what it always did before
+     * that split: own the GPU/citro3d context (from Port_PPU_Init above) and
+     * push finished frames to the screen, now via a loop instead of a direct
+     * call, at whatever pace the GPU can sustain -- see
+     * platform/3ds/source/port_ppu_mzm.c's Port_PPU_GpuPresentPump. */
+    Port_DebugLog("main: before starting agbmain() logic thread");
+    if (!Platform3DS_StartLogicThread(agbmain)) {
+        Platform3DS_ShowFatal("Thread error", "Could not start the game-logic thread.");
+        Platform3DS_Shutdown();
+        return 1;
+    }
 
-    Platform3DS_Shutdown();
-    return 0;
+    extern bool Port_PPU_GpuPresentPump(void);
+    Port_DebugLog("main: entering GPU present loop");
+    for (;;) {
+        if (!Port_PPU_GpuPresentPump()) {
+            Platform3DS_WaitForVBlank();
+        }
+    }
 }

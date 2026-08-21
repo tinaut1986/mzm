@@ -32,6 +32,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 extern void Port_DebugLog(const char* msg);
@@ -49,6 +50,33 @@ static uint32_t* sTopRightBuffer;
 static uint32_t* sBottomBuffer;
 static bool sReady;
 static unsigned sPresentFrameCount;
+
+/* Logic-side (CPU scanline render) output buffers, decoupled from the real
+ * GPU-mapped ones above. The CPU renderer used to write straight into
+ * sTopBuffer/sTopRightBuffer -- the exact buffer PlatformGpu3DS_* then
+ * uploaded to the GPU -- on the SAME thread and call, so a slow/stalled GPU
+ * submission (the still-unresolved bottom-screen bug's neighborhood) stalled
+ * the whole agbmain() loop, which stalled audio production with it (see
+ * docs/future-roadmap-and-architecture.md Fase 3 and the branch history).
+ * Port_PPU_RenderFrame() (game-logic thread) now renders into one of two
+ * ping-pong buffers here and publishes it; Port_PPU_GpuPresentPump() (a
+ * separate present thread, main_3ds.c) copies the latest published buffer
+ * into the real GPU buffer and does the actual GPU submission at its own
+ * pace. Lock-free hand-off (generation counter, release/acquire), matching
+ * the existing mzm-audio-ring pattern in port_mzm_audio_glue.c rather than
+ * introducing the first mutex/LightLock in this tree. Two slots means the
+ * present thread must keep up with one full logic-frame period (it does,
+ * see port_ppu_mzm.c's Port_PPU_GpuPresentPump doc comment) or it risks
+ * reading a slot the logic thread has started overwriting; a third slot
+ * would close that theoretical window at the cost of more RAM and isn't
+ * worth it unless it's observed in practice. */
+#define LOGIC_BUFFER_SLOTS 2
+static uint32_t* sLogicTop[LOGIC_BUFFER_SLOTS];
+static uint32_t* sLogicTopRight[LOGIC_BUFFER_SLOTS];
+static unsigned sLogicWriteSlot;
+static volatile unsigned sPublishedGeneration;
+static volatile unsigned sPublishedSlot;
+static unsigned sConsumedGeneration;
 
 /* platform_gpu_3ds.c calls these (FPS HUD / aspect ratio / display style
  * config, normally backed by a settings menu that doesn't exist yet). */
@@ -108,9 +136,19 @@ bool Port_PPU_Init(void) {
      * it just skips re-uploading it every frame since changed=false. */
     memset(sBottomBuffer, 0, 512u * 256u * sizeof(uint32_t));
 
-    virtuappu_mode1_set_output_buffer(sTopBuffer, TOP_PITCH);
+    for (int i = 0; i < LOGIC_BUFFER_SLOTS; ++i) {
+        sLogicTop[i] = (uint32_t*)malloc((size_t)TOP_PITCH * 160u * sizeof(uint32_t));
+        if (!sLogicTop[i]) return false;
+        memset(sLogicTop[i], 0, (size_t)TOP_PITCH * 160u * sizeof(uint32_t));
+        if (sTopRightBuffer) {
+            sLogicTopRight[i] = (uint32_t*)malloc((size_t)TOP_PITCH * 160u * sizeof(uint32_t));
+            if (!sLogicTopRight[i]) return false;
+            memset(sLogicTopRight[i], 0, (size_t)TOP_PITCH * 160u * sizeof(uint32_t));
+        }
+    }
+    virtuappu_mode1_set_output_buffer(sLogicTop[0], TOP_PITCH);
     if (sTopRightBuffer) {
-        virtuappu_mode1_set_right_output_buffer(sTopRightBuffer, TOP_PITCH);
+        virtuappu_mode1_set_right_output_buffer(sLogicTopRight[0], TOP_PITCH);
     }
 
 #ifdef PORT_GPU_TILE_RENDERER
@@ -139,7 +177,14 @@ bool Port_PPU_Init(void) {
 extern void Port_DebugLogBuffered(const char* msg);
 #define Port_DebugLog Port_DebugLogBuffered
 
-void Port_PPU_PresentFrame(void) {
+/* Called every VBlankIntrWait() on the game-logic thread (port_bios.c). Does
+ * the CPU scanline render only and publishes the result -- see the doc
+ * comment on sLogicTop above for why. The experimental GPU tile renderer
+ * (PORT_GPU_TILE_RENDERER, off by default) composites straight into the GPU
+ * pipeline as its render step, so it can't be deferred to a separate
+ * buffer/thread the same way; it keeps the old synchronous inline present,
+ * same as PORT_PPU_TEST_PATTERN's direct-to-GPU-buffer diagnostic path. */
+void Port_PPU_RenderFrame(void) {
     if (!sReady) return;
 
     /* Confirmed root cause of a reported bottom-screen debug-overlay
@@ -207,8 +252,17 @@ void Port_PPU_PresentFrame(void) {
         uint32_t* r = sTopBuffer + (size_t)row * TOP_PITCH;
         for (int col = 0; col < TOP_NATIVE_W; ++col) r[col] = color;
     }
+    /* Writes sTopBuffer (the real GPU buffer) directly, bypassing the
+     * logic-side ping-pong buffers -- keep the old synchronous inline
+     * present below for this diagnostic path. */
+    const bool forceSyncPresent = true;
 #else
+    const bool forceSyncPresent = false;
     if (!useGpuRenderer) {
+        virtuappu_mode1_set_output_buffer(sLogicTop[sLogicWriteSlot], TOP_PITCH);
+        if (sTopRightBuffer) {
+            virtuappu_mode1_set_right_output_buffer(sLogicTopRight[sLogicWriteSlot], TOP_PITCH);
+        }
         virtuappu_mode1_set_frame_geometry(&ppu);
         virtuappu_mode1_render_frame(&ppu);
     }
@@ -250,12 +304,22 @@ void Port_PPU_PresentFrame(void) {
             "PPU[%u]: mode=%u/%u dispcnt=%04x bg0-3cnt=%04x,%04x,%04x,%04x winin/out=%04x/%04x win1=%04x,%04x bld=%04x/%04x px[80,120]=%08lx",
             sPresentFrameCount, gMainGameMode, gSubGameMode1, dispcnt,
             bg0cnt, bg1cnt, bg2cnt, bg3cnt, winin, winout, win1h, win1v, bldcnt, bldalpha,
-            (unsigned long)sTopBuffer[(size_t)80 * TOP_PITCH + 120]);
+            (unsigned long)(forceSyncPresent ? sTopBuffer : sLogicTop[sLogicWriteSlot])[(size_t)80 * TOP_PITCH + 120]);
         Port_DebugLog(msg);
     }
 #endif
     ++sPresentFrameCount;
     UpdateFpsWindow();
+
+    if (!useGpuRenderer && !forceSyncPresent) {
+        /* Normal (default-build) path: hand the finished CPU render off to
+         * the present thread instead of pushing it to the GPU inline here --
+         * see the doc comment on sLogicTop/Port_PPU_RenderFrame above. */
+        sPublishedSlot = sLogicWriteSlot;
+        __atomic_store_n(&sPublishedGeneration, sPublishedGeneration + 1, __ATOMIC_RELEASE);
+        sLogicWriteSlot ^= 1u;
+        return;
+    }
 
 #if defined(PORT_VERBOSE_FRAME_LOG)
     Port_DebugLog("Port_PPU_PresentFrame: before BeginTop");
@@ -313,4 +377,34 @@ void Port_PPU_PresentFrame(void) {
         Port_DebugLog(msg);
     }
 #endif
+}
+
+/* Present thread (main_3ds.c) entry point: consumes the latest frame
+ * Port_PPU_RenderFrame() published (if any) and does the actual GPU
+ * submission -- the part that can legitimately block/stall on a busy or
+ * buggy GPU pipeline (still-unresolved bottom-screen duplication included)
+ * without that stall reaching back into game logic or audio production.
+ * Returns false when there was nothing new to present, so the caller can
+ * fall back to waiting for the next real display refresh instead of
+ * spinning. Not reentrant-guarded like the old inline path needed to be --
+ * a generation counter can't be observed twice, so there is nothing to
+ * de-duplicate here. */
+bool Port_PPU_GpuPresentPump(void) {
+    if (!sReady) return false;
+    const unsigned generation = __atomic_load_n(&sPublishedGeneration, __ATOMIC_ACQUIRE);
+    if (generation == sConsumedGeneration) return false;
+    sConsumedGeneration = generation;
+    const unsigned slot = sPublishedSlot;
+
+    memcpy(sTopBuffer, sLogicTop[slot], (size_t)TOP_PITCH * 160u * sizeof(uint32_t));
+    if (sTopRightBuffer) {
+        memcpy(sTopRightBuffer, sLogicTopRight[slot], (size_t)TOP_PITCH * 160u * sizeof(uint32_t));
+    }
+
+#ifdef PORT_GPU_TILE_RENDERER
+    sLastFrameUsedGpu = false;
+#endif
+    PlatformGpu3DS_BeginTopStereo(sTopBuffer, sTopRightBuffer, TOP_NATIVE_W);
+    PlatformGpu3DS_EndBottom(sBottomBuffer, true);
+    return true;
 }

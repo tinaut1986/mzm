@@ -224,8 +224,41 @@ extern void Platform_Linux_VBlank(void);
 
 #ifdef TMC_3DS
 extern void Port_DebugLog(const char* msg);
-extern void Port_PPU_PresentFrame(void);
+extern void Port_PPU_RenderFrame(void);
 extern void Platform3DS_PollKeysIntoGba(void);
+extern u64 Platform3DS_SystemTick(void);
+extern u64 Platform3DS_TicksPerSecond(void);
+
+/* Real GBA frame period: 228 scanlines * 73350ns/scanline (see
+ * port/port_gba_timing.c for where that constant comes from) ~= 59.79Hz.
+ * Port_PPU_RenderFrame() no longer blocks on the GPU (see
+ * platform/3ds/source/port_ppu_mzm.c's Port_PPU_RenderFrame/
+ * Port_PPU_GpuPresentPump split), so nothing paces agbmain()'s loop -- and
+ * with it game logic and audio production -- to real time anymore unless
+ * this does it explicitly. Deadline-accumulates instead of sleeping a fixed
+ * amount every call, so small per-call jitter doesn't drift the average
+ * rate; resyncs instead of burning through a backlog if a single iteration
+ * falls more than one frame behind (a debugger breakpoint, a slow SD
+ * write, ...), rather than free-running to catch up. */
+#define PORT_BIOS_FRAME_NS 16724400ull
+static u64 sNextFrameDeadlineTicks;
+
+static void Port_Bios_PaceFrame(void) {
+    const u64 ticksPerSec = Platform3DS_TicksPerSecond();
+    const u64 ticksPerFrame = (ticksPerSec * PORT_BIOS_FRAME_NS) / 1000000000ull;
+    const u64 now = Platform3DS_SystemTick();
+
+    if (sNextFrameDeadlineTicks == 0 || now >= sNextFrameDeadlineTicks + ticksPerFrame) {
+        sNextFrameDeadlineTicks = now;
+    }
+    sNextFrameDeadlineTicks += ticksPerFrame;
+
+    if (now < sNextFrameDeadlineTicks) {
+        const u64 remainingTicks = sNextFrameDeadlineTicks - now;
+        const s64 remainingNs = (s64)((remainingTicks * 1000000000ull) / ticksPerSec);
+        if (remainingNs > 0) svcSleepThread(remainingNs);
+    }
+}
 #endif
 
 void Port_Bios_Halt(void) {
@@ -258,10 +291,15 @@ void Port_Bios_Halt(void) {
 #ifdef PORT_VERBOSE_FRAME_LOG
     Port_DebugLog("Port_Bios_Halt: after CallbackCallVblank");
 #endif
-    Port_PPU_PresentFrame();
+    Port_PPU_RenderFrame();
 #ifdef PORT_VERBOSE_FRAME_LOG
-    Port_DebugLog("Port_Bios_Halt: after Port_PPU_PresentFrame");
+    Port_DebugLog("Port_Bios_Halt: after Port_PPU_RenderFrame");
 #endif
+    /* Port_PPU_RenderFrame() no longer blocks on the GPU (it hands the
+     * finished CPU render to a separate present thread and returns), so this
+     * is now the only thing pacing agbmain()'s loop -- and with it audio
+     * production -- to real time. See Port_Bios_PaceFrame's doc comment. */
+    Port_Bios_PaceFrame();
 #endif
 }
 
