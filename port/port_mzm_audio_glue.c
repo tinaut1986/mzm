@@ -3,6 +3,7 @@
 
 #include "structs/audio.h"
 #include "data/audio.h"
+#include "audio/track_internal.h"
 
 #include <stdio.h>
 
@@ -218,6 +219,35 @@ void Port_MzmAudio_InstallSoundCodeCHook(void) {
         sRealSoundCodeC = gSoundCodeCPointer;
     if (sRealSoundCodeC != NULL)
         gSoundCodeCPointer = Port_MzmAudio_SoundCodeC;
+}
+
+/* Cross-thread lock guarding gMusicInfo/TrackData -- the real LightLock
+ * lives in platform/3ds/source/port_mzm_audio_3ds.c (needs <3ds.h>, which
+ * this file deliberately doesn't include, see the header comment above).
+ * Plain extern, no 3ds-specific types in the signature, same boundary style
+ * as the rest of this producer/consumer split. */
+extern void Port_AudioStateLock_Acquire(void);
+extern void Port_AudioStateLock_Release(void);
+
+void Port_MzmAudio_ProduceTick(void) {
+    if (!sInitialized) return;
+
+    Port_AudioStateLock_Acquire();
+
+    /* Approximates the real DMA2 interrupt's cadence (src/music_wrappers.c's
+     * DMA2IntrCode) -- see this function's declaration in the header and
+     * src/agbmain.c's comment on why it moved here instead of running once
+     * per game-loop iteration. */
+    if (gMusicInfo.unk_E != 0) {
+        gMusicInfo.unk_10 += gMusicInfo.unk_C;
+        if (gMusicInfo.unk_10 >= gMusicInfo.unk_E)
+            gMusicInfo.unk_10 -= gMusicInfo.unk_E;
+    }
+
+    Port_MzmAudio_InstallSoundCodeCHook();
+    UpdateAudio();
+
+    Port_AudioStateLock_Release();
 }
 
 void Port_MzmAudio_InitGlue(void) {

@@ -229,6 +229,16 @@ extern void Platform3DS_PollKeysIntoGba(void);
 extern u64 Platform3DS_SystemTick(void);
 extern u64 Platform3DS_TicksPerSecond(void);
 
+/* Guards gMusicInfo/TrackData against the audio thread's own production
+ * ticks (see platform/3ds/source/port_mzm_audio_3ds.c's doc comment on
+ * sAudioStateLock). Released for the render+pace work below, which never
+ * touches audio state, so the audio thread gets a real window to run in
+ * every VBlankIntrWait() call regardless of how deep in game logic it was
+ * called from (src/transfer.c calls it directly mid-frame, not just
+ * agbmain's own loop -- see Port_PPU_RenderFrame's reentrancy comment). */
+extern void Port_AudioStateLock_Acquire(void);
+extern void Port_AudioStateLock_Release(void);
+
 /* Real GBA frame period: 228 scanlines * 73350ns/scanline (see
  * port/port_gba_timing.c for where that constant comes from) ~= 59.79Hz.
  * Port_PPU_RenderFrame() no longer blocks on the GPU (see
@@ -285,6 +295,9 @@ void Port_Bios_Halt(void) {
      * testing now and can be swapped back once gfxSwapBuffers()-driven
      * presentation exists to investigate the gspWaitForEvent hang for real. */
 #endif
+#if defined(TMC_3DS) && !defined(PLATFORM_LINUX)
+    Port_AudioStateLock_Release();
+#endif
     CallbackCallVblank();
 
 #if defined(TMC_3DS) && !defined(PLATFORM_LINUX)
@@ -300,6 +313,7 @@ void Port_Bios_Halt(void) {
      * is now the only thing pacing agbmain()'s loop -- and with it audio
      * production -- to real time. See Port_Bios_PaceFrame's doc comment. */
     Port_Bios_PaceFrame();
+    Port_AudioStateLock_Acquire();
 #endif
 }
 

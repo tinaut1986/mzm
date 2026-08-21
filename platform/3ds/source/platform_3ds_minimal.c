@@ -39,8 +39,15 @@ extern void Port_GbaTiming_ThreadMain(void* arg);
 static Thread sLogicThread;
 static void (*sLogicThreadEntry)(void);
 
+/* Held by the logic thread whenever it isn't inside Port_Bios_Halt's
+ * render+pace section -- see port_mzm_audio_3ds.c's sAudioStateLock doc
+ * comment. Must be acquired before agbmain() runs anything (InitializeGame
+ * can trigger sound setup before the first VBlankIntrWait call). */
+extern void Port_AudioStateLock_Acquire(void);
+
 static void Platform3DS_LogicThreadTrampoline(void* arg) {
     (void)arg;
+    Port_AudioStateLock_Acquire();
     sLogicThreadEntry();
     /* agbmain() never returns in practice -- it's an infinite loop that only
      * ever leaves the process via exit(0) inside Port_Bios_Halt. Nothing
