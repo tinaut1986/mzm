@@ -134,7 +134,7 @@ static const uint8_t* StatusGlyph(char c) {
     return NULL;
 }
 
-static void DrawStatusText(float x, float y, float scale, const char* text) {
+void PlatformGpu3DS_DrawStatusText(float x, float y, float scale, const char* text) {
     const uint32_t color = C2D_Color32(255, 255, 255, 255);
     for (; *text; ++text, x += 6.0f * scale) {
         const uint8_t* glyph = StatusGlyph(*text);
@@ -449,7 +449,7 @@ static void DrawTopImageStereo(const uint32_t* leftPixels, const uint32_t* right
         if (rounded > 999u) rounded = 999u;
         snprintf(label, sizeof(label), "FPS %u", rounded);
         C2D_DrawRectSolid(5.0f, 216.0f, 0.7f, 100.0f, 20.0f, C2D_Color32(0, 0, 0, 210));
-        DrawStatusText(10.0f, 219.0f, 2.0f, label);
+        PlatformGpu3DS_DrawStatusText(10.0f, 219.0f, 2.0f, label);
     }
 
     if (sTopRightTarget) {
@@ -464,7 +464,7 @@ static void DrawTopImageStereo(const uint32_t* leftPixels, const uint32_t* right
             if (rounded > 999u) rounded = 999u;
             snprintf(label, sizeof(label), "FPS %u", rounded);
             C2D_DrawRectSolid(5.0f, 216.0f, 0.7f, 100.0f, 20.0f, C2D_Color32(0, 0, 0, 210));
-            DrawStatusText(10.0f, 219.0f, 2.0f, label);
+            PlatformGpu3DS_DrawStatusText(10.0f, 219.0f, 2.0f, label);
         }
     }
 }
@@ -530,36 +530,8 @@ bool PlatformGpu3DS_EndBottom(const uint32_t* pixels, bool changed) {
         C2D_TargetClear(sBottomTarget, C2D_Color32(0, 0, 0, 255));
         C2D_SceneBegin(sBottomTarget);
         PlatformGpu3DS_ResetSolidTexEnv();
-        if (Port_Config_GetShowFps()) {
-            char line1[64], line2[64], line3[64];
-            double fps = Port_PPU_3DS_CurrentFps();
-            unsigned rounded = fps > 0.0 ? (unsigned)(fps + 0.5) : 0u;
-            if (rounded > 999u) rounded = 999u;
-            const bool usedGpu = Port_PPU_3DS_LastFrameUsedGpu();
-            const float slider3d = osGet3DSliderState();
-            const bool isNew3ds = Platform3DS_IsNew3DS();
-
-            snprintf(line1, sizeof(line1), "FPS:%u %s 3D:%s", rounded, usedGpu ? "GPU" : "CPU",
-                     slider3d > 0.01f ? "ON" : "OFF");
-
-            if (usedGpu) {
-                extern void Port_GpuRenderer_GetLastFrameStats(int* outItems, int* outObjItems, int* outCacheSlots);
-                int items = 0, objItems = 0, cacheSlots = 0;
-                Port_GpuRenderer_GetLastFrameStats(&items, &objItems, &cacheSlots);
-                snprintf(line2, sizeof(line2), "ITEMS:%d OBJ:%d CACHE:%d", items, objItems, cacheSlots);
-            } else {
-                snprintf(line2, sizeof(line2), "RENDER: CPU SCANLINE (MODE 1)");
-            }
-
-            snprintf(line3, sizeof(line3), "%s DRAW:%.1fMS PROC:%.1fMS",
-                     isNew3ds ? "NEW3DS" : "OLD3DS",
-                     (double)sStats.drawingTime, (double)sStats.processingTime);
-
-            C2D_DrawRectSolid(6.0f, 6.0f, 0.7f, 308.0f, 42.0f, C2D_Color32(0, 0, 0, 210));
-            DrawStatusText(10.0f, 10.0f, 1.0f, line1);
-            DrawStatusText(10.0f, 22.0f, 1.0f, line2);
-            DrawStatusText(10.0f, 34.0f, 1.0f, line3);
-        }
+        extern void Port_BottomUI_Render(void);
+        Port_BottomUI_Render();
         sBottomTargetValid = true;
         ++sStats.bottomTargetDraws;
     } else {
@@ -603,7 +575,7 @@ void PlatformGpu3DS_ShowDumpSavedOverlay(void) {
     sFrameActive = true;
     DrawTopImage(sTopUpload, sTopPresentWidth);
     C2D_DrawRectSolid(132.0f, 12.0f, 0.7f, 136.0f, 24.0f, C2D_Color32(0, 0, 0, 220));
-    DrawStatusText(141.0f, 17.0f, 2.0f, "DUMP SAVED");
+    PlatformGpu3DS_DrawStatusText(141.0f, 17.0f, 2.0f, "DUMP SAVED");
 
     sBottomSubtexture = (Tex3DS_SubTexture){
         .width = 320, .height = 240, .left = 0.0f, .top = 1.0f,
@@ -709,3 +681,4 @@ void PlatformGpu3DS_DumpScreens(void) {
     extern void Port_DebugLog(const char* msg);
     Port_DebugLog(msg);
 }
+

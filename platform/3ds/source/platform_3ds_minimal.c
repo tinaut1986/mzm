@@ -209,6 +209,16 @@ void Platform3DS_PollKeysIntoGba(void) {
                            ++sMarkCount, (unsigned long long)osGetTime());
         Port_DebugLog(msg);
     }
+    if (hidKeysHeld() & KEY_TOUCH) {
+        touchPosition touch;
+        hidTouchRead(&touch);
+        bool isNewTap = (hidKeysDown() & KEY_TOUCH) != 0;
+        extern void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap);
+        Port_BottomUI_HandleTouchDrag(touch.px, touch.py, isNewTap);
+    } else if (hidKeysUp() & KEY_TOUCH) {
+        extern void Port_BottomUI_TouchReleased(void);
+        Port_BottomUI_TouchReleased();
+    }
 }
 
 uint16_t Platform3DS_ReadKeyDownInput(void) {

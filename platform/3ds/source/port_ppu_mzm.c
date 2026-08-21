@@ -108,9 +108,31 @@ static void UpdateFpsWindow(void) {
     }
 }
 
-bool Port_Config_GetShowFps(void) { return true; }
-int Port_Config_Get3DSAspectRatio(void) { return 0; /* TOP_ASPECT_WIDE */ }
-int Port_Config_Get3DSDisplayStyle(void) { return 0; /* TOP_DISPLAY_PIXEL_PERFECT */ }
+static bool sShowFps = true;
+static int sAspectRatio = 0; /* 0 = WIDE, 1 = ORIGINAL, 2 = STRETCH */
+static int sDisplayStyle = 0; /* 0 = PIXEL PERFECT, 1 = SCALED, 2 = BLUR */
+
+bool Port_Config_GetShowFps(void) { return sShowFps; }
+void Port_Config_SetShowFps(bool on) { sShowFps = on; }
+
+int Port_Config_Get3DSAspectRatio(void) { return sAspectRatio; }
+const char* Port_Config_Get3DSAspectRatioName(void) {
+    static const char* const names[] = { "WIDE", "ORIGINAL", "STRETCH" };
+    return (sAspectRatio >= 0 && sAspectRatio < 3) ? names[sAspectRatio] : "WIDE";
+}
+void Port_Config_Cycle3DSAspectRatio(void) {
+    sAspectRatio = (sAspectRatio + 1) % 3;
+}
+
+int Port_Config_Get3DSDisplayStyle(void) { return sDisplayStyle; }
+const char* Port_Config_Get3DSDisplayStyleName(void) {
+    static const char* const names[] = { "PIXEL PERFECT", "SCALED", "BLUR" };
+    return (sDisplayStyle >= 0 && sDisplayStyle < 3) ? names[sDisplayStyle] : "PIXEL PERFECT";
+}
+void Port_Config_Cycle3DSDisplayStyle(void) {
+    sDisplayStyle = (sDisplayStyle + 1) % 3;
+}
+
 double Port_PPU_3DS_CurrentFps(void) { return sCurrentFps; }
 
 /* Which path actually rendered the most recently presented frame -- the

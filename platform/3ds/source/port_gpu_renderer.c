@@ -1287,23 +1287,28 @@ void Port_GpuRenderer_GetLastFrameTimingMs(float* outCollectMs, float* outDrawMs
  * screen position (item->x/y, see CollectSprite) and rotated about their own
  * center by item->angle -- see DrawItem's comment for why x/y/w/h mean
  * different things depending on this flag. */
-static inline C2D_DrawParams BuildDrawParams(const DrawItem* item, float screenBaseX, float eyeOffset, float scale) {
+extern bool Port_Config_GetShowFps(void);
+extern int Port_Config_Get3DSAspectRatio(void);
+extern int Port_Config_Get3DSDisplayStyle(void);
+extern double Port_PPU_3DS_CurrentFps(void);
+
+static inline C2D_DrawParams BuildDrawParams(const DrawItem* item, float screenBaseX, float screenBaseY, float eyeOffset, float scaleX, float scaleY) {
     C2D_DrawParams params;
     params.depth = 0.5f;
     if (item->affine) {
-        float w = item->w * scale, h = item->h * scale;
-        params.pos.x = screenBaseX + eyeOffset + item->x * scale - w * 0.5f;
-        params.pos.y = item->y * scale - h * 0.5f;
+        float w = item->w * scaleX, h = item->h * scaleY;
+        params.pos.x = screenBaseX + eyeOffset + item->x * scaleX - w * 0.5f;
+        params.pos.y = screenBaseY + item->y * scaleY - h * 0.5f;
         params.pos.w = w;
         params.pos.h = h;
         params.center.x = w * 0.5f;
         params.center.y = h * 0.5f;
         params.angle = item->angle;
     } else {
-        params.pos.x = screenBaseX + eyeOffset + item->x * scale;
-        params.pos.y = item->y * scale;
-        params.pos.w = item->w * scale;
-        params.pos.h = item->h * scale;
+        params.pos.x = screenBaseX + eyeOffset + item->x * scaleX;
+        params.pos.y = screenBaseY + item->y * scaleY;
+        params.pos.w = item->w * scaleX;
+        params.pos.h = item->h * scaleY;
         params.center.x = 0.0f;
         params.center.y = 0.0f;
         params.angle = 0.0f;
@@ -1558,36 +1563,47 @@ void Port_GpuRenderer_RenderFrame(void) {
     sLastAtlasUploadMs = (float)((double)(tAfterCollect - tBeforeUpload) / PORT_GPU_RENDERER_CPU_TICKS_PER_MSEC);
 
     float slider3d = osGet3DSliderState();
-    const float scale = 1.5f;
-    const float screenBaseX = (400.0f - 240.0f * scale) * 0.5f;
+    const int style = Port_Config_Get3DSDisplayStyle();
+    const int aspect = Port_Config_Get3DSAspectRatio();
 
-    /* Scissor rect for the window-clip passes below, in the SAME logical
-     * 400x240 landscape space citro2d's own draws already use (screenBaseX/
-     * scale, confirmed against this function's existing item-placement
-     * math) -- NOT applied per-eye (the window is a fixed 2D screen-space
-     * rect on real hardware, not something that shifts with stereo
-     * parallax; approximating it as eye-independent is low-risk since
-     * window-clipped content is typically UI/foreground, near the screen
-     * plane, per kTierEyeOffsetPx's BG0 entry already being 0). ASSUMPTION,
-     * NOT YET VERIFIED ON A REAL SCREEN: C3D_SetScissor's left/top/right/
-     * bottom are documented in citro3d only as "u32", with no confirmation
-     * anywhere in the installed headers of whether they're logical
-     * (citro2d's rotation-corrected space, used here) or physical (the top
-     * screen framebuffer's actual portrait-rotated memory layout) -- see
-     * the "one real unknown" section of
-     * docs/3ds-gpu-renderer-window-affine-mosaic-feasibility-2026-08-21.md.
-     * This environment has no display output to verify against, so this is
-     * a best-guess default (logical, matching the rest of this file's own
-     * coordinate math) rather than a confirmed-correct value -- if window-
-     * clipped scenes render with the wrong region clipped (or a rotated/
-     * mirrored clip) on real hardware or in an interactive Azahar session,
-     * swap this for the physical-framebuffer mapping instead. */
+    C3D_TexSetFilter(&sAtlasTexture, (style == 2) ? GPU_LINEAR : GPU_NEAREST,
+                     (style == 2) ? GPU_LINEAR : GPU_NEAREST);
+
+    float scaleX = 1.5f;
+    float scaleY = 1.5f;
+    float screenBaseX = 20.0f;
+    float screenBaseY = 0.0f;
+
+    if (style == 0) { /* PIXEL PERFECT (1:1) */
+        scaleX = 1.0f;
+        scaleY = 1.0f;
+        screenBaseX = 80.0f; /* (400 - 240) / 2 */
+        screenBaseY = 40.0f; /* (240 - 160) / 2 */
+    } else {
+        if (aspect == 2) { /* STRETCH (400x240) */
+            scaleX = 400.0f / 240.0f; /* 1.6666667f */
+            scaleY = 1.5f;
+            screenBaseX = 0.0f;
+            screenBaseY = 0.0f;
+        } else if (aspect == 0) { /* WIDE (16:9) */
+            scaleX = 400.0f / 240.0f;
+            scaleY = 1.5f;
+            screenBaseX = 0.0f;
+            screenBaseY = 0.0f;
+        } else { /* ORIGINAL (3:2 / 360x240) */
+            scaleX = 1.5f;
+            scaleY = 1.5f;
+            screenBaseX = 20.0f;
+            screenBaseY = 0.0f;
+        }
+    }
+
     u32 scLeft = 0, scTop = 0, scRight = 0, scBottom = 0;
     if (sWindowActive) {
-        scLeft = (u32)(screenBaseX + (float)sWinLeft * scale);
-        scTop = (u32)((float)sWinTop * scale);
-        scRight = (u32)(screenBaseX + (float)sWinRight * scale);
-        scBottom = (u32)((float)sWinBottom * scale);
+        scLeft = (u32)(screenBaseX + (float)sWinLeft * scaleX);
+        scTop = (u32)(screenBaseY + (float)sWinTop * scaleY);
+        scRight = (u32)(screenBaseX + (float)sWinRight * scaleX);
+        scBottom = (u32)(screenBaseY + (float)sWinBottom * scaleY);
     }
 
     C3D_RenderTarget* leftTarget = PlatformGpu3DS_GetTopLeftTarget();
@@ -1608,65 +1624,18 @@ void Port_GpuRenderer_RenderFrame(void) {
     for (int eye = 0; eye < 2; ++eye) {
         C3D_RenderTarget* target = (eye == 0) ? leftTarget : rightTarget;
         if (!target) continue;
-        /* kTierEyeOffsetPx is all <=0, scaled larger in magnitude for
-         * farther layers (BG3 furthest, -3.5px; BG0/HUD nearest, 0px).
-         * Correct stereo convention for something behind the screen plane
-         * (the common case here) is "uncrossed"/positive parallax: the
-         * right eye's copy sits further RIGHT on-screen than the left
-         * eye's, so the viewer's eyes diverge slightly and the object
-         * reads as receding. This was backwards (eye0/left=-1,
-         * eye1/right=+1): with a negative per-tier offset that shifts the
-         * LEFT eye's far background right and the RIGHT eye's left --
-         * right-x < left-x, crossed/negative parallax -- which reads as
-         * the background popping out IN FRONT of the screen instead of
-         * receding into it. Confirmed on hardware: backgrounds appeared to
-         * sit in front of the foreground/gameplay layers once the right
-         * eye's content was actually visible (fixed separately, see the
-         * C2D_Init sizing above). */
         float eyeSign = (eye == 0) ? 1.0f : -1.0f;
 
         C2D_TargetClear(target, C2D_Color32(0, 0, 0, 255));
         C2D_SceneBegin(target);
         ConfigureAtlasTextureEnv();
-        /* Explicit, rather than trusting citro2d's own default: this is 2D
-         * tile/sprite compositing purely by draw order (painter's
-         * algorithm, same z=0.5 on every item, see C2D_DrawParams below),
-         * with no legitimate use for depth testing. Defensive against the
-         * right-eye target (the second one processed in a frame with the
-         * 3D slider on) somehow inheriting an enabled depth test/compare
-         * state that the first (left) target's own citro2d draws happened
-         * to satisfy by coincidence of clear order, while the right
-         * target's identical-Z overlapping quads (BG0/menu tiles drawn
-         * over floor tiles at the same screen position) get compare-
-         * rejected -- reported as "floor/menu tiles missing, right eye
-         * only, 3D on only" and not explained by draw-call counts (which
-         * are identical between eyes, see the EYE0/EYE1 diag log below). */
         C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_ALL);
-        /* GBA palette transparency is binary (index 0 = fully transparent),
-         * so alpha-test discard handles it regardless of blend pass -- both
-         * passes below keep this enabled. */
         C3D_AlphaTest(true, GPU_GREATER, 0);
-        /* Standard passthrough blend: for opaque texels (alpha=255, the only
-         * ones alpha-test lets through) this reduces to a plain replace, so
-         * it's a safe default for every non-BLDCNT-blended item (the common
-         * case). Set explicitly every frame rather than relying on
-         * whatever citro2d's own default happens to be. */
         C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_SRC_ALPHA,
                        GPU_ONE_MINUS_SRC_ALPHA);
 
         int drawCount = 0;
         bool reassertedTexEnv = false;
-        /* Window-clip: when a single WIN0/WIN1 rect is actively clipping
-         * (sWindowActive -- see Port_GpuRenderer_CanRenderFrame's scope
-         * note), draw the opaque pass TWICE, once scissored to the rect's
-         * inside (GPU_SCISSOR_NORMAL) and once to its outside
-         * (GPU_SCISSOR_INVERT), each skipping items that don't belong to
-         * that region per their precomputed winVis (see
-         * ComputeLayerWinVis/ItemPassesWindow). The two scissor rects are
-         * exact complements, so an ALWAYS item -- drawn in both passes --
-         * ends up fully drawn exactly once per pixel, not double-composited
-         * (see ItemPassesWindow's comment). No window active is the common
-         * case and stays a single unscissored pass, identical to before. */
         int scissorPasses = sWindowActive ? 2 : 1;
         for (int sp = 0; sp < scissorPasses; ++sp) {
             bool insidePass = (sp == 0);
@@ -1678,38 +1647,12 @@ void Port_GpuRenderer_RenderFrame(void) {
                 if (item->blendAlpha) continue; /* second pass, below */
                 if (!ItemPassesWindow(sWindowActive, item->winVis, insidePass)) continue;
                 float eyeOffset = eyeSign * slider3d * kTierEyeOffsetPx[item->depthTier];
-                C2D_DrawParams params = BuildDrawParams(item, screenBaseX, eyeOffset, scale);
+                C2D_DrawParams params = BuildDrawParams(item, screenBaseX, screenBaseY, eyeOffset, scaleX, scaleY);
                 C2D_DrawImage(item->img, &params, NULL);
-                /* citro2d silently reprograms TEV unit 0 to its own default
-                 * whenever it switches between "solid" (C2D_DrawRectSolid,
-                 * used by the bottom-screen debug overlay in
-                 * platform_gpu_3ds.c, drawn every frame now) and "textured"
-                 * (C2D_DrawImage) draws -- it has no idea we hand-configured
-                 * TEV0 above via ConfigureAtlasTextureEnv() for the PICA200's
-                 * reversed RGBA8 byte order (see the big comment at the top of
-                 * this file), so the very first textured draw after a solid
-                 * draw clobbers it back to citro2d's default, which reads
-                 * texture channels in the wrong order -- exactly the red/
-                 * magenta-tinted screen from section 2.1 of
-                 * docs/3ds-port-gpu-renderer-status-2026-08-20.md, now
-                 * resurfacing every frame because the debug overlay guarantees
-                 * the mode ends each frame as "solid". Reassert once right
-                 * after the first draw of this loop (whether or not a clobber
-                 * actually happened) rather than before it, since re-running
-                 * it before would just get clobbered again by this same draw
-                 * call. */
                 if (!reassertedTexEnv) {
                     ConfigureAtlasTextureEnv();
                     reassertedTexEnv = true;
                 }
-                /* Defensive: PlatformGpu3DS_Init sizes citro2d's shared vertex
-                 * buffer for this renderer's documented worst case
-                 * (MAX_DRAW_ITEMS), but a periodic flush here means a scene that
-                 * somehow exceeds it degrades to an extra GPU submission instead
-                 * of silently failing to draw past the buffer's capacity --
-                 * exactly the bug that made every large scene show only its
-                 * first ~128 quads (roughly the top of the screen) before the
-                 * buffer was resized. */
                 if ((++drawCount % 512) == 0) C2D_Flush();
             }
         }
@@ -1718,19 +1661,6 @@ void Port_GpuRenderer_RenderFrame(void) {
             C3D_SetScissor(GPU_SCISSOR_DISABLE, 0, 0, 0, 0);
         }
 
-        /* BLDCNT effect 1 (alpha blend) second pass: GBA blends a
-         * first-target layer's pixel against whatever's the current
-         * second-target pixel underneath using EVA/EVB (5-bit, out of 16).
-         * Approximated here as: draw first-target items on top of whatever
-         * is already in the framebuffer (the pass-1 opaque draws above),
-         * blending with the GPU's own blend unit using EVA as the constant
-         * blend alpha (assumes EVA+EVB~=16, true for the common crossfade
-         * usage -- an exact per-pixel top/second-target match like the CPU
-         * renderer does would need reading back the framebuffer per pixel,
-         * not practical here). GPU_CONSTANT_ALPHA/GPU_ONE_MINUS_CONSTANT_ALPHA
-         * read C3D_BlendingColor's alpha instead of the texture's own alpha,
-         * which matters because our texture alpha is binary (0 or 255) from
-         * the alpha-test above, not a blend factor. */
         if (sBldEffect == 1) {
             bool flushedForBlend = false;
             bool blendScissorSet = false;
@@ -1753,23 +1683,14 @@ void Port_GpuRenderer_RenderFrame(void) {
                         blendScissorSet = true;
                     }
                     float eyeOffset = eyeSign * slider3d * kTierEyeOffsetPx[item->depthTier];
-                    C2D_DrawParams params = BuildDrawParams(item, screenBaseX, eyeOffset, scale);
+                    C2D_DrawParams params = BuildDrawParams(item, screenBaseX, screenBaseY, eyeOffset, scaleX, scaleY);
                     C2D_DrawImage(item->img, &params, NULL);
-                    /* Same TEV-clobber concern as the pass-1 loop above -- only
-                     * relevant here if pass 1 drew zero items (mode could still
-                     * be "solid" entering this loop). */
                     if (!reassertedTexEnv) {
                         ConfigureAtlasTextureEnv();
                         reassertedTexEnv = true;
                     }
                     if ((++drawCount % 512) == 0) C2D_Flush();
                 }
-                /* Scissor mode must change between passes even if the first
-                 * pass never actually flushed into blend mode (e.g. every
-                 * blend item was outside-only and this is the inside pass)
-                 * -- reset the per-pass latch, not the outer flushedForBlend
-                 * one, so the NEXT pass's first blend draw still sets its
-                 * own scissor mode. */
                 blendScissorSet = false;
             }
             if (flushedForBlend) {
@@ -1778,6 +1699,16 @@ void Port_GpuRenderer_RenderFrame(void) {
                                GPU_ONE_MINUS_SRC_ALPHA);
                 if (sWindowActive) C3D_SetScissor(GPU_SCISSOR_DISABLE, 0, 0, 0, 0);
             }
+        }
+
+        if (Port_Config_GetShowFps()) {
+            char label[20];
+            double fps = Port_PPU_3DS_CurrentFps();
+            unsigned rounded = fps > 0.0 ? (unsigned)(fps + 0.5) : 0u;
+            if (rounded > 999u) rounded = 999u;
+            snprintf(label, sizeof(label), "FPS %u", rounded);
+            C2D_DrawRectSolid(5.0f, 216.0f, 0.7f, 65.0f, 18.0f, C2D_Color32(0, 0, 0, 200));
+            PlatformGpu3DS_DrawStatusText(8.0f, 220.0f, 1.5f, label);
         }
 #ifdef PORT_GPU_RENDERER_DIAG_LOG
         {
