@@ -16,6 +16,7 @@ extern uint8_t gMinimapX;
 extern uint8_t gMinimapY;
 extern uint8_t gCurrentArea;
 extern uint8_t gCurrentRoom;
+extern int8_t gLanguage;
 
 struct BottomEquipmentView {
     uint16_t maxEnergy;
@@ -95,6 +96,12 @@ static bool sIsDragging = false;
 static uint16_t sOtherAreaTiles[32 * 32];
 static uint8_t sCachedOtherArea = 0xFF;
 
+/* Language helpers (0=JP, 1=HIRA, 2=EN, 3=DE, 4=FR, 5=IT, 6=ES) */
+static inline int GetLang(void) {
+    if (gLanguage >= 0 && gLanguage <= 6) return (int)gLanguage;
+    return 2; /* Default English */
+}
+
 static const char* AreaName(uint8_t area) {
     switch (area) {
         case 0: return "BRINSTAR";
@@ -109,59 +116,62 @@ static const char* AreaName(uint8_t area) {
     }
 }
 
-/* Bitmap font 5x7 glyph renderer */
+/* Crisp 5x7 bitmap font glyph table */
 static const uint8_t* GetGlyph(char c) {
     static const uint8_t digits[10][7] = {
-        { 14, 17, 19, 21, 25, 17, 14 }, { 4, 12, 4, 4, 4, 4, 14 },
-        { 14, 17, 1, 2, 4, 8, 31 },     { 30, 1, 1, 14, 1, 1, 30 },
-        { 2, 6, 10, 18, 31, 2, 2 },     { 31, 16, 16, 30, 1, 1, 30 },
-        { 14, 16, 16, 30, 17, 17, 14 }, { 31, 1, 2, 4, 8, 8, 8 },
-        { 14, 17, 17, 14, 17, 17, 14 }, { 14, 17, 17, 15, 1, 1, 14 },
+        { 0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E }, /* 0 */
+        { 0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E }, /* 1 */
+        { 0x0E, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1F }, /* 2 */
+        { 0x1E, 0x01, 0x01, 0x0E, 0x01, 0x01, 0x1E }, /* 3 */
+        { 0x02, 0x06, 0x0A, 0x12, 0x1F, 0x02, 0x02 }, /* 4 */
+        { 0x1F, 0x10, 0x10, 0x1E, 0x01, 0x01, 0x1E }, /* 5 */
+        { 0x0E, 0x10, 0x10, 0x1E, 0x11, 0x11, 0x0E }, /* 6 */
+        { 0x1F, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08 }, /* 7 */
+        { 0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E }, /* 8 */
+        { 0x0E, 0x11, 0x11, 0x0F, 0x01, 0x01, 0x0E }, /* 9 */
     };
     static const uint8_t letters[26][7] = {
-        { 14, 17, 17, 31, 17, 17, 17 }, /* A */
-        { 30, 17, 17, 30, 17, 17, 30 }, /* B */
-        { 31, 16, 16, 16, 16, 16, 31 }, /* C */
-        { 30, 17, 17, 17, 17, 17, 30 }, /* D */
-        { 31, 16, 16, 30, 16, 16, 31 }, /* E */
-        { 31, 16, 16, 30, 16, 16, 16 }, /* F */
-        { 14, 17, 16, 23, 17, 17, 14 }, /* G */
-        { 17, 17, 17, 31, 17, 17, 17 }, /* H */
-        { 31, 4, 4, 4, 4, 4, 31 },      /* I */
-        { 7, 2, 2, 2, 2, 18, 12 },      /* J */
-        { 17, 18, 20, 24, 20, 18, 17 }, /* K */
-        { 16, 16, 16, 16, 16, 16, 31 }, /* L */
-        { 17, 27, 21, 21, 17, 17, 17 }, /* M */
-        { 17, 25, 21, 19, 17, 17, 17 }, /* N */
-        { 14, 17, 17, 17, 17, 17, 14 }, /* O */
-        { 30, 17, 17, 30, 16, 16, 16 }, /* P */
-        { 14, 17, 17, 21, 18, 9, 22 },  /* Q */
-        { 30, 17, 17, 30, 20, 18, 17 }, /* R */
-        { 15, 16, 16, 14, 1, 1, 30 },   /* S */
-        { 31, 4, 4, 4, 4, 4, 4 },       /* T */
-        { 17, 17, 17, 17, 17, 17, 14 }, /* U */
-        { 17, 17, 17, 17, 17, 10, 4 },  /* V */
-        { 17, 17, 17, 21, 21, 27, 17 }, /* W */
-        { 17, 10, 4, 4, 4, 10, 17 },    /* X */
-        { 17, 10, 4, 4, 4, 4, 4 },      /* Y */
-        { 31, 1, 2, 4, 8, 16, 31 },     /* Z */
+        { 0x0E, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11 }, /* A */
+        { 0x1E, 0x11, 0x11, 0x1E, 0x11, 0x11, 0x1E }, /* B */
+        { 0x0E, 0x11, 0x10, 0x10, 0x10, 0x11, 0x0E }, /* C */
+        { 0x1C, 0x12, 0x11, 0x11, 0x11, 0x12, 0x1C }, /* D */
+        { 0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x1F }, /* E */
+        { 0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x10 }, /* F */
+        { 0x0E, 0x11, 0x10, 0x13, 0x11, 0x11, 0x0F }, /* G */
+        { 0x11, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11 }, /* H */
+        { 0x0E, 0x04, 0x04, 0x04, 0x04, 0x04, 0x0E }, /* I */
+        { 0x07, 0x02, 0x02, 0x02, 0x02, 0x12, 0x0C }, /* J */
+        { 0x11, 0x12, 0x14, 0x18, 0x14, 0x12, 0x11 }, /* K */
+        { 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x1F }, /* L */
+        { 0x11, 0x1B, 0x15, 0x15, 0x11, 0x11, 0x11 }, /* M */
+        { 0x11, 0x19, 0x15, 0x13, 0x11, 0x11, 0x11 }, /* N */
+        { 0x0E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E }, /* O */
+        { 0x1E, 0x11, 0x11, 0x1E, 0x10, 0x10, 0x10 }, /* P */
+        { 0x0E, 0x11, 0x11, 0x11, 0x15, 0x12, 0x0D }, /* Q */
+        { 0x1E, 0x11, 0x11, 0x1E, 0x14, 0x12, 0x11 }, /* R */
+        { 0x0E, 0x11, 0x10, 0x0E, 0x01, 0x11, 0x0E }, /* S */
+        { 0x1F, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04 }, /* T */
+        { 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E }, /* U */
+        { 0x11, 0x11, 0x11, 0x11, 0x11, 0x0A, 0x04 }, /* V */
+        { 0x11, 0x11, 0x11, 0x15, 0x15, 0x15, 0x0A }, /* W */
+        { 0x11, 0x11, 0x0A, 0x04, 0x0A, 0x11, 0x11 }, /* X */
+        { 0x11, 0x11, 0x0A, 0x04, 0x04, 0x04, 0x04 }, /* Y */
+        { 0x1F, 0x01, 0x02, 0x04, 0x08, 0x10, 0x1F }, /* Z */
     };
-    static const uint8_t colon[7]   = { 0, 12, 12, 0, 12, 12, 0 };
-    static const uint8_t dot[7]     = { 0, 0, 0, 0, 0, 12, 12 };
-    static const uint8_t dash[7]    = { 0, 0, 0, 31, 0, 0, 0 };
-    static const uint8_t slash[7]   = { 1, 2, 2, 4, 8, 8, 16 };
-    static const uint8_t percent[7] = { 19, 19, 2, 4, 8, 25, 25 };
-    static const uint8_t lbracket[7]= { 14, 8, 8, 8, 8, 8, 14 };
-    static const uint8_t rbracket[7]= { 14, 2, 2, 2, 2, 2, 14 };
-    static const uint8_t lparen[7]  = { 2, 4, 8, 8, 8, 4, 2 };
-    static const uint8_t rparen[7]  = { 8, 4, 2, 2, 2, 4, 8 };
-    static const uint8_t comma[7]   = { 0, 0, 0, 0, 0, 12, 8 };
-    static const uint8_t plus[7]    = { 0, 4, 4, 31, 4, 4, 0 };
-    static const uint8_t equal[7]   = { 0, 31, 0, 31, 0, 0, 0 };
-    static const uint8_t exclam[7]  = { 4, 4, 4, 4, 4, 0, 4 };
-    static const uint8_t question[7]= { 14, 17, 1, 2, 4, 0, 4 };
-    static const uint8_t gt[7]      = { 16, 8, 4, 2, 4, 8, 16 };
-    static const uint8_t lt[7]      = { 1, 2, 4, 8, 4, 2, 1 };
+    static const uint8_t colon[7]   = { 0x00, 0x0C, 0x0C, 0x00, 0x0C, 0x0C, 0x00 };
+    static const uint8_t dot[7]     = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x0C, 0x0C };
+    static const uint8_t dash[7]    = { 0x00, 0x00, 0x00, 0x1F, 0x00, 0x00, 0x00 };
+    static const uint8_t slash[7]   = { 0x01, 0x02, 0x02, 0x04, 0x08, 0x08, 0x10 };
+    static const uint8_t percent[7] = { 0x13, 0x13, 0x02, 0x04, 0x08, 0x19, 0x19 };
+    static const uint8_t lbracket[7]= { 0x0E, 0x08, 0x08, 0x08, 0x08, 0x08, 0x0E };
+    static const uint8_t rbracket[7]= { 0x0E, 0x02, 0x02, 0x02, 0x02, 0x02, 0x0E };
+    static const uint8_t checkmark[7]={ 0x00, 0x01, 0x01, 0x02, 0x12, 0x0C, 0x00 }; /* ✓ / * */
+    static const uint8_t plus[7]    = { 0x00, 0x04, 0x04, 0x1F, 0x04, 0x04, 0x00 };
+    static const uint8_t equal[7]   = { 0x00, 0x1F, 0x00, 0x1F, 0x00, 0x00, 0x00 };
+    static const uint8_t exclam[7]  = { 0x04, 0x04, 0x04, 0x04, 0x04, 0x00, 0x04 };
+    static const uint8_t question[7]= { 0x0E, 0x11, 0x01, 0x02, 0x04, 0x00, 0x04 };
+    static const uint8_t gt[7]      = { 0x10, 0x08, 0x04, 0x02, 0x04, 0x08, 0x10 };
+    static const uint8_t lt[7]      = { 0x01, 0x02, 0x04, 0x08, 0x04, 0x02, 0x01 };
 
     if (c >= '0' && c <= '9') return digits[c - '0'];
     if (c >= 'A' && c <= 'Z') return letters[c - 'A'];
@@ -173,9 +183,7 @@ static const uint8_t* GetGlyph(char c) {
     if (c == '%') return percent;
     if (c == '[') return lbracket;
     if (c == ']') return rbracket;
-    if (c == '(') return lparen;
-    if (c == ')') return rparen;
-    if (c == ',') return comma;
+    if (c == '*' || c == 'v' || c == '#') return checkmark;
     if (c == '+') return plus;
     if (c == '=') return equal;
     if (c == '!') return exclam;
@@ -186,19 +194,21 @@ static const uint8_t* GetGlyph(char c) {
 }
 
 static void DrawText(float x, float y, float scale, const char* text, uint32_t color) {
-    for (; *text; ++text, x += 6.0f * scale) {
+    float charW = 6.0f * scale;
+    for (; *text; ++text, x += charW) {
         const uint8_t* glyph = GetGlyph(*text);
         if (!glyph) continue;
         for (int row = 0; row < 7; ++row) {
+            uint8_t rowVal = glyph[row];
             for (int col = 0; col < 5;) {
-                if ((glyph[row] & (1u << (4 - col))) == 0) {
+                if ((rowVal & (1u << (4 - col))) == 0) {
                     ++col;
                     continue;
                 }
                 int end = col + 1;
-                while (end < 5 && (glyph[row] & (1u << (4 - end))) != 0) ++end;
-                C2D_DrawRectSolid(x + col * scale, y + row * scale, 0.85f,
-                                  (end - col) * scale, scale, color);
+                while (end < 5 && (rowVal & (1u << (4 - end))) != 0) ++end;
+                C2D_DrawRectSolid(x + (float)col * scale, y + (float)row * scale, 0.85f,
+                                  (float)(end - col) * scale, scale, color);
                 col = end;
             }
         }
@@ -343,7 +353,7 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
                     sViewArea = gCurrentArea;
                     CenterMapOnTile(gMinimapX, gMinimapY);
                 }
-                /* Target Button [ ! OBJ ] */
+                /* Target Button [ ! OBJ / TARGET ] */
                 else if (x >= 252 && x <= 316) {
                     uint8_t tArea = 0, tX = 0, tY = 0;
                     if (GetActiveChozoTarget(&tArea, &tX, &tY)) {
@@ -408,16 +418,26 @@ void Port_BottomUI_TouchReleased(void) {
 
 /* Render 4-Tab Navigation Bar */
 static void RenderTabBar(void) {
+    int lang = GetLang();
+    const char* tabNames[7][4] = {
+        { "MAP", "STATUS", "DEBUG", "OPTIONS" },  /* JP */
+        { "MAP", "STATUS", "DEBUG", "OPTIONS" },  /* HIRA */
+        { "MAP", "STATUS", "DEBUG", "OPTIONS" },  /* EN */
+        { "KARTE", "STATUS", "DEBUG", "OPTIONEN" }, /* DE */
+        { "CARTE", "STATUT", "DEBUG", "OPTIONS" },  /* FR */
+        { "MAPPA", "STATO", "DEBUG", "OPZIONI" },  /* IT */
+        { "MAPA", "ESTADO", "DEBUG", "OPCIONES" }  /* ES */
+    };
+
     struct {
         float x;
         float w;
-        const char* label;
         PortBottomTab tab;
     } tabs[] = {
-        { 4.0f,   74.0f, "MAP",     BOTTOM_TAB_MAP },
-        { 82.0f,  74.0f, "STATUS",  BOTTOM_TAB_STATUS },
-        { 160.0f, 74.0f, "DEBUG",   BOTTOM_TAB_DEBUG },
-        { 238.0f, 78.0f, "OPTIONS", BOTTOM_TAB_OPTIONS }
+        { 4.0f,   74.0f, BOTTOM_TAB_MAP },
+        { 82.0f,  74.0f, BOTTOM_TAB_STATUS },
+        { 160.0f, 74.0f, BOTTOM_TAB_DEBUG },
+        { 238.0f, 78.0f, BOTTOM_TAB_OPTIONS }
     };
 
     for (int i = 0; i < 4; ++i) {
@@ -428,7 +448,7 @@ static void RenderTabBar(void) {
 
         C2D_DrawRectSolid(tabs[i].x, 3.0f, 0.4f, tabs[i].w, 20.0f, border);
         C2D_DrawRectSolid(tabs[i].x + 1.0f, 4.0f, 0.5f, tabs[i].w - 2.0f, 18.0f, bg);
-        DrawTextCentered(tabs[i].x + tabs[i].w / 2.0f, 9.0f, 1.1f, tabs[i].label, textColor);
+        DrawTextCentered(tabs[i].x + tabs[i].w / 2.0f, 9.0f, 1.0f, tabNames[lang][i], textColor);
     }
 }
 
@@ -550,6 +570,7 @@ static void DrawPowerBombIcon(float x, float y) {
 
 /* Render Map View */
 static void RenderMapView(void) {
+    int lang = GetLang();
     if (sFollowSamus) {
         sViewArea = gCurrentArea;
     }
@@ -578,13 +599,14 @@ static void RenderMapView(void) {
     /* Chozo Objective Badge */
     uint8_t targetArea = 0, targetX = 0, targetY = 0;
     bool hasTarget = GetActiveChozoTarget(&targetArea, &targetX, &targetY);
+    const char* objLabel = (lang == 6) ? "! OBJETIVO" : ((lang == 3) ? "! ZIEL" : "! TARGET");
     if (hasTarget) {
         bool inViewArea = (targetArea == sViewArea);
         uint32_t targetBg = inViewArea
             ? (((sFrameCounter % 20) < 10) ? C2D_Color32(200, 40, 40, 255) : C2D_Color32(160, 120, 0, 255))
             : C2D_Color32(80, 60, 20, 255);
         C2D_DrawRectSolid(252.0f, 26.0f, 0.4f, 64.0f, 18.0f, targetBg);
-        DrawTextCentered(284.0f, 31.0f, 1.0f, inViewArea ? "! TARGET" : "! OBJ", C2D_Color32(255, 255, 255, 255));
+        DrawTextCentered(284.0f, 31.0f, 1.0f, objLabel, C2D_Color32(255, 255, 255, 255));
     } else {
         C2D_DrawRectSolid(252.0f, 26.0f, 0.4f, 64.0f, 18.0f, C2D_Color32(20, 25, 38, 255));
         char pBuf[16];
@@ -690,107 +712,151 @@ static void RenderMapView(void) {
 
 /* Render Status (Estado) View */
 static void RenderStatusView(void) {
-    C2D_DrawRectSolid(6.0f, 26.0f, 0.4f, 308.0f, 210.0f, C2D_Color32(12, 16, 26, 255));
-    C2D_DrawRectSolid(6.0f, 26.0f, 0.35f, 308.0f, 210.0f, C2D_Color32(35, 50, 75, 255));
+    int lang = GetLang();
 
-    DrawText(14.0f, 32.0f, 1.1f, "SAMUS ARAN - STATUS & EQUIPMENT", C2D_Color32(100, 220, 255, 255));
+    C2D_DrawRectSolid(4.0f, 26.0f, 0.4f, 312.0f, 210.0f, C2D_Color32(12, 16, 26, 255));
+    C2D_DrawRectSolid(4.0f, 26.0f, 0.35f, 312.0f, 210.0f, C2D_Color32(35, 50, 75, 255));
 
-    /* 1. Health & Ammunition Card (Y: 48 to 82) */
-    C2D_DrawRectSolid(10.0f, 48.0f, 0.45f, 300.0f, 34.0f, C2D_Color32(20, 26, 40, 255));
-    C2D_DrawRectSolid(10.0f, 48.0f, 0.4f, 300.0f, 1.0f, C2D_Color32(50, 65, 95, 255));
+    const char* titles[7] = {
+        "SAMUS ARAN - STATUS & EQUIPMENT",
+        "SAMUS ARAN - STATUS & EQUIPMENT",
+        "SAMUS ARAN - STATUS & EQUIPMENT",
+        "SAMUS ARAN - STATUS & AUSRUESTUNG",
+        "SAMUS ARAN - STATUT ET EQUIPEMENT",
+        "SAMUS ARAN - STATO ED EQUIPAGGIAMENTO",
+        "SAMUS ARAN - ESTADO Y EQUIPAMIENTO"
+    };
+    DrawText(12.0f, 32.0f, 1.0f, titles[lang], C2D_Color32(100, 220, 255, 255));
+
+    /* 1. Health & Ammunition Card (Y: 46 to 74) */
+    C2D_DrawRectSolid(8.0f, 46.0f, 0.45f, 304.0f, 28.0f, C2D_Color32(20, 26, 40, 255));
+    C2D_DrawRectSolid(8.0f, 46.0f, 0.4f, 304.0f, 1.0f, C2D_Color32(50, 65, 95, 255));
 
     /* Energy */
-    DrawEnergyTankIcon(16.0f, 60.0f);
+    DrawEnergyTankIcon(14.0f, 55.0f);
     char eBuf[32];
     snprintf(eBuf, sizeof(eBuf), "%03u/%03u", gEquipment.currentEnergy, gEquipment.maxEnergy);
-    DrawText(33.0f, 60.0f, 1.0f, eBuf, C2D_Color32(255, 255, 255, 255));
+    DrawText(31.0f, 56.0f, 1.0f, eBuf, C2D_Color32(255, 255, 255, 255));
 
     /* Missiles */
-    DrawMissileIcon(92.0f, 60.0f);
+    DrawMissileIcon(90.0f, 55.0f);
     char mBuf[32];
     if (gEquipment.maxMissiles > 0) {
         snprintf(mBuf, sizeof(mBuf), "%03u/%03u", gEquipment.currentMissiles, gEquipment.maxMissiles);
-        DrawText(109.0f, 60.0f, 1.0f, mBuf, C2D_Color32(255, 140, 140, 255));
+        DrawText(107.0f, 56.0f, 1.0f, mBuf, C2D_Color32(255, 140, 140, 255));
     } else {
-        DrawText(109.0f, 60.0f, 1.0f, "---/---", C2D_Color32(120, 130, 150, 255));
+        DrawText(107.0f, 56.0f, 1.0f, "---/---", C2D_Color32(100, 110, 130, 255));
     }
 
     /* Super Missiles */
-    DrawSuperMissileIcon(168.0f, 60.0f);
+    DrawSuperMissileIcon(166.0f, 55.0f);
     char smBuf[32];
     if (gEquipment.maxSuperMissiles > 0) {
         snprintf(smBuf, sizeof(smBuf), "%02u/%02u", gEquipment.currentSuperMissiles, gEquipment.maxSuperMissiles);
-        DrawText(185.0f, 60.0f, 1.0f, smBuf, C2D_Color32(100, 255, 140, 255));
+        DrawText(183.0f, 56.0f, 1.0f, smBuf, C2D_Color32(100, 255, 140, 255));
     } else {
-        DrawText(185.0f, 60.0f, 1.0f, "--/--", C2D_Color32(120, 130, 150, 255));
+        DrawText(183.0f, 56.0f, 1.0f, "--/--", C2D_Color32(100, 110, 130, 255));
     }
 
     /* Power Bombs */
-    DrawPowerBombIcon(244.0f, 60.0f);
+    DrawPowerBombIcon(238.0f, 55.0f);
     char pbBuf[32];
     if (gEquipment.maxPowerBombs > 0) {
         snprintf(pbBuf, sizeof(pbBuf), "%02u/%02u", gEquipment.currentPowerBombs, gEquipment.maxPowerBombs);
-        DrawText(260.0f, 60.0f, 1.0f, pbBuf, C2D_Color32(255, 225, 80, 255));
+        DrawText(254.0f, 56.0f, 1.0f, pbBuf, C2D_Color32(255, 225, 80, 255));
     } else {
-        DrawText(260.0f, 60.0f, 1.0f, "--/--", C2D_Color32(120, 130, 150, 255));
+        DrawText(254.0f, 56.0f, 1.0f, "--/--", C2D_Color32(100, 110, 130, 255));
     }
 
-    /* 2. Beams & Weapons Column (X: 10, W: 146, Y: 88 to 184) */
-    C2D_DrawRectSolid(10.0f, 88.0f, 0.45f, 146.0f, 96.0f, C2D_Color32(18, 22, 34, 255));
-    DrawText(14.0f, 92.0f, 1.0f, "BEAMS & BOMBS", C2D_Color32(255, 215, 0, 255));
+    /* 2. Beams & Weapons Column (X: 8, W: 148, Y: 78 to 166) */
+    C2D_DrawRectSolid(8.0f, 78.0f, 0.45f, 148.0f, 88.0f, C2D_Color32(18, 22, 34, 255));
+    const char* beamColTitles[7] = {
+        "BEAMS & BOMBS", "BEAMS & BOMBS", "BEAMS & BOMBS",
+        "BEAMS & BOMBEN", "RAYONS & BOMBES", "RAGGI E BOMBE", "RAYOS Y BOMBAS"
+    };
+    DrawText(14.0f, 83.0f, 1.0f, beamColTitles[lang], C2D_Color32(255, 215, 0, 255));
 
     struct {
-        const char* name;
+        const char* name[7];
         uint8_t flag;
     } beams[] = {
-        { "LONG BEAM",   1 << 0 },
-        { "ICE BEAM",    1 << 1 },
-        { "WAVE BEAM",   1 << 2 },
-        { "PLASMA BEAM", 1 << 3 },
-        { "CHARGE BEAM", 1 << 4 },
-        { "NORMAL BOMBS",1 << 7 }
+        { { "LONG BEAM", "LONG BEAM", "LONG BEAM", "LONG BEAM", "RAYON LONG", "RAGGIO LUNGO", "RAYO LARGO" }, 1 << 0 },
+        { { "ICE BEAM", "ICE BEAM", "ICE BEAM", "EIS BEAM", "RAYON GLACE", "RAGGIO GELO", "RAYO HIELO" }, 1 << 1 },
+        { { "WAVE BEAM", "WAVE BEAM", "WAVE BEAM", "WAVE BEAM", "RAYON ONDES", "RAGGIO ONDA", "RAYO ONDAS" }, 1 << 2 },
+        { { "PLASMA BEAM", "PLASMA BEAM", "PLASMA BEAM", "PLASMA BEAM", "RAYON PLASMA", "RAGGIO PLASMA", "RAYO PLASMA" }, 1 << 3 },
+        { { "CHARGE BEAM", "CHARGE BEAM", "CHARGE BEAM", "CHARGE BEAM", "RAYON CHARGE", "RAGGIO CARICA", "RAYO CARGA" }, 1 << 4 },
+        { { "BOMBS", "BOMBS", "NORMAL BOMBS", "NORMAL BOMBEN", "BOMBES", "BOMBE NORMALI", "BOMBAS" }, 1 << 7 }
     };
     for (int i = 0; i < 6; ++i) {
         bool has = (gEquipment.beamBombs & beams[i].flag) != 0;
-        uint32_t col = has ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(70, 80, 100, 255);
-        DrawText(14.0f, 104.0f + (float)i * 12.0f, 0.9f, beams[i].name, col);
-        DrawText(120.0f, 104.0f + (float)i * 12.0f, 0.9f, has ? "ON" : "--", col);
+        uint32_t col = has ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(75, 85, 105, 255);
+        float py = 95.0f + (float)i * 11.0f;
+        DrawText(14.0f, py, 1.0f, beams[i].name[lang], col);
+        DrawText(130.0f, py, 1.0f, has ? "ON" : "--", col);
     }
 
-    /* 3. Suits & Upgrades Column (X: 164, W: 146, Y: 88 to 184) */
-    C2D_DrawRectSolid(164.0f, 88.0f, 0.45f, 146.0f, 96.0f, C2D_Color32(18, 22, 34, 255));
-    DrawText(168.0f, 92.0f, 1.0f, "SUITS & MISC", C2D_Color32(255, 215, 0, 255));
+    /* 3. Suits & Upgrades Column (X: 164, W: 148, Y: 78 to 166) */
+    C2D_DrawRectSolid(164.0f, 78.0f, 0.45f, 148.0f, 88.0f, C2D_Color32(18, 22, 34, 255));
+    const char* suitColTitles[7] = {
+        "SUITS & MISC", "SUITS & MISC", "SUITS & MISC",
+        "ANZUEGE & ITEMS", "COMBINAISONS", "TUTE E OGGETTI", "TRAJES Y EQUIPO"
+    };
+    DrawText(170.0f, 83.0f, 1.0f, suitColTitles[lang], C2D_Color32(255, 215, 0, 255));
 
     struct {
-        const char* name;
+        const char* name[7];
         uint8_t flag;
     } suits[] = {
-        { "HIGH JUMP",   1 << 0 },
-        { "SPEEDBOOSTER",1 << 1 },
-        { "SPACE JUMP",  1 << 2 },
-        { "SCREW ATTACK",1 << 3 },
-        { "VARIA SUIT",  1 << 4 },
-        { "GRAVITY SUIT",1 << 5 },
-        { "MORPH BALL",  1 << 6 },
-        { "POWER GRIP",  1 << 7 }
+        { { "HI-JUMP", "HI-JUMP", "HIGH JUMP", "HOCHSPRUNG", "SUPER SAUT", "SALTO IN ALTO", "SALTO ALTO" }, 1 << 0 },
+        { { "SPEEDBOOSTER", "SPEEDBOOSTER", "SPEED BOOSTER", "SPEED BOOSTER", "ACCELERATION", "SUPERVELOCITA", "ACELERADOR" }, 1 << 1 },
+        { { "SPACE JUMP", "SPACE JUMP", "SPACE JUMP", "SPACE JUMP", "SAUT SPATIAL", "SALTO SPAZIALE", "SALTO ESPACIO" }, 1 << 2 },
+        { { "SCREW ATTACK", "SCREW ATTACK", "SCREW ATTACK", "SCREW ATTACK", "ATTAQUE VRILLE", "ATTACCO A VITE", "ATAQUE ESPIRAL" }, 1 << 3 },
+        { { "VARIA SUIT", "VARIA SUIT", "VARIA SUIT", "VARIA SUIT", "COSTUME VARIA", "TUTA VARIA", "TRAJE VARIA" }, 1 << 4 },
+        { { "GRAVITY SUIT", "GRAVITY SUIT", "GRAVITY SUIT", "GRAVITY SUIT", "COSTUME GRAVITE", "TUTA GRAVITA", "TRAJE GRAVEDAD" }, 1 << 5 },
+        { { "MORPH BALL", "MORPH BALL", "MORPH BALL", "MORPH BALL", "MORPHING", "MORFOSFERA", "MORFOSFERA" }, 1 << 6 }
     };
-    for (int i = 0; i < 8; ++i) {
+    for (int i = 0; i < 7; ++i) {
         bool has = (gEquipment.suitMisc & suits[i].flag) != 0;
-        uint32_t col = has ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(70, 80, 100, 255);
-        float py = 104.0f + (float)i * 10.0f;
-        if (i < 7) {
-            DrawText(168.0f, py, 0.85f, suits[i].name, col);
-            DrawText(274.0f, py, 0.85f, has ? "OK" : "--", col);
-        }
+        uint32_t col = has ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(75, 85, 105, 255);
+        float py = 95.0f + (float)i * 10.0f;
+        DrawText(170.0f, py, 1.0f, suits[i].name[lang], col);
+        DrawText(286.0f, py, 1.0f, has ? "OK" : "--", col);
     }
 
-    /* 4. Area Map Downloads (Y: 190 to 230) */
-    C2D_DrawRectSolid(10.0f, 190.0f, 0.45f, 300.0f, 40.0f, C2D_Color32(16, 20, 30, 255));
-    DrawText(14.0f, 194.0f, 0.9f, "DOWNLOADED MAPS:", C2D_Color32(100, 220, 255, 255));
-    for (int i = 0; i < 7; ++i) {
+    /* 4. Area Map Downloads Card (Y: 170 to 232) */
+    C2D_DrawRectSolid(8.0f, 170.0f, 0.45f, 304.0f, 62.0f, C2D_Color32(16, 20, 30, 255));
+    const char* mapHeaderTitles[7] = {
+        "DOWNLOADED MAPS:", "DOWNLOADED MAPS:", "DOWNLOADED MAPS:",
+        "HERUNTERGELADENE KARTEN:", "CARTES TELECHARGEES:", "MAPPE SCARICATE:", "MAPAS DESCARGADOS:"
+    };
+    DrawText(14.0f, 174.0f, 1.0f, mapHeaderTitles[lang], C2D_Color32(100, 220, 255, 255));
+
+    /* Row 1: 4 areas (Brinstar, Kraid, Norfair, Ridley) */
+    for (int i = 0; i < 4; ++i) {
         bool dl = (gEquipment.downloadedMapStatus & (1 << i)) != 0;
-        uint32_t c = dl ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(70, 80, 100, 255);
-        DrawText(14.0f + (float)i * 42.0f, 208.0f, 0.85f, AreaName(i), c);
+        float bx = 14.0f + (float)i * 73.0f;
+        float by = 186.0f;
+        uint32_t boxBg = dl ? C2D_Color32(16, 50, 95, 255) : C2D_Color32(22, 26, 38, 255);
+        uint32_t boxBorder = dl ? C2D_Color32(40, 160, 250, 255) : C2D_Color32(45, 52, 70, 255);
+        uint32_t textCol = dl ? C2D_Color32(255, 255, 255, 255) : C2D_Color32(90, 100, 120, 255);
+
+        C2D_DrawRectSolid(bx, by, 0.5f, 68.0f, 18.0f, boxBorder);
+        C2D_DrawRectSolid(bx + 1.0f, by + 1.0f, 0.55f, 66.0f, 16.0f, boxBg);
+        DrawTextCentered(bx + 34.0f, by + 5.0f, 1.0f, AreaName(i), textCol);
+    }
+
+    /* Row 2: 3 areas (Tourian, Crateria, Chozodia) */
+    for (int i = 4; i < 7; ++i) {
+        bool dl = (gEquipment.downloadedMapStatus & (1 << i)) != 0;
+        float bx = 14.0f + (float)(i - 4) * 98.0f;
+        float by = 208.0f;
+        uint32_t boxBg = dl ? C2D_Color32(16, 50, 95, 255) : C2D_Color32(22, 26, 38, 255);
+        uint32_t boxBorder = dl ? C2D_Color32(40, 160, 250, 255) : C2D_Color32(45, 52, 70, 255);
+        uint32_t textCol = dl ? C2D_Color32(255, 255, 255, 255) : C2D_Color32(90, 100, 120, 255);
+
+        C2D_DrawRectSolid(bx, by, 0.5f, 92.0f, 18.0f, boxBorder);
+        C2D_DrawRectSolid(bx + 1.0f, by + 1.0f, 0.55f, 90.0f, 16.0f, boxBg);
+        DrawTextCentered(bx + 46.0f, by + 5.0f, 1.0f, AreaName(i), textCol);
     }
 }
 
@@ -810,24 +876,28 @@ static void RenderDebugView(void) {
 
     snprintf(buf, sizeof(buf), "FPS: %u   RENDER: %s   SYS: %s",
              roundedFps, usedGpu ? "GPU" : "CPU", isNew3ds ? "N3DS" : "O3DS");
-    DrawText(16.0f, 46.0f, 0.9f, buf, C2D_Color32(255, 255, 255, 255));
+    DrawText(16.0f, 46.0f, 1.0f, buf, C2D_Color32(255, 255, 255, 255));
 
     snprintf(buf, sizeof(buf), "GAME STATE: AREA=%s (%u) ROOM=%u",
              AreaName(gCurrentArea), gCurrentArea, gCurrentRoom);
-    DrawText(16.0f, 58.0f, 0.9f, buf, C2D_Color32(180, 240, 160, 255));
+    DrawText(16.0f, 58.0f, 1.0f, buf, C2D_Color32(180, 240, 160, 255));
 
     snprintf(buf, sizeof(buf), "MAP COORDS: X=%u Y=%u", gMinimapX, gMinimapY);
-    DrawText(16.0f, 70.0f, 0.9f, buf, C2D_Color32(180, 240, 160, 255));
+    DrawText(16.0f, 70.0f, 1.0f, buf, C2D_Color32(180, 240, 160, 255));
 
     /* Current room raw tile data & surrounding 3x3 inspect */
     uint16_t curTile = gDecompressedMinimapVisitedTiles[gMinimapX + gMinimapY * 32];
     uint16_t baseTile = gDecompressedMinimapData[gMinimapX + gMinimapY * 32];
-    snprintf(buf, sizeof(buf), "CURRENT TILE: VISITED=0x%04X (T=%u P=%u) BASE=0x%04X",
-             curTile, curTile & 0x3FF, (curTile >> 12) & 0xF, baseTile);
-    DrawText(16.0f, 84.0f, 0.9f, buf, C2D_Color32(255, 220, 100, 255));
+    snprintf(buf, sizeof(buf), "CURRENT TILE: VISITED=0x%04X (T=%u P=%u)",
+             curTile, curTile & 0x3FF, (curTile >> 12) & 0xF);
+    DrawText(16.0f, 82.0f, 1.0f, buf, C2D_Color32(255, 220, 100, 255));
+
+    snprintf(buf, sizeof(buf), "BASE MAP TILE: 0x%04X (T=%u P=%u)",
+             baseTile, baseTile & 0x3FF, (baseTile >> 12) & 0xF);
+    DrawText(16.0f, 93.0f, 1.0f, buf, C2D_Color32(255, 200, 80, 255));
 
     /* 3x3 Grid surrounding Samus */
-    DrawText(16.0f, 98.0f, 0.9f, "SURROUNDING 3x3 TILES (VISITED / BASE):", C2D_Color32(140, 200, 255, 255));
+    DrawText(16.0f, 107.0f, 1.0f, "SURROUNDING 3x3 TILES:", C2D_Color32(140, 200, 255, 255));
     for (int dy = -1; dy <= 1; ++dy) {
         int ty = (int)gMinimapY + dy;
         char rowBuf[64];
@@ -839,7 +909,7 @@ static void RenderDebugView(void) {
         } else {
             snprintf(rowBuf, sizeof(rowBuf), "Y%+d: OUT OF BOUNDS", dy);
         }
-        DrawText(20.0f, 110.0f + (float)(dy + 1) * 12.0f, 0.85f, rowBuf, C2D_Color32(200, 220, 240, 255));
+        DrawText(20.0f, 118.0f + (float)(dy + 1) * 11.0f, 1.0f, rowBuf, C2D_Color32(200, 220, 240, 255));
     }
 
     /* Active Chozo target status */
@@ -847,9 +917,9 @@ static void RenderDebugView(void) {
     bool hasTarget = GetActiveChozoTarget(&tArea, &tX, &tY);
     if (hasTarget) {
         snprintf(buf, sizeof(buf), "CHOZO TARGET: AREA=%s (%u) X=%u Y=%u", AreaName(tArea), tArea, tX, tY);
-        DrawText(16.0f, 150.0f, 0.9f, buf, C2D_Color32(255, 120, 120, 255));
+        DrawText(16.0f, 158.0f, 1.0f, buf, C2D_Color32(255, 120, 120, 255));
     } else {
-        DrawText(16.0f, 150.0f, 0.9f, "CHOZO TARGET: NONE ACTIVE", C2D_Color32(140, 150, 170, 255));
+        DrawText(16.0f, 158.0f, 1.0f, "CHOZO TARGET: NONE ACTIVE", C2D_Color32(140, 150, 170, 255));
     }
 
     /* Check obtained items count */
@@ -864,45 +934,72 @@ static void RenderDebugView(void) {
         }
     }
     snprintf(buf, sizeof(buf), "TOTAL ITEMS OBTAINED: %lu", (unsigned long)totalItems);
-    DrawText(16.0f, 164.0f, 0.9f, buf, C2D_Color32(180, 240, 160, 255));
+    DrawText(16.0f, 171.0f, 1.0f, buf, C2D_Color32(180, 240, 160, 255));
 
-    DrawText(16.0f, 212.0f, 0.85f, "TOUCH [MAP] TAB TO RETURN TO MAP VIEW", C2D_Color32(120, 140, 170, 255));
+    DrawText(16.0f, 212.0f, 1.0f, (GetLang() == 6) ? "TOCA LA PESTANA [MAPA] PARA VOLVER" : "TOUCH [MAP] TAB TO RETURN TO MAP VIEW", C2D_Color32(120, 140, 170, 255));
 }
 
 /* Render Options View */
 static void RenderOptionsView(void) {
+    int lang = GetLang();
+
     C2D_DrawRectSolid(8.0f, 28.0f, 0.4f, 304.0f, 204.0f, C2D_Color32(14, 18, 28, 255));
 
-    DrawText(16.0f, 32.0f, 1.0f, "SETTINGS (TOUCH AN OPTION TO CHANGE)", C2D_Color32(100, 220, 255, 255));
+    const char* optTitles[7] = {
+        "SETTINGS (TOUCH AN OPTION TO CHANGE)",
+        "SETTINGS (TOUCH AN OPTION TO CHANGE)",
+        "SETTINGS (TOUCH AN OPTION TO CHANGE)",
+        "EINSTELLUNGEN (ZUM AENDERN BERUEHREN)",
+        "PARAMETRES (TOUCHER POUR MODIFIER)",
+        "IMPOSTAZIONI (TOCCA PER MODIFICARE)",
+        "AJUSTES (TOCA UNA OPCION PARA CAMBIAR)"
+    };
+    DrawText(16.0f, 32.0f, 1.0f, optTitles[lang], C2D_Color32(100, 220, 255, 255));
 
     /* Option 1: Aspect Ratio */
     C2D_DrawRectSolid(12.0f, 44.0f, 0.45f, 296.0f, 26.0f, C2D_Color32(26, 32, 48, 255));
     C2D_DrawRectSolid(12.0f, 44.0f, 0.4f, 296.0f, 1.0f, C2D_Color32(60, 75, 110, 255));
-    DrawText(20.0f, 52.0f, 1.1f, "ASPECT RATIO:", C2D_Color32(255, 255, 255, 255));
-    DrawText(170.0f, 52.0f, 1.1f, Port_Config_Get3DSAspectRatioName(), C2D_Color32(255, 215, 0, 255));
+    const char* arLabels[7] = {
+        "ASPECT RATIO:", "ASPECT RATIO:", "ASPECT RATIO:",
+        "BILDVERHAELTNIS:", "FORMAT IMAGE:", "FORMATO SCHERMO:", "RELACION DE ASPECTO:"
+    };
+    DrawText(20.0f, 52.0f, 1.0f, arLabels[lang], C2D_Color32(255, 255, 255, 255));
+    DrawText(170.0f, 52.0f, 1.0f, Port_Config_Get3DSAspectRatioName(), C2D_Color32(255, 215, 0, 255));
 
     /* Option 2: Display Style */
     C2D_DrawRectSolid(12.0f, 76.0f, 0.45f, 296.0f, 26.0f, C2D_Color32(26, 32, 48, 255));
     C2D_DrawRectSolid(12.0f, 76.0f, 0.4f, 296.0f, 1.0f, C2D_Color32(60, 75, 110, 255));
-    DrawText(20.0f, 84.0f, 1.1f, "DISPLAY STYLE:", C2D_Color32(255, 255, 255, 255));
-    DrawText(170.0f, 84.0f, 1.1f, Port_Config_Get3DSDisplayStyleName(), C2D_Color32(255, 215, 0, 255));
+    const char* dsLabels[7] = {
+        "DISPLAY STYLE:", "DISPLAY STYLE:", "DISPLAY STYLE:",
+        "ANZEIGE-STIL:", "STYLE AFFICHAGE:", "STILE DISPLAY:", "ESTILO DE PANTALLA:"
+    };
+    DrawText(20.0f, 84.0f, 1.0f, dsLabels[lang], C2D_Color32(255, 255, 255, 255));
+    DrawText(170.0f, 84.0f, 1.0f, Port_Config_Get3DSDisplayStyleName(), C2D_Color32(255, 215, 0, 255));
 
     /* Option 3: FPS Overlay */
     C2D_DrawRectSolid(12.0f, 108.0f, 0.45f, 296.0f, 26.0f, C2D_Color32(26, 32, 48, 255));
     C2D_DrawRectSolid(12.0f, 108.0f, 0.4f, 296.0f, 1.0f, C2D_Color32(60, 75, 110, 255));
-    DrawText(20.0f, 116.0f, 1.1f, "FPS OVERLAY:", C2D_Color32(255, 255, 255, 255));
-    DrawText(170.0f, 116.0f, 1.1f, Port_Config_GetShowFps() ? "ON" : "OFF",
+    DrawText(20.0f, 116.0f, 1.0f, "FPS OVERLAY:", C2D_Color32(255, 255, 255, 255));
+    DrawText(170.0f, 116.0f, 1.0f, Port_Config_GetShowFps() ? "ON" : "OFF",
              Port_Config_GetShowFps() ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 100, 100, 255));
 
     /* Informational Notes Box */
     C2D_DrawRectSolid(12.0f, 142.0f, 0.45f, 296.0f, 84.0f, C2D_Color32(18, 22, 34, 255));
     C2D_DrawRectSolid(12.0f, 142.0f, 0.4f, 296.0f, 1.0f, C2D_Color32(50, 65, 95, 255));
 
-    DrawText(20.0f, 150.0f, 1.0f, "NOTES & TIPS:", C2D_Color32(100, 220, 255, 255));
-    DrawText(20.0f, 166.0f, 1.0f, "- DRAG WITH STYLUS TO PAN ACROSS ZOOMED MAPS", C2D_Color32(180, 195, 215, 255));
-    DrawText(20.0f, 180.0f, 1.0f, "- USE [<] AND [>] TO VIEW UNLOCKED AREAS", C2D_Color32(180, 195, 215, 255));
-    DrawText(20.0f, 194.0f, 1.0f, "- TAP [SAMUS] TO INSTANTLY RE-CENTER ON PLAYER", C2D_Color32(180, 195, 215, 255));
-    DrawText(20.0f, 210.0f, 1.0f, "- TAP [STATUS] TO VIEW DETAILED SAMUS EQUIPMENT", C2D_Color32(140, 220, 160, 255));
+    if (lang == 6) {
+        DrawText(20.0f, 150.0f, 1.0f, "NOTAS Y CONSEJOS:", C2D_Color32(100, 220, 255, 255));
+        DrawText(20.0f, 166.0f, 1.0f, "- ARRASTRA EL STYLUS PARA MOVER EL MAPA", C2D_Color32(180, 195, 215, 255));
+        DrawText(20.0f, 180.0f, 1.0f, "- USA [<] Y [>] PARA VER OTRAS ZONAS", C2D_Color32(180, 195, 215, 255));
+        DrawText(20.0f, 194.0f, 1.0f, "- TOCA [SAMUS] PARA CENTRARTE EN TU POSICION", C2D_Color32(180, 195, 215, 255));
+        DrawText(20.0f, 210.0f, 1.0f, "- TOCA [ESTADO] PARA VER EL EQUIPO AL COMPLETO", C2D_Color32(140, 220, 160, 255));
+    } else {
+        DrawText(20.0f, 150.0f, 1.0f, "NOTES & TIPS:", C2D_Color32(100, 220, 255, 255));
+        DrawText(20.0f, 166.0f, 1.0f, "- DRAG WITH STYLUS TO PAN ACROSS ZOOMED MAPS", C2D_Color32(180, 195, 215, 255));
+        DrawText(20.0f, 180.0f, 1.0f, "- USE [<] AND [>] TO VIEW UNLOCKED AREAS", C2D_Color32(180, 195, 215, 255));
+        DrawText(20.0f, 194.0f, 1.0f, "- TAP [SAMUS] TO INSTANTLY RE-CENTER ON PLAYER", C2D_Color32(180, 195, 215, 255));
+        DrawText(20.0f, 210.0f, 1.0f, "- TAP [STATUS] TO VIEW DETAILED SAMUS EQUIPMENT", C2D_Color32(140, 220, 160, 255));
+    }
 }
 
 void Port_BottomUI_Render(void) {
