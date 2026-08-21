@@ -73,7 +73,6 @@ bool Platform3DS_StartLogicThread(void (*entry)(void)) {
 
 int Platform3DS_Init(void) {
     gfxInitDefault();
-    consoleInit(GFX_BOTTOM, NULL);
 
     APT_CheckNew3DS(&sIsNew3DS);
     if (sIsNew3DS) {
@@ -135,20 +134,18 @@ void Platform3DS_ShowSplash(void) {
     printf("Metroid Zero Mission 3DS\n\n");
 }
 
+static bool DummyPrint(void* console, int character) {
+    (void)console;
+    (void)character;
+    return true;
+}
+
 void Platform3DS_EnterGameplayDisplay(void) {
-    /* TEMP diagnostic: printf("\x1b[2J") removed here. This runs AFTER
-     * Port_PPU_Init() (main_3ds.c) has already handed GFX_BOTTOM to citro3d
-     * via PlatformGpu3DS_Init -- but stdout is still wired to the
-     * consoleInit(GFX_BOTTOM, ...) console from Platform3DS_Init, since
-     * nothing ever re-selects it. This ANSI clear writes into libctru's gfx
-     * module framebuffer for that same screen through the OLD text-console
-     * path, well after citro3d has already claimed the physical output --
-     * a real candidate for corrupting/racing with citro3d's live render
-     * target, and something none of this session's standalone citro2d test
-     * apps ever exercised (they never call consoleInit at all). Testing
-     * whether the bottom-screen duplication bug
-     * (docs/3ds-port-gpu-renderer-status-2026-08-20.md section 19) depends
-     * on this call. Revert if it turns out not to matter. */
+    static PrintConsole sDummyConsole;
+    sDummyConsole = *consoleGetDefault();
+    sDummyConsole.PrintChar = DummyPrint;
+    sDummyConsole.consoleInitialised = true;
+    consoleSelect(&sDummyConsole);
     sGameplayDisplayActive = true;
 }
 

@@ -116,6 +116,16 @@ static const uint8_t* StatusGlyph(char c) {
         0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
         13, 14, 15, 255, 16, 17, 18, 19, 20, 21, 22, 23, 255,
     };
+    static const uint8_t colon[7] = { 0, 12, 12, 0, 12, 12, 0 };
+    static const uint8_t dot[7] = { 0, 0, 0, 0, 0, 12, 12 };
+    static const uint8_t dash[7] = { 0, 0, 0, 31, 0, 0, 0 };
+    static const uint8_t slash[7] = { 1, 2, 2, 4, 8, 8, 16 };
+    static const uint8_t percent[7] = { 19, 19, 2, 4, 8, 25, 25 };
+    if (c == ':') return colon;
+    if (c == '.') return dot;
+    if (c == '-') return dash;
+    if (c == '/') return slash;
+    if (c == '%') return percent;
     if (c >= '0' && c <= '9') return digits[c - '0'];
     if (c >= 'A' && c <= 'Z') {
         uint8_t id = letterIds[c - 'A'];
@@ -191,10 +201,15 @@ void PlatformGpu3DS_ConfigureAbgrTextureEnv(void) {
  * after the textured draw and before any solid draw in the same scene to
  * put units 1/2 back to a harmless passthrough. */
 void PlatformGpu3DS_ResetSolidTexEnv(void) {
-    C3D_TexEnv* env = C3D_GetTexEnv(1);
+    C3D_TexEnv* env = C3D_GetTexEnv(0);
     C3D_TexEnvInit(env);
-    env = C3D_GetTexEnv(2);
-    C3D_TexEnvInit(env);
+    C3D_TexEnvSrc(env, C3D_Both, GPU_PRIMARY_COLOR, 0, 0);
+    C3D_TexEnvFunc(env, C3D_Both, GPU_REPLACE);
+
+    for (int i = 1; i < 6; ++i) {
+        env = C3D_GetTexEnv(i);
+        C3D_TexEnvInit(env);
+    }
 }
 
 bool PlatformGpu3DS_Init(bool old3dsProfile) {
@@ -298,9 +313,9 @@ bool PlatformGpu3DS_Init(bool old3dsProfile) {
     C3D_TexSetWrap(&sBottomTexture, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
 
     gfxSet3D(true);
-    sTopTarget = C3D_RenderTargetCreate(240, 400, GPU_RB_RGBA8, GPU_RB_DEPTH16);
-    sTopRightTarget = C3D_RenderTargetCreate(240, 400, GPU_RB_RGBA8, GPU_RB_DEPTH16);
-    sBottomTarget = C3D_RenderTargetCreate(240, 320, GPU_RB_RGBA8, GPU_RB_DEPTH16);
+    sTopTarget = C3D_RenderTargetCreate(240, 400, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8);
+    sTopRightTarget = C3D_RenderTargetCreate(240, 400, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8);
+    sBottomTarget = C3D_RenderTargetCreate(240, 320, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8);
     if (!sTopTarget || !sBottomTarget) goto fail_targets;
     const u32 output = GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(0) |
                        GX_TRANSFER_RAW_COPY(0) | GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) |
@@ -309,23 +324,6 @@ bool PlatformGpu3DS_Init(bool old3dsProfile) {
     C3D_RenderTargetSetOutput(sTopTarget, GFX_TOP, GFX_LEFT, output);
     if (sTopRightTarget) C3D_RenderTargetSetOutput(sTopRightTarget, GFX_TOP, GFX_RIGHT, output);
     C3D_RenderTargetSetOutput(sBottomTarget, GFX_BOTTOM, GFX_LEFT, output);
-    /* Platform3DS_Init() calls consoleInit(GFX_BOTTOM, NULL) before this
-     * runs (for the fatal-error text console), which leaves libctru's gfx
-     * module owning GFX_BOTTOM with its own double-buffering swap counter --
-     * a separate subsystem from citro3d that can independently flip which
-     * physical framebuffer address the LCD reads from. citro3d now owns
-     * bottom-screen presentation exclusively via C3D_RenderTargetSetOutput
-     * above; leaving gfx's own double buffering enabled for that screen
-     * means two subsystems can race over which buffer address is actually
-     * scanned out, a strong candidate for the still-unexplained bottom-
-     * screen "clean copy + stale/blurry copy, offset down" duplication
-     * (docs/3ds-port-gpu-renderer-status-2026-08-20.md section 18 -- ruled
-     * out reentrant presents and target content, both confirmed clean via
-     * KEY_X; never checked this gfx/citro3d double-buffer interaction).
-     * Disabling gfx's double buffering here removes that race without
-     * touching consoleInit itself (still needed for Platform3DS_ShowFatal).
-     * Unverified: needs confirming on real hardware, not just Azahar. */
-    gfxSetDoubleBuffering(GFX_BOTTOM, false);
 #ifdef PORT_GPU_RENDERER_DIAG_LOG
     {
         /* Diagnostic (docs/.../3ds-port-gpu-renderer-status-2026-08-20.md
@@ -528,72 +526,43 @@ bool PlatformGpu3DS_EndBottom(const uint32_t* pixels, bool changed) {
         }
     }
 #endif
-    if (changed) {
-        GSPGPU_FlushDataCache(pixels, 512u * 240u * sizeof(uint32_t));
-        const unsigned sourceHeight = sOld3DSProfile ? 240u : 256u;
-        C3D_SyncDisplayTransfer((u32*)pixels, GX_BUFFER_DIM(512, sourceHeight),
-                                (u32*)sBottomTexture.data, GX_BUFFER_DIM(512, 256), TextureTransfer());
-        ++sStats.bottomTransfers;
-    }
     if (!sOld3DSProfile || changed || !sBottomTargetValid) {
-        sBottomSubtexture = (Tex3DS_SubTexture){
-            .width = 320, .height = 240, .left = 0.0f, .top = 1.0f,
-            .right = 320.0f / 512.0f, .bottom = 1.0f - 240.0f / 256.0f,
-        };
-        const C2D_Image image = { .tex = &sBottomTexture, .subtex = &sBottomSubtexture };
-        const C2D_DrawParams params = {
-            .pos = { .x = 0.0f, .y = 0.0f, .w = 320.0f, .h = 240.0f },
-            .center = { 0.0f, 0.0f }, .depth = 0.0f, .angle = 0.0f,
-        };
         C2D_TargetClear(sBottomTarget, C2D_Color32(0, 0, 0, 255));
         C2D_SceneBegin(sBottomTarget);
-        /* Must run BEFORE the C2D_DrawImage below, not after: this configures
-         * the TEV byte-swizzle for sBottomTexture's ABGR-composited content
-         * (see this function's own doc comment). Called after used to leave
-         * the draw sampling whatever TEV state the GPU tile renderer's own
-         * ConfigureAtlasTextureEnv left behind from drawing the top screen
-         * this same frame -- a different byte-order convention, which reads
-         * as visibly wrong/noisy colors on the bottom screen's own image.
-         * Confirmed as a real bug, not just the reentrant-present issue
-         * fixed alongside it -- see
-         * docs/3ds-port-gpu-renderer-status-2026-08-20.md section 18. */
-        PlatformGpu3DS_ConfigureAbgrTextureEnv();
-        C2D_DrawImage(image, &params, NULL);
         PlatformGpu3DS_ResetSolidTexEnv();
         if (Port_Config_GetShowFps()) {
-            /* Bottom-screen debug overlay: unlike the top-screen "FPS NN"
-             * box (only ever drawn by the CPU path, see DrawTopImageStereo
-             * -- that's deliberate, it's the visual tell for which path
-             * rendered a frame), this one is drawn every frame regardless
-             * of path, so FPS stays visible even while the GPU renderer is
-             * active and the top-screen counter is absent.
-             *
-             * Deliberately ONE compact line, small scale -- a 3-line,
-             * larger-scale version was tried and reported back as
-             * duplicated/noisy on real hardware in a way a raw KEY_X dump
-             * of this exact render target did NOT reproduce (the target's
-             * own content was clean, a single copy) -- see
-             * docs/3ds-port-gpu-renderer-status-2026-08-20.md section 18.
-             * Root cause still unresolved; keeping this small and simple
-             * limits how bad the still-unexplained artifact can look until
-             * a future session can pin it down with direct pixel-level
-             * inspection instead of photos/screenshots. */
-            char label[48];
+            char line1[64], line2[64], line3[64];
             double fps = Port_PPU_3DS_CurrentFps();
             unsigned rounded = fps > 0.0 ? (unsigned)(fps + 0.5) : 0u;
             if (rounded > 999u) rounded = 999u;
             const bool usedGpu = Port_PPU_3DS_LastFrameUsedGpu();
-            snprintf(label, sizeof(label), "FPS%u %s", rounded, usedGpu ? "GPU" : "CPU");
-            C2D_DrawRectSolid(3.0f, 3.0f, 0.7f, 70.0f, 11.0f, C2D_Color32(0, 0, 0, 210));
-            DrawStatusText(5.0f, 5.0f, 1.0f, label);
+            const float slider3d = osGet3DSliderState();
+            const bool isNew3ds = Platform3DS_IsNew3DS();
+
+            snprintf(line1, sizeof(line1), "FPS:%u %s 3D:%s", rounded, usedGpu ? "GPU" : "CPU",
+                     slider3d > 0.01f ? "ON" : "OFF");
+
+            if (usedGpu) {
+                extern void Port_GpuRenderer_GetLastFrameStats(int* outItems, int* outObjItems, int* outCacheSlots);
+                int items = 0, objItems = 0, cacheSlots = 0;
+                Port_GpuRenderer_GetLastFrameStats(&items, &objItems, &cacheSlots);
+                snprintf(line2, sizeof(line2), "ITEMS:%d OBJ:%d CACHE:%d", items, objItems, cacheSlots);
+            } else {
+                snprintf(line2, sizeof(line2), "RENDER: CPU SCANLINE (MODE 1)");
+            }
+
+            snprintf(line3, sizeof(line3), "%s DRAW:%.1fMS PROC:%.1fMS",
+                     isNew3ds ? "NEW3DS" : "OLD3DS",
+                     (double)sStats.drawingTime, (double)sStats.processingTime);
+
+            C2D_DrawRectSolid(6.0f, 6.0f, 0.7f, 308.0f, 42.0f, C2D_Color32(0, 0, 0, 210));
+            DrawStatusText(10.0f, 10.0f, 1.0f, line1);
+            DrawStatusText(10.0f, 22.0f, 1.0f, line2);
+            DrawStatusText(10.0f, 34.0f, 1.0f, line3);
         }
         sBottomTargetValid = true;
         ++sStats.bottomTargetDraws;
     } else {
-        /* The physical bottom image and its hitbox generation are unchanged.
-         * Old 3DS can leave that render target displayed instead of clearing,
-         * drawing and scheduling an identical output transfer on every top
-         * presentation. New 3DS retains the established two-target frame. */
         ++sStats.bottomTargetReuseSkips;
     }
     C2D_Flush();
