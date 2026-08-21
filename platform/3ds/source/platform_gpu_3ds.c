@@ -60,22 +60,39 @@ static const uint8_t* StatusGlyph(char c) {
         { 14, 16, 16, 30, 17, 17, 14 }, { 31, 1, 2, 4, 8, 8, 8 },
         { 14, 17, 17, 14, 17, 17, 14 }, { 14, 17, 17, 15, 1, 1, 14 },
     };
-    static const uint8_t letters[11][7] = {
+    /* A-Y minus Q/Z (never needed so far) -- extended from the original
+     * A,C,D,E,F,G,M,P,S,U,V set to label the debug overlay properly
+     * (NEW3DS/OLD3DS, item/obj/cache prefixes) instead of unlabeled
+     * numbers -- see PlatformGpu3DS_EndBottom. */
+    static const uint8_t letters[24][7] = {
         { 14, 17, 17, 31, 17, 17, 17 }, /* A */
+        { 30, 17, 17, 30, 17, 17, 30 }, /* B */
+        { 31, 16, 16, 16, 16, 16, 31 }, /* C */
         { 30, 17, 17, 17, 17, 17, 30 }, /* D */
         { 31, 16, 16, 30, 16, 16, 31 }, /* E */
         { 31, 16, 16, 30, 16, 16, 16 }, /* F */
+        { 14, 17, 16, 23, 17, 17, 14 }, /* G */
+        { 17, 17, 17, 31, 17, 17, 17 }, /* H */
+        { 31, 4, 4, 4, 4, 4, 31 },      /* I */
+        { 7, 2, 2, 2, 2, 18, 12 },      /* J */
+        { 17, 18, 20, 24, 20, 18, 17 }, /* K */
+        { 16, 16, 16, 16, 16, 16, 31 }, /* L */
         { 17, 27, 21, 21, 17, 17, 17 }, /* M */
+        { 17, 25, 21, 19, 17, 17, 17 }, /* N */
+        { 14, 17, 17, 17, 17, 17, 14 }, /* O */
         { 30, 17, 17, 30, 16, 16, 16 }, /* P */
+        { 30, 17, 17, 30, 20, 18, 17 }, /* R */
         { 15, 16, 16, 14, 1, 1, 30 },   /* S */
+        { 31, 4, 4, 4, 4, 4, 4 },       /* T */
         { 17, 17, 17, 17, 17, 17, 14 }, /* U */
         { 17, 17, 17, 17, 17, 10, 4 },  /* V */
-        { 31, 16, 16, 16, 16, 16, 31 }, /* C -- added for the GPU/CPU debug overlay */
-        { 14, 17, 16, 23, 17, 17, 14 }, /* G -- added for the GPU/CPU debug overlay */
+        { 17, 17, 17, 21, 21, 27, 17 }, /* W */
+        { 17, 10, 4, 4, 4, 10, 17 },    /* X */
+        { 17, 10, 4, 4, 4, 4, 4 },      /* Y */
     };
     static const uint8_t letterIds[26] = {
-        0, 255, 9, 1, 2, 3, 10, 255, 255, 255, 255, 255, 4,
-        255, 255, 5, 255, 255, 6, 255, 7, 8, 255, 255, 255, 255,
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+        13, 14, 15, 255, 16, 17, 18, 19, 20, 21, 22, 23, 255,
     };
     if (c >= '0' && c <= '9') return digits[c - '0'];
     if (c >= 'A' && c <= 'Z') {
@@ -418,34 +435,44 @@ bool PlatformGpu3DS_EndBottom(const uint32_t* pixels, bool changed) {
         };
         C2D_TargetClear(sBottomTarget, C2D_Color32(0, 0, 0, 255));
         C2D_SceneBegin(sBottomTarget);
-        C2D_DrawImage(image, &params, NULL);
+        /* Must run BEFORE the C2D_DrawImage below, not after: this configures
+         * the TEV byte-swizzle for sBottomTexture's ABGR-composited content
+         * (see this function's own doc comment). Called after used to leave
+         * the draw sampling whatever TEV state the GPU tile renderer's own
+         * ConfigureAtlasTextureEnv left behind from drawing the top screen
+         * this same frame -- a different byte-order convention, which reads
+         * as visibly wrong/noisy colors on the bottom screen's own image.
+         * Confirmed as a real bug, not just the reentrant-present issue
+         * fixed alongside it -- see
+         * docs/3ds-port-gpu-renderer-status-2026-08-20.md section 18. */
         PlatformGpu3DS_ConfigureAbgrTextureEnv();
+        C2D_DrawImage(image, &params, NULL);
         if (Port_Config_GetShowFps()) {
             /* Bottom-screen debug overlay: unlike the top-screen "FPS NN"
              * box (only ever drawn by the CPU path, see DrawTopImageStereo
              * -- that's deliberate, it's the visual tell for which path
              * rendered a frame), this one is drawn every frame regardless
              * of path, so FPS stays visible even while the GPU renderer is
-             * active and the top-screen counter is absent. GPU/CPU line
-             * only appears once PORT_GPU_TILE_RENDERER is actually wired
-             * up server-side (Port_PPU_3DS_LastFrameUsedGpu always returns
-             * false in a CPU-only build, so it never prints "GPU"). */
+             * active and the top-screen counter is absent.
+             *
+             * Deliberately ONE compact line, small scale -- a 3-line,
+             * larger-scale version was tried and reported back as
+             * duplicated/noisy on real hardware in a way a raw KEY_X dump
+             * of this exact render target did NOT reproduce (the target's
+             * own content was clean, a single copy) -- see
+             * docs/3ds-port-gpu-renderer-status-2026-08-20.md section 18.
+             * Root cause still unresolved; keeping this small and simple
+             * limits how bad the still-unexplained artifact can look until
+             * a future session can pin it down with direct pixel-level
+             * inspection instead of photos/screenshots. */
             char label[48];
             double fps = Port_PPU_3DS_CurrentFps();
             unsigned rounded = fps > 0.0 ? (unsigned)(fps + 0.5) : 0u;
             if (rounded > 999u) rounded = 999u;
             const bool usedGpu = Port_PPU_3DS_LastFrameUsedGpu();
             snprintf(label, sizeof(label), "FPS%u %s", rounded, usedGpu ? "GPU" : "CPU");
-            C2D_DrawRectSolid(5.0f, 5.0f, 0.7f, 130.0f, 20.0f, C2D_Color32(0, 0, 0, 210));
-            DrawStatusText(9.0f, 8.0f, 2.0f, label);
-            if (usedGpu) {
-                int items = 0, objItems = 0, cacheSlots = 0;
-                Port_GpuRenderer_GetLastFrameStats(&items, &objItems, &cacheSlots);
-                snprintf(label, sizeof(label), "%u %u %u", (unsigned)items, (unsigned)objItems,
-                         (unsigned)cacheSlots);
-                C2D_DrawRectSolid(5.0f, 27.0f, 0.7f, 130.0f, 14.0f, C2D_Color32(0, 0, 0, 210));
-                DrawStatusText(9.0f, 29.0f, 1.5f, label);
-            }
+            C2D_DrawRectSolid(3.0f, 3.0f, 0.7f, 70.0f, 11.0f, C2D_Color32(0, 0, 0, 210));
+            DrawStatusText(5.0f, 5.0f, 1.0f, label);
         }
         sBottomTargetValid = true;
         ++sStats.bottomTargetDraws;

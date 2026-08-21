@@ -1228,9 +1228,143 @@ FPS mantenidos). **Pendiente de confirmar en hardware** con otro volcado
 "antes" de esta sesión. CIA subido por FTP (build normal y con
 `PORT_GPU_TILE_RENDERER`, sin logs de diagnóstico).
 
+## 18. Continuación misma sesión (2026-08-21, madrugada): overlay de la pantalla inferior -- "ruido" y duplicación, dos bugs reales encontrados y arreglados, PERO la duplicación en sí sigue sin resolverse
+
+**Estado final de esta sección, tras confirmar en hardware real: la
+duplicación reportada por el usuario NO se ha arreglado.** Los dos bugs
+de las subsecciones 18.1/18.2 son reales y se mantienen (correctness
+genuina), pero ninguno de los dos era la causa de lo que el usuario ve.
+Con el overlay reducido a una sola línea muy pequeña (subsección 18.3
+revisada), el usuario sigue viendo **dos copias** en la pantalla física
+-- una arriba, limpia, y otra bastante más abajo (no a una distancia fija
+pequeña, sino descendida una fracción notable de la altura de la
+pantalla), la segunda copia borrosa/ilegible. Que la duplicación persista
+igual con una sola línea de texto (antes eran 3) confirma que **no es un
+problema de "demasiado contenido"** -- pasa igual con lo mínimo posible.
+
+### Lo que sí se descartó con evidencia real esta sesión
+
+- **No es un artefacto de la ventana de Azahar** (hipótesis inicial,
+  descartada por el propio usuario: se ve igual en hardware real, una
+  sola pantalla física).
+- **No es el contenido del render target en sí**: un volcado `KEY_X` del
+  target de la pantalla inferior, leído directamente de memoria PICA200,
+  muestra **una sola copia limpia**, sin ruido. El bug ocurre en algún
+  punto entre ese buffer y lo que la pantalla física termina mostrando.
+- **No es la reentrada de `Port_PPU_PresentFrame`** por sí sola (aunque
+  el bug de la sección 18.2 era real y se mantiene arreglado): con el
+  corte de reentrada activo, la duplicación persiste igual.
+- **No es la cantidad de contenido dibujado**: persiste con una sola
+  línea de texto pequeña.
+- Un patrón de prueba (cuadrantes de color + cruceta) no dio una lectura
+  limpia interpretado a través de capturas de pantalla comprimidas -- se
+  retiró sin conclusión útil, más allá de reforzar que el problema es
+  real y no depende del contenido dibujado.
+
+### Pistas para la próxima sesión, con un método distinto
+
+1. **No seguir iterando por captura de pantalla/foto** -- la resolución y
+   compresión hacen casi imposible medir posiciones con precisión.
+   Instrumentar en su lugar: por ejemplo, dibujar un patrón con
+   coordenadas conocidas y volcar con `KEY_X`, comparando los bytes crudos
+   del fichero (no una imagen) contra las coordenadas esperadas
+   matemáticamente.
+2. **Aislar con el ejemplo oficial mínimo de citro3d** (`both_screens`,
+   en `$DEVKITPRO/examples/3ds/graphics/gpu/both_screens/`, que usa
+   exactamente el mismo patrón `C3D_RenderTargetCreate(240,320,...)` +
+   `C3D_RenderTargetSetOutput(..., GFX_BOTTOM, ...)` que nuestro código):
+   compilarlo tal cual y probarlo en el mismo hardware. Si ese ejemplo
+   TAMBIÉN duplica, es un problema del entorno/firmware/hardware concreto
+   del usuario, no de nuestro código. Si NO duplica, comparar línea a
+   línea contra nuestra inicialización de `platform_gpu_3ds.c` hasta
+   encontrar la diferencia real.
+3. Revisar si `sBottomTarget`/`sTopTarget` comparten alguna configuración
+   GPU (profundidad, formato) que difiera de forma sutil entre sí, dado
+   que la pantalla superior (según el usuario) **no** muestra este
+   problema -- la diferencia entre ambos setups es la pista más
+   prometedora que queda sin explotar del todo.
+4. Los dos arreglos reales de esta sección (orden del TEV en 18.1, corte
+   de reentrada en 18.2) se mantienen en el código -- son correcciones
+   legítimas independientemente de que no expliquen la duplicación.
+
+El usuario reportó que el texto de depuración de la pantalla inferior se
+veía "con ruido" y además duplicado (una copia arriba, otra abajo). Se
+encontraron y arreglaron **dos bugs independientes**, ninguno relacionado
+con las líneas horizontales de la sección 17:
+
+### 18.1 — "Ruido": TEV configurado después de dibujar, no antes
+
+`PlatformGpu3DS_EndBottom()` dibujaba la imagen de la pantalla inferior
+(`C2D_DrawImage`, muestreando `sBottomTexture`) **antes** de llamar a
+`PlatformGpu3DS_ConfigureAbgrTextureEnv()`, que configura cómo interpretar
+el orden de bytes de esa textura (convención ABGR distinta a la del atlas
+de tiles del renderer de GPU). El resultado: ese dibujado usaba el TEV que
+hubiera quedado configurado por el renderer de GPU al dibujar la pantalla
+superior el mismo frame (`ConfigureAtlasTextureEnv`, una convención de
+bytes distinta) -- colores mal interpretados, exactamente lo que se
+percibe como "ruido". Arreglo: mover la llamada a
+`ConfigureAbgrTextureEnv()` antes del `C2D_DrawImage`.
+
+### 18.2 — Duplicación: `Port_PPU_PresentFrame` reentrante, nunca arreglado del todo
+
+Ya investigado y documentado en una sesión anterior (comentario "Chasing a
+reported bottom-screen debug-overlay duplication" en `port_ppu_mzm.c`)
+pero solo instrumentado con un log, nunca corregido de verdad.
+`src/transfer.c` llama a `VBlankIntrWait()` directamente (aparte del
+bucle principal de `agbmain`), y `VBlankIntrWait → Port_Bios_Halt →
+Port_PPU_PresentFrame` -- así que una transferencia de VRAM que abarca
+varias llamadas a `VBlankIntrWait()` puede disparar
+`Port_PPU_PresentFrame()` (y por tanto el redibujado completo del overlay
+de la pantalla inferior) **más de una vez por refresco real de
+pantalla**. En New3DS, `PlatformGpu3DS_EndBottom()` no tenía ninguna
+protección contra esto (el "saltar redibujado" solo existía para el perfil
+Old3DS) -- confirmado con el log `PRESENT gap=7ms (re-entrant?)` ya
+capturado en una sesión anterior.
+
+**Arreglo:** la guarda de reentrada (que antes solo registraba el hueco
+sospechoso en el log de diagnóstico) ahora **corta de verdad** la segunda
+llamada -- si `Port_PPU_PresentFrame()` se invoca a menos de 8ms de la
+anterior (imposible que sea un frame real nuevo, un refresco real son
+~16.67ms), se descarta sin redibujar nada. Movido fuera del
+`#ifdef PORT_GPU_RENDERER_DIAG_LOG` para que funcione también en el build
+normal (el bug afecta a todo el mundo, no solo a sesiones de diagnóstico).
+
+### 18.3 — De paso: overlay de depuración más completo, a petición del usuario
+
+Se amplió el alfabeto de la fuente bitmap de 5x7 (de 11 a 24 letras --
+faltaban I, N, O, T, R, etc., necesarias para etiquetar nada) y se
+reescribió el contenido del overlay:
+- Línea 1 (igual que antes): `FPSxx GPU`/`CPU`.
+- Línea 2 (si va por GPU): antes `609 9 962` sin etiquetar; ahora
+  `I609 O9 C932` (Items en pantalla, Objetos/sprites, tiles únicos en la
+  Caché del atlas -- un valor de caché pegado cerca del límite indicaría
+  que el reset proactivo de la sección 8 está machacándose cada frame).
+- Línea 3 (nueva, siempre visible): `NEW3DS`/`OLD3DS` + tiempo de frame en
+  ms (complementa el FPS redondeado con el dato real de presupuesto
+  gastado contra los 16.67ms de los 60 FPS) -- el usuario pidió
+  explícitamente saber si el hardware es New3DS u Old3DS de un vistazo,
+  dado que Old3DS es el caso más exigente.
+
+**Verificado:** compila limpio, overlay se ve correcto y legible en
+Azahar (`FPS58 GPU / I669 O67 C932 / NEW3DS 17MS`). **La duplicación
+"una copia arriba, otra abajo" que se veía en las capturas de Azahar de
+TODA esta sesión resultó ser, con mucha probabilidad, un artefacto de
+cómo la ventana de Azahar compone las dos pantallas en una sola imagen
+para la captura -- no un bug del juego** (el mismo patrón aparece en
+escenas donde la guarda de reentrada de la sección 18.2 no debería
+dispararse). La duplicación real que reportó el usuario en hardware sigue
+sin confirmarse arreglada -- pendiente de prueba en hardware real, donde
+no hay ambigüedad de ventana (una sola pantalla física de verdad).
+
+CIA subido por FTP (build normal y con `PORT_GPU_TILE_RENDERER`, sin
+logs de diagnóstico).
+
 ### Pendiente para la próxima sesión
 
-0. Confirmar en hardware con `KEY_X` que las líneas han desaparecido o se
+0. Confirmar en hardware que el "ruido" y la duplicación del overlay de
+   la pantalla inferior han desaparecido de verdad (dos arreglos
+   distintos, secciones 18.1 y 18.2).
+0.1. Confirmar en hardware con `KEY_X` que las líneas han desaparecido o se
    han reducido notablemente, comparando contra la captura de esta
    sesión (`mzm-dump-left.rgb` con el efecto visible, guardada antes del
    arreglo).

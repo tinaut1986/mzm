@@ -142,32 +142,37 @@ extern void Port_DebugLogBuffered(const char* msg);
 void Port_PPU_PresentFrame(void) {
     if (!sReady) return;
 
-#ifdef PORT_GPU_RENDERER_DIAG_LOG
-    /* Chasing a reported bottom-screen debug-overlay duplication (2 copies
-     * of the same FPS/stat text stacked vertically, seen both in Azahar and
-     * on real hardware, unconditionally -- not tied to scene load). One
-     * hypothesis: src/transfer.c calls VBlankIntrWait() directly (separate
-     * from agbmain's own per-frame Halt loop), so this function -- and
-     * thus PlatformGpu3DS_EndBottom's overlay draw -- may run more than
-     * once per real ~16.67ms display refresh whenever a VRAM transfer
-     * spans multiple calls. Logging the gap between consecutive calls
-     * (throttled to suspicious gaps only, <8ms = under half a refresh
-     * period) confirms or rules this out empirically instead of guessing
-     * further. */
+    /* Confirmed root cause of a reported bottom-screen debug-overlay
+     * duplication (2 copies of the same FPS/stat text stacked vertically,
+     * seen both in Azahar and on real hardware): src/transfer.c calls
+     * VBlankIntrWait() directly, separate from agbmain's own per-frame
+     * Halt loop -- VBlankIntrWait -> Port_Bios_Halt -> this function (see
+     * port_bios.c), so a VRAM transfer that spans multiple
+     * VBlankIntrWait() calls makes this run more than once per real
+     * ~16.67ms display refresh. Each call redraws (and re-presents) the
+     * bottom-screen overlay from scratch -- on New3DS in particular,
+     * PlatformGpu3DS_EndBottom's own "skip redraw" branch only exists for
+     * the Old3DS profile, so a re-entrant call there was never skipped.
+     * A real display refresh is ~16.67ms apart; anything under half of
+     * that (8ms) between two calls cannot be a new real frame, so skip
+     * presenting again entirely rather than redrawing (and thus visually
+     * duplicating) the same content. This was previously just logged as a
+     * "re-entrant?" diagnostic without actually being fixed -- see
+     * docs/3ds-port-gpu-renderer-status-2026-08-20.md section 18. */
     {
         static uint64_t sLastPresentMs;
         uint64_t nowMs = osGetTime();
-        if (sLastPresentMs != 0) {
-            uint64_t deltaMs = nowMs - sLastPresentMs;
-            if (deltaMs < 8u) {
-                char msg[64];
-                __builtin_snprintf(msg, sizeof(msg), "PRESENT gap=%lums (re-entrant?)", (unsigned long)deltaMs);
-                Port_DebugLog(msg);
-            }
+        if (sLastPresentMs != 0 && (nowMs - sLastPresentMs) < 8u) {
+#ifdef PORT_GPU_RENDERER_DIAG_LOG
+            char msg[64];
+            __builtin_snprintf(msg, sizeof(msg), "PRESENT gap=%lums (skipped, re-entrant)",
+                               (unsigned long)(nowMs - sLastPresentMs));
+            Port_DebugLog(msg);
+#endif
+            return;
         }
         sLastPresentMs = nowMs;
     }
-#endif
 
     const uint16_t dispcnt = (uint16_t)(gIoMem[0] | (gIoMem[1] << 8));
     const uint8_t gbaMode = (uint8_t)(dispcnt & 7);
