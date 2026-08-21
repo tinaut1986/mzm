@@ -526,13 +526,13 @@ static inline WindowVis ComputeLayerWinVis(uint8_t insideMask, uint8_t outsideMa
  * atlas write, caching): a mask tile's actual COLOR never matters, only
  * whether it has any opaque texel at all. */
 static inline bool TileHasOpaquePixel(uint32_t byteOffset, bool bpp8) {
-    const uint8_t* src = gVram + byteOffset;
-    if (bpp8) {
-        for (int i = 0; i < 64; ++i) if (src[i] != 0) return true;
+    const uint32_t* src = (const uint32_t*)(gVram + byteOffset);
+    if (!bpp8) {
+        return (src[0] | src[1] | src[2] | src[3] | src[4] | src[5] | src[6] | src[7]) != 0;
     } else {
-        for (int i = 0; i < 32; ++i) if (src[i] != 0) return true; /* either nibble non-zero */
+        return (src[0] | src[1] | src[2] | src[3] | src[4] | src[5] | src[6] | src[7] |
+                src[8] | src[9] | src[10] | src[11] | src[12] | src[13] | src[14] | src[15]) != 0;
     }
-    return false;
 }
 
 /* Rasterizes every live OBJWIN sprite (attr0 objMode==2) into
@@ -899,14 +899,15 @@ static void CollectBgLayer(int bgIndex) {
             bool hflip = (entry & 0x0400u) != 0;
             bool vflip = (entry & 0x0800u) != 0;
             int palBank = (entry >> 12) & 0x0Fu;
-
-            uint32_t byteOffset = charBase + (uint32_t)tileId * bytesPerTile;
-            int slot = GetOrDecodeTileSlot(byteOffset, bpp8, pal, palBank, hflip, vflip, false, brightAdjust);
-
             float drawX = (float)(tx * 8 - fineX);
             float drawY = (float)(ty * 8 - fineY);
             if (drawY <= -8.0f || drawY >= 160.0f || drawX <= -8.0f || drawX >= 240.0f) continue;
+
+            uint32_t byteOffset = charBase + (uint32_t)tileId * bytesPerTile;
+            if (!TileHasOpaquePixel(byteOffset, bpp8)) continue;
             if (sObjWindowActive && !ObjWinItemVisible(objWinVis, drawX, drawY)) continue;
+
+            int slot = GetOrDecodeTileSlot(byteOffset, bpp8, pal, palBank, hflip, vflip, false, brightAdjust);
 
             /* GBA BGCNT priority is 0=highest (drawn on top), 3=lowest
              * (drawn furthest back) -- the inverse of sortKey's own
@@ -1097,15 +1098,19 @@ static void CollectSprite(int oamIndex, bool obj1D) {
                 tileIndex = (uint16_t)(baseTile + srcTy * 32 + srcTx * (bpp8 ? 2 : 1));
             }
             uint32_t byteOffset = (uint32_t)(objBase - gVram) + (uint32_t)tileIndex * bytesPerTile;
-            int slot = GetOrDecodeTileSlot(byteOffset, bpp8, pal, palBank, hflip, vflip, true, brightAdjust);
+            if (!TileHasOpaquePixel(byteOffset, bpp8)) continue;
 
             if (!isAffine) {
                 float drawX = (float)(x + tx * 8);
                 float drawY = (float)(y + ty * 8);
+                if (drawY <= -8.0f || drawY >= 160.0f || drawX <= -8.0f || drawX >= 240.0f) continue;
                 if (sObjWindowActive && !ObjWinItemVisible(objWinVis, drawX, drawY)) continue;
+                int slot = GetOrDecodeTileSlot(byteOffset, bpp8, pal, palBank, hflip, vflip, true, brightAdjust);
                 PushItem(slot, drawX, drawY, sortKey, 4, blendAlpha, rectWinVis);
                 continue;
             }
+
+            int slot = GetOrDecodeTileSlot(byteOffset, bpp8, pal, palBank, hflip, vflip, true, brightAdjust);
 
             /* Subtile center relative to the sprite's own (unrotated)
              * texture pivot, then mapped through the FULL inverted affine
