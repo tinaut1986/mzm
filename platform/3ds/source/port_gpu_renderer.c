@@ -311,13 +311,15 @@ static const uint8_t kObjHeights[3][4] = { { 8, 16, 32, 64 }, { 8, 8, 16, 32 }, 
 
 /* Stereo depth mapping (docs/future-roadmap-and-architecture.md's table):
  * index 0=BG3(farthest) .. 3=BG0/HUD(nearest), 4=OBJ. Values are px of
- * parallax shift at full slider; sign flips between eyes in the caller. */
+ * parallax shift at full slider; sign flips between eyes in the caller.
+ * Samus (OBJ) is placed slightly behind BG1 platforms so platforms appear
+ * with depth/thickness in front of Samus. */
 static const float kTierEyeOffsetPx[5] = {
-    -3.5f, /* BG3: far background */
-    -1.75f, /* BG2: mid background */
-    -0.4f, /* BG1: platforms/gameplay plane */
-    0.0f,  /* BG0: HUD/foreground, screen plane */
-    -0.4f, /* OBJ: same plane as gameplay by default */
+    -4.0f, /* BG3: far background / sky */
+    -2.0f, /* BG2: mid background / caves */
+    -0.3f, /* BG1: platforms / interactive ground (closer to viewer) */
+    0.0f,  /* BG0: HUD / UI / screen plane */
+    -0.8f, /* OBJ: Samus / enemies (slightly behind BG1 platforms) */
 };
 
 bool Port_GpuRenderer_IsActive(void) { return sGpuRendererActive; }
@@ -1631,8 +1633,10 @@ void Port_GpuRenderer_RenderFrame(void) {
         ConfigureAtlasTextureEnv();
         C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_ALL);
         C3D_AlphaTest(true, GPU_GREATER, 0);
-        C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_SRC_ALPHA,
-                       GPU_ONE_MINUS_SRC_ALPHA);
+        /* Opaque pass: all passing fragments have alpha=255. Use ONE/ZERO blend
+         * to avoid reading back the destination framebuffer from VRAM, saving
+         * massive memory bandwidth during scaled / full-screen rendering. */
+        C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
 
         int drawCount = 0;
         bool reassertedTexEnv = false;
@@ -1649,11 +1653,11 @@ void Port_GpuRenderer_RenderFrame(void) {
                 float eyeOffset = eyeSign * slider3d * kTierEyeOffsetPx[item->depthTier];
                 C2D_DrawParams params = BuildDrawParams(item, screenBaseX, screenBaseY, eyeOffset, scaleX, scaleY);
                 C2D_DrawImage(item->img, &params, NULL);
+                ++drawCount;
                 if (!reassertedTexEnv) {
                     ConfigureAtlasTextureEnv();
                     reassertedTexEnv = true;
                 }
-                if ((++drawCount % 512) == 0) C2D_Flush();
             }
         }
         if (sWindowActive) {
@@ -1689,14 +1693,12 @@ void Port_GpuRenderer_RenderFrame(void) {
                         ConfigureAtlasTextureEnv();
                         reassertedTexEnv = true;
                     }
-                    if ((++drawCount % 512) == 0) C2D_Flush();
                 }
                 blendScissorSet = false;
             }
             if (flushedForBlend) {
                 C2D_Flush();
-                C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_SRC_ALPHA,
-                               GPU_ONE_MINUS_SRC_ALPHA);
+                C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
                 if (sWindowActive) C3D_SetScissor(GPU_SCISSOR_DISABLE, 0, 0, 0, 0);
             }
         }

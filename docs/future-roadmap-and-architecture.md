@@ -72,15 +72,17 @@ concreto de la próxima sesión.
   4. **Modos de Fusión y Ventanas GBA**:
      * Implementar `BLDCNT`, `BLDALPHA` y `BLDY` usando combinadores de textura (`C3D_TexEnv`) o shaders PICA200.
 
-#### Mapeo de Profundidades Estereoscópicas Sugerido:
-| Capa | Elemento en Pantalla | Profundidad Z | Offset Paralaje ($dX$) |
-| :--- | :--- | :--- | :--- |
-| **HUD / UI** | Contador de vida, minimapa, misiles | $0.0$ | $0.0$ px (plano de pantalla) |
-| **BG0** | Niebla, humo, columnas en primer plano | $+1.5$ | $+2.5$ px (hacia fuera) |
-| **Samus / Sprites** | Samus, proyectiles, enemigos | $-0.5$ | $-0.8$ px (plano de juego) |
-| **BG1** | Plataformas, escenario interactivo | $-0.5$ | $-0.8$ px (plano de juego) |
-| **BG2** | Fondos intermedios, cuevas | $-2.0$ | $-3.5$ px (profundidad media) |
-| **BG3** | Cielo, estrellas, fondo lejano | $-4.0$ | $-7.0$ px (profundidad infinita) |
+#### Mapeo de Profundidades Estereoscópicas:
+| Capa | Elemento en Pantalla | Profundidad Z | Offset Paralaje ($dX$) | Rol Visual |
+| :--- | :--- | :--- | :--- | :--- |
+| **HUD / UI (BG0)** | Contador de vida, minimapa, misiles | $0.0$ | $0.0$ px | Plano de pantalla fijo (sin fatiga) |
+| **BG1** | Plataformas, escenario interactivo | $-0.2$ | $-0.3$ px | Frente de plataforma (más cercano al observador) |
+| **Samus / Sprites** | Samus, proyectiles, enemigos | $-0.6$ | $-0.8$ px | Plano de juego (Samus ligeramente por detrás de BG1) |
+| **BG2** | Fondos intermedios, cuevas | $-2.0$ | $-2.0$ px | Profundidad media |
+| **BG3** | Cielo, estrellas, fondo lejano | $-4.0$ | $-4.0$ px | Profundidad lejana / horizonte |
+
+> **Nota de diseño 3D (Samus vs BG1):** Samus y los sprites se colocan deliberadamente a una profundidad ligeramente mayor que las plataformas de BG1 ($-0.8\text{ px}$ vs $-0.3\text{ px}$). Esto genera la sensación óptica de que la plataforma tiene volumen/anchura y Samus se desplaza por el centro/interior de la misma, siendo la cara frontal de la plataforma la más cercana al observador.
+
 
 ---
 

@@ -300,6 +300,8 @@ void Port_Bios_Halt(void) {
 #endif
     CallbackCallVblank();
 
+extern bool Port_PPU_3DS_LastFrameUsedGpu(void);
+
 #if defined(TMC_3DS) && !defined(PLATFORM_LINUX)
 #ifdef PORT_VERBOSE_FRAME_LOG
     Port_DebugLog("Port_Bios_Halt: after CallbackCallVblank");
@@ -308,11 +310,14 @@ void Port_Bios_Halt(void) {
 #ifdef PORT_VERBOSE_FRAME_LOG
     Port_DebugLog("Port_Bios_Halt: after Port_PPU_RenderFrame");
 #endif
-    /* Port_PPU_RenderFrame() no longer blocks on the GPU (it hands the
-     * finished CPU render to a separate present thread and returns), so this
-     * is now the only thing pacing agbmain()'s loop -- and with it audio
-     * production -- to real time. See Port_Bios_PaceFrame's doc comment. */
-    Port_Bios_PaceFrame();
+    /* If the frame was submitted via the synchronous GPU renderer, C3D_FrameSync()
+     * in PlatformGpu3DS_EndBottom has already synchronized to hardware VBlank (60Hz).
+     * Only the asynchronous CPU renderer handoff path needs software pacing. */
+    if (!Port_PPU_3DS_LastFrameUsedGpu()) {
+        Port_Bios_PaceFrame();
+    } else {
+        sNextFrameDeadlineTicks = 0;
+    }
     Port_AudioStateLock_Acquire();
 #endif
 }
