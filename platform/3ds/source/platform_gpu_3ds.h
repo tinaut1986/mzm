@@ -33,6 +33,12 @@ uint32_t* PlatformGpu3DS_TopBuffer(void);
 uint32_t* PlatformGpu3DS_TopRightBuffer(void);
 uint32_t* PlatformGpu3DS_BottomBuffer(unsigned index);
 void PlatformGpu3DS_BeginTop(const uint32_t* pixels, unsigned width);
+/* Must bracket every actual GPU submission call (BeginTop.../EndBottom) made
+ * from more than one thread -- see the doc comment on sGpuSubmitLock in
+ * platform_gpu_3ds.c for why. */
+void PlatformGpu3DS_SubmitLock_Acquire(void);
+void PlatformGpu3DS_SubmitLock_Release(void);
+
 void PlatformGpu3DS_BeginTopStereo(const uint32_t* leftPixels, const uint32_t* rightPixels, unsigned width);
 /* Returns true only when a Citro3D frame was active and submitted. */
 bool PlatformGpu3DS_EndBottom(const uint32_t* pixels, bool changed);

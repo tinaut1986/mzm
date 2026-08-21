@@ -26,6 +26,28 @@ static bool sBottomTargetValid;
 static PlatformGpu3DSStats sStats;
 static unsigned sTopPresentWidth = 240;
 
+/* Serializes every actual GPU submission (C3D_FrameBegin/End, citro2d
+ * draws) across the two threads that can now issue them: the present
+ * thread (port_ppu_mzm.c's Port_PPU_GpuPresentPump, consuming a CPU-
+ * rendered frame published by the game-logic thread) and the game-logic
+ * thread itself, which still calls straight into this file synchronously
+ * for the experimental GPU tile renderer path (PORT_GPU_TILE_RENDERER) and
+ * the PORT_PPU_TEST_PATTERN diagnostic -- neither produces a CPU pixel
+ * buffer that can be handed off the way the normal path does, so they were
+ * left calling BeginTop.../EndBottom inline, same as before the present
+ * thread existed. That was fine when everything ran on one thread; once
+ * present moved to its own thread, those two call sites became a second,
+ * completely unsynchronized caller of citro3d/citro2d (neither of which is
+ * thread-safe) racing the present thread's own calls -- confirmed on
+ * hardware as a hang (not a crash) exactly at a CPU<->GPU renderer
+ * transition: the screen freezes while gameplay and audio (a separate
+ * thread untouched by any of this) keep running normally, matching a
+ * wedged GPU command queue rather than a crashed thread. */
+static LightLock sGpuSubmitLock;
+
+void PlatformGpu3DS_SubmitLock_Acquire(void) { LightLock_Lock(&sGpuSubmitLock); }
+void PlatformGpu3DS_SubmitLock_Release(void) { LightLock_Unlock(&sGpuSubmitLock); }
+
 enum {
     TOP_TEXTURE_WIDTH = 512,
     TOP_TEXTURE_HEIGHT = 256,
@@ -177,6 +199,7 @@ void PlatformGpu3DS_ResetSolidTexEnv(void) {
 
 bool PlatformGpu3DS_Init(bool old3dsProfile) {
     memset(&sStats, 0, sizeof(sStats));
+    LightLock_Init(&sGpuSubmitLock);
     sOld3DSProfile = old3dsProfile;
     sBottomTargetValid = false;
     sC2dFlushBase = NULL;

@@ -324,6 +324,11 @@ void Port_PPU_RenderFrame(void) {
 #if defined(PORT_VERBOSE_FRAME_LOG)
     Port_DebugLog("Port_PPU_PresentFrame: before BeginTop");
 #endif
+    /* This is the sync path's own direct GPU submission, called from the
+     * game-logic thread -- must not run concurrently with the present
+     * thread's own submission in Port_PPU_GpuPresentPump below. See
+     * platform_gpu_3ds.c's sGpuSubmitLock doc comment. */
+    PlatformGpu3DS_SubmitLock_Acquire();
 #ifdef PORT_GPU_TILE_RENDERER
     if (useGpuRenderer) {
         if (PlatformGpu3DS_BeginTopSceneGpu()) {
@@ -347,6 +352,7 @@ void Port_PPU_RenderFrame(void) {
     Port_DebugLog("Port_PPU_PresentFrame: before EndBottom");
 #endif
     PlatformGpu3DS_EndBottom(sBottomBuffer, true);
+    PlatformGpu3DS_SubmitLock_Release();
 #if defined(PORT_VERBOSE_FRAME_LOG)
     Port_DebugLog("Port_PPU_PresentFrame: done");
 #endif
@@ -404,7 +410,12 @@ bool Port_PPU_GpuPresentPump(void) {
 #ifdef PORT_GPU_TILE_RENDERER
     sLastFrameUsedGpu = false;
 #endif
+    /* See platform_gpu_3ds.c's sGpuSubmitLock doc comment -- the game-logic
+     * thread can still be mid-submission via the PORT_GPU_TILE_RENDERER/
+     * PORT_PPU_TEST_PATTERN sync path in Port_PPU_RenderFrame above. */
+    PlatformGpu3DS_SubmitLock_Acquire();
     PlatformGpu3DS_BeginTopStereo(sTopBuffer, sTopRightBuffer, TOP_NATIVE_W);
     PlatformGpu3DS_EndBottom(sBottomBuffer, true);
+    PlatformGpu3DS_SubmitLock_Release();
     return true;
 }
