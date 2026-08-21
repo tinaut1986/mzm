@@ -27,10 +27,10 @@ struct BottomEquipmentView {
     uint16_t currentMissiles;
     uint8_t currentSuperMissiles;
     uint8_t currentPowerBombs;
-    uint32_t beamBombs;
-    uint32_t beamBombsActivation;
-    uint32_t suitMisc;
-    uint32_t suitMiscActivation;
+    uint8_t beamBombs;
+    uint8_t beamBombsActivation;
+    uint8_t suitMisc;
+    uint8_t suitMiscActivation;
     uint8_t downloadedMapStatus;
     uint8_t lowHealth;
     uint8_t suitType;
