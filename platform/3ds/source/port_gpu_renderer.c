@@ -343,6 +343,24 @@ static inline void FlushAtlasRange(void* addr, size_t size) {
     svcFlushProcessDataCache(CUR_PROCESS_HANDLE, (u32)addr, (u32)size);
 }
 
+static Tex3DS_SubTexture sSlotSubtexTable[ATLAS_MAX_SLOTS];
+
+static void InitSlotSubtexTable(void) {
+    const float invAtlas = 1.0f / (float)ATLAS_DIM;
+    for (int slot = 0; slot < ATLAS_MAX_SLOTS; ++slot) {
+        int sx = (slot % ATLAS_TILES_PER_ROW) * 8;
+        int sy = (slot / ATLAS_TILES_PER_ROW) * 8;
+        sSlotSubtexTable[slot] = (Tex3DS_SubTexture){
+            .width = 8,
+            .height = 8,
+            .left = ((float)sx + 0.5f) * invAtlas,
+            .top = 1.0f - ((float)sy + 0.5f) * invAtlas,
+            .right = ((float)sx + 7.5f) * invAtlas,
+            .bottom = 1.0f - ((float)sy + 7.5f) * invAtlas,
+        };
+    }
+}
+
 bool Port_GpuRenderer_Init(void) {
     if (sInitialized) return true;
 
@@ -366,6 +384,8 @@ bool Port_GpuRenderer_Init(void) {
     memset(sAtlasTexture.data, 0, ATLAS_DIM * ATLAS_DIM * sizeof(u32));
     FlushAtlasRange(sAtlasTexture.data, ATLAS_DIM * ATLAS_DIM * sizeof(u32));
     C3D_TexSetFilter(&sAtlasTexture, GPU_NEAREST, GPU_NEAREST);
+
+    InitSlotSubtexTable();
 
     for (int i = 0; i < HASH_BUCKETS; ++i) sHashBucketHead[i] = -1;
     sCacheCount = 0;
@@ -763,49 +783,12 @@ static int GetOrDecodeTileSlot(uint32_t byteOffset, bool bpp8, const uint16_t* p
     return slot;
 }
 
-static inline void SlotToUV(int slot, Tex3DS_SubTexture* out) {
-    int sx = (slot % ATLAS_TILES_PER_ROW) * 8;
-    int sy = (slot / ATLAS_TILES_PER_ROW) * 8;
-    out->width = 8;
-    out->height = 8;
-    /* Inset by half a texel on every edge -- tiles are packed edge-to-edge
-     * in the atlas with no gutter, and with GPU_NEAREST filtering plus the
-     * non-integer 1.5x scale used to fill the screen (8 source px -> 12
-     * destination px), a UV coordinate landing exactly ON a tile boundary
-     * is ambiguous: floating-point rounding during rasterization can pick
-     * the FIRST texel of the next tile instead of the last texel of this
-     * one, sampling unrelated atlas content -- confirmed on hardware via
-     * the KEY_X screen dump (docs/3ds-port-gpu-renderer-status-2026-08-20.md,
-     * "efecto persiana" investigation) as thin dark vertical/horizontal
-     * seam lines at a spacing matching the scaled tile size. Using the
-     * CENTER of the first/last texel instead of the tile's outer edge
-     * keeps every interpolated sample point closer to its intended texel
-     * than to a neighboring tile's, which is the standard fix for
-     * point-sampled, gutter-less texture atlases. */
-    out->left = ((float)sx + 0.5f) / (float)ATLAS_DIM;
-    out->top = 1.0f - ((float)sy + 0.5f) / (float)ATLAS_DIM;
-    out->right = ((float)sx + 7.5f) / (float)ATLAS_DIM;
-    out->bottom = 1.0f - ((float)sy + 7.5f) / (float)ATLAS_DIM;
-}
-
-/* Shared item-allocation tail for PushItem/PushAffineItem below: reserves a
- * slot in sDrawItems, wires up its atlas UV rect and this sortKey's
- * insertion-order bucket chain (see SORT_KEY_BUCKETS's comment). Returns -1
- * (and pushes nothing) if MAX_DRAW_ITEMS is already exhausted. */
 static inline int AllocDrawItem(int slot, int sortKey) {
     if (sDrawItemCount >= MAX_DRAW_ITEMS) return -1;
-    Tex3DS_SubTexture subtex;
-    SlotToUV(slot, &subtex);
     int idx = sDrawItemCount++;
-    /* subtex is stack-local per call site in the original C2D_Image pattern;
-     * store it by value inside the persisted image via a static per-item
-     * copy so it stays valid until the draw pass. C2D_Image only holds a
-     * pointer, so give each item its own backing subtex. */
-    static Tex3DS_SubTexture sSubtexPool[MAX_DRAW_ITEMS];
-    sSubtexPool[idx] = subtex;
     DrawItem* item = &sDrawItems[idx];
     item->img.tex = &sAtlasTexture;
-    item->img.subtex = &sSubtexPool[idx];
+    item->img.subtex = &sSlotSubtexTable[slot];
     item->sortKey = sortKey;
 
     sBucketNext[idx] = -1;
