@@ -188,11 +188,29 @@ extern void gba_write16(uint32_t addr, uint16_t v);
  * this file's existing style of narrow forward declarations. */
 extern void PlatformGpu3DS_DumpScreens(void);
 
+/* KEY_Y (also outside MZM_KEY_MASK, same reasoning as KEY_X above): drops a
+ * numbered, timestamped marker line into mzm-debug.log so a play session can
+ * flag "something happened right here" (e.g. a visible CPU/GPU renderer
+ * fallback) without having to describe timing after the fact -- grep the log
+ * for "USER MARK" and read the surrounding GPU_REJECT/GPUDIAG lines (needs
+ * -DPORT_GPU_RENDERER_DIAG_LOG for those) or ModeChange lines to see what the
+ * game was doing at that exact moment. Unbuffered (Port_DebugLog, not
+ * Port_DebugLogBuffered) so the mark is flushed to disk immediately even if
+ * the app is killed moments later. */
+extern void Port_DebugLog(const char* msg);
+
 void Platform3DS_PollKeysIntoGba(void) {
     const uint16_t held = Platform3DS_ReadKeyInput() & MZM_KEY_MASK;
     gba_write16(MZM_REG_KEY_INPUT, (uint16_t)(~held & MZM_KEY_MASK));
     if (hidKeysDown() & KEY_X) {
         PlatformGpu3DS_DumpScreens();
+    }
+    if (hidKeysDown() & KEY_Y) {
+        static unsigned sMarkCount;
+        char msg[48];
+        __builtin_snprintf(msg, sizeof(msg), "=== USER MARK #%u (t=%llums) ===",
+                           ++sMarkCount, (unsigned long long)osGetTime());
+        Port_DebugLog(msg);
     }
 }
 
