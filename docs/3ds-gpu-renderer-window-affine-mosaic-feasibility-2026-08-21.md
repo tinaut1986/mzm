@@ -227,6 +227,103 @@ Both changes build cleanly (`arm-none-eabi-gcc`, with and without
 `PORT_GPU_RENDERER_DIAG_LOG`), but neither has been exercised in a running
 session yet.
 
+## Update (same day, later still): OBJWIN confirmed occurring -- pause screen suit view
+
+After the affine OBJ / window clipping changes above landed, a fresh
+diagnostic-build play session (`PORT_GPU_RENDERER_DIAG_LOG`, played in Azahar
+after an FTP-to-hardware attempt failed to connect) surfaced a THIRD
+CPU-fallback reason actually occurring in real play, which this doc had
+previously written off ("no evidence... recommend leaving this as a CPU
+fallback indefinitely"):
+
+```
+GPU_REJECT: OBJWIN
+```
+
+Three throttled log lines, right after the user marked (`KEY_Y`) the moment
+they were checking their suit on the pause screen, with the diagnostic
+`GPUDIAG` line just before it showing `obj=` (visible sprite count) dropping
+sharply (32 -> 8 -> 10) -- consistent with several sprites switching to
+OBJ-window mode (which stops them being drawn as sprites at all).
+
+**Root cause, confirmed in source**: `PauseScreenUpdateWireframeSamus()`
+(`src/menus/pause_screen.c:1007-1011`) duplicates the pause screen's rotating
+Samus wireframe sprite into a second OAM slot and sets that copy's
+`objMode = 2` (`OAM_OBJ_MODE_WINDOW`, `include/oam.h`):
+
+```c
+PAUSE_SCREEN_DATA.miscOam[8].oamId = oamId;      // the drawn wireframe sprite
+PAUSE_SCREEN_DATA.miscOam[8].exists = OAM_ID_CHANGED_FLAG;
+
+PAUSE_SCREEN_DATA.miscOam[9] = PAUSE_SCREEN_DATA.miscOam[8];
+PAUSE_SCREEN_DATA.miscOam[9].objMode = 2;         // same shape, used as an OBJWIN mask instead
+```
+
+I.e. the wireframe Samus silhouette ITSELF is reused as an OBJ-window mask --
+almost certainly to gate some effect (a shine/highlight sweep across the
+suit, or the equipment-flash overlay) so it only shows up inside the
+silhouette's exact shape, not its bounding box. This is not a rare edge
+case: every player who opens the pause menu and looks at their equipped suit
+hits this path, so it's a common, everyday CPU fallback, not the rare one
+originally assumed.
+
+## Update (same day, later still again): OBJWIN attempted via stencil plane, REVERTED -- broken on screen
+
+Implemented the stencil-buffer approach sketched above (the "real" GPU-native
+shape mask, not an approximation), built clean, and had the user test it in
+Azahar against the pause screen's suit view. **It rendered incorrectly** --
+screenshot showed the wireframe Samus as a solid blue blob with a magenta
+hex/diamond pattern bleeding across the ENTIRE top screen (HUD bars
+included), not confined to the silhouette at all. Symptom shape (something
+that should be mask-confined instead appearing everywhere) is consistent
+with the stencil test never actually gating anything -- i.e. every fragment
+"passing" regardless of the buffer's contents, which would happen if either
+pass's `GPU_EQUAL` test silently no-ops. **Reverted in full**
+(`git checkout` on both changed source files) rather than iterate blindly --
+this environment has no display to debug against, and burning more
+build/FTP-or-Azahar/screenshot round trips on an unverified GPU quirk
+wasn't a good trade. `Port_GpuRenderer_CanRenderFrame` is back to
+unconditionally rejecting OBJWIN (falls back to CPU, as before this
+whole OBJWIN investigation started); window clipping and affine OBJ (the
+two changes verified working in earlier rounds) are untouched by the
+revert.
+
+**Leading suspect, not yet confirmed**: the assumption in
+`SetClipPassState`'s comment -- that the PICA200 requires `C3D_DepthTest`
+enabled (even with `GPU_ALWAYS` and no depth write) for the stencil unit to
+actually run at all -- may be wrong, or the mask-write pre-pass's own
+`C3D_DepthTest(true, GPU_ALWAYS, 0)` (zero write-mask, meant to suppress
+color output during the mask-only draw) may not behave as assumed on this
+GPU/citro3d version. Both are exactly the kind of undocumented
+fixed-function-pipeline interaction this environment can't verify without a
+real screen, in the same spirit as the still-unresolved
+`C3D_SetScissor` coordinate-space assumption for window clipping above (that
+one at least degrades gracefully to "clipped in the wrong place"; this one
+degraded to "not clipped at all," visually worse).
+
+**Left for a future round, if revisited**: get a minimal, isolated stencil
+test working first (e.g. a single hardcoded solid-color rect gated by a
+single hardcoded stencil write, verified on an actual screen) before wiring
+it back into this renderer's full draw-order/window/blend machinery --
+mirrors the same "prove the primitive in isolation before integrating it"
+lesson the window-clipping scissor-rect risk note above already called out
+in advance; OBJWIN just didn't get that isolated proof step first.
+
+**What was tried, for the record** (none of this code is present on `main`
+or any branch after the revert -- kept here only so a future attempt doesn't
+have to rediscover the same shape from scratch): top render targets
+(`sTopTarget`/`sTopRightTarget` in `platform_gpu_3ds.c`) switched from
+`GPU_RB_DEPTH16` to `GPU_RB_DEPTH24_STENCIL8`; `CollectSprite`'s `objMode==2`
+sprites collected into a separate `sMaskItems` array (unordered, since a
+stencil OR-write doesn't care about draw order) instead of the normal sorted
+`sDrawItems`; a per-eye mask-write pre-pass clearing the stencil plane then
+drawing every mask subtile with `GPU_STENCIL_REPLACE` (ref=1) and color/depth
+writes off; the existing WIN0/WIN1 two-pass scissor scheme generalized into
+`SetClipPassState`/`ClearClipPassState` so the same opaque/blend draw loops
+could apply either a scissor test or a `GPU_EQUAL` stencil test; and
+`WINOUT`'s high byte (the OBJWIN "inside mask" per-layer enable) feeding the
+same `ComputeLayerWinVis` machinery WIN0/WIN1 already used.
+
 ## Recommendation
 
 Both window clipping and affine OBJ are now confirmed (not just inferred)
@@ -253,3 +350,53 @@ already based on impact + risk rather than just occurrence:
    play (see "Two things remain unconfirmed" above); re-check whether Zero
    Mission's intro actually uses affine BG at all before investing effort
    there.
+
+## Update (same day, yet later): OBJWIN re-attempted via a CPU coverage grid instead of the GPU stencil unit
+
+After the stencil-buffer attempt above rendered garbled on real
+screen/Azahar and was reverted, re-implemented OBJWIN a second way that
+avoids the GPU stencil unit (and the render-target format change it
+needed) entirely, on the theory that the garbled render came from an
+undocumented depth/stencil fixed-function interaction this environment has
+no way to verify before shipping.
+
+**New approach**: `ComputeObjWinMask()` (`port_gpu_renderer.c`) runs once
+per frame, only when OBJWIN is active, BEFORE `CollectBgLayer`/
+`CollectSprite`. It walks OAM directly (same shape/size/position/flip decode
+`CollectSprite` already does) looking for `objMode==2` sprites, and
+rasterizes them into `sObjWinCovered`, a plain `bool[20][30]` grid at 8x8-
+cell granularity over the 240x160 screen -- for a non-affine mask sprite,
+each covered cell is decided by reading the sprite's raw VRAM tile bytes
+directly and checking for any non-zero (opaque) palette index
+(`TileHasOpaquePixel`), the same granularity BG/OBJ tiles already draw at;
+for an affine mask sprite (the confirmed pause-screen wireframe can rotate),
+the WHOLE rotated bounding box is marked covered instead -- a deliberately
+coarser approximation, accepted to avoid re-deriving the inverse-affine-
+matrix machinery `CollectSprite`'s drawable path already has just to
+rasterize a boolean mask.
+
+`CollectBgLayer`/`CollectSprite` then resolve OBJWIN visibility per tile
+directly at COLLECTION time via `ObjWinItemVisible` (a single grid lookup),
+instead of tagging items for a second GPU draw pass -- items that fail the
+check are simply never pushed. This runs alongside, not instead of, the
+existing WIN0/WIN1 rect mechanism (which still uses its own `rectWinVis` tag
++ scissor draw passes, untouched) -- the two are mutually exclusive per
+frame (`Port_GpuRenderer_CanRenderFrame` still rejects OBJWIN combined with
+an actively-clipping WIN0/WIN1), so no item is ever resolved by both paths
+at once.
+
+**Why this should be lower-risk than the stencil attempt**: no render-target
+format change, no new GPU pipeline state (no stencil test, no depth test
+toggling, no extra draw pass), nothing beyond VRAM/OAM reads and a small
+CPU-side boolean array -- every mechanism this needs was already proven
+working elsewhere in this file (VRAM tile reads via `GetOrDecodeTileSlot`'s
+neighbors, OAM decode via `CollectSprite`'s existing logic, per-item
+collection-time skip via the same pattern `WIN_VIS_NEVER` already uses).
+`platform_gpu_3ds.c` is untouched this time.
+
+**Not yet exercised in a running session** -- builds clean
+(`arm-none-eabi-gcc`, both with and without `PORT_GPU_RENDERER_DIAG_LOG`),
+not yet played against the pause screen's suit view. If this ALSO renders
+wrong, the bug is more likely in the coverage rasterization logic itself
+(a plain CPU/data bug, much easier to reason about from a log/screenshot
+than a GPU fixed-function quirk) than in an unverifiable GPU assumption.

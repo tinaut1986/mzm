@@ -451,6 +451,37 @@ static bool sWindowActive;
 static int sWinLeft, sWinTop, sWinRight, sWinBottom;
 static WindowVis sLayerWinVis[5]; /* index 0-3 = BG0-3, 4 = OBJ, same layer-id convention as BldIsFirstTarget */
 
+/* OBJ-window (OBJWIN, DISPCNT bit15) state: a second, mutually-exclusive-
+ * with-sWindowActive clipping source (Port_GpuRenderer_CanRenderFrame
+ * rejects the combination of OBJWIN with an actually-clipping WIN0/WIN1),
+ * where "inside" is not a rectangle but the union of every live OBJ-mode-2
+ * sprite's opaque pixels (confirmed occurring: the pause screen's suit-view
+ * wireframe Samus reuses itself as an OBJWIN mask, see
+ * docs/3ds-gpu-renderer-window-affine-mosaic-feasibility-2026-08-21.md's
+ * OBJWIN section).
+ *
+ * A first attempt rendered this mask into the PICA200's stencil buffer
+ * (extra GPU render-target format change + a stencil-write pre-pass +
+ * GPU_EQUAL stencil-test draw passes) -- it built clean but rendered
+ * garbled on real hardware/Azahar (see that section's "REVERTED" update),
+ * most likely because this environment has no display to verify an
+ * undocumented depth/stencil fixed-function interaction against before
+ * shipping it. This version deliberately avoids the GPU stencil unit
+ * entirely: the mask is rasterized on the CPU into a coarse 8x8-cell
+ * coverage grid (sObjWinCovered, see ComputeObjWinMask) BEFORE
+ * CollectBgLayer/CollectSprite run, and each candidate item's visibility is
+ * resolved by a single grid lookup at COLLECTION time (see
+ * ObjWinItemVisible) -- no second draw pass, no new render-target state, no
+ * GPU feature this renderer hasn't already relied on elsewhere (VRAM/OAM
+ * reads and a plain boolean array). Coarser than the stencil approach would
+ * have been (8x8-cell granularity, not per-pixel; an affine mask sprite's
+ * coverage is approximated as its whole rotated bounding box, not its exact
+ * rotated silhouette -- see ComputeObjWinMask), but low-risk and reuses only
+ * mechanisms already proven working in this file. */
+static bool sObjWindowActive;
+enum { OBJWIN_GRID_COLS = 240 / 8, OBJWIN_GRID_ROWS = 160 / 8 };
+static bool sObjWinCovered[OBJWIN_GRID_ROWS][OBJWIN_GRID_COLS];
+
 /* WININ/WINOUT per-layer bit -> WindowVis, for the single active window's
  * inside mask (WININ low byte for WIN0, high byte for WIN1) and the shared
  * WINOUT "outside any window" mask. Bit layout (GBATek): bits0-3 BG0-3,
@@ -464,6 +495,134 @@ static inline WindowVis ComputeLayerWinVis(uint8_t insideMask, uint8_t outsideMa
     if (in) return WIN_VIS_INSIDE_ONLY;
     if (out) return WIN_VIS_OUTSIDE_ONLY;
     return WIN_VIS_NEVER;
+}
+
+/* True if `byteOffset` (into gVram) names a tile with at least one non-zero
+ * (opaque) palette index. Deliberately raw/minimal -- just enough to
+ * rasterize OBJWIN mask coverage (see ComputeObjWinMask), unlike
+ * GetOrDecodeTileSlot's full decode (palette lookup, brighten/darken,
+ * atlas write, caching): a mask tile's actual COLOR never matters, only
+ * whether it has any opaque texel at all. */
+static inline bool TileHasOpaquePixel(uint32_t byteOffset, bool bpp8) {
+    const uint8_t* src = gVram + byteOffset;
+    if (bpp8) {
+        for (int i = 0; i < 64; ++i) if (src[i] != 0) return true;
+    } else {
+        for (int i = 0; i < 32; ++i) if (src[i] != 0) return true; /* either nibble non-zero */
+    }
+    return false;
+}
+
+/* Rasterizes every live OBJWIN sprite (attr0 objMode==2) into
+ * sObjWinCovered, an 8x8-cell-granularity coverage grid over the 240x160
+ * GBA screen -- called once per frame, before CollectBgLayer/CollectSprite,
+ * only when sObjWindowActive. Mirrors CollectSprite's own OAM decode
+ * (shape/size/position/flip/tile-mapping) closely enough to place tiles
+ * correctly, but stays CPU-only and boolean: no atlas slot, no DrawItem, no
+ * GPU state at all (see sObjWindowActive's comment for why that's
+ * deliberate this time).
+ *
+ * Non-affine mask sprites get exact per-TILE coverage (a screen cell is
+ * "covered" if the tile mapped to it has any opaque texel -- see
+ * TileHasOpaquePixel); this matches the granularity CollectBgLayer/
+ * CollectSprite already draw at, so it's not a coarser approximation than
+ * the rest of this renderer's tile-atlas approach. Affine mask sprites
+ * (the confirmed pause-screen wireframe case can rotate) instead mark their
+ * entire rotated BOUNDING BOX as covered -- an intentionally coarser
+ * approximation (a rotated silhouette's true shape is smaller than its
+ * axis-aligned bounding box), accepted here to avoid re-deriving the same
+ * inverse-affine-matrix machinery CollectSprite's drawable path already has
+ * just to rasterize a boolean mask; revisit if a room turns up where this
+ * over-covers noticeably. */
+static void ComputeObjWinMask(bool obj1D) {
+    memset(sObjWinCovered, 0, sizeof(sObjWinCovered));
+    const uint16_t* oam = (const uint16_t*)gOamMem;
+    const uint8_t* objBase = gVram + 0x10000u;
+
+    for (int oamIndex = 0; oamIndex < 128; ++oamIndex) {
+        uint16_t attr0 = oam[oamIndex * 4 + 0];
+        uint16_t attr1 = oam[oamIndex * 4 + 1];
+        uint16_t attr2 = oam[oamIndex * 4 + 2];
+
+        bool isAffine = ((attr0 >> 8) & 1u) != 0u;
+        if (((attr0 >> 9) & 1u) && !isAffine) continue; /* disabled (non-affine hidden bit) */
+        uint8_t objMode = (uint8_t)((attr0 >> 10) & 3u);
+        if (objMode != 2) continue; /* only OBJWIN mask sprites contribute */
+
+        uint8_t shape = (uint8_t)((attr0 >> 14) & 3u);
+        uint8_t size = (uint8_t)((attr1 >> 14) & 3u);
+        if (shape == 3) continue;
+        int width = kObjWidths[shape][size];
+        int height = kObjHeights[shape][size];
+        bool doubleSize = isAffine && (((attr0 >> 9) & 1u) != 0u);
+        int boundsWidth = doubleSize ? width * 2 : width;
+        int boundsHeight = doubleSize ? height * 2 : height;
+
+        int y = attr0 & 0xFFu;
+        if (y >= 160) y -= 256;
+        int x = (int)(attr1 & 0x1FFu);
+        if (x >= 240) x -= 512;
+        if (y >= 160 || y + boundsHeight <= 0 || x >= 240 || x + boundsWidth <= 0) continue;
+
+        if (isAffine) {
+            /* Coarse approximation (see this function's header comment):
+             * whole bounding box, no attempt at the rotated silhouette. */
+            int cellX0 = x < 0 ? 0 : x / 8;
+            int cellY0 = y < 0 ? 0 : y / 8;
+            int cellX1 = (x + boundsWidth) > 240 ? 240 : x + boundsWidth;
+            int cellY1 = (y + boundsHeight) > 160 ? 160 : y + boundsHeight;
+            for (int cy = cellY0; cy * 8 < cellY1; ++cy) {
+                for (int cx = cellX0; cx * 8 < cellX1; ++cx) sObjWinCovered[cy][cx] = true;
+            }
+            continue;
+        }
+
+        bool bpp8 = ((attr0 >> 13) & 1u) != 0;
+        bool hflip = ((attr1 >> 12) & 1u) != 0;
+        bool vflip = ((attr1 >> 13) & 1u) != 0;
+        uint16_t baseTile = attr2 & 0x3FFu;
+        const int bytesPerTile = bpp8 ? 64 : 32;
+        int tilesW = width / 8;
+        int tilesH = height / 8;
+
+        for (int ty = 0; ty < tilesH; ++ty) {
+            int destY = y + ty * 8;
+            if (destY <= -8 || destY >= 160) continue;
+            for (int tx = 0; tx < tilesW; ++tx) {
+                int destX = x + tx * 8;
+                if (destX <= -8 || destX >= 240) continue;
+                int srcTx = hflip ? (tilesW - 1 - tx) : tx;
+                int srcTy = vflip ? (tilesH - 1 - ty) : ty;
+                uint16_t tileIndex;
+                if (obj1D) {
+                    tileIndex = (uint16_t)(baseTile + (srcTy * tilesW + srcTx) * (bpp8 ? 2 : 1));
+                } else {
+                    tileIndex = (uint16_t)(baseTile + srcTy * 32 + srcTx * (bpp8 ? 2 : 1));
+                }
+                uint32_t byteOffset = (uint32_t)(objBase - gVram) + (uint32_t)tileIndex * bytesPerTile;
+                if (!TileHasOpaquePixel(byteOffset, bpp8)) continue;
+                int cellX = destX / 8, cellY = destY / 8; /* destX/Y already tile-aligned to the 8px grid */
+                if (cellX < 0 || cellX >= OBJWIN_GRID_COLS || cellY < 0 || cellY >= OBJWIN_GRID_ROWS) continue;
+                sObjWinCovered[cellY][cellX] = true;
+            }
+        }
+    }
+}
+
+/* Resolves a candidate item's OBJWIN visibility at COLLECTION time (no
+ * draw-time GPU state involved -- see sObjWindowActive's comment): `layerVis`
+ * is this item's layer's WININ/WINOUT-derived classification (from
+ * sLayerWinVis, same as the WIN0/WIN1 rect mechanism uses), and
+ * (screenX, screenY) is the item's GBA-screen-space position used to sample
+ * sObjWinCovered. Only called when sObjWindowActive. */
+static inline bool ObjWinItemVisible(WindowVis layerVis, float screenX, float screenY) {
+    if (layerVis == WIN_VIS_ALWAYS) return true;
+    if (layerVis == WIN_VIS_NEVER) return false;
+    int cellX = (int)screenX / 8, cellY = (int)screenY / 8;
+    if (cellX < 0) cellX = 0; else if (cellX >= OBJWIN_GRID_COLS) cellX = OBJWIN_GRID_COLS - 1;
+    if (cellY < 0) cellY = 0; else if (cellY >= OBJWIN_GRID_ROWS) cellY = OBJWIN_GRID_ROWS - 1;
+    bool covered = sObjWinCovered[cellY][cellX];
+    return (layerVis == WIN_VIS_INSIDE_ONLY) ? covered : !covered;
 }
 
 /* PICA200 8x8-texel tile swizzle (Z-order/Morton within the tile) -- the
@@ -695,11 +854,17 @@ static inline void PushAffineItem(int slot, float centerX, float centerY, float 
  * in port/ppu/src/mode1.c (screen_block_x/y + blocks_per_row quadrant
  * layout for the 32x32/64x32/32x64/64x64 GBA screen sizes). */
 static void CollectBgLayer(int bgIndex) {
-    /* Whole layer disabled by the active window's WININ/WINOUT masks (see
-     * sLayerWinVis) -- skip collection entirely rather than pushing items
-     * that would never be visible either inside or outside the window rect. */
-    WindowVis winVis = sWindowActive ? sLayerWinVis[bgIndex] : WIN_VIS_ALWAYS;
-    if (winVis == WIN_VIS_NEVER) return;
+    /* Two independent, mutually-exclusive window-clip sources tag/gate this
+     * layer differently: rectWinVis (WIN0/WIN1) is carried on each pushed
+     * item as a tag, resolved later at DRAW time via the PICA200 scissor
+     * test (see ItemPassesWindow); objWinVis (OBJWIN) is instead resolved
+     * per-TILE right here at COLLECTION time via ObjWinItemVisible/
+     * sObjWinCovered (see sObjWindowActive's comment for why). Whole-layer
+     * NEVER (from either source) skips collection entirely. */
+    WindowVis rectWinVis = sWindowActive ? sLayerWinVis[bgIndex] : WIN_VIS_ALWAYS;
+    if (rectWinVis == WIN_VIS_NEVER) return;
+    WindowVis objWinVis = sObjWindowActive ? sLayerWinVis[bgIndex] : WIN_VIS_ALWAYS;
+    if (objWinVis == WIN_VIS_NEVER) return;
 
     uint16_t bgcnt = (uint16_t)(gIoMem[0x08 + bgIndex * 2] | (gIoMem[0x09 + bgIndex * 2] << 8));
     uint8_t priority = (uint8_t)(bgcnt & 3u);
@@ -756,6 +921,7 @@ static void CollectBgLayer(int bgIndex) {
             float drawX = (float)(tx * 8 - fineX);
             float drawY = (float)(ty * 8 - fineY);
             if (drawY <= -8.0f || drawY >= 160.0f || drawX <= -8.0f || drawX >= 240.0f) continue;
+            if (sObjWindowActive && !ObjWinItemVisible(objWinVis, drawX, drawY)) continue;
 
             /* GBA BGCNT priority is 0=highest (drawn on top), 3=lowest
              * (drawn furthest back) -- the inverse of sortKey's own
@@ -777,7 +943,7 @@ static void CollectBgLayer(int bgIndex) {
              * far-background BG3 offset), and BG3 read index 3 == 0.0f --
              * silently swapping stereo depth between the nearest and
              * farthest layers. */
-            PushItem(slot, drawX, drawY, sortKey, 3 - bgIndex, blendAlpha, winVis);
+            PushItem(slot, drawX, drawY, sortKey, 3 - bgIndex, blendAlpha, rectWinVis);
         }
     }
 }
@@ -834,8 +1000,13 @@ static void CollectSprite(int oamIndex, bool obj1D) {
 
     if (y >= 160 || y + boundsHeight <= 0 || x >= 240 || x + boundsWidth <= 0) return;
 
-    WindowVis winVis = sWindowActive ? sLayerWinVis[4] : WIN_VIS_ALWAYS;
-    if (winVis == WIN_VIS_NEVER) return;
+    /* See CollectBgLayer's comment: rectWinVis tags items for the WIN0/WIN1
+     * draw-time scissor mechanism; objWinVis is resolved per-subtile right
+     * here via ObjWinItemVisible/sObjWinCovered instead. */
+    WindowVis rectWinVis = sWindowActive ? sLayerWinVis[4] : WIN_VIS_ALWAYS;
+    if (rectWinVis == WIN_VIS_NEVER) return;
+    WindowVis objWinVis = sObjWindowActive ? sLayerWinVis[4] : WIN_VIS_ALWAYS;
+    if (objWinVis == WIN_VIS_NEVER) return;
 
     const uint8_t* objBase = gVram + 0x10000u;
     const uint16_t* pal = (const uint16_t*)gObjPltt;
@@ -946,7 +1117,8 @@ static void CollectSprite(int oamIndex, bool obj1D) {
             if (!isAffine) {
                 float drawX = (float)(x + tx * 8);
                 float drawY = (float)(y + ty * 8);
-                PushItem(slot, drawX, drawY, sortKey, 4, blendAlpha, winVis);
+                if (sObjWindowActive && !ObjWinItemVisible(objWinVis, drawX, drawY)) continue;
+                PushItem(slot, drawX, drawY, sortKey, 4, blendAlpha, rectWinVis);
                 continue;
             }
 
@@ -962,8 +1134,9 @@ static void CollectSprite(int oamIndex, bool obj1D) {
             float dy = affM10 * relX + affM11 * relY;
             float screenCenterX = pivotX + dx;
             float screenCenterY = pivotY + dy;
+            if (sObjWindowActive && !ObjWinItemVisible(objWinVis, screenCenterX, screenCenterY)) continue;
             PushAffineItem(slot, screenCenterX, screenCenterY, affAngle, affScaleX, affScaleY, sortKey, 4, blendAlpha,
-                           winVis);
+                           rectWinVis);
         }
     }
 }
@@ -981,8 +1154,12 @@ static void CollectSprite(int oamIndex, bool obj1D) {
  * WIN1 -- that actually clips IS now supported via the PICA200 scissor test,
  * see Port_GpuRenderer_RenderFrame's window-clip pass; two independently-
  * shaped rects at once is a rect-minus-a-rect region, not expressible as a
- * single scissor rect, so still falls back), OBJ window (attr0 objMode==2 /
- * DISPCNT bit15, not approximated at all), or BG/OBJ mosaic. Affine OBJ
+ * single scissor rect, so still falls back), or BG/OBJ mosaic. OBJ window
+ * (attr0 objMode==2 sprites, DISPCNT bit15) IS now supported, on its own
+ * (not combined with an actually-clipping WIN0/WIN1 -- see the OBJWIN check
+ * below), via a CPU-rasterized coverage grid resolved at collection time --
+ * see CollectBgLayer/CollectSprite's objWinVis handling and
+ * ComputeObjWinMask in Port_GpuRenderer_RenderFrame. Affine OBJ
  * (attr0 bit8 set, rotated/scaled items -- explosions, per the "What I
  * actually measured" section of docs/3ds-gpu-renderer-window-affine-mosaic-feasibility-2026-08-21.md)
  * is now handled directly in CollectSprite, not rejected here.
@@ -1054,7 +1231,21 @@ bool Port_GpuRenderer_CanRenderFrame(void) {
          * approximates the same way the old full-screen-only path did). */
         if (win0Clips || win1Clips) REJECT("WIN0+WIN1");
     }
-    if (dispcnt & (1u << 15)) REJECT("OBJWIN");
+    /* OBJWIN (attr0 objMode==2 sprites acting as a shape mask, DISPCNT
+     * bit15): confirmed occurring in real play (the pause screen's suit-
+     * view wireframe Samus reuses itself as an OBJWIN mask, see
+     * docs/3ds-gpu-renderer-window-affine-mosaic-feasibility-2026-08-21.md's
+     * OBJWIN section) and now handled via a CPU-rasterized coverage grid --
+     * see ComputeObjWinMask/ObjWinItemVisible in Port_GpuRenderer_RenderFrame
+     * (a GPU-stencil-buffer attempt was tried first, built clean, but
+     * rendered garbled on real hardware -- see that section's "REVERTED"
+     * update for why this CPU-side approach replaced it). Scoped narrowly
+     * like WIN0/WIN1 above: only supported on its own, not combined with an
+     * actually-clipping WIN0/WIN1 rect -- GBA hardware's real
+     * WIN0>WIN1>OBJWIN>outside priority resolution between a rect and a
+     * shape mask isn't implemented, so that combination still falls back. */
+    bool objWinOn = (dispcnt & (1u << 15)) != 0u;
+    if (objWinOn && (win0On || win1On)) REJECT("OBJWIN+WIN");
 
     uint16_t mosaic = (uint16_t)(gIoMem[0x4C] | (gIoMem[0x4D] << 8));
     if (mosaic != 0) {
@@ -1243,6 +1434,28 @@ void Port_GpuRenderer_RenderFrame(void) {
             for (int l = 0; l < 4; ++l) sLayerWinVis[l] = ComputeLayerWinVis(insideMask, outsideMask, l);
             sLayerWinVis[4] = ComputeLayerWinVis(insideMask, outsideMask, 4);
         }
+    }
+
+    /* OBJWIN state (see sObjWindowActive's comment): mutually exclusive
+     * with sWindowActive by construction (Port_GpuRenderer_CanRenderFrame
+     * rejects OBJWIN combined with an active WIN0/WIN1). WINOUT's high byte
+     * (bits8-13) is the "inside the OBJWIN mask" per-layer enable -- the
+     * OBJWIN counterpart to WININ's inside mask for WIN0/WIN1 -- while its
+     * low byte (bits0-5, same bits sWindowActive's outsideMask already
+     * reads above) is shared: "outside every active window" means the same
+     * thing whether that window is a WIN0/WIN1 rect or the OBJWIN mask.
+     * ComputeObjWinMask rasterizes the actual mask sprites into
+     * sObjWinCovered BEFORE the BG/OBJ collection loops below run, since
+     * CollectBgLayer/CollectSprite need it ready to resolve per-tile
+     * visibility as they go. */
+    sObjWindowActive = !sWindowActive && (dispcnt & (1u << 15)) != 0u;
+    if (sObjWindowActive) {
+        uint16_t winout = (uint16_t)(gIoMem[0x4A] | (gIoMem[0x4B] << 8));
+        uint8_t insideMask = (uint8_t)((winout >> 8) & 0xFFu);
+        uint8_t outsideMask = (uint8_t)(winout & 0xFFu);
+        for (int l = 0; l < 4; ++l) sLayerWinVis[l] = ComputeLayerWinVis(insideMask, outsideMask, l);
+        sLayerWinVis[4] = ComputeLayerWinVis(insideMask, outsideMask, 4);
+        ComputeObjWinMask(obj1D);
     }
 
     for (int bg = 3; bg >= 0; --bg) {
