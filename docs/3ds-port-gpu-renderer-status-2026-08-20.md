@@ -1402,6 +1402,289 @@ logs de diagnóstico).
    mitad del problema y no arrastra el riesgo de tocar el pipeline de
    dibujado de bajo nivel.
 
+## 19. Continuación, sesión distinta (2026-08-21): hipótesis nueva para la duplicación de la pantalla inferior -- conflicto `gfx`/citro3d, sin confirmar en hardware
+
+Siguiendo la pista 3 de la sección 18 ("revisar si `sBottomTarget`/
+`sTopTarget` difieren sutilmente en configuración GPU"), comparando contra
+el ejemplo oficial `both_screens` de citro3d
+(`$DEVKITPRO/examples/3ds/graphics/gpu/both_screens/`): ese ejemplo **nunca
+llama a `consoleInit`**. Nuestro `Platform3DS_Init()`
+(`platform_3ds_minimal.c:40`) sí llama a `consoleInit(GFX_BOTTOM, NULL)`
+incondicionalmente al arrancar (para la consola de texto de
+`Platform3DS_ShowFatal`), **antes** de que `PlatformGpu3DS_Init()` reclame
+esa misma pantalla vía `C3D_RenderTargetSetOutput(sBottomTarget,
+GFX_BOTTOM, ...)`.
+
+`consoleInit` deja el doble-buffering del módulo `gfx` de libctru activo
+para esa pantalla -- un subsistema **distinto** de citro3d, que también
+gestiona qué dirección de framebuffer físico ve la LCD. citro3d pasa a
+presentar la pantalla inferior por su cuenta desde ese punto en adelante,
+pero nunca se le dijo a `gfx` que dejara de gestionar el doble-buffering de
+esa misma pantalla -- una carrera entre dos subsistemas por decidir qué
+dirección de buffer se escanea a la LCD encaja con el síntoma reportado
+("una copia limpia, otra vieja/borrosa, desplazada hacia abajo") mejor que
+las hipótesis ya descartadas (contenido del render target -- confirmado
+limpio por `KEY_X` -- y reentrada de `Port_PPU_PresentFrame`, sección
+18.2). No se había mirado esta interacción `gfx`/citro3d en ninguna sesión
+anterior.
+
+**Arreglo probado:** `gfxSetDoubleBuffering(GFX_BOTTOM, false)` añadido en
+`PlatformGpu3DS_Init()` justo después de
+`C3D_RenderTargetSetOutput(sBottomTarget, ...)`
+(`platform_gpu_3ds.c`), sin tocar `consoleInit` (sigue haciendo falta para
+`Platform3DS_ShowFatal`). Compila limpio en build normal y con
+`PORT_GPU_TILE_RENDERER`. Pasada de humo en Azahar sin input: sin
+corrupción visual nueva; el "duplicado" que se sigue viendo en la captura
+de Azahar coincide con el artefacto de composición de ventana ya descartado
+en la sección 18.3 (persiste igual con o sin este cambio), así que Azahar
+no sirve para confirmar ni descartar esta hipótesis -- **hace falta
+probarlo en hardware real**, donde no hay ambigüedad de ventana.
+
+**Sin verificar en hardware.** Pendiente de que el usuario instale este
+build y confirme si la duplicación desaparece. Si no la arregla, la pista 2
+de la sección 18 (aislar con `both_screens` compilado tal cual en el mismo
+hardware) sigue siendo el siguiente paso más informativo.
+
+## 20. Continuación misma sesión (2026-08-21): sesión larga de pruebas en hardware real -- todas las hipótesis obvias descartadas con datos, causa raíz aún sin encontrar
+
+**Resumen para quien retome esto:** esta sesión probó, una por una y con
+datos reales de hardware (no solo teoría), prácticamente todas las
+hipótesis razonables para la duplicación de la pantalla inferior. Todas se
+descartaron. La causa sigue sin encontrarse. Ver la sección "Pendiente"
+al final para la lista actualizada de lo que queda por probar.
+
+### 20.1 — `gfxSetDoubleBuffering(GFX_BOTTOM, false)`: descartado
+
+Hipótesis: `Platform3DS_Init()` llama a `consoleInit(GFX_BOTTOM, NULL)`
+antes de que `PlatformGpu3DS_Init()` reclame esa pantalla para citro3d,
+dejando el doble-buffering del módulo `gfx` de libctru activo en paralelo
+al de citro3d -- dos subsistemas compitiendo por qué framebuffer físico ve
+la LCD. Se añadió `gfxSetDoubleBuffering(GFX_BOTTOM, false)` justo después
+de que citro3d reclama la pantalla. **Probado en hardware real: la
+duplicación persiste igual.** Descartado como causa única (el cambio se
+revirtió).
+
+### 20.2 — Aislado con el ejemplo oficial `both_screens`: confirma que NO es firmware/entorno
+
+Se compiló el ejemplo oficial de citro3d `both_screens`
+(`$DEVKITPRO/examples/3ds/graphics/gpu/both_screens/`) tal cual, sin tocar
+nada, como `.3dsx` vía Homebrew Launcher. **En el mismo hardware del
+usuario, no duplica** -- un triángulo limpio en cada pantalla. Esto
+descarta definitivamente firmware/entorno/hardware defectuoso como causa:
+el problema está en el código de mzm.
+
+### 20.3 — Tres rondas de un homebrew de prueba con citro2d, cada vez más parecido al código real: ninguna reprodujo el bug
+
+Se escribió un `.3dsx` de prueba mínimo (`c2d_dual_test`, fuera del
+repo, en el scratchpad de la sesión) y se fue acercando al patrón real de
+`platform_gpu_3ds.c` en tres rondas sucesivas, cada una probada en
+hardware real:
+
+1. **Ronda 1**: dos render targets (arriba/abajo) con citro2d puro,
+   `C2D_DrawRectSolid` simple, `C3D_FRAME_SYNCDRAW`. Confirmado limpio por
+   el usuario ("todo parece correcto").
+2. **Ronda 2**: + una textura subida por `C3D_SyncDisplayTransfer` y
+   dibujada con `C2D_DrawImage`, + un `C2D_DrawRectSolid` encima (mezcla
+   textura/sólido, el mismo patrón que dispara el bug de TEV de la sección
+   5.7), + 3D estéreo real (`gfxSet3D(true)` + tercer render target). Un
+   bug propio del test (flags de transferencia de textura reutilizadas mal,
+   formato RGB8 en vez de RGBA8) produjo "ruido" que se corrigió aparte;
+   una vez arreglado, **confirmado limpio, sin duplicación**.
+3. **Ronda 3**: + `C3D_FrameBegin(0)` en vez de `SYNCDRAW` (sin esperar a
+   la GPU, igual que mzm), + funciones `BeginTop()`/`EndBottom()`
+   separadas (igual que `PlatformGpu3DS_BeginTopStereo`/`EndBottom`), +
+   `EndBottom()` invocado dos veces seguidas cada iteración con la misma
+   guarda de reentrada de 8ms por `svcGetSystemTick()` que usa el código
+   real (sección 18.2), simulando la reentrada real de
+   `VBlankIntrWait()`. Un primer intento sin `C3D_FrameSync()` crasheó en
+   hardware real (volcado ARM11 confirmado, `luma/dumps/arm11/`) -- bug
+   del test (faltaba el `C3D_FrameSync()` que sí tiene el código real para
+   no saturar la GPU sin pacing), no evidencia nueva. Corregido y
+   reprobado: **confirmado limpio, sin duplicación**, incluso con la
+   reentrada simulada.
+
+**Conclusión de las tres rondas:** ni citro2d en sí, ni la mezcla
+textura/sólido, ni el estéreo 3D, ni `FrameBegin` sin sincronizar, ni la
+reentrada simulada de un único hilo explican el bug por sí solos -- algo
+específico del código o las condiciones reales de mzm sigue sin
+replicarse en un homebrew de prueba aislado.
+
+### 20.4 — Confusión de instalación: varias pruebas de esta sesión pueden haber sido inválidas
+
+A mitad de sesión se descubrió que el usuario llevaba un rato instalando
+siempre el mismo CIA cacheado en `sdmc:/cias/mzm-zm.cia` (de una sesión
+anterior, sin ninguno de los cambios de hoy) en vez del que se subía a la
+raíz de la SD (`sdmc:/mzm-3ds.cia`). **Esto invalida la prueba de la
+sección 20.1** (el fix de `gfxSetDoubleBuffering` puede no haberse probado
+de verdad la primera vez) -- se repitió correctamente después, subiendo
+siempre a `cias/mzm-zm.cia`, y con esa ruta confirmada, la duplicación
+seguía sin arreglarse igualmente. **Lección para la próxima sesión: subir
+siempre a `sdmc:/cias/mzm-zm.cia` por FTP (no a la raíz), que es donde el
+usuario instala desde FBI.**
+
+### 20.5 — Diagnóstico decisivo: hasta un `C2D_DrawRectSolid` suelto, sin texto ni imagen, se duplica -- y el volcado del render target sale limpio
+
+Con la instalación correcta confirmada, se metió temporalmente en el
+propio `PlatformGpu3DS_EndBottom()` real un único `C2D_DrawRectSolid`
+grande naranja, sin overlay de texto y sin depender de la imagen
+compuesta real. **En hardware real, se ve duplicado igual** (dos bloques
+separados verticalmente, confirmado con una captura limpia del propio
+usuario) -- descarta que el bug dependa del número de draw calls (el
+texto son decenas de `C2D_DrawRectSolid` por glifo) o del contenido
+(imagen compuesta real vs. un rectángulo trivial).
+
+El mismo rectángulo también salió con un color incorrecto (rayado
+azul/blanco en vez de naranja sólido) en las fotos del hardware --
+hipótesis probada: `PlatformGpu3DS_ConfigureAbgrTextureEnv()` deja las
+unidades TEV 1 y 2 de la GPU cableadas para muestrear
+`GPU_TEXTURE0`, y citro2d solo reprograma la unidad 0 al cambiar a modo
+"sólido" -- las unidades 1/2 se quedarían leyendo una textura no
+vinculada. Se añadió `PlatformGpu3DS_ResetSolidTexEnv()` (revierte las
+unidades 1/2 a paso-directo) llamada tras el `C2D_DrawImage` y antes de
+cualquier dibujo sólido -- **el cambio se mantiene en el código por ser
+correcto independientemente del resultado**, pero probado en hardware
+real, el rayado de color no desapareció y la duplicación tampoco.
+
+**El dato más importante de toda la sesión:** con `KEY_X` se volcó el
+render target real de la pantalla inferior mientras el rectángulo
+duplicado era visible en pantalla. **El volcado muestra un único
+rectángulo limpio, sin duplicar** (aunque con el mismo problema de color
+incorrecto -- azul en vez de naranja, un bug de color aparte, no
+investigado más). Esto confirma con datos crudos, no con fotos ni
+capturas comprimidas, lo que la sección 18 ya sospechaba: **el contenido
+que la GPU renderiza es correcto; la duplicación se introduce en algún
+punto entre ese buffer y lo que la pantalla física termina mostrando.**
+
+### 20.6 — `Platform3DS_EnterGameplayDisplay()`: el `printf` de limpieza de consola, descartado
+
+Hipótesis: `Port_PPU_Init()` (que reclama `GFX_BOTTOM` para citro3d) se
+llama en `main_3ds.c` **antes** que `Platform3DS_EnterGameplayDisplay()`,
+que hace `printf("\x1b[2J")` para limpiar la consola de texto -- pero
+`stdout` sigue apuntando a la consola de `GFX_BOTTOM` de
+`consoleInit()` (nunca se reselecciona), así que ese `printf` escribe en
+el framebuffer del módulo `gfx` para esa pantalla **después** de que
+citro3d ya la había reclamado. Se quitó esa llamada (ya no servía para
+nada útil de todos modos, una vez el renderer de GPU pinta su propio
+overlay). **Probado en hardware real: la duplicación persiste igual.**
+El cambio se revirtió (era una limpieza válida de código muerto, pero no
+la causa).
+
+### Pendiente para la próxima sesión (reemplaza/actualiza la lista de la sección 18)
+
+Hipótesis ya descartadas con datos de hardware real esta sesión (no
+repetir): `gfxSetDoubleBuffering`, contenido/complejidad de lo dibujado
+(un solo rect ya duplica), citro2d en sí (3 rondas de test aislado
+limpias), estéreo 3D consigo solo, `FrameBegin` sin sincronizar,
+reentrada de un único hilo simulada, TEV de unidades 1/2 sin resetear, y
+el `printf` de limpieza de consola.
+
+1. **Auditoría multi-hilo real**: `Port_GbaTiming_ThreadMain` (Core 1) solo
+   escribe `REG_VCOUNT`/`REG_DISPSTAT`, no toca GPU -- descartado por
+   inspección de código, no probado en aislamiento. Pero **el audio real
+   (`ndspInit`/NDSP) nunca se ha incluido en ningún test aislado de esta
+   sesión** -- es la pieza más grande que sigue sin descartar. El DSP y la
+   GPU comparten ancho de banda de memoria en 3DS y hay interacciones
+   conocidas y sutiles entre ambos; sería el siguiente candidato razonable
+   antes de seguir con más tests puramente gráficos.
+2. **Prueba de larga duración**: todos los tests aislados de esta sesión
+   duraron segundos/minutos. El usuario juega sesiones reales de varios
+   minutos. Si la causa es algo que se acumula (memoria VRAM
+   fragmentándose, algún contador desbordando, degradación térmica en
+   hardware real) un test corto nunca lo va a reproducir -- probar
+   dejando correr el juego real un buen rato antes de mirar la pantalla
+   inferior, en vez de mirar en los primeros segundos.
+3. Seguir la pista 2 original de la sección 18 que nunca se completó del
+   todo: comparar registro a registro la configuración de
+   `sBottomTarget` contra `sTopTarget` (que no tiene el bug) -- profundidad,
+   formato, algo sutil que difiera entre ambos que once rondas de tests no
+   han tocado todavía.
+4. Instrumentar de verdad el momento exacto en que aparece la segunda
+   copia: ¿está presente desde el primer frame tras `PlatformGpu3DS_Init`,
+   o aparece más tarde (tras cierto número de frames, tras cierto evento
+   del juego)? Ninguna sesión hasta ahora ha comprobado esto -- todas las
+   capturas fueron de "en algún momento de la partida", no del primer
+   frame posible.
+5. Recordatorio operativo: subir siempre los CIA de prueba a
+   `sdmc:/cias/mzm-zm.cia` por FTP (sección 20.4) -- es donde el usuario
+   instala desde FBI, no a la raíz de la SD.
+
+### 20.7 — Logs añadidos, con datos: config de targets idéntica, sin reentrada real, presente desde el frame 1
+
+Se añadió instrumentación permanente (detrás de `PORT_GPU_RENDERER_DIAG_LOG`,
+ver `PlatformGpu3DS_Init`/`PlatformGpu3DS_EndBottom`) y se recogió una
+sesión real de ~130s / 6540 frames:
+
+- **`TARGETCMP`** (una vez, al iniciar): `sTopTarget` y `sBottomTarget`
+  salen estructuralmente idénticos -- mismo `colorFmt`, `linked=1`,
+  `xfer=00001000`, `side=0`; solo difieren en `screen` (0 vs 1) y las
+  direcciones/dimensiones esperadas. **Descarta una diferencia de
+  configuración de registro entre ambos targets como causa** (pista 3 de
+  la sección 18/20, ahora cerrada).
+- **`ENDBOTTOM`** (cada llamada real, throttled tras el frame 120): en las
+  6540 líneas recogidas, **`changed=1` en el 100% de los casos** -- la
+  rama `else` de reutilización (pensada solo para Old 3DS, sección 5.1)
+  nunca se ejecuta en este hardware (New 3DS, confirmado `old3ds=0`
+  siempre). **Cero eventos de reentrada** en toda la sesión -- descarta
+  definitivamente que la guarda de 8ms de la sección 18.2 esté
+  interviniendo en el bug actual. La duplicación **está presente desde
+  `n=1`**, no aparece tras cierto tiempo/evento -- descarta degradación
+  por sesión larga (punto 2 de la lista pendiente anterior).
+
+### 20.8 — Pista del usuario: un bug histórico ya arreglado (`a9f564cf`), mecanismo real pero no aplicable hoy
+
+El usuario recordaba una sesión anterior donde la pantalla **superior**
+se veía duplicada varias veces, en pequeño, con tinte rojo, relacionado
+con el formato/profundidad de píxel al presentar la imagen. Encontrado:
+commit `a9f564cf` ("unconditionally submit right-eye draw to prevent C3D
+display transfer stalls", 2026-08-20). El mecanismo real, confirmado
+leyendo el código fuente de citro3d (`renderqueue.c`, bajado de
+`github.com/devkitPro/citro3d` para esta sesión -- no viene con las
+cabeceras instaladas localmente): `C3D_FrameEnd()` solo transfiere a la
+pantalla física los render targets cuyo `->used` esté a `true` ese frame
+-- y `->used` solo se pone a `true` si ese frame se llamó a
+`C3D_FrameDrawOn` (internamente, vía `C2D_SceneBegin`) sobre ese target
+concreto. Si una condición salta esa llamada para un target enlazado
+(como pasaba con el ojo derecho, antes condicionado a
+`slider3d > 0.001f`), la pantalla física correspondiente **no se
+transfiere ni cambia de buffer ese frame**, quedando mostrando contenido
+de un frame anterior mientras el resto avanza -- coincide con el patrón
+descrito.
+
+**Comprobado que no aplica hoy:** no queda ninguna condición dinámica
+equivalente. `sTopRightTarget` solo se guarda tras `if (sTopRightTarget)`
+(un puntero fijo una vez asignado, no una condición del slider). Y el
+`EndBottom` actual, aunque tiene una estructura `if/else` con pinta
+similar (salta `C2D_SceneBegin(sBottomTarget)` en la rama `else`), se
+confirmó en la sección 20.7 que esa rama **nunca se ejecuta en New3DS**
+(0 de 6540 frames). Mecanismo real y bien identificado por el usuario,
+pero no es la causa del bug actual con el código de hoy -- se deja
+documentado por si reaparece una condición similar en el futuro (p.ej. al
+tocar la rama Old3DS, que sí usa esa ruta y nunca se ha probado en
+hardware Old3DS real esta rama entera).
+
+### Pendiente para la próxima sesión (reemplaza la lista anterior)
+
+Con `TARGETCMP`, `ENDBOTTOM` y la pista de `a9f564cf` ya agotadas, la
+lista de sospechosos razonables y baratos de comprobar sin hardware
+especializado está prácticamente vacía. Quedan:
+
+1. **Audio real (NDSP/DSP)**: la única pieza grande del sistema real que
+   ningún test aislado de esta sesión ha incluido. Candidato razonable
+   dado que DSP y GPU comparten ancho de banda de memoria en 3DS.
+2. **Probar en Old3DS real**: toda la sesión (hoy y anteriores) se ha
+   validado en un único New3DS. La rama `else` de `EndBottom` (código
+   real, nunca ejercitado en ninguna prueba de esta sesión) es exclusiva
+   de Old3DS -- si el usuario tiene o consigue acceso a una Old3DS,
+   probar ahí podría revelar un bug completamente distinto o el mismo con
+   otra causa.
+3. Si ninguna de las dos anteriores lo explica: el bug puede estar en el
+   propio firmware/GSP del sistema del usuario en una capa que no es
+   observable desde citro3d (verificar sería instalar Luma3DS
+   actualizado, o probar con una build totalmente distinta de firmware si
+   es viable, algo fuera del alcance de este repositorio).
+4. Recordatorio operativo: seguir subiendo los CIA de prueba a
+   `sdmc:/cias/mzm-zm.cia` por FTP, no a la raíz de la SD.
+
 ### Pendiente para la próxima sesión (actualiza la lista de la sección 10)
 
 1. Confirmar en hardware, visitando **varias salas distintas** (no solo

@@ -65,6 +65,7 @@ struct C3D_RenderTarget_tag* PlatformGpu3DS_GetTopRightTarget(void);
  * must call this before its draws -- TexEnv state is global GPU state, not
  * per-texture, so it doesn't happen automatically. */
 void PlatformGpu3DS_ConfigureAbgrTextureEnv(void);
+void PlatformGpu3DS_ResetSolidTexEnv(void);
 void PlatformGpu3DS_ShowDumpSavedOverlay(void);
 void PlatformGpu3DS_DumpScreens(void);
 void PlatformGpu3DS_GetStats(PlatformGpu3DSStats* stats);

@@ -155,6 +155,26 @@ void PlatformGpu3DS_ConfigureAbgrTextureEnv(void) {
     C3D_TexEnvColor(env, C2D_Color32(0, 0, 255, 255));
 }
 
+/* ConfigureAbgrTextureEnv() above wires TEV units 1 and 2 to sample
+ * GPU_TEXTURE0 (the 3-stage byte-swizzle needed for the ABGR-composited
+ * bottom-screen image). citro2d's own solid-color draws (C2D_DrawRectSolid,
+ * used by the debug overlay and its font) only reprogram unit 0 when
+ * switching from textured to solid mode -- it doesn't know our units 1/2
+ * exist, so they stay wired to sample whatever texture unit 0 last pointed
+ * at even though a solid draw binds no texture at all. Confirmed on real
+ * hardware: a plain C2D_DrawRectSolid drawn right after
+ * ConfigureAbgrTextureEnv() + C2D_DrawImage came out colorless/banded
+ * instead of solid, exactly this leftover-TEV-state pattern (see
+ * docs/3ds-port-gpu-renderer-status-2026-08-20.md section 19). Call this
+ * after the textured draw and before any solid draw in the same scene to
+ * put units 1/2 back to a harmless passthrough. */
+void PlatformGpu3DS_ResetSolidTexEnv(void) {
+    C3D_TexEnv* env = C3D_GetTexEnv(1);
+    C3D_TexEnvInit(env);
+    env = C3D_GetTexEnv(2);
+    C3D_TexEnvInit(env);
+}
+
 bool PlatformGpu3DS_Init(bool old3dsProfile) {
     memset(&sStats, 0, sizeof(sStats));
     sOld3DSProfile = old3dsProfile;
@@ -266,6 +286,49 @@ bool PlatformGpu3DS_Init(bool old3dsProfile) {
     C3D_RenderTargetSetOutput(sTopTarget, GFX_TOP, GFX_LEFT, output);
     if (sTopRightTarget) C3D_RenderTargetSetOutput(sTopRightTarget, GFX_TOP, GFX_RIGHT, output);
     C3D_RenderTargetSetOutput(sBottomTarget, GFX_BOTTOM, GFX_LEFT, output);
+    /* Platform3DS_Init() calls consoleInit(GFX_BOTTOM, NULL) before this
+     * runs (for the fatal-error text console), which leaves libctru's gfx
+     * module owning GFX_BOTTOM with its own double-buffering swap counter --
+     * a separate subsystem from citro3d that can independently flip which
+     * physical framebuffer address the LCD reads from. citro3d now owns
+     * bottom-screen presentation exclusively via C3D_RenderTargetSetOutput
+     * above; leaving gfx's own double buffering enabled for that screen
+     * means two subsystems can race over which buffer address is actually
+     * scanned out, a strong candidate for the still-unexplained bottom-
+     * screen "clean copy + stale/blurry copy, offset down" duplication
+     * (docs/3ds-port-gpu-renderer-status-2026-08-20.md section 18 -- ruled
+     * out reentrant presents and target content, both confirmed clean via
+     * KEY_X; never checked this gfx/citro3d double-buffer interaction).
+     * Disabling gfx's double buffering here removes that race without
+     * touching consoleInit itself (still needed for Platform3DS_ShowFatal).
+     * Unverified: needs confirming on real hardware, not just Azahar. */
+    gfxSetDoubleBuffering(GFX_BOTTOM, false);
+#ifdef PORT_GPU_RENDERER_DIAG_LOG
+    {
+        /* Diagnostic (docs/.../3ds-port-gpu-renderer-status-2026-08-20.md
+         * section 20): dump every field of both targets' C3D_FrameBuf/
+         * C3D_RenderTarget at creation, side by side, looking for any
+         * register-level difference between sTopTarget (never shows the
+         * duplication bug) and sBottomTarget (always does). Confirmed on
+         * hardware (2026-08-21): both structurally identical aside from
+         * expected dims/addresses/screen id -- ruled out a config
+         * difference as the cause. */
+        char msg[192];
+        snprintf(msg, sizeof(msg),
+                 "TARGETCMP top: w=%u h=%u colorBuf=%p depthBuf=%p colorFmt=%d linked=%d screen=%d side=%d xfer=%08lx",
+                 sTopTarget->frameBuf.width, sTopTarget->frameBuf.height, sTopTarget->frameBuf.colorBuf,
+                 sTopTarget->frameBuf.depthBuf, (int)sTopTarget->frameBuf.colorFmt, (int)sTopTarget->linked,
+                 (int)sTopTarget->screen, (int)sTopTarget->side, (unsigned long)sTopTarget->transferFlags);
+        extern void Port_DebugLog(const char* msg);
+        Port_DebugLog(msg);
+        snprintf(msg, sizeof(msg),
+                 "TARGETCMP bot: w=%u h=%u colorBuf=%p depthBuf=%p colorFmt=%d linked=%d screen=%d side=%d xfer=%08lx",
+                 sBottomTarget->frameBuf.width, sBottomTarget->frameBuf.height, sBottomTarget->frameBuf.colorBuf,
+                 sBottomTarget->frameBuf.depthBuf, (int)sBottomTarget->frameBuf.colorFmt, (int)sBottomTarget->linked,
+                 (int)sBottomTarget->screen, (int)sBottomTarget->side, (unsigned long)sBottomTarget->transferFlags);
+        Port_DebugLog(msg);
+    }
+#endif
     sReady = true;
     return true;
 
@@ -416,6 +479,32 @@ C3D_RenderTarget* PlatformGpu3DS_GetTopRightTarget(void) { return sTopRightTarge
 
 bool PlatformGpu3DS_EndBottom(const uint32_t* pixels, bool changed) {
     if (!sFrameActive || !pixels) return false;
+#ifdef PORT_GPU_RENDERER_DIAG_LOG
+    {
+        /* Diagnostic (docs/.../3ds-port-gpu-renderer-status-2026-08-20.md
+         * section 20 pendiente item 4): log every real EndBottom call
+         * unthrottled for the first 120 (~2s at 60fps) so we can see
+         * whether the duplication is present from frame 1 or appears
+         * later, then throttle to keep the log file from growing forever
+         * during a real play session. Confirmed on hardware (2026-08-21):
+         * present from frame 1, changed=1 and the "real draw" branch taken
+         * on every single call (New3DS never hits EndBottom's own/else
+         * skip branch) -- ruled out reentrancy/skip-branch theories. */
+        static unsigned sEndBottomCallCount;
+        static u64 sFirstCallTick;
+        const u64 nowTick = svcGetSystemTick();
+        if (sFirstCallTick == 0) sFirstCallTick = nowTick;
+        const unsigned n = ++sEndBottomCallCount;
+        if (n <= 120 || (n % 60u) == 0u) {
+            char msg[128];
+            const double msSinceFirst = (double)(nowTick - sFirstCallTick) / (double)CPU_TICKS_PER_MSEC;
+            snprintf(msg, sizeof(msg), "ENDBOTTOM n=%u changed=%d valid=%d old3ds=%d t=%.0fms",
+                     n, (int)changed, (int)sBottomTargetValid, (int)sOld3DSProfile, msSinceFirst);
+            extern void Port_DebugLogBuffered(const char* msg);
+            Port_DebugLogBuffered(msg);
+        }
+    }
+#endif
     if (changed) {
         GSPGPU_FlushDataCache(pixels, 512u * 240u * sizeof(uint32_t));
         const unsigned sourceHeight = sOld3DSProfile ? 240u : 256u;
@@ -447,6 +536,7 @@ bool PlatformGpu3DS_EndBottom(const uint32_t* pixels, bool changed) {
          * docs/3ds-port-gpu-renderer-status-2026-08-20.md section 18. */
         PlatformGpu3DS_ConfigureAbgrTextureEnv();
         C2D_DrawImage(image, &params, NULL);
+        PlatformGpu3DS_ResetSolidTexEnv();
         if (Port_Config_GetShowFps()) {
             /* Bottom-screen debug overlay: unlike the top-screen "FPS NN"
              * box (only ever drawn by the CPU path, see DrawTopImageStereo
