@@ -297,8 +297,10 @@ enum { SORT_KEY_BUCKETS = 35 };
 static int32_t sBucketHead[SORT_KEY_BUCKETS];
 static int32_t sBucketTail[SORT_KEY_BUCKETS];
 static int32_t sBucketNext[MAX_DRAW_ITEMS];
-static int32_t sSortedOrder[MAX_DRAW_ITEMS];
-static int sSortedCount;
+static int32_t sOpaqueOrder[MAX_DRAW_ITEMS];
+static int sOpaqueCount;
+static int32_t sBlendOrder[MAX_DRAW_ITEMS];
+static int sBlendCount;
 
 /* GBA sprite shape/size -> pixel dimensions (attr0 bits14-15 = shape,
  * attr1 bits14-15 = size). Same table as port/ppu/src/mode1.c's
@@ -311,13 +313,15 @@ static const uint8_t kObjHeights[3][4] = { { 8, 16, 32, 64 }, { 8, 8, 16, 32 }, 
 
 /* Stereo depth mapping (docs/future-roadmap-and-architecture.md's table):
  * index 0=BG3(farthest) .. 3=BG0/HUD(nearest), 4=OBJ. Values are px of
- * parallax shift at full slider; sign flips between eyes in the caller. */
+ * parallax shift at full slider; sign flips between eyes in the caller.
+ * Samus (OBJ) is placed slightly behind BG1 platforms so platforms appear
+ * with depth/thickness in front of Samus. */
 static const float kTierEyeOffsetPx[5] = {
-    -3.5f, /* BG3: far background */
-    -1.75f, /* BG2: mid background */
-    -0.4f, /* BG1: platforms/gameplay plane */
-    0.0f,  /* BG0: HUD/foreground, screen plane */
-    -0.4f, /* OBJ: same plane as gameplay by default */
+    -4.0f, /* BG3: far background / sky */
+    -2.0f, /* BG2: mid background / caves */
+    -0.3f, /* BG1: platforms / interactive ground (closer to viewer) */
+    0.0f,  /* BG0: HUD / UI / screen plane */
+    -0.8f, /* OBJ: Samus / enemies (slightly behind BG1 platforms) */
 };
 
 bool Port_GpuRenderer_IsActive(void) { return sGpuRendererActive; }
@@ -339,6 +343,24 @@ void Port_GpuRenderer_SetActive(bool active) { sGpuRendererActive = active; }
  * wrapper keeps the dirty-row-range granularity from sDirtyRowMask. */
 static inline void FlushAtlasRange(void* addr, size_t size) {
     svcFlushProcessDataCache(CUR_PROCESS_HANDLE, (u32)addr, (u32)size);
+}
+
+static Tex3DS_SubTexture sSlotSubtexTable[ATLAS_MAX_SLOTS];
+
+static void InitSlotSubtexTable(void) {
+    const float invAtlas = 1.0f / (float)ATLAS_DIM;
+    for (int slot = 0; slot < ATLAS_MAX_SLOTS; ++slot) {
+        int sx = (slot % ATLAS_TILES_PER_ROW) * 8;
+        int sy = (slot / ATLAS_TILES_PER_ROW) * 8;
+        sSlotSubtexTable[slot] = (Tex3DS_SubTexture){
+            .width = 8,
+            .height = 8,
+            .left = ((float)sx + 0.5f) * invAtlas,
+            .top = 1.0f - ((float)sy + 0.5f) * invAtlas,
+            .right = ((float)sx + 7.5f) * invAtlas,
+            .bottom = 1.0f - ((float)sy + 7.5f) * invAtlas,
+        };
+    }
 }
 
 bool Port_GpuRenderer_Init(void) {
@@ -364,6 +386,8 @@ bool Port_GpuRenderer_Init(void) {
     memset(sAtlasTexture.data, 0, ATLAS_DIM * ATLAS_DIM * sizeof(u32));
     FlushAtlasRange(sAtlasTexture.data, ATLAS_DIM * ATLAS_DIM * sizeof(u32));
     C3D_TexSetFilter(&sAtlasTexture, GPU_NEAREST, GPU_NEAREST);
+
+    InitSlotSubtexTable();
 
     for (int i = 0; i < HASH_BUCKETS; ++i) sHashBucketHead[i] = -1;
     sCacheCount = 0;
@@ -504,13 +528,13 @@ static inline WindowVis ComputeLayerWinVis(uint8_t insideMask, uint8_t outsideMa
  * atlas write, caching): a mask tile's actual COLOR never matters, only
  * whether it has any opaque texel at all. */
 static inline bool TileHasOpaquePixel(uint32_t byteOffset, bool bpp8) {
-    const uint8_t* src = gVram + byteOffset;
-    if (bpp8) {
-        for (int i = 0; i < 64; ++i) if (src[i] != 0) return true;
+    const uint32_t* src = (const uint32_t*)(gVram + byteOffset);
+    if (!bpp8) {
+        return (src[0] | src[1] | src[2] | src[3] | src[4] | src[5] | src[6] | src[7]) != 0;
     } else {
-        for (int i = 0; i < 32; ++i) if (src[i] != 0) return true; /* either nibble non-zero */
+        return (src[0] | src[1] | src[2] | src[3] | src[4] | src[5] | src[6] | src[7] |
+                src[8] | src[9] | src[10] | src[11] | src[12] | src[13] | src[14] | src[15]) != 0;
     }
-    return false;
 }
 
 /* Rasterizes every live OBJWIN sprite (attr0 objMode==2) into
@@ -761,49 +785,12 @@ static int GetOrDecodeTileSlot(uint32_t byteOffset, bool bpp8, const uint16_t* p
     return slot;
 }
 
-static inline void SlotToUV(int slot, Tex3DS_SubTexture* out) {
-    int sx = (slot % ATLAS_TILES_PER_ROW) * 8;
-    int sy = (slot / ATLAS_TILES_PER_ROW) * 8;
-    out->width = 8;
-    out->height = 8;
-    /* Inset by half a texel on every edge -- tiles are packed edge-to-edge
-     * in the atlas with no gutter, and with GPU_NEAREST filtering plus the
-     * non-integer 1.5x scale used to fill the screen (8 source px -> 12
-     * destination px), a UV coordinate landing exactly ON a tile boundary
-     * is ambiguous: floating-point rounding during rasterization can pick
-     * the FIRST texel of the next tile instead of the last texel of this
-     * one, sampling unrelated atlas content -- confirmed on hardware via
-     * the KEY_X screen dump (docs/3ds-port-gpu-renderer-status-2026-08-20.md,
-     * "efecto persiana" investigation) as thin dark vertical/horizontal
-     * seam lines at a spacing matching the scaled tile size. Using the
-     * CENTER of the first/last texel instead of the tile's outer edge
-     * keeps every interpolated sample point closer to its intended texel
-     * than to a neighboring tile's, which is the standard fix for
-     * point-sampled, gutter-less texture atlases. */
-    out->left = ((float)sx + 0.5f) / (float)ATLAS_DIM;
-    out->top = 1.0f - ((float)sy + 0.5f) / (float)ATLAS_DIM;
-    out->right = ((float)sx + 7.5f) / (float)ATLAS_DIM;
-    out->bottom = 1.0f - ((float)sy + 7.5f) / (float)ATLAS_DIM;
-}
-
-/* Shared item-allocation tail for PushItem/PushAffineItem below: reserves a
- * slot in sDrawItems, wires up its atlas UV rect and this sortKey's
- * insertion-order bucket chain (see SORT_KEY_BUCKETS's comment). Returns -1
- * (and pushes nothing) if MAX_DRAW_ITEMS is already exhausted. */
 static inline int AllocDrawItem(int slot, int sortKey) {
     if (sDrawItemCount >= MAX_DRAW_ITEMS) return -1;
-    Tex3DS_SubTexture subtex;
-    SlotToUV(slot, &subtex);
     int idx = sDrawItemCount++;
-    /* subtex is stack-local per call site in the original C2D_Image pattern;
-     * store it by value inside the persisted image via a static per-item
-     * copy so it stays valid until the draw pass. C2D_Image only holds a
-     * pointer, so give each item its own backing subtex. */
-    static Tex3DS_SubTexture sSubtexPool[MAX_DRAW_ITEMS];
-    sSubtexPool[idx] = subtex;
     DrawItem* item = &sDrawItems[idx];
     item->img.tex = &sAtlasTexture;
-    item->img.subtex = &sSubtexPool[idx];
+    item->img.subtex = &sSlotSubtexTable[slot];
     item->sortKey = sortKey;
 
     sBucketNext[idx] = -1;
@@ -914,14 +901,15 @@ static void CollectBgLayer(int bgIndex) {
             bool hflip = (entry & 0x0400u) != 0;
             bool vflip = (entry & 0x0800u) != 0;
             int palBank = (entry >> 12) & 0x0Fu;
-
-            uint32_t byteOffset = charBase + (uint32_t)tileId * bytesPerTile;
-            int slot = GetOrDecodeTileSlot(byteOffset, bpp8, pal, palBank, hflip, vflip, false, brightAdjust);
-
             float drawX = (float)(tx * 8 - fineX);
             float drawY = (float)(ty * 8 - fineY);
             if (drawY <= -8.0f || drawY >= 160.0f || drawX <= -8.0f || drawX >= 240.0f) continue;
+
+            uint32_t byteOffset = charBase + (uint32_t)tileId * bytesPerTile;
+            if (!TileHasOpaquePixel(byteOffset, bpp8)) continue;
             if (sObjWindowActive && !ObjWinItemVisible(objWinVis, drawX, drawY)) continue;
+
+            int slot = GetOrDecodeTileSlot(byteOffset, bpp8, pal, palBank, hflip, vflip, false, brightAdjust);
 
             /* GBA BGCNT priority is 0=highest (drawn on top), 3=lowest
              * (drawn furthest back) -- the inverse of sortKey's own
@@ -1112,15 +1100,19 @@ static void CollectSprite(int oamIndex, bool obj1D) {
                 tileIndex = (uint16_t)(baseTile + srcTy * 32 + srcTx * (bpp8 ? 2 : 1));
             }
             uint32_t byteOffset = (uint32_t)(objBase - gVram) + (uint32_t)tileIndex * bytesPerTile;
-            int slot = GetOrDecodeTileSlot(byteOffset, bpp8, pal, palBank, hflip, vflip, true, brightAdjust);
+            if (!TileHasOpaquePixel(byteOffset, bpp8)) continue;
 
             if (!isAffine) {
                 float drawX = (float)(x + tx * 8);
                 float drawY = (float)(y + ty * 8);
+                if (drawY <= -8.0f || drawY >= 160.0f || drawX <= -8.0f || drawX >= 240.0f) continue;
                 if (sObjWindowActive && !ObjWinItemVisible(objWinVis, drawX, drawY)) continue;
+                int slot = GetOrDecodeTileSlot(byteOffset, bpp8, pal, palBank, hflip, vflip, true, brightAdjust);
                 PushItem(slot, drawX, drawY, sortKey, 4, blendAlpha, rectWinVis);
                 continue;
             }
+
+            int slot = GetOrDecodeTileSlot(byteOffset, bpp8, pal, palBank, hflip, vflip, true, brightAdjust);
 
             /* Subtile center relative to the sprite's own (unrotated)
              * texture pivot, then mapped through the FULL inverted affine
@@ -1469,9 +1461,16 @@ void Port_GpuRenderer_RenderFrame(void) {
     if (dispcnt & (1u << 12)) {
         for (int i = 127; i >= 0; --i) CollectSprite(i, obj1D);
     }
-    sSortedCount = 0;
+    sOpaqueCount = 0;
+    sBlendCount = 0;
     for (int b = 0; b < SORT_KEY_BUCKETS; ++b) {
-        for (int32_t i = sBucketHead[b]; i >= 0; i = sBucketNext[i]) sSortedOrder[sSortedCount++] = i;
+        for (int32_t i = sBucketHead[b]; i >= 0; i = sBucketNext[i]) {
+            if (sDrawItems[i].blendAlpha) {
+                sBlendOrder[sBlendCount++] = i;
+            } else {
+                sOpaqueOrder[sOpaqueCount++] = i;
+            }
+        }
     }
 
     {
@@ -1484,17 +1483,17 @@ void Port_GpuRenderer_RenderFrame(void) {
 
 #ifdef PORT_GPU_RENDERER_DIAG_LOG
     {
-        static unsigned sFrameCounter;
-        if ((sFrameCounter++ % 5u) == 0u) {
-            float minY = 1e9f, maxY = -1e9f;
-            int objItems = 0, cacheSlots = sCacheCount, blendItems = 0;
+        static unsigned sDiagCounter;
+        if ((sDiagCounter++ % 5u) == 0u) {
+            char msg[512];
+            int objItems = 0, cacheSlots = sCacheCount;
+            float minY = 999.0f, maxY = -999.0f;
             for (int i = 0; i < sDrawItemCount; ++i) {
+                if (sDrawItems[i].depthTier == 4) ++objItems;
                 if (sDrawItems[i].y < minY) minY = sDrawItems[i].y;
                 if (sDrawItems[i].y > maxY) maxY = sDrawItems[i].y;
-                if (sDrawItems[i].depthTier == 4) ++objItems;
-                if (sDrawItems[i].blendAlpha) ++blendItems;
             }
-            char msg[240];
+            int blendItems = sBlendCount;
             int off = __builtin_snprintf(msg, sizeof(msg),
                                          "GPUDIAG dispcnt=%04x items=%d obj=%d cache=%d yrange=[%.0f,%.0f] "
                                          "bldcnt=%04x eff=%d eva=%d evb=%d blend=%d",
@@ -1546,16 +1545,17 @@ void Port_GpuRenderer_RenderFrame(void) {
             uint64_t shifted = mask >> startRow; /* bit 0 is guaranteed set */
             /* Run length = index of the first zero bit above startRow.
              * __builtin_ctzll(~shifted) is undefined for an all-ones input
-             * (~shifted == 0), which happens exactly when every remaining
-             * row from startRow to 63 is dirty -- handled directly instead. */
-            int runLen = (shifted == ~0ull) ? (64 - startRow) : __builtin_ctzll(~shifted);
-            uint64_t clearMask = (runLen >= 64) ? ~0ull : (((1ull << runLen) - 1ull) << startRow);
-            mask &= ~clearMask;
-
-            int height = runLen * 8;
-            size_t byteOffset = (size_t)startRow * 8 * rowBytes;
-            FlushAtlasRange((uint8_t*)sAtlasTexture.data + byteOffset, (size_t)height * rowBytes);
+             * in C, but shifted here is guaranteed non-zero and has at most
+             * 64 - startRow valid bits, so ~shifted is never 0 for any
+             * startRow > 0. For startRow == 0 and all 64 bits dirty,
+             * runLength = 64 directly. */
+            int runLength = (~shifted == 0) ? 64 : __builtin_ctzll(~shifted);
+            u32* flushStart = (u32*)sAtlasTexture.data + (size_t)startRow * 8 * ATLAS_DIM;
+            size_t flushBytes = (size_t)runLength * 8 * rowBytes;
+            FlushAtlasRange(flushStart, flushBytes);
+            mask &= ~(((1ull << runLength) - 1ull) << startRow);
         }
+        sDirtyRowMask = 0;
     }
 
     u64 tAfterCollect = svcGetSystemTick();
@@ -1631,8 +1631,10 @@ void Port_GpuRenderer_RenderFrame(void) {
         ConfigureAtlasTextureEnv();
         C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_ALL);
         C3D_AlphaTest(true, GPU_GREATER, 0);
-        C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_SRC_ALPHA,
-                       GPU_ONE_MINUS_SRC_ALPHA);
+        /* Opaque pass: all passing fragments have alpha=255. Use ONE/ZERO blend
+         * to avoid reading back the destination framebuffer from VRAM, saving
+         * massive memory bandwidth during scaled / full-screen rendering. */
+        C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
 
         int drawCount = 0;
         bool reassertedTexEnv = false;
@@ -1642,18 +1644,17 @@ void Port_GpuRenderer_RenderFrame(void) {
             if (sWindowActive) {
                 C3D_SetScissor(insidePass ? GPU_SCISSOR_NORMAL : GPU_SCISSOR_INVERT, scLeft, scTop, scRight, scBottom);
             }
-            for (int oi = 0; oi < sSortedCount; ++oi) {
-                const DrawItem* item = &sDrawItems[sSortedOrder[oi]];
-                if (item->blendAlpha) continue; /* second pass, below */
+            for (int oi = 0; oi < sOpaqueCount; ++oi) {
+                const DrawItem* item = &sDrawItems[sOpaqueOrder[oi]];
                 if (!ItemPassesWindow(sWindowActive, item->winVis, insidePass)) continue;
                 float eyeOffset = eyeSign * slider3d * kTierEyeOffsetPx[item->depthTier];
                 C2D_DrawParams params = BuildDrawParams(item, screenBaseX, screenBaseY, eyeOffset, scaleX, scaleY);
                 C2D_DrawImage(item->img, &params, NULL);
+                ++drawCount;
                 if (!reassertedTexEnv) {
                     ConfigureAtlasTextureEnv();
                     reassertedTexEnv = true;
                 }
-                if ((++drawCount % 512) == 0) C2D_Flush();
             }
         }
         if (sWindowActive) {
@@ -1661,44 +1662,34 @@ void Port_GpuRenderer_RenderFrame(void) {
             C3D_SetScissor(GPU_SCISSOR_DISABLE, 0, 0, 0, 0);
         }
 
-        if (sBldEffect == 1) {
-            bool flushedForBlend = false;
-            bool blendScissorSet = false;
+        if (sBldEffect == 1 && sBlendCount > 0) {
+            C2D_Flush();
+            C3D_BlendingColor(C2D_Color32(0, 0, 0, (u32)((sBldEva * 255) / 16)));
+            C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_CONSTANT_ALPHA, GPU_ONE_MINUS_CONSTANT_ALPHA,
+                           GPU_CONSTANT_ALPHA, GPU_ONE_MINUS_CONSTANT_ALPHA);
+
             for (int sp = 0; sp < scissorPasses; ++sp) {
                 bool insidePass = (sp == 0);
-                for (int oi = 0; oi < sSortedCount; ++oi) {
-                    const DrawItem* item = &sDrawItems[sSortedOrder[oi]];
-                    if (!item->blendAlpha) continue;
+                if (sWindowActive) {
+                    C3D_SetScissor(insidePass ? GPU_SCISSOR_NORMAL : GPU_SCISSOR_INVERT, scLeft, scTop, scRight,
+                                   scBottom);
+                }
+                for (int oi = 0; oi < sBlendCount; ++oi) {
+                    const DrawItem* item = &sDrawItems[sBlendOrder[oi]];
                     if (!ItemPassesWindow(sWindowActive, item->winVis, insidePass)) continue;
-                    if (!flushedForBlend) {
-                        C2D_Flush();
-                        C3D_BlendingColor(C2D_Color32(0, 0, 0, (u32)((sBldEva * 255) / 16)));
-                        C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_CONSTANT_ALPHA, GPU_ONE_MINUS_CONSTANT_ALPHA,
-                                       GPU_CONSTANT_ALPHA, GPU_ONE_MINUS_CONSTANT_ALPHA);
-                        flushedForBlend = true;
-                    }
-                    if (sWindowActive && !blendScissorSet) {
-                        C3D_SetScissor(insidePass ? GPU_SCISSOR_NORMAL : GPU_SCISSOR_INVERT, scLeft, scTop, scRight,
-                                       scBottom);
-                        blendScissorSet = true;
-                    }
                     float eyeOffset = eyeSign * slider3d * kTierEyeOffsetPx[item->depthTier];
                     C2D_DrawParams params = BuildDrawParams(item, screenBaseX, screenBaseY, eyeOffset, scaleX, scaleY);
                     C2D_DrawImage(item->img, &params, NULL);
+                    ++drawCount;
                     if (!reassertedTexEnv) {
                         ConfigureAtlasTextureEnv();
                         reassertedTexEnv = true;
                     }
-                    if ((++drawCount % 512) == 0) C2D_Flush();
                 }
-                blendScissorSet = false;
             }
-            if (flushedForBlend) {
-                C2D_Flush();
-                C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_SRC_ALPHA,
-                               GPU_ONE_MINUS_SRC_ALPHA);
-                if (sWindowActive) C3D_SetScissor(GPU_SCISSOR_DISABLE, 0, 0, 0, 0);
-            }
+            C2D_Flush();
+            C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
+            if (sWindowActive) C3D_SetScissor(GPU_SCISSOR_DISABLE, 0, 0, 0, 0);
         }
 
         if (Port_Config_GetShowFps()) {
