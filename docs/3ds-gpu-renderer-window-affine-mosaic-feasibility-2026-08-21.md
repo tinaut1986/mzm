@@ -1,9 +1,15 @@
 # GPU tile renderer: closing the CPU-fallback gap (window clipping, affine BG/OBJ, mosaic)
 
 Branch: `feat/gpu-renderer-window-affine-mosaic`, based on `main`
-(`c45ecef2`, after the audio-decouple work). Investigation only in this
-first commit -- no rendering code changed yet. See "Recommendation" at the
-bottom for what to build first and why nothing was implemented blind.
+(`c45ecef2`, after the audio-decouple work; later rebased onto `main` again
+to pick up the GPU-submit-lock hang fix). Investigation only so far -- no
+rendering code changed yet. See "Recommendation" at the bottom for what to
+build first and why nothing was implemented blind.
+
+**Update (same day):** added a `KEY_Y` debug-marker hotkey and had the user
+play through a session with it, confirming two of the three originally
+reported symptoms against real play instead of just inferring them from
+code. See "What I actually measured" below.
 
 ## The ask
 
@@ -14,10 +20,12 @@ to the CPU scanline renderer (`port/ppu/src/mode1.c`) for that frame -- for
 several GBA PPU features it doesn't implement. Reported symptoms this
 investigation was asked to explain:
 
-1. An intro scene falls back to CPU.
+1. An intro scene falls back to CPU. **Not yet confirmed.**
 2. A menu selection that appears to "crop" something falls back to CPU.
+   **Confirmed: file-select's transition animation triggers `GPU_REJECT: WIN0`.**
 3. The idle/attract-mode gameplay demo (plays after leaving the title
-   screen untouched) falls back to CPU, but only sometimes.
+   screen untouched) falls back to CPU, but only sometimes. **Confirmed
+   (at least in part): explosions trigger `GPU_REJECT: affine OBJ`.**
 
 ## What actually rejects a frame today
 
@@ -34,33 +42,51 @@ investigation was asked to explain:
 
 ### What I actually measured
 
-Built with `EXTRA_CFLAGS=-DPORT_GPU_RENDERER_DIAG_LOG` and ran two headless
-Azahar sessions (45s, then 90s) via `tools/run_azahar_test.sh`, covering boot
-through the intro text crawl, title/file-select, and into an in-game demo
-(`GM 0x0B`, confirmed via the debug log's `ModeChange` lines). Only
-`GPU_REJECT: affine OBJ` appeared (2 log lines; logging is throttled to
-1-in-30 rejected frames, so the real reject count is higher but the frame
-class is confirmed).
+**Round 1** (headless, no input): built with `EXTRA_CFLAGS=-DPORT_GPU_RENDERER_DIAG_LOG`
+and ran two headless Azahar sessions (45s, then 90s) via
+`tools/run_azahar_test.sh`, covering boot through the intro text crawl,
+title/file-select, and into an in-game demo (`GM 0x0B`, confirmed via the
+debug log's `ModeChange` lines). Only `GPU_REJECT: affine OBJ` appeared (2
+log lines; logging is throttled to 1-in-30 rejected frames, so the real
+reject count is higher but the frame class is confirmed). No input
+automation was available in this environment (no `xdotool` or equivalent),
+so the menu case was never exercised in this round.
 
-This is a **partial** measurement, not a full confirmation of all three
-symptoms:
-- No input automation is available in this environment (no `xdotool` or
-  equivalent), so the menu-crop case (which needs an actual menu open/close)
-  was never exercised.
-- The run may not have lingered on whatever affine-BG intro moment exists
-  long enough, or that scene may be shorter than expected, or Zero
-  Mission's intro may not actually use an affine BG (this needs
-  re-checking against `docs/3ds-port-ppu-audit.md` and/or a longer/targeted
-  capture).
-- 90s did not appear to reach the actual idle-timeout attract-mode demo
-  (title screen inactivity timer); the `GM 0x0B` reached was likely a
-  cutscene-triggered in-game sequence, not the attract-mode demo per se.
+**Round 2** (manual play, on the user's machine): to work around the lack
+of input automation, added a `KEY_Y` debug hotkey
+(`platform/3ds/source/platform_3ds_minimal.c`, `Platform3DS_PollKeysIntoGba`)
+that drops a numbered, timestamped `USER MARK` line into `mzm-debug.log`.
+The user played the same diagnostic build manually, pressing `Y` at two
+moments they suspected were falling back to CPU, then handed back the log.
+Cross-referencing the marks against the surrounding `GPU_REJECT`/`GPUDIAG`/
+sprite-log lines **confirmed both remaining suspected symptoms concretely**:
 
-**Next session with input automation or manual play should re-run the same
-diagnostic build and specifically: sit on the title screen until attract
-mode starts, open an in-game menu, and step through the intro slowly**, to
-get a real reason breakdown for all three reported symptoms instead of just
-the one confirmed here (affine OBJ).
+- **Marks #2/#3** landed right on a burst of `SpriteSpawnSecondary` calls
+  (multiple parts of sprite id 12 spawned in a tight cluster -- the shape of
+  an explosion's particle sprites) immediately followed by
+  `GPU_REJECT: affine OBJ` a few frames later. Confirms explosions are (at
+  least sometimes) the "(3) idle gameplay sometimes falls back" case, and
+  that they use OAM affine transforms (scale/rotate) rather than plain
+  sprites.
+- **Mark #4** landed right in the middle of a `FileSelect subMenuStage: 0 ->
+  1 -> 2 -> 3 -> 4 -> 6 -> 7` sequence (the file-select screen's own
+  transition animation), immediately followed by `GPU_REJECT: WIN0`.
+  Confirms **(2) the menu "crop"** is exactly the window-clipping case this
+  doc already flagged as the top candidate (see `WindowCoversFullScreen`'s
+  existing comment about `gSuitFlashEffect`) -- WIN0 gates the file-select
+  reveal/wipe transition.
+
+Two things remain unconfirmed:
+- **(1) the intro affine-BG scene** -- neither round captured a `mode != 0`
+  reject. Worth re-checking whether Zero Mission's intro actually uses an
+  affine BG at all, or whether it's a short-lived moment easy to miss even
+  with marks.
+- The idle-timeout **attract-mode demo** specifically (as opposed to the
+  explosion case above, which happens during regular/demo gameplay) --
+  still not deliberately exercised.
+
+Full session reject tally (both rounds combined, log-file-lifetime,
+1-in-30-throttled so real counts are higher): `affine OBJ` x3, `WIN0` x1.
 
 ## Feasibility per rejection category
 
@@ -159,19 +185,27 @@ in-game case turns up.
 
 ## Recommendation
 
-1. Re-run the diagnostic build with real input (manual play, or add input
-   automation to this environment) specifically covering: the intro scene
-   in full, opening at least one in-game menu, and the title-screen
-   attract-mode demo, to get real reason counts for all three reported
-   symptoms instead of just the one confirmed here.
-2. Implement window clipping first (highest apparent impact per the
-   `transparency.c`/`gSuitFlashEffect` evidence already in this codebase,
-   and the scissor test is a clean hardware match) -- but resolve the
-   citro2d-vs-citro3d coordinate-space question first, either by finding
-   authoritative documentation/source for citro2d's rotation handling, or
-   by testing a single hardcoded scissor rect against a known screen
-   location on a real device/interactive Azahar session before wiring it
-   to actual GBA window registers.
-3. Affine OBJ next (confirmed occurring, moderate effort, lower coordinate
-   risk than window clipping).
-4. Affine BG, then mosaic, in that order, as follow-ups.
+Both window clipping and affine OBJ are now confirmed (not just inferred)
+against real play, via the marked session in "What I actually measured"
+above. Priority order unchanged from the original assessment, since it was
+already based on impact + risk rather than just occurrence:
+
+1. Affine OBJ first now, not window clipping -- it's confirmed occurring,
+   moderate effort, and has much lower coordinate-transform risk (a 2x2
+   matrix on an existing per-sprite quad, not a raw hardware scissor
+   register). Reordered ahead of window clipping specifically *because* it
+   can be implemented and reasoned about without needing to resolve the
+   citro2d-vs-citro3d coordinate-space unknown below first.
+2. Window clipping next -- confirmed high-impact (file-select's own
+   transition, likely several other menu/effect transitions given
+   `gSuitFlashEffect` already suspected), clean hardware match
+   (`GPU_SCISSOR_NORMAL`/`INVERT`), but still blocked on resolving whether
+   `C3D_SetScissor` expects citro2d's logical or the raw physical (rotated)
+   framebuffer coordinates -- see the still-unresolved risk write-up above.
+   Test a single hardcoded scissor rect against a known screen location
+   interactively (real device or the user's Azahar session) before wiring
+   it to actual GBA window registers.
+3. Affine BG, then mosaic, as follow-ups -- still unconfirmed against real
+   play (see "Two things remain unconfirmed" above); re-check whether Zero
+   Mission's intro actually uses affine BG at all before investing effort
+   there.
