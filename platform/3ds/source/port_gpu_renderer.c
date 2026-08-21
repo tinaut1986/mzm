@@ -297,8 +297,10 @@ enum { SORT_KEY_BUCKETS = 35 };
 static int32_t sBucketHead[SORT_KEY_BUCKETS];
 static int32_t sBucketTail[SORT_KEY_BUCKETS];
 static int32_t sBucketNext[MAX_DRAW_ITEMS];
-static int32_t sSortedOrder[MAX_DRAW_ITEMS];
-static int sSortedCount;
+static int32_t sOpaqueOrder[MAX_DRAW_ITEMS];
+static int sOpaqueCount;
+static int32_t sBlendOrder[MAX_DRAW_ITEMS];
+static int sBlendCount;
 
 /* GBA sprite shape/size -> pixel dimensions (attr0 bits14-15 = shape,
  * attr1 bits14-15 = size). Same table as port/ppu/src/mode1.c's
@@ -1459,9 +1461,16 @@ void Port_GpuRenderer_RenderFrame(void) {
     if (dispcnt & (1u << 12)) {
         for (int i = 127; i >= 0; --i) CollectSprite(i, obj1D);
     }
-    sSortedCount = 0;
+    sOpaqueCount = 0;
+    sBlendCount = 0;
     for (int b = 0; b < SORT_KEY_BUCKETS; ++b) {
-        for (int32_t i = sBucketHead[b]; i >= 0; i = sBucketNext[i]) sSortedOrder[sSortedCount++] = i;
+        for (int32_t i = sBucketHead[b]; i >= 0; i = sBucketNext[i]) {
+            if (sDrawItems[i].blendAlpha) {
+                sBlendOrder[sBlendCount++] = i;
+            } else {
+                sOpaqueOrder[sOpaqueCount++] = i;
+            }
+        }
     }
 
     {
@@ -1474,17 +1483,17 @@ void Port_GpuRenderer_RenderFrame(void) {
 
 #ifdef PORT_GPU_RENDERER_DIAG_LOG
     {
-        static unsigned sFrameCounter;
-        if ((sFrameCounter++ % 5u) == 0u) {
-            float minY = 1e9f, maxY = -1e9f;
-            int objItems = 0, cacheSlots = sCacheCount, blendItems = 0;
+        static unsigned sDiagCounter;
+        if ((sDiagCounter++ % 5u) == 0u) {
+            char msg[512];
+            int objItems = 0, cacheSlots = sCacheCount;
+            float minY = 999.0f, maxY = -999.0f;
             for (int i = 0; i < sDrawItemCount; ++i) {
+                if (sDrawItems[i].depthTier == 4) ++objItems;
                 if (sDrawItems[i].y < minY) minY = sDrawItems[i].y;
                 if (sDrawItems[i].y > maxY) maxY = sDrawItems[i].y;
-                if (sDrawItems[i].depthTier == 4) ++objItems;
-                if (sDrawItems[i].blendAlpha) ++blendItems;
             }
-            char msg[240];
+            int blendItems = sBlendCount;
             int off = __builtin_snprintf(msg, sizeof(msg),
                                          "GPUDIAG dispcnt=%04x items=%d obj=%d cache=%d yrange=[%.0f,%.0f] "
                                          "bldcnt=%04x eff=%d eva=%d evb=%d blend=%d",
@@ -1536,16 +1545,17 @@ void Port_GpuRenderer_RenderFrame(void) {
             uint64_t shifted = mask >> startRow; /* bit 0 is guaranteed set */
             /* Run length = index of the first zero bit above startRow.
              * __builtin_ctzll(~shifted) is undefined for an all-ones input
-             * (~shifted == 0), which happens exactly when every remaining
-             * row from startRow to 63 is dirty -- handled directly instead. */
-            int runLen = (shifted == ~0ull) ? (64 - startRow) : __builtin_ctzll(~shifted);
-            uint64_t clearMask = (runLen >= 64) ? ~0ull : (((1ull << runLen) - 1ull) << startRow);
-            mask &= ~clearMask;
-
-            int height = runLen * 8;
-            size_t byteOffset = (size_t)startRow * 8 * rowBytes;
-            FlushAtlasRange((uint8_t*)sAtlasTexture.data + byteOffset, (size_t)height * rowBytes);
+             * in C, but shifted here is guaranteed non-zero and has at most
+             * 64 - startRow valid bits, so ~shifted is never 0 for any
+             * startRow > 0. For startRow == 0 and all 64 bits dirty,
+             * runLength = 64 directly. */
+            int runLength = (~shifted == 0) ? 64 : __builtin_ctzll(~shifted);
+            u32* flushStart = (u32*)sAtlasTexture.data + (size_t)startRow * 8 * ATLAS_DIM;
+            size_t flushBytes = (size_t)runLength * 8 * rowBytes;
+            FlushAtlasRange(flushStart, flushBytes);
+            mask &= ~(((1ull << runLength) - 1ull) << startRow);
         }
+        sDirtyRowMask = 0;
     }
 
     u64 tAfterCollect = svcGetSystemTick();
@@ -1634,9 +1644,8 @@ void Port_GpuRenderer_RenderFrame(void) {
             if (sWindowActive) {
                 C3D_SetScissor(insidePass ? GPU_SCISSOR_NORMAL : GPU_SCISSOR_INVERT, scLeft, scTop, scRight, scBottom);
             }
-            for (int oi = 0; oi < sSortedCount; ++oi) {
-                const DrawItem* item = &sDrawItems[sSortedOrder[oi]];
-                if (item->blendAlpha) continue; /* second pass, below */
+            for (int oi = 0; oi < sOpaqueCount; ++oi) {
+                const DrawItem* item = &sDrawItems[sOpaqueOrder[oi]];
                 if (!ItemPassesWindow(sWindowActive, item->winVis, insidePass)) continue;
                 float eyeOffset = eyeSign * slider3d * kTierEyeOffsetPx[item->depthTier];
                 C2D_DrawParams params = BuildDrawParams(item, screenBaseX, screenBaseY, eyeOffset, scaleX, scaleY);
@@ -1653,42 +1662,34 @@ void Port_GpuRenderer_RenderFrame(void) {
             C3D_SetScissor(GPU_SCISSOR_DISABLE, 0, 0, 0, 0);
         }
 
-        if (sBldEffect == 1) {
-            bool flushedForBlend = false;
-            bool blendScissorSet = false;
+        if (sBldEffect == 1 && sBlendCount > 0) {
+            C2D_Flush();
+            C3D_BlendingColor(C2D_Color32(0, 0, 0, (u32)((sBldEva * 255) / 16)));
+            C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_CONSTANT_ALPHA, GPU_ONE_MINUS_CONSTANT_ALPHA,
+                           GPU_CONSTANT_ALPHA, GPU_ONE_MINUS_CONSTANT_ALPHA);
+
             for (int sp = 0; sp < scissorPasses; ++sp) {
                 bool insidePass = (sp == 0);
-                for (int oi = 0; oi < sSortedCount; ++oi) {
-                    const DrawItem* item = &sDrawItems[sSortedOrder[oi]];
-                    if (!item->blendAlpha) continue;
+                if (sWindowActive) {
+                    C3D_SetScissor(insidePass ? GPU_SCISSOR_NORMAL : GPU_SCISSOR_INVERT, scLeft, scTop, scRight,
+                                   scBottom);
+                }
+                for (int oi = 0; oi < sBlendCount; ++oi) {
+                    const DrawItem* item = &sDrawItems[sBlendOrder[oi]];
                     if (!ItemPassesWindow(sWindowActive, item->winVis, insidePass)) continue;
-                    if (!flushedForBlend) {
-                        C2D_Flush();
-                        C3D_BlendingColor(C2D_Color32(0, 0, 0, (u32)((sBldEva * 255) / 16)));
-                        C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_CONSTANT_ALPHA, GPU_ONE_MINUS_CONSTANT_ALPHA,
-                                       GPU_CONSTANT_ALPHA, GPU_ONE_MINUS_CONSTANT_ALPHA);
-                        flushedForBlend = true;
-                    }
-                    if (sWindowActive && !blendScissorSet) {
-                        C3D_SetScissor(insidePass ? GPU_SCISSOR_NORMAL : GPU_SCISSOR_INVERT, scLeft, scTop, scRight,
-                                       scBottom);
-                        blendScissorSet = true;
-                    }
                     float eyeOffset = eyeSign * slider3d * kTierEyeOffsetPx[item->depthTier];
                     C2D_DrawParams params = BuildDrawParams(item, screenBaseX, screenBaseY, eyeOffset, scaleX, scaleY);
                     C2D_DrawImage(item->img, &params, NULL);
+                    ++drawCount;
                     if (!reassertedTexEnv) {
                         ConfigureAtlasTextureEnv();
                         reassertedTexEnv = true;
                     }
                 }
-                blendScissorSet = false;
             }
-            if (flushedForBlend) {
-                C2D_Flush();
-                C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
-                if (sWindowActive) C3D_SetScissor(GPU_SCISSOR_DISABLE, 0, 0, 0, 0);
-            }
+            C2D_Flush();
+            C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
+            if (sWindowActive) C3D_SetScissor(GPU_SCISSOR_DISABLE, 0, 0, 0, 0);
         }
 
         if (Port_Config_GetShowFps()) {
