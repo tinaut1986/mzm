@@ -19,8 +19,10 @@ void CallbackCallVblank(void)
     gVBlankRequestFlag = TRUE;
     gInterruptCheckFlag |= 1;
 
+#if !(defined(TMC_3DS) && defined(__3DS__))
     if (!gVblankActive)
         UpdateAudio();
+#endif
 }
 
 /**

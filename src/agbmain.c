@@ -56,20 +56,16 @@ void agbmain(void)
         Port_DebugLog("agbmain: before UpdateAudio()");
 #endif
 #if defined(TMC_3DS) && defined(__3DS__)
-        {
-            if (gMusicInfo.unk_E != 0) {
-                gMusicInfo.unk_10 += gMusicInfo.unk_C;
-                if (gMusicInfo.unk_10 >= gMusicInfo.unk_E)
-                    gMusicInfo.unk_10 -= gMusicInfo.unk_E;
-            }
-
-            extern void Port_MzmAudio_InstallSoundCodeCHook(void);
-            Port_MzmAudio_InstallSoundCodeCHook();
-            UpdateAudio();
-
-            extern void Port_MzmAudio_Pump(void);
-            Port_MzmAudio_Pump();
-        }
+        /* Audio production (the unk_10/unk_C/unk_E DMA2-IRQ-cadence
+         * approximation, the SoundCodeC hook install, and UpdateAudio()
+         * itself) no longer runs here. On real GBA hardware this is all
+         * driven by a DMA/timer interrupt independent of the CPU's main
+         * loop (see src/music_wrappers.c's DMA2IntrCode, the real interrupt
+         * this counter update approximates); running it from agbmain's own
+         * loop instead tied audio production to however fast this loop
+         * iterates, i.e. to render FPS. It's now on its own thread, ticked
+         * by the real NDSP hardware playback cadence instead -- see
+         * platform/3ds/source/port_mzm_audio_3ds.c's AudioThreadMain. */
 #else
         UpdateAudio();
 #endif

@@ -3,6 +3,7 @@
 
 #include "structs/audio.h"
 #include "data/audio.h"
+#include "audio/track_internal.h"
 
 #include <stdio.h>
 
@@ -139,19 +140,30 @@ static u8* Port_MzmAudio_SoundCodeC(u32* dest, u32* src, u8 count) {
 
         PortPsg_BeginBlock(engineRate);
         unsigned int wIdx = sRingWriteIndex;
-        for (unsigned int i = 0; i < n; ++i) {
-            const int lv = (signed char)left[i];
-            const int rv = (signed char)right[i];
-            int psgL, psgR;
-            PortPsg_NextSample(&psgL, &psgR);
-            int mixL = (lv << 8) + psgL;
-            int mixR = (rv << 8) + psgR;
-            if (mixL > 32767) mixL = 32767; else if (mixL < -32768) mixL = -32768;
-            if (mixR > 32767) mixR = 32767; else if (mixR < -32768) mixR = -32768;
-            const unsigned int idx = (wIdx % MZM_AUDIO_RING_FRAMES) * 2;
-            gMzmAudioRing[idx] = (short)mixL;
-            gMzmAudioRing[idx + 1] = (short)mixR;
-            ++wIdx;
+        if (!PortPsg_IsAnyVoiceActive()) {
+            for (unsigned int i = 0; i < n; ++i) {
+                int mixL = (int)(signed char)left[i] << 8;
+                int mixR = (int)(signed char)right[i] << 8;
+                const unsigned int idx = (wIdx % MZM_AUDIO_RING_FRAMES) * 2;
+                gMzmAudioRing[idx] = (short)mixL;
+                gMzmAudioRing[idx + 1] = (short)mixR;
+                ++wIdx;
+            }
+        } else {
+            for (unsigned int i = 0; i < n; ++i) {
+                const int lv = (signed char)left[i];
+                const int rv = (signed char)right[i];
+                int psgL, psgR;
+                PortPsg_NextSample(&psgL, &psgR);
+                int mixL = (lv << 8) + psgL;
+                int mixR = (rv << 8) + psgR;
+                if (mixL > 32767) mixL = 32767; else if (mixL < -32768) mixL = -32768;
+                if (mixR > 32767) mixR = 32767; else if (mixR < -32768) mixR = -32768;
+                const unsigned int idx = (wIdx % MZM_AUDIO_RING_FRAMES) * 2;
+                gMzmAudioRing[idx] = (short)mixL;
+                gMzmAudioRing[idx + 1] = (short)mixR;
+                ++wIdx;
+            }
         }
         __atomic_store_n(&sRingWriteIndex, wIdx, __ATOMIC_RELEASE);
 
@@ -207,6 +219,35 @@ void Port_MzmAudio_InstallSoundCodeCHook(void) {
         sRealSoundCodeC = gSoundCodeCPointer;
     if (sRealSoundCodeC != NULL)
         gSoundCodeCPointer = Port_MzmAudio_SoundCodeC;
+}
+
+/* Cross-thread lock guarding gMusicInfo/TrackData -- the real LightLock
+ * lives in platform/3ds/source/port_mzm_audio_3ds.c (needs <3ds.h>, which
+ * this file deliberately doesn't include, see the header comment above).
+ * Plain extern, no 3ds-specific types in the signature, same boundary style
+ * as the rest of this producer/consumer split. */
+extern void Port_AudioStateLock_Acquire(void);
+extern void Port_AudioStateLock_Release(void);
+
+void Port_MzmAudio_ProduceTick(void) {
+    if (!sInitialized) return;
+
+    Port_AudioStateLock_Acquire();
+
+    /* Approximates the real DMA2 interrupt's cadence (src/music_wrappers.c's
+     * DMA2IntrCode) -- see this function's declaration in the header and
+     * src/agbmain.c's comment on why it moved here instead of running once
+     * per game-loop iteration. */
+    if (gMusicInfo.unk_E != 0) {
+        gMusicInfo.unk_10 += gMusicInfo.unk_C;
+        if (gMusicInfo.unk_10 >= gMusicInfo.unk_E)
+            gMusicInfo.unk_10 -= gMusicInfo.unk_E;
+    }
+
+    Port_MzmAudio_InstallSoundCodeCHook();
+    UpdateAudio();
+
+    Port_AudioStateLock_Release();
 }
 
 void Port_MzmAudio_InitGlue(void) {

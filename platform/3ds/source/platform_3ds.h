@@ -70,6 +70,11 @@ typedef struct Platform3DSCaptureStats {
 
 int Platform3DS_Init(void);
 void Platform3DS_Shutdown(void);
+/* Spawns a dedicated thread that calls entry() (agbmain) and never returns
+ * in practice. See platform_3ds_minimal.c and port/port_bios.c: this is
+ * what lets the game-logic/audio loop run independent of GPU present
+ * timing. Returns false if the thread could not be created. */
+bool Platform3DS_StartLogicThread(void (*entry)(void));
 bool Platform3DS_IsRunning(void);
 bool Platform3DS_IsNew3DS(void);
 bool Platform3DS_CanUseCore1(void);

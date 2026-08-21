@@ -310,6 +310,13 @@ void PortPsg_BeginBlock(unsigned int rate) {
     }
 }
 
+static int sScaleL, sScaleR;
+static bool sAnyVoiceActive;
+
+bool PortPsg_IsAnyVoiceActive(void) {
+    return sAnyVoiceActive;
+}
+
 /* Duty thresholds as a fraction of the 32-bit phase: 12.5%, 25%, 50%, 75%. */
 static const unsigned int kDutyThreshold[4] = {
     0x20000000u, 0x40000000u, 0x80000000u, 0xC0000000u
@@ -318,7 +325,7 @@ static const unsigned int kDutyThreshold[4] = {
 void PortPsg_NextSample(int* outLeft, int* outRight) {
     int left = 0, right = 0;
 
-    if (!sMasterOn) {
+    if (!sAnyVoiceActive) {
         *outLeft = 0;
         *outRight = 0;
         return;
@@ -343,7 +350,7 @@ void PortPsg_NextSample(int* outLeft, int* outRight) {
         /* Nibbles are unsigned 0..15; centre them so silence is 0. */
         int amp = nibble - 8;
         if (sWave.volumeShift < 0)
-            amp = (amp * 3) / 4; /* GBA 75% mode */
+            amp = (amp * 3) >> 2; /* GBA 75% mode */
         else
             amp >>= sWave.volumeShift;
         if (sWave.enabledL) left += amp;
@@ -357,8 +364,6 @@ void PortPsg_NextSample(int* outLeft, int* outRight) {
         const unsigned int before = sNoise.phase;
         sNoise.phase += sNoise.inc;
         if (sNoise.phase < before) {
-            /* Standard GB LFSR: xor of the low two bits feeds back into bit 14
-             * (and bit 6 as well in 7-bit mode). */
             const unsigned int bit = (sNoise.lfsr ^ (sNoise.lfsr >> 1)) & 1u;
             sNoise.lfsr >>= 1;
             sNoise.lfsr |= bit << 14;
@@ -374,11 +379,7 @@ void PortPsg_NextSample(int* outLeft, int* outRight) {
         }
     }
 
-    /* Apply the PSG:DMA ratio (quarter steps) and the master volume (0..7,
-     * where 7 is unity), then scale into 16-bit output units. */
-    left = (left * PSG_UNIT_SCALE * sPsgRatioNum * (sMasterVolL + 1)) / (4 * 8);
-    right = (right * PSG_UNIT_SCALE * sPsgRatioNum * (sMasterVolR + 1)) / (4 * 8);
-
-    *outLeft = left;
-    *outRight = right;
+    /* Scale into 16-bit output units without software divide */
+    *outLeft = (left * sScaleL) >> 5;
+    *outRight = (right * sScaleR) >> 5;
 }

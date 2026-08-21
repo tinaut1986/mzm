@@ -29,4 +29,11 @@ void Port_MzmAudio_SetRateHook(void (*hook)(unsigned int engineRate));
 void Port_MzmAudio_InitGlue(void);
 void Port_MzmAudio_InstallSoundCodeCHook(void);
 
+/* Runs one real engine audio-production step (the DMA2-IRQ-cadence
+ * approximation + UpdateAudio(), see port_mzm_audio_glue.c) under the
+ * cross-thread audio-state lock. Called from the NDSP audio thread
+ * (platform/3ds/source/port_mzm_audio_3ds.c), not from agbmain's own loop --
+ * see that file's AudioThreadMain for why. */
+void Port_MzmAudio_ProduceTick(void);
+
 #endif

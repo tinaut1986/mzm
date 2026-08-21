@@ -1417,10 +1417,75 @@ void virtuappu_mode1_render_obj_line(int line, bool obj_1d, uint32_t* line_buffe
     }
 }
 
-void virtuappu_mode1_composite_line(int line, uint32_t bg_layers[MODE1_GBA_BG_COUNT][MODE1_GBA_WIDTH],
-                                    uint8_t bg_priority[MODE1_GBA_BG_COUNT][MODE1_GBA_WIDTH],
-                                    uint32_t obj_layer[MODE1_GBA_WIDTH], uint8_t obj_priority[MODE1_GBA_WIDTH],
-                                    uint16_t dispcnt) {
+static uint32_t* mode1_output_buffer_right = NULL;
+static int mode1_output_pitch_right = 0;
+static float mode1_3d_slider = 0.0f;
+
+void virtuappu_mode1_set_right_output_buffer(uint32_t* pixels, int pitch) {
+    if (pixels != NULL && pitch >= MODE1_GBA_WIDTH) {
+        mode1_output_buffer_right = pixels;
+        mode1_output_pitch_right = pitch;
+    } else {
+        mode1_output_buffer_right = NULL;
+        mode1_output_pitch_right = 0;
+    }
+}
+
+void virtuappu_mode1_set_3d_slider(float slider) {
+    mode1_3d_slider = slider;
+}
+
+static uint32_t* mode1_output_row_right(int line) {
+    if (mode1_output_buffer_right != NULL) {
+        return mode1_output_buffer_right + (size_t)line * (size_t)mode1_output_pitch_right;
+    }
+    return NULL;
+}
+
+static inline uint32_t mode1_sample_bg_shifted(const uint32_t bg[MODE1_GBA_WIDTH], int x, int shift, int width) {
+    int sx = x + shift;
+    if (sx < 0 || sx >= width) return 0;
+    return bg[sx];
+}
+
+static inline uint32_t mode1_sample_obj_shifted(const uint32_t obj[MODE1_GBA_WIDTH], const uint8_t pri[MODE1_GBA_WIDTH],
+                                                 int x, int shift, int width, unsigned* out_p, bool* out_semi) {
+    int sx = x + shift;
+    if (sx < 0 || sx >= width) {
+        *out_p = 0xFF;
+        *out_semi = false;
+        return 0;
+    }
+    *out_p = pri[sx];
+    *out_semi = virtuappu_mode1_obj_semitrans[sx];
+    return obj[sx];
+}
+
+static inline void mode1_get_layer_shifts(float slider, int sign, int shifts[5]) {
+    /* 0=BG0, 1=BG1, 2=BG2, 3=BG3, 4=OBJ */
+    if (slider <= 0.001f || sign == 0) {
+        shifts[0] = shifts[1] = shifts[2] = shifts[3] = shifts[4] = 0;
+        return;
+    }
+    float s = slider * (float)sign;
+    /* BG0: Water / Lava / Level foreground (0.0px - aligned with platforms so lava integrates with mountains) */
+    shifts[0] = 0;
+    /* BG1: Platforms / solid ground (0.0px - reference screen plane) */
+    shifts[1] = 0;
+    /* BG2: Mid cave backdrop (-3.0px) */
+    shifts[2] = (int)(-3.0f * s + (s >= 0.0f ? 0.5f : -0.5f));
+    /* BG3: Distant sky / stars (-5.0px) */
+    shifts[3] = (int)(-5.0f * s + (s >= 0.0f ? 0.5f : -0.5f));
+    /* OBJ: Samus / enemies (-1.5px into the ledge) */
+    shifts[4] = (int)(-1.5f * s + (s >= 0.0f ? 0.5f : -0.5f));
+}
+
+static void mode1_composite_line_pass(int line, uint32_t* out_row,
+                                      uint32_t bg_layers[MODE1_GBA_BG_COUNT][MODE1_GBA_WIDTH],
+                                      uint32_t obj_layer[MODE1_GBA_WIDTH], uint8_t obj_priority[MODE1_GBA_WIDTH],
+                                      uint16_t dispcnt, int sign) {
+    if (!out_row) return;
+
     uint32_t backdrop_color = mode1_bg_abgr_lut[0];
     bool bg_enabled[MODE1_GBA_BG_COUNT] = { (dispcnt & MODE1_DISP_BG0_ON) != 0u, (dispcnt & MODE1_DISP_BG1_ON) != 0u,
                                             (dispcnt & MODE1_DISP_BG2_ON) != 0u, (dispcnt & MODE1_DISP_BG3_ON) != 0u };
@@ -1446,81 +1511,38 @@ void virtuappu_mode1_composite_line(int line, uint32_t bg_layers[MODE1_GBA_BG_CO
     int win0_right = win0h & 0xFFu;
     int win0_top = win0v >> 8u;
     int win0_bottom = win0v & 0xFFu;
-    bool win0_h_wrap;
-    bool win0_v_wrap;
-    bool win0_v_active;
     uint16_t win1h = virtuappu_mode1_io_read16(MODE1_IO_WIN1H);
     uint16_t win1v = virtuappu_mode1_io_read16(MODE1_IO_WIN1V);
     int win1_left = win1h >> 8u;
     int win1_right = win1h & 0xFFu;
     int win1_top = win1v >> 8u;
     int win1_bottom = win1v & 0xFFu;
-    bool win1_h_wrap;
-    bool win1_v_wrap;
-    bool win1_v_active;
     uint8_t win0_ctrl = (uint8_t)(winin & 0x3Fu);
     uint8_t win1_ctrl = (uint8_t)((winin >> 8u) & 0x3Fu);
     uint8_t outside_ctrl = (uint8_t)(winout & 0x3Fu);
     uint8_t objwin_ctrl = (uint8_t)((winout >> 8u) & 0x3Fu);
-    int i;
-    int x;
     const int frame_width = mode1_frame_width;
-    uint32_t* const out_row = mode1_output_row(line);
 
-    (void)bg_priority;
+    if (eva > 16) eva = 16;
+    if (evb > 16) evb = 16;
+    if (evy > 16) evy = 16;
+    if (win0_right > frame_width) win0_right = frame_width;
+    if (win0_bottom > MODE1_GBA_HEIGHT) win0_bottom = MODE1_GBA_HEIGHT;
+    if (win1_right > frame_width) win1_right = frame_width;
+    if (win1_bottom > MODE1_GBA_HEIGHT) win1_bottom = MODE1_GBA_HEIGHT;
 
-    if (eva > 16) {
-        eva = 16;
-    }
-    if (evb > 16) {
-        evb = 16;
-    }
-    if (evy > 16) {
-        evy = 16;
-    }
+    bool win0_h_wrap = win0_left > win0_right;
+    bool win0_v_wrap = win0_top > win0_bottom;
+    bool win0_v_active = win0_on && (win0_v_wrap ? (line >= win0_top || line < win0_bottom) : (line >= win0_top && line < win0_bottom));
+    bool win1_h_wrap = win1_left > win1_right;
+    bool win1_v_wrap = win1_top > win1_bottom;
+    bool win1_v_active = win1_on && (win1_v_wrap ? (line >= win1_top || line < win1_bottom) : (line >= win1_top && line < win1_bottom));
 
-    if (win0_right > frame_width) {
-        win0_right = frame_width;
-    }
-    if (win0_bottom > MODE1_GBA_HEIGHT) {
-        win0_bottom = MODE1_GBA_HEIGHT;
-    }
-    if (win1_right > frame_width) {
-        win1_right = frame_width;
-    }
-    if (win1_bottom > MODE1_GBA_HEIGHT) {
-        win1_bottom = MODE1_GBA_HEIGHT;
-    }
-
-    win0_h_wrap = win0_left > win0_right;
-    /* GBA: WINxV with top > bottom is an inverted/wrapped vertical span,
-     * active for (line >= top || line < bottom) — mirrors the horizontal
-     * winX_h_wrap handling. Previously the window went fully inactive on
-     * inversion, blanking the digging-cave iris spotlight (src/scroll.c
-     * Scroll5Sub2/Sub5) on small-iris frames where an inverted WINxV is packed. */
-    win0_v_wrap = win0_top > win0_bottom;
-    win0_v_active =
-        win0_on && (win0_v_wrap ? (line >= win0_top || line < win0_bottom) : (line >= win0_top && line < win0_bottom));
-    win1_h_wrap = win1_left > win1_right;
-    win1_v_wrap = win1_top > win1_bottom;
-    win1_v_active =
-        win1_on && (win1_v_wrap ? (line >= win1_top || line < win1_bottom) : (line >= win1_top && line < win1_bottom));
-
-    for (i = 0; i < MODE1_GBA_BG_COUNT; ++i) {
+    for (int i = 0; i < MODE1_GBA_BG_COUNT; ++i) {
         bg_order_priority[i] = (uint8_t)(virtuappu_mode1_io_read16((uint16_t)(MODE1_IO_BG0CNT + i * 2)) & 3u);
     }
 
-    /* Stable insertion sort by priority. GBA hardware breaks priority ties by
-     * BG index (lower BG number drawn on top), so equal-priority BGs MUST keep
-     * their initial 0,1,2,3 order. The previous selection sort swapped
-     * non-adjacent entries, so a lower-priority BG (e.g. a disabled BG3 left at
-     * priority 0 by a prior dark room) could swap forward and displace BG1 past
-     * BG2 — flipping the BG1/BG2 tie-break and hiding a same-priority BG1 layer
-     * behind BG2. #139: ToGrimblade's BG1 flame braziers vanished behind the
-     * BG2 bowl after a dark-dojo round-trip left BG3CNT at priority 0. Using a
-     * stable sort (`>` strict, only shift higher-priority entries) keeps the
-     * GBA index tie-break intact regardless of the other BGs' priorities. */
-    for (i = 1; i < MODE1_GBA_BG_COUNT; ++i) {
+    for (int i = 1; i < MODE1_GBA_BG_COUNT; ++i) {
         uint8_t key = bg_order[i];
         uint8_t key_pri = bg_order_priority[key];
         int j = i - 1;
@@ -1531,15 +1553,50 @@ void virtuappu_mode1_composite_line(int line, uint32_t bg_layers[MODE1_GBA_BG_CO
         bg_order[j + 1] = key;
     }
 
-    const bool native_no_effect_fast_path =
-        frame_width <= MODE1_GBA_BG_CLIP_X && !any_window && effect == MODE1_BLEND_NONE;
-    const bool has_second_targets = (bldcnt & 0x3F00u) != 0u;
+    int shifts[5];
+    mode1_get_layer_shifts(mode1_3d_slider, sign, shifts);
 
-    for (x = 0; x < frame_width; ++x) {
+    const bool native_no_effect = (frame_width <= MODE1_GBA_BG_CLIP_X && !any_window && effect == MODE1_BLEND_NONE);
+    if (native_no_effect) {
+        const int sh2 = shifts[2];
+        const int sh3 = shifts[3];
+        const int sh_obj = shifts[4];
+
+        for (int x = 0; x < frame_width; ++x) {
+            uint32_t top_color = backdrop_color;
+            int cur_obj_shift = (line < 26 && (x <= 115 || x >= 185)) ? 0 : sh_obj;
+            int sx_obj = x + cur_obj_shift;
+            uint32_t s_obj = (sx_obj >= 0 && sx_obj < frame_width) ? obj_layer[sx_obj] : 0;
+            unsigned obj_p = (sx_obj >= 0 && sx_obj < frame_width) ? obj_priority[sx_obj] : 0xFF;
+            bool obj_candidate = obj_enabled && (s_obj != 0u);
+
+            int sx2 = x + sh2;
+            int sx3 = x + sh3;
+            uint32_t s_bg0 = bg_layers[0][x];
+            uint32_t s_bg1 = bg_layers[1][x];
+            uint32_t s_bg2 = (sx2 >= 0 && sx2 < frame_width) ? bg_layers[2][sx2] : 0;
+            uint32_t s_bg3 = (sx3 >= 0 && sx3 < frame_width) ? bg_layers[3][sx3] : 0;
+            uint32_t s_bg[4] = { s_bg0, s_bg1, s_bg2, s_bg3 };
+
+            for (int order_index = 0; order_index < MODE1_GBA_BG_COUNT; ++order_index) {
+                int bg = bg_order[order_index];
+                if (obj_candidate && bg_order_priority[bg] >= obj_p) {
+                    top_color = s_obj;
+                    break;
+                }
+                if (bg_enabled[bg] && s_bg[bg] != 0u) {
+                    top_color = s_bg[bg];
+                    break;
+                }
+            }
+            if (top_color == backdrop_color && obj_candidate) top_color = s_obj;
+            out_row[x] = top_color;
+        }
+        return;
+    }
+
+    for (int x = 0; x < frame_width; ++x) {
         uint8_t win_ctrl = 0x3Fu;
-        bool visible_bg[MODE1_GBA_BG_COUNT];
-        bool visible_obj;
-        bool allow_sfx;
         uint32_t top_color = backdrop_color;
         int top_layer = 5;
         uint32_t bottom_color = backdrop_color;
@@ -1547,74 +1604,38 @@ void virtuappu_mode1_composite_line(int line, uint32_t bg_layers[MODE1_GBA_BG_CO
         bool found_top = false;
         bool found_bottom = false;
 
-        /* Most gameplay pixels have no window and no color effect. Only the
-         * top layer can affect those pixels, so avoid finding a second layer.
-         * Semi-transparent OBJ pixels retain the full blend path whenever a
-         * possible second target is configured. */
-        if (native_no_effect_fast_path &&
-            !(obj_enabled && obj_layer[x] != 0u && virtuappu_mode1_obj_semitrans[x] && has_second_targets)) {
-            const bool obj_candidate = obj_enabled && obj_layer[x] != 0u;
-            const unsigned obj_p = obj_priority[x];
-
-            for (int order_index = 0; order_index < MODE1_GBA_BG_COUNT; ++order_index) {
-                const int bg = bg_order[order_index];
-                if (obj_candidate && bg_order_priority[bg] >= obj_p) {
-                    top_color = obj_layer[x];
-                    found_top = true;
-                    break;
-                }
-                if (bg_enabled[bg] && bg_layers[bg][x] != 0u) {
-                    top_color = bg_layers[bg][x];
-                    found_top = true;
-                    break;
-                }
-            }
-            if (!found_top && obj_candidate) top_color = obj_layer[x];
-            out_row[x] = top_color;
-            continue;
-        }
-
         if (any_window) {
             win_ctrl = outside_ctrl;
-            /* Window priority is WIN0 > WIN1 > OBJ-window > outside, so OBJ
-             * window sits below WIN1/WIN0 (applied after this) and above the
-             * plain outside control. */
-            if (objwin_on && virtuappu_mode1_obj_window[x]) {
-                win_ctrl = objwin_ctrl;
-            }
+            if (objwin_on && virtuappu_mode1_obj_window[x]) win_ctrl = objwin_ctrl;
             if (win1_v_active) {
                 bool in_h = win1_h_wrap ? (x >= win1_left || x < win1_right) : (x >= win1_left && x < win1_right);
-                if (in_h) {
-                    win_ctrl = win1_ctrl;
-                }
+                if (in_h) win_ctrl = win1_ctrl;
             }
             if (win0_v_active) {
                 bool in_h = win0_h_wrap ? (x >= win0_left || x < win0_right) : (x >= win0_left && x < win0_right);
-                if (in_h) {
-                    win_ctrl = win0_ctrl;
-                }
+                if (in_h) win_ctrl = win0_ctrl;
             }
         }
 
-        visible_bg[0] = (win_ctrl & 0x01u) != 0u;
-        visible_bg[1] = (win_ctrl & 0x02u) != 0u;
-        visible_bg[2] = (win_ctrl & 0x04u) != 0u;
-        visible_bg[3] = (win_ctrl & 0x08u) != 0u;
-        visible_obj = (win_ctrl & 0x10u) != 0u;
-        allow_sfx = (win_ctrl & 0x20u) != 0u;
+        bool visible_bg[MODE1_GBA_BG_COUNT] = {
+            (win_ctrl & 0x01u) != 0u, (win_ctrl & 0x02u) != 0u,
+            (win_ctrl & 0x04u) != 0u, (win_ctrl & 0x08u) != 0u
+        };
+        bool visible_obj = (win_ctrl & 0x10u) != 0u;
+        bool allow_sfx = (win_ctrl & 0x20u) != 0u;
 
-        /* Single merged pass over the priority-sorted bg_order, inserting OBJ at
-         * its priority slot — byte-identical layering to the former
-         * priority(0..3) x bg(0..3) double loop (up to 20 iters/pixel), but ~5
-         * iters and one loop. OBJ is emitted right before the first bg whose
-         * priority >= obj_priority[x] (GBA ties: OBJ over same-priority BG); if
-         * no such bg, OBJ is emitted after the walk. Removing per-pixel work with
-         * no added data-dependent branch is the A53-correct optimisation. */
-        {
-            bool obj_candidate = obj_enabled && visible_obj && (obj_layer[x] != 0u);
-            unsigned obj_p = obj_priority[x];
-            bool obj_emitted = false;
-            int order_index;
+        int obj_shift = (line < 26 && (x <= 115 || x >= 185)) ? 0 : shifts[4];
+        uint32_t s_bg[MODE1_GBA_BG_COUNT] = {
+            mode1_sample_bg_shifted(bg_layers[0], x, shifts[0], frame_width),
+            mode1_sample_bg_shifted(bg_layers[1], x, shifts[1], frame_width),
+            mode1_sample_bg_shifted(bg_layers[2], x, shifts[2], frame_width),
+            mode1_sample_bg_shifted(bg_layers[3], x, shifts[3], frame_width),
+        };
+        unsigned obj_p = 0xFF;
+        bool obj_semi = false;
+        uint32_t s_obj = mode1_sample_obj_shifted(obj_layer, obj_priority, x, obj_shift, frame_width, &obj_p, &obj_semi);
+        bool obj_candidate = obj_enabled && visible_obj && (s_obj != 0u);
+        bool obj_emitted = false;
 
 #define MODE1_CONSIDER(_color, _layer) \
     do {                               \
@@ -1629,37 +1650,23 @@ void virtuappu_mode1_composite_line(int line, uint32_t bg_layers[MODE1_GBA_BG_CO
         }                              \
     } while (0)
 
-            for (order_index = 0; order_index < MODE1_GBA_BG_COUNT && !found_bottom; ++order_index) {
-                int bg = bg_order[order_index];
-                if (obj_candidate && !obj_emitted && bg_order_priority[bg] >= obj_p) {
-                    MODE1_CONSIDER(obj_layer[x], 4);
-                    obj_emitted = true;
-                    if (found_bottom) {
-                        break;
-                    }
-                }
-                if (!bg_enabled[bg] || !visible_bg[bg] || bg_layers[bg][x] == 0u) {
-                    continue;
-                }
-                MODE1_CONSIDER(bg_layers[bg][x], bg);
+        for (int order_index = 0; order_index < MODE1_GBA_BG_COUNT && !found_bottom; ++order_index) {
+            int bg = bg_order[order_index];
+            if (obj_candidate && !obj_emitted && bg_order_priority[bg] >= obj_p) {
+                MODE1_CONSIDER(s_obj, 4);
+                obj_emitted = true;
+                if (found_bottom) break;
             }
-            if (obj_candidate && !obj_emitted && !found_bottom) {
-                MODE1_CONSIDER(obj_layer[x], 4);
-            }
-#undef MODE1_CONSIDER
+            if (!bg_enabled[bg] || !visible_bg[bg] || s_bg[bg] == 0u) continue;
+            MODE1_CONSIDER(s_bg[bg], bg);
         }
+        if (obj_candidate && !obj_emitted && !found_bottom) {
+            MODE1_CONSIDER(s_obj, 4);
+        }
+#undef MODE1_CONSIDER
 
         if (allow_sfx) {
-            if (top_layer == 4 && virtuappu_mode1_obj_semitrans[x]) {
-                /* Semi-transparent OBJ (attr0 mode 1): GBA forces it to be an
-                 * alpha-blend 1st target regardless of BLDCNT's effect mode and
-                 * 1st-target bits. It blends with the layer directly below when
-                 * that layer is a BLDCNT 2nd target (the backdrop counts via the
-                 * BD bit) and that blend preempts any brighten/darken. When the
-                 * layer below is NOT a 2nd target, GBATEK: "the brightness
-                 * effect will take place" — the OBJ is still an always-1st
-                 * target, so BLDY brighten/darken applies (previously skipped,
-                 * leaving sprites unfaded during BLDY screen fades). */
+            if (top_layer == 4 && obj_semi) {
                 if (mode1_is_second_target(bldcnt, bottom_layer)) {
                     top_color = mode1_alpha_blend(top_color, bottom_color, eva, evb);
                 } else if (effect == MODE1_BLEND_BRIGHTEN) {
@@ -1690,24 +1697,36 @@ void virtuappu_mode1_composite_line(int line, uint32_t bg_layers[MODE1_GBA_BG_CO
             }
         }
 
-        /* Widescreen Option A: past MODE1_GBA_BG_CLIP_X (240) the reveal
-         * columns are valid only where render_text_bg_line wrote real tile
-         * data — which happens only when a shadow is registered (gameplay)
-         * and the world tile there is non-transparent. Everywhere else
-         * (native 240, non-gameplay screens, a narrow room's empty edge)
-         * bg_layers stays 0 here, so force-black and let port_ppu.cpp's
-         * non-gameplay path fill the margin. */
         if (x >= MODE1_GBA_BG_CLIP_X) {
-            bool any_bg_drew_here = false;
+            bool any_bg_drew = false;
             for (int b = 0; b < MODE1_GBA_BG_COUNT; ++b) {
-                if (bg_enabled[b] && bg_layers[b][x] != 0u) {
-                    any_bg_drew_here = true;
-                    break;
-                }
+                if (bg_enabled[b] && s_bg[b] != 0u) { any_bg_drew = true; break; }
             }
-            out_row[x] = any_bg_drew_here ? top_color : 0xFF000000u;
+            out_row[x] = any_bg_drew ? top_color : 0xFF000000u;
         } else {
             out_row[x] = top_color;
+        }
+    }
+}
+
+void virtuappu_mode1_composite_line(int line, uint32_t bg_layers[MODE1_GBA_BG_COUNT][MODE1_GBA_WIDTH],
+                                    uint8_t bg_priority[MODE1_GBA_BG_COUNT][MODE1_GBA_WIDTH],
+                                    uint32_t obj_layer[MODE1_GBA_WIDTH], uint8_t obj_priority[MODE1_GBA_WIDTH],
+                                    uint16_t dispcnt) {
+    (void)bg_priority;
+    uint32_t* const out_row_left = mode1_output_row(line);
+    uint32_t* const out_row_right = mode1_output_row_right(line);
+
+    if (mode1_3d_slider > 0.001f && out_row_right != NULL) {
+        /* Left Eye with negative parallax */
+        mode1_composite_line_pass(line, out_row_left, bg_layers, obj_layer, obj_priority, dispcnt, -1);
+        /* Right Eye with positive parallax */
+        mode1_composite_line_pass(line, out_row_right, bg_layers, obj_layer, obj_priority, dispcnt, +1);
+    } else {
+        /* 2D / Slider zero */
+        mode1_composite_line_pass(line, out_row_left, bg_layers, obj_layer, obj_priority, dispcnt, 0);
+        if (out_row_right != NULL) {
+            memcpy(out_row_right, out_row_left, (size_t)mode1_frame_width * sizeof(uint32_t));
         }
     }
 }
@@ -1718,6 +1737,140 @@ void virtuappu_mode1_composite_line(int line, uint32_t bg_layers[MODE1_GBA_BG_CO
  * where its per-pixel priority wins (OBJ wins ties on GBA). This keeps every
  * tile/palette/OAM rule identical while removing the four-plane compositor
  * from the overwhelmingly common indoor and menu frames. */
+static bool mode1_render_stereo_direct_line(int line, uint16_t dispcnt, int frame_width) {
+    if (!MODE1_NATIVE_FAST_PATHS_ENABLED() ||
+        (dispcnt & (MODE1_DISP_WIN0_ON | MODE1_DISP_WIN1_ON | MODE1_DISP_OBJWIN_ON)) != 0u) {
+        return false;
+    }
+
+    const uint16_t bldcnt = virtuappu_mode1_io_read16(MODE1_IO_BLDCNT);
+    if (((bldcnt >> 6u) & 3u) != MODE1_BLEND_NONE || (bldcnt & 0x3F00u) != 0u) {
+        return false;
+    }
+
+    uint32_t* const out_left = mode1_output_row(line);
+    uint32_t* const out_right = mode1_output_row_right(line);
+    if (!out_left) return false;
+
+    bool bg_enabled[MODE1_GBA_BG_COUNT];
+    uint16_t bgcnt[MODE1_GBA_BG_COUNT];
+    uint8_t bg_order[MODE1_GBA_BG_COUNT] = { 0u, 1u, 2u, 3u };
+    uint8_t bg_priority[MODE1_GBA_BG_COUNT];
+    for (int bg = 0; bg < MODE1_GBA_BG_COUNT; ++bg) {
+        bg_enabled[bg] = (dispcnt & (uint16_t)(MODE1_DISP_BG0_ON << bg)) != 0u;
+        bgcnt[bg] = virtuappu_mode1_io_read16((uint16_t)(MODE1_IO_BG0CNT + bg * 2));
+        bg_priority[bg] = (uint8_t)(bgcnt[bg] & 3u);
+    }
+
+    for (int i = 1; i < MODE1_GBA_BG_COUNT; ++i) {
+        const uint8_t key = bg_order[i];
+        const uint8_t key_priority = bg_priority[key];
+        int j = i - 1;
+        while (j >= 0 && bg_priority[bg_order[j]] > key_priority) {
+            bg_order[j + 1] = bg_order[j];
+            --j;
+        }
+        bg_order[j + 1] = key;
+    }
+
+    int shifts_left[5];
+    int shifts_right[5];
+    mode1_get_layer_shifts(mode1_3d_slider, -1, shifts_left);
+    mode1_get_layer_shifts(mode1_3d_slider, +1, shifts_right);
+
+    const uint32_t backdrop = mode1_bg_abgr_lut[0];
+    for (int x = 0; x < frame_width; ++x) {
+        out_left[x] = backdrop;
+        if (out_right) out_right[x] = backdrop;
+    }
+
+    uint8_t win_pri_left[MODE1_GBA_WIDTH];
+    uint8_t win_pri_right[MODE1_GBA_WIDTH];
+    memset(win_pri_left, 0xFF, (size_t)frame_width);
+    if (out_right) memset(win_pri_right, 0xFF, (size_t)frame_width);
+
+    uint32_t temp_bg[MODE1_GBA_WIDTH];
+    uint8_t temp_pri[MODE1_GBA_WIDTH];
+
+    for (int order_index = MODE1_GBA_BG_COUNT - 1; order_index >= 0; --order_index) {
+        const int bg = bg_order[order_index];
+        if (!bg_enabled[bg]) continue;
+
+        int sh_l = shifts_left[bg];
+        int sh_r = shifts_right[bg];
+
+        if (sh_l == 0 && sh_r == 0) {
+            virtuappu_mode1_render_text_bg_line(bg, line, out_left, win_pri_left);
+            if (out_right) {
+                for (int x = 0; x < frame_width; ++x) {
+                    if (win_pri_left[x] == bg_priority[bg]) {
+                        out_right[x] = out_left[x];
+                        win_pri_right[x] = win_pri_left[x];
+                    }
+                }
+            }
+        } else {
+            memset(temp_bg, 0, (size_t)frame_width * sizeof(uint32_t));
+            memset(temp_pri, 0xFF, (size_t)frame_width);
+            virtuappu_mode1_render_text_bg_line(bg, line, temp_bg, temp_pri);
+
+            for (int x = 0; x < frame_width; ++x) {
+                int sx = x + sh_l;
+                if ((unsigned)sx < (unsigned)frame_width && temp_bg[sx] != 0u) {
+                    out_left[x] = temp_bg[sx];
+                    win_pri_left[x] = temp_pri[sx];
+                }
+            }
+            if (out_right) {
+                for (int x = 0; x < frame_width; ++x) {
+                    int sx = x + sh_r;
+                    if ((unsigned)sx < (unsigned)frame_width && temp_bg[sx] != 0u) {
+                        out_right[x] = temp_bg[sx];
+                        win_pri_right[x] = temp_pri[sx];
+                    }
+                }
+            }
+        }
+    }
+
+    if ((dispcnt & MODE1_DISP_OBJ_ON) != 0u) {
+        uint32_t obj_layer[MODE1_GBA_WIDTH];
+        uint8_t obj_priority[MODE1_GBA_WIDTH];
+        memset(obj_layer, 0, (size_t)frame_width * sizeof(uint32_t));
+        memset(obj_priority, 0xFF, (size_t)frame_width);
+        virtuappu_mode1_render_obj_line(line, (dispcnt & MODE1_DISP_OBJ_1D) != 0u, obj_layer, obj_priority);
+
+        int sh_l = shifts_left[4];
+        int sh_r = shifts_right[4];
+
+        for (int x = 0; x < frame_width; ++x) {
+            int cur_sh_l = (line < 26 && (x <= 115 || x >= 185)) ? 0 : sh_l;
+            int sx_l = x + cur_sh_l;
+            if ((unsigned)sx_l < (unsigned)frame_width && obj_layer[sx_l] != 0u && obj_priority[sx_l] <= win_pri_left[x]) {
+                out_left[x] = obj_layer[sx_l];
+            }
+
+            if (out_right) {
+                int cur_sh_r = (line < 26 && (x <= 115 || x >= 185)) ? 0 : sh_r;
+                int sx_r = x + cur_sh_r;
+                if ((unsigned)sx_r < (unsigned)frame_width && obj_layer[sx_r] != 0u && obj_priority[sx_r] <= win_pri_right[x]) {
+                    out_right[x] = obj_layer[sx_r];
+                }
+            }
+        }
+    } else {
+        memset(virtuappu_mode1_obj_window, 0, (size_t)frame_width);
+        memset(virtuappu_mode1_obj_semitrans, 0, (size_t)frame_width);
+    }
+
+    for (int x = MODE1_GBA_BG_CLIP_X; x < frame_width; ++x) {
+        if (win_pri_left[x] == 0xFFu) out_left[x] = 0xFF000000u;
+        if (out_right && win_pri_right[x] == 0xFFu) out_right[x] = 0xFF000000u;
+    }
+
+    return true;
+}
+
 static bool mode1_render_native_direct_no_effect_line(int line, uint16_t dispcnt, int frame_width) {
     if (!MODE1_NATIVE_FAST_PATHS_ENABLED() ||
         (dispcnt & (MODE1_DISP_WIN0_ON | MODE1_DISP_WIN1_ON | MODE1_DISP_OBJWIN_ON)) != 0u) {
@@ -2490,13 +2643,25 @@ static void mode1_render_lines(const Mode1RenderLinesContext* context, int first
 
         if (!context->affine) {
             int old_path = -1;
-            if (mode1_render_native_direct_no_effect_line(line, line_dispcnt, context->frame_width)) {
-                old_path = MODE1_OLD_PATH_DIRECT;
-            } else if (mode1_old3ds_profile &&
-                       mode1_render_old3ds_field_alpha_line(line, line_dispcnt, context->frame_width)) {
-                old_path = MODE1_OLD_PATH_FIELD_ALPHA;
-            } else if (mode1_render_native_compact_line(line, line_dispcnt, context->frame_width)) {
-                old_path = MODE1_OLD_PATH_COMPACT;
+            if (mode1_3d_slider > 0.001f) {
+                if (mode1_render_stereo_direct_line(line, line_dispcnt, context->frame_width)) {
+                    old_path = MODE1_OLD_PATH_DIRECT;
+                }
+            } else {
+                if (mode1_render_native_direct_no_effect_line(line, line_dispcnt, context->frame_width)) {
+                    old_path = MODE1_OLD_PATH_DIRECT;
+                } else if (mode1_old3ds_profile &&
+                           mode1_render_old3ds_field_alpha_line(line, line_dispcnt, context->frame_width)) {
+                    old_path = MODE1_OLD_PATH_FIELD_ALPHA;
+                } else if (mode1_render_native_compact_line(line, line_dispcnt, context->frame_width)) {
+                    old_path = MODE1_OLD_PATH_COMPACT;
+                }
+                if (old_path >= 0) {
+                    uint32_t* r_row = mode1_output_row_right(line);
+                    if (r_row != NULL) {
+                        memcpy(r_row, mode1_output_row(line), (size_t)context->frame_width * sizeof(uint32_t));
+                    }
+                }
             }
             if (old_path >= 0) {
                 if (mode1_old3ds_profile && old_path_lines != NULL) ++old_path_lines[old_path];
@@ -2725,6 +2890,8 @@ void virtuappu_mode1_render_frame(const PPUMemory* ppu) {
     if ((dispcnt & MODE1_DISP_FORCED_BLANK) != 0u) {
         for (line = 0; line < MODE1_GBA_HEIGHT; ++line) {
             memset(mode1_output_row(line), 0xFF, (size_t)mode1_frame_width * sizeof(uint32_t));
+            uint32_t* r_row = mode1_output_row_right(line);
+            if (r_row) memset(r_row, 0xFF, (size_t)mode1_frame_width * sizeof(uint32_t));
         }
         return;
     }

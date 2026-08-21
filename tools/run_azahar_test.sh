@@ -92,11 +92,18 @@ AZAHAR_LAUNCHER_PID=$!
 sleep "$SECONDS_TO_RUN"
 
 echo "==> Taking screenshot"
-spectacle -b -n -o /tmp/azahar_test_screenshot_full.png >/dev/null 2>&1 || true
-# Multi-monitor setup: Azahar renders on the first (leftmost) display only.
-# Crop to it so callers don't have to read/ship the whole multi-monitor image.
-ffmpeg -y -i /tmp/azahar_test_screenshot_full.png -vf "crop=1920:1080:0:0" \
-    -frames:v 1 /tmp/azahar_test_screenshot.png >/dev/null 2>&1 || cp /tmp/azahar_test_screenshot_full.png /tmp/azahar_test_screenshot.png
+# Multi-monitor setup: which physical screen Azahar's window lands on varies
+# run to run (whichever screen was last focused), so a fixed-region crop of
+# a full-desktop capture (the old approach) silently grabbed the wrong
+# screen as soon as the window moved. -a/--activewindow captures whatever
+# window currently has focus instead -- Azahar grabs focus on launch on this
+# WM, so as long as nothing else stole it during the sleep above, this is
+# its window regardless of which screen it's on.
+spectacle -b -n -a -o /tmp/azahar_test_screenshot.png >/dev/null 2>&1 || true
+if [[ ! -s /tmp/azahar_test_screenshot.png ]]; then
+    echo "==> Active-window capture failed/empty, falling back to full-desktop screenshot"
+    spectacle -b -n -o /tmp/azahar_test_screenshot.png >/dev/null 2>&1 || true
+fi
 
 echo "==> Stopping Azahar"
 kill_azahar

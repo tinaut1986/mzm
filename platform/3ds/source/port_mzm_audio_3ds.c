@@ -27,6 +27,12 @@ extern bool Platform3DS_CanUseCore1(void);
 
 #define RING_FLOOR 0
 
+/* How far ahead of NDSP consumption to keep the ring buffered, and a hard
+ * cap on how many production ticks one wake is allowed to run -- see
+ * AudioThreadMain's doc comment. */
+#define RING_TARGET_FRAMES (BUFFER_FRAMES * 2u)
+#define MAX_PRODUCE_TICKS_PER_WAKE 16
+
 static ndspWaveBuf sWave[BUFFER_COUNT];
 static int16_t* sSamples;
 static bool sInitialized;
@@ -34,6 +40,22 @@ static bool sPaused;
 static volatile bool sAudioThreadRunning;
 static Thread sAudioThread;
 static LightEvent sAudioWake;
+
+/* Guards gMusicInfo/TrackData (port_mzm_audio_glue.c's Port_MzmAudio_ProduceTick,
+ * called from AudioThreadMain below) against the game-logic thread's own
+ * code that can also touch that state (song/SFX triggers scattered through
+ * the decompiled engine, menus, cutscenes -- too many call sites to audit
+ * individually). port/port_bios.c's Port_Bios_Halt releases this around its
+ * render+pace work (never touches audio state) and re-acquires it before
+ * returning, bracketing every VBlankIntrWait() call regardless of nesting --
+ * see that function's doc comment. First LightLock in this tree; every
+ * other cross-thread hand-off so far (the mzm audio ring, mode1's worker
+ * rendezvous) has managed to stay lock-free, but there's no way to avoid
+ * one here without auditing every place the engine can trigger a sound. */
+static LightLock sAudioStateLock;
+
+void Port_AudioStateLock_Acquire(void) { LightLock_Lock(&sAudioStateLock); }
+void Port_AudioStateLock_Release(void) { LightLock_Unlock(&sAudioStateLock); }
 
 /* Rate the NDSP channel is currently configured at. Defaults to
  * MZM_AUDIO_OUT_RATE until the engine's real rate is reported via the rate
@@ -135,11 +157,28 @@ static void AudioFrameFinished(void* data) {
     LightEvent_Signal(&sAudioWake);
 }
 
+/* Keeps the ring topped up to RING_TARGET_FRAMES by running real engine
+ * audio-production ticks (port_mzm_audio_glue.c's Port_MzmAudio_ProduceTick,
+ * which is what used to run once per agbmain() loop iteration -- see that
+ * function's doc comment for why it moved here). Capped at
+ * MAX_PRODUCE_TICKS_PER_WAKE as a sanity backstop, not a real limit --
+ * production and consumption are both driven from this same thread now, so
+ * they can't drift apart the way they could when production lived on the
+ * game-logic thread. */
+static void ProduceUntilTarget(void) {
+    for (int i = 0; i < MAX_PRODUCE_TICKS_PER_WAKE; ++i) {
+        const unsigned int available = Port_MzmAudio_RingWriteIndex() - Port_MzmAudio_RingReadIndex();
+        if (available >= RING_TARGET_FRAMES) return;
+        Port_MzmAudio_ProduceTick();
+    }
+}
+
 static void AudioThreadMain(void* argument) {
     (void)argument;
     while (__atomic_load_n(&sAudioThreadRunning, __ATOMIC_ACQUIRE)) {
         LightEvent_Wait(&sAudioWake);
         if (!__atomic_load_n(&sAudioThreadRunning, __ATOMIC_ACQUIRE)) break;
+        ProduceUntilTarget();
         int bufferIndex;
         while ((bufferIndex = FindDoneBuffer()) >= 0) {
             FillBuffer(bufferIndex);
@@ -169,6 +208,7 @@ bool Port_MzmAudio_Init(void) {
     memset(sWave, 0, sizeof(sWave));
     memset(sSamples, 0, BUFFER_COUNT * BUFFER_FRAMES * 2 * sizeof(int16_t));
     LightEvent_Init(&sAudioWake, RESET_ONESHOT);
+    LightLock_Init(&sAudioStateLock);
     sInitialized = true;
     sPaused = false;
     ndspSetCallback(AudioFrameFinished, NULL);
@@ -193,18 +233,6 @@ bool Port_MzmAudio_Init(void) {
         __atomic_store_n(&sAudioThreadRunning, false, __ATOMIC_RELEASE);
     }
     return true;
-}
-
-void Port_MzmAudio_Pump(void) {
-    if (!sInitialized) return;
-    if (sPaused) return;
-    if (CountDoneBuffers() > 0) LightEvent_Signal(&sAudioWake);
-    if (!sAudioThread) {
-        int bufferIndex;
-        while ((bufferIndex = FindDoneBuffer()) >= 0) {
-            FillBuffer(bufferIndex);
-        }
-    }
 }
 
 void Port_MzmAudio_Shutdown(void) {

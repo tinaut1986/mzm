@@ -79,6 +79,7 @@ SRCS_3DS := \
 	$(CURDIR)/source/platform_3ds_minimal.c \
 	$(CURDIR)/source/platform_gpu_3ds.c \
 	$(CURDIR)/source/port_ppu_mzm.c \
+	$(CURDIR)/source/port_gpu_renderer.c \
 	$(CURDIR)/source/port_mzm_audio_3ds.c
 
 # Generar objetos
@@ -89,7 +90,7 @@ C_OBJS    := $(OBJS_ROOT) $(OBJS_ASM) $(OBJS_3DS)
 DEPS      := $(C_OBJS:.o=.d)
 
 ARCH    := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
-CFLAGS  := -g -Wall -O2 -mword-relocations -ffunction-sections -fdata-sections \
+CFLAGS  := -O2 -fomit-frame-pointer -Wall -mword-relocations -ffunction-sections -fdata-sections \
            -DREGION_EU -DMZM_PORT_VERSION='"0.0-dev"' -D__3DS__ -DTMC_3DS \
            -DNON_MATCHING=1 \
            -Wno-implicit-function-declaration -Wno-implicit-int -Wno-builtin-declaration-mismatch \
@@ -98,6 +99,24 @@ CFLAGS  := -g -Wall -O2 -mword-relocations -ffunction-sections -fdata-sections \
            -Wno-int-conversion -Wno-pointer-to-int-cast -Wno-int-to-pointer-cast \
            $(ARCH)
 
+
+# Which top-screen renderer to build: gpu (default) offloads mode-0 tile/
+# sprite compositing to the PICA200 (port_gpu_renderer.c), falling back to
+# the CPU scanline renderer per-frame for anything it doesn't support yet
+# (affine BG, blend, windows, mosaic, affine OBJ -- see
+# Port_GpuRenderer_CanRenderFrame). cpu forces the plain CPU scanline path
+# (mode1.c) unconditionally, e.g. to isolate whether a bug is renderer-
+# specific:
+#   make clean && make RENDERER=cpu
+# The clean matters: changing flags alone does not invalidate existing
+# objects, which is exactly the stale-.o trap documented in
+# docs/3ds-port-status-2026-08-17.md section 6l.
+RENDERER ?= gpu
+ifeq ($(RENDERER),gpu)
+  CFLAGS += -DPORT_GPU_TILE_RENDERER
+else ifneq ($(RENDERER),cpu)
+  $(error Unknown RENDERER '$(RENDERER)' -- expected 'gpu' or 'cpu')
+endif
 
 # Extra flags from the command line, e.g. to turn on the audio diagnostics that
 # are off by default (they do SD I/O on the audio path and cost real frame rate,
