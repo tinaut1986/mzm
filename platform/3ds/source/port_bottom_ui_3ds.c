@@ -939,6 +939,50 @@ static void RenderDebugView(void) {
     DrawText(16.0f, 212.0f, 1.0f, (GetLang() == 6) ? "TOCA LA PESTANA [MAPA] PARA VOLVER" : "TOUCH [MAP] TAB TO RETURN TO MAP VIEW", C2D_Color32(120, 140, 170, 255));
 }
 
+static const char* GetAspectRatioDisplayName(int lang) {
+    int ar = Port_Config_Get3DSAspectRatio();
+    if (lang == 6) {
+        switch (ar) {
+            case 0: return "PANORAMICO";
+            case 1: return "ORIGINAL (3:2)";
+            case 2: return "ESTIRADO (16:9)";
+            default: return "ORIGINAL";
+        }
+    }
+    switch (ar) {
+        case 0: return "WIDE";
+        case 1: return "ORIGINAL (3:2)";
+        case 2: return "STRETCH";
+        default: return "ORIGINAL";
+    }
+}
+
+static const char* GetDisplayStyleDisplayName(int lang) {
+    int ds = Port_Config_Get3DSDisplayStyle();
+    if (lang == 6) {
+        switch (ds) {
+            case 0: return "PIXEL PERFECT (1:1)";
+            case 1: return "ESCALADO NITIDO";
+            case 2: return "SUAVIZADO";
+            default: return "ESCALADO";
+        }
+    }
+    switch (ds) {
+        case 0: return "PIXEL PERFECT (1:1)";
+        case 1: return "SCALED (SHARP)";
+        case 2: return "BLUR (SMOOTH)";
+        default: return "SCALED";
+    }
+}
+
+static const char* GetFpsOverlayDisplayName(int lang) {
+    bool on = Port_Config_GetShowFps();
+    if (lang == 6) {
+        return on ? "ACTIVADO" : "DESACTIVADO";
+    }
+    return on ? "ON" : "OFF";
+}
+
 /* Render Options View */
 static void RenderOptionsView(void) {
     int lang = GetLang();
@@ -964,7 +1008,7 @@ static void RenderOptionsView(void) {
         "BILDVERHAELTNIS:", "FORMAT IMAGE:", "FORMATO SCHERMO:", "RELACION DE ASPECTO:"
     };
     DrawText(20.0f, 52.0f, 1.0f, arLabels[lang], C2D_Color32(255, 255, 255, 255));
-    DrawText(170.0f, 52.0f, 1.0f, Port_Config_Get3DSAspectRatioName(), C2D_Color32(255, 215, 0, 255));
+    DrawText(170.0f, 52.0f, 1.0f, GetAspectRatioDisplayName(lang), C2D_Color32(255, 215, 0, 255));
 
     /* Option 2: Display Style */
     C2D_DrawRectSolid(12.0f, 76.0f, 0.45f, 296.0f, 26.0f, C2D_Color32(26, 32, 48, 255));
@@ -974,13 +1018,17 @@ static void RenderOptionsView(void) {
         "ANZEIGE-STIL:", "STYLE AFFICHAGE:", "STILE DISPLAY:", "ESTILO DE PANTALLA:"
     };
     DrawText(20.0f, 84.0f, 1.0f, dsLabels[lang], C2D_Color32(255, 255, 255, 255));
-    DrawText(170.0f, 84.0f, 1.0f, Port_Config_Get3DSDisplayStyleName(), C2D_Color32(255, 215, 0, 255));
+    DrawText(170.0f, 84.0f, 1.0f, GetDisplayStyleDisplayName(lang), C2D_Color32(255, 215, 0, 255));
 
     /* Option 3: FPS Overlay */
     C2D_DrawRectSolid(12.0f, 108.0f, 0.45f, 296.0f, 26.0f, C2D_Color32(26, 32, 48, 255));
     C2D_DrawRectSolid(12.0f, 108.0f, 0.4f, 296.0f, 1.0f, C2D_Color32(60, 75, 110, 255));
-    DrawText(20.0f, 116.0f, 1.0f, "FPS OVERLAY:", C2D_Color32(255, 255, 255, 255));
-    DrawText(170.0f, 116.0f, 1.0f, Port_Config_GetShowFps() ? "ON" : "OFF",
+    const char* fpsLabels[7] = {
+        "FPS OVERLAY:", "FPS OVERLAY:", "FPS OVERLAY:",
+        "FPS-ANZEIGE:", "COMPTEUR FPS:", "OVERLAY FPS:", "CONTADOR FPS:"
+    };
+    DrawText(20.0f, 116.0f, 1.0f, fpsLabels[lang], C2D_Color32(255, 255, 255, 255));
+    DrawText(170.0f, 116.0f, 1.0f, GetFpsOverlayDisplayName(lang),
              Port_Config_GetShowFps() ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 100, 100, 255));
 
     /* Informational Notes Box */

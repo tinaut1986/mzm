@@ -134,7 +134,7 @@ static const uint8_t* StatusGlyph(char c) {
     return NULL;
 }
 
-static void DrawStatusText(float x, float y, float scale, const char* text) {
+void PlatformGpu3DS_DrawStatusText(float x, float y, float scale, const char* text) {
     const uint32_t color = C2D_Color32(255, 255, 255, 255);
     for (; *text; ++text, x += 6.0f * scale) {
         const uint8_t* glyph = StatusGlyph(*text);
@@ -449,7 +449,7 @@ static void DrawTopImageStereo(const uint32_t* leftPixels, const uint32_t* right
         if (rounded > 999u) rounded = 999u;
         snprintf(label, sizeof(label), "FPS %u", rounded);
         C2D_DrawRectSolid(5.0f, 216.0f, 0.7f, 100.0f, 20.0f, C2D_Color32(0, 0, 0, 210));
-        DrawStatusText(10.0f, 219.0f, 2.0f, label);
+        PlatformGpu3DS_DrawStatusText(10.0f, 219.0f, 2.0f, label);
     }
 
     if (sTopRightTarget) {
@@ -464,7 +464,7 @@ static void DrawTopImageStereo(const uint32_t* leftPixels, const uint32_t* right
             if (rounded > 999u) rounded = 999u;
             snprintf(label, sizeof(label), "FPS %u", rounded);
             C2D_DrawRectSolid(5.0f, 216.0f, 0.7f, 100.0f, 20.0f, C2D_Color32(0, 0, 0, 210));
-            DrawStatusText(10.0f, 219.0f, 2.0f, label);
+            PlatformGpu3DS_DrawStatusText(10.0f, 219.0f, 2.0f, label);
         }
     }
 }
@@ -575,7 +575,7 @@ void PlatformGpu3DS_ShowDumpSavedOverlay(void) {
     sFrameActive = true;
     DrawTopImage(sTopUpload, sTopPresentWidth);
     C2D_DrawRectSolid(132.0f, 12.0f, 0.7f, 136.0f, 24.0f, C2D_Color32(0, 0, 0, 220));
-    DrawStatusText(141.0f, 17.0f, 2.0f, "DUMP SAVED");
+    PlatformGpu3DS_DrawStatusText(141.0f, 17.0f, 2.0f, "DUMP SAVED");
 
     sBottomSubtexture = (Tex3DS_SubTexture){
         .width = 320, .height = 240, .left = 0.0f, .top = 1.0f,
