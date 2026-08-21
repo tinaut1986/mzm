@@ -183,6 +183,50 @@ window mask from a sprite's rendered shape, effectively a stencil pass).
 Recommend leaving this as a CPU fallback indefinitely unless a concrete
 in-game case turns up.
 
+## Update (same day, later): affine OBJ and window clipping implemented
+
+Both of the top two recommended items are now implemented in
+`platform/3ds/source/port_gpu_renderer.c`, per the priority order below
+(mosaic and affine BG were intentionally left out of this pass -- lower
+priority, per the original assessment, and not requested).
+
+**Affine OBJ**: `CollectSprite` now reads the OAM affine parameter group
+(PA/PB/PC/PD, GBATek 6.4.4), inverts it (the on-hardware matrix is a
+backward screen->texture sampling map; this renderer draws forward quads, so
+it needs the inverse), and decomposes the inverse into rotation + per-axis
+scale for `C2D_DrawParams` (which has no general shear support). Each 8x8
+subtile is placed by applying the FULL (non-decomposed) inverse matrix to
+its pivot-relative center, so subtile *placement* stays exact even when the
+source matrix carries shear -- only a sheared subtile's own *shape* is
+approximated (rotation+scale only). Double-size sprites (attr0 bit9) widen
+the bounding/culling box as GBATek specifies. `Port_GpuRenderer_CanRenderFrame`
+no longer rejects affine OBJ frames at all.
+
+**Window clipping**: a single active window (WIN0 xor WIN1, still falling
+back to CPU if both are simultaneously clipping -- see the scope note in
+`Port_GpuRenderer_CanRenderFrame`'s header comment) is now rendered via two
+`C3D_SetScissor` passes (`GPU_SCISSOR_NORMAL` for the inside, `GPU_SCISSOR_INVERT`
+for the outside) instead of falling back. Each BG/OBJ layer's visibility
+(always / inside-only / outside-only / never) is precomputed once per frame
+from WININ/WINOUT and carried per `DrawItem`; an always-visible item is drawn
+in both scissor passes, which -- since the two rects are exact complements --
+composites correctly without double-drawing any pixel.
+
+**The scissor coordinate-space risk flagged above was NOT resolved.** This
+environment still has no display output. The implementation assumes
+`C3D_SetScissor`'s left/top/right/bottom are in the same logical 400x240
+landscape space citro2d's own draws already use (matching this file's
+existing `screenBaseX`/`scale` math), not the physical rotated framebuffer
+space -- documented inline at the scissor-rect computation in
+`Port_GpuRenderer_RenderFrame`. **This needs verification against a real
+screen or an interactive Azahar session before being trusted**: if a
+window-clipped scene (file-select's transition, `gSuitFlashEffect`) shows
+the wrong region clipped, or a rotated/mirrored clip, that assumption is
+wrong and the physical-framebuffer mapping needs to be substituted instead.
+Both changes build cleanly (`arm-none-eabi-gcc`, with and without
+`PORT_GPU_RENDERER_DIAG_LOG`), but neither has been exercised in a running
+session yet.
+
 ## Recommendation
 
 Both window clipping and affine OBJ are now confirmed (not just inferred)

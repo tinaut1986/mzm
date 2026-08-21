@@ -19,6 +19,7 @@
 #include <3ds.h>
 #include <citro2d.h>
 #include <citro3d.h>
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -129,9 +130,26 @@ typedef struct TileCacheKey {
                            * that mints a new one. */
 } TileCacheKey;
 
+/* Per-layer visibility relative to the single active GBA window (WIN0 xor
+ * WIN1 -- see sWindowActive/sLayerWinVis in Port_GpuRenderer_RenderFrame).
+ * WIN_VIS_NEVER means the whole layer is disabled while the window is
+ * active (neither WININ's inside bit nor WINOUT's outside bit set for it) --
+ * items are never pushed for such a layer at all (see ComputeLayerWinVis),
+ * so it never appears on a DrawItem. */
+typedef enum { WIN_VIS_ALWAYS, WIN_VIS_INSIDE_ONLY, WIN_VIS_OUTSIDE_ONLY, WIN_VIS_NEVER } WindowVis;
+
 typedef struct DrawItem {
     C2D_Image img;
+    /* Non-affine item: x,y is the top-left corner in GBA screen space, w/h
+     * are always 8 (one atlas tile). Affine OBJ item (affine=true): x,y is
+     * instead this subtile's already-transformed CENTER in GBA screen space
+     * (see CollectSprite's affine path), w/h are the subtile's rotation-
+     * decomposed scaled size, and angle is the sprite's decomposed rotation
+     * -- see the big comment on affine OBJ handling in CollectSprite for why
+     * per-subtile rotation about the sprite's own pivot reproduces the whole
+     * sprite's rotation exactly for the common rotate+uniform-scale case. */
     float x, y, w, h;
+    float angle;
     int sortKey;   /* ascending draw order: lower = drawn first (further back) */
     int8_t depthTier; /* stereo parallax tier, see kTierEyeOffsetScale */
     bool blendAlpha; /* BLDCNT effect 1 (alpha blend) active for this item's
@@ -139,6 +157,8 @@ typedef struct DrawItem {
                       * against whatever's already in the framebuffer,
                       * approximating GBA's 1st-target/2nd-target blend
                       * (see Port_GpuRenderer_RenderFrame). */
+    bool affine;
+    WindowVis winVis;
 } DrawItem;
 
 static C3D_Tex sAtlasTexture;
@@ -419,6 +439,33 @@ static int sBldEva, sBldEvb, sBldEvy;
 
 static inline bool BldIsFirstTarget(uint16_t bldcnt, int layerId) { return ((bldcnt >> layerId) & 1u) != 0u; }
 
+/* Frame-global window-clip state (WIN0 xor WIN1 -- see
+ * Port_GpuRenderer_CanRenderFrame's scope note: two simultaneously-clipping
+ * windows still fall back to CPU, so at most one of WIN0/WIN1 is ever the
+ * source here), computed once per frame in Port_GpuRenderer_RenderFrame and
+ * consumed by CollectBgLayer/CollectSprite (per-layer visibility) and the
+ * draw loop (the scissor rect itself). sWinLeft/Top/Right/Bottom are in raw
+ * GBA screen pixels (0..240, 0..160), converted to the render target's
+ * scissor space at draw time. */
+static bool sWindowActive;
+static int sWinLeft, sWinTop, sWinRight, sWinBottom;
+static WindowVis sLayerWinVis[5]; /* index 0-3 = BG0-3, 4 = OBJ, same layer-id convention as BldIsFirstTarget */
+
+/* WININ/WINOUT per-layer bit -> WindowVis, for the single active window's
+ * inside mask (WININ low byte for WIN0, high byte for WIN1) and the shared
+ * WINOUT "outside any window" mask. Bit layout (GBATek): bits0-3 BG0-3,
+ * bit4 OBJ, bit5 special-effect-enable (ignored -- see the existing
+ * WindowCoversFullScreen comment on approximating this bit away, same
+ * rationale extended from the gating-only case to the real-clip case here). */
+static inline WindowVis ComputeLayerWinVis(uint8_t insideMask, uint8_t outsideMask, int layerBit) {
+    bool in = ((insideMask >> layerBit) & 1u) != 0u;
+    bool out = ((outsideMask >> layerBit) & 1u) != 0u;
+    if (in && out) return WIN_VIS_ALWAYS;
+    if (in) return WIN_VIS_INSIDE_ONLY;
+    if (out) return WIN_VIS_OUTSIDE_ONLY;
+    return WIN_VIS_NEVER;
+}
+
 /* PICA200 8x8-texel tile swizzle (Z-order/Morton within the tile) -- the
  * exact per-texel reordering that GX_TRANSFER_OUT_TILED(1) used to apply
  * for us when tile pixels were decoded into a plain linear staging buffer
@@ -580,38 +627,80 @@ static inline void SlotToUV(int slot, Tex3DS_SubTexture* out) {
     out->bottom = 1.0f - ((float)sy + 7.5f) / (float)ATLAS_DIM;
 }
 
-static inline void PushItem(int slot, float x, float y, int sortKey, int depthTier, bool blendAlpha) {
-    if (sDrawItemCount >= MAX_DRAW_ITEMS) return;
+/* Shared item-allocation tail for PushItem/PushAffineItem below: reserves a
+ * slot in sDrawItems, wires up its atlas UV rect and this sortKey's
+ * insertion-order bucket chain (see SORT_KEY_BUCKETS's comment). Returns -1
+ * (and pushes nothing) if MAX_DRAW_ITEMS is already exhausted. */
+static inline int AllocDrawItem(int slot, int sortKey) {
+    if (sDrawItemCount >= MAX_DRAW_ITEMS) return -1;
     Tex3DS_SubTexture subtex;
     SlotToUV(slot, &subtex);
-    DrawItem* item = &sDrawItems[sDrawItemCount++];
+    int idx = sDrawItemCount++;
     /* subtex is stack-local per call site in the original C2D_Image pattern;
      * store it by value inside the persisted image via a static per-item
      * copy so it stays valid until the draw pass. C2D_Image only holds a
      * pointer, so give each item its own backing subtex. */
     static Tex3DS_SubTexture sSubtexPool[MAX_DRAW_ITEMS];
-    sSubtexPool[sDrawItemCount - 1] = subtex;
+    sSubtexPool[idx] = subtex;
+    DrawItem* item = &sDrawItems[idx];
     item->img.tex = &sAtlasTexture;
-    item->img.subtex = &sSubtexPool[sDrawItemCount - 1];
-    item->x = x;
-    item->y = y;
-    item->w = 8.0f;
-    item->h = 8.0f;
+    item->img.subtex = &sSubtexPool[idx];
     item->sortKey = sortKey;
-    item->depthTier = (int8_t)depthTier;
-    item->blendAlpha = blendAlpha;
 
-    int idx = sDrawItemCount - 1;
     sBucketNext[idx] = -1;
     if (sBucketHead[sortKey] < 0) sBucketHead[sortKey] = idx;
     else sBucketNext[sBucketTail[sortKey]] = idx;
     sBucketTail[sortKey] = idx;
+    return idx;
+}
+
+static inline void PushItem(int slot, float x, float y, int sortKey, int depthTier, bool blendAlpha,
+                            WindowVis winVis) {
+    int idx = AllocDrawItem(slot, sortKey);
+    if (idx < 0) return;
+    DrawItem* item = &sDrawItems[idx];
+    item->x = x;
+    item->y = y;
+    item->w = 8.0f;
+    item->h = 8.0f;
+    item->angle = 0.0f;
+    item->depthTier = (int8_t)depthTier;
+    item->blendAlpha = blendAlpha;
+    item->affine = false;
+    item->winVis = winVis;
+}
+
+/* Affine OBJ variant: x,y is the subtile's already-transformed screen-space
+ * CENTER (not top-left), w/h are the decomposed scaled subtile size (see
+ * CollectSprite's affine path), and angle (radians) is the sprite's
+ * decomposed rotation -- consumed by the draw loop via C2D_DrawParams'
+ * center+angle instead of the plain top-left placement non-affine items use. */
+static inline void PushAffineItem(int slot, float centerX, float centerY, float angle, float scaleX, float scaleY,
+                                  int sortKey, int depthTier, bool blendAlpha, WindowVis winVis) {
+    int idx = AllocDrawItem(slot, sortKey);
+    if (idx < 0) return;
+    DrawItem* item = &sDrawItems[idx];
+    item->x = centerX;
+    item->y = centerY;
+    item->w = 8.0f * scaleX;
+    item->h = 8.0f * scaleY;
+    item->angle = angle;
+    item->depthTier = (int8_t)depthTier;
+    item->blendAlpha = blendAlpha;
+    item->affine = true;
+    item->winVis = winVis;
 }
 
 /* Text-mode BG tilemap addressing, byte-identical to the formula validated
  * in port/ppu/src/mode1.c (screen_block_x/y + blocks_per_row quadrant
  * layout for the 32x32/64x32/32x64/64x64 GBA screen sizes). */
 static void CollectBgLayer(int bgIndex) {
+    /* Whole layer disabled by the active window's WININ/WINOUT masks (see
+     * sLayerWinVis) -- skip collection entirely rather than pushing items
+     * that would never be visible either inside or outside the window rect. */
+    WindowVis winVis = sWindowActive ? sLayerWinVis[bgIndex] : WIN_VIS_ALWAYS;
+    if (winVis == WIN_VIS_NEVER) return;
+
     uint16_t bgcnt = (uint16_t)(gIoMem[0x08 + bgIndex * 2] | (gIoMem[0x09 + bgIndex * 2] << 8));
     uint8_t priority = (uint8_t)(bgcnt & 3u);
     uint32_t charBase = (uint32_t)((bgcnt >> 2) & 3u) * 0x4000u;
@@ -688,7 +777,7 @@ static void CollectBgLayer(int bgIndex) {
              * far-background BG3 offset), and BG3 read index 3 == 0.0f --
              * silently swapping stereo depth between the nearest and
              * farthest layers. */
-            PushItem(slot, drawX, drawY, sortKey, 3 - bgIndex, blendAlpha);
+            PushItem(slot, drawX, drawY, sortKey, 3 - bgIndex, blendAlpha, winVis);
         }
     }
 }
@@ -696,16 +785,17 @@ static void CollectBgLayer(int bgIndex) {
 /* Multi-tile OBJ blit: walks the sprite's width/height in 8x8 tiles and
  * pushes one atlas quad per subtile, honoring 1D/2D OBJ char mapping
  * (DISPCNT bit 6) and whole-sprite hflip/vflip (subtile position AND
- * texture flip both mirror, matching hardware). Affine OBJs (attr0 bit8)
- * are rejected earlier by Port_GpuRenderer_CanRenderFrame -- not handled
- * here. */
+ * texture flip both mirror, matching hardware). Affine OBJs (attr0 bit8) are
+ * handled below via a per-subtile rotation+scale decomposition -- see the
+ * comment further down. */
 static void CollectSprite(int oamIndex, bool obj1D) {
     const uint16_t* oam = (const uint16_t*)gOamMem;
     uint16_t attr0 = oam[oamIndex * 4 + 0];
     uint16_t attr1 = oam[oamIndex * 4 + 1];
     uint16_t attr2 = oam[oamIndex * 4 + 2];
 
-    if (((attr0 >> 9) & 1u) && !((attr0 >> 8) & 1u)) return; /* disabled (non-affine hidden bit) */
+    bool isAffine = ((attr0 >> 8) & 1u) != 0u;
+    if (((attr0 >> 9) & 1u) && !isAffine) return; /* disabled (non-affine hidden bit) */
     uint8_t objMode = (uint8_t)((attr0 >> 10) & 3u);
     if (objMode == 2) return; /* OBJ window: not a drawable sprite */
 
@@ -715,19 +805,37 @@ static void CollectSprite(int oamIndex, bool obj1D) {
     int width = kObjWidths[shape][size];
     int height = kObjHeights[shape][size];
 
+    /* Double-size (attr0 bit9, only meaningful when affine): the sprite's
+     * on-screen bounding box doubles so a rotated/scaled sprite has room to
+     * grow without clipping against its own unrotated footprint (GBATek
+     * 6.4.4). The sprite's own texture dimensions (width/height above) are
+     * unaffected -- only the placement/culling box and the affine pivot
+     * change. */
+    bool doubleSize = isAffine && (((attr0 >> 9) & 1u) != 0u);
+    int boundsWidth = doubleSize ? width * 2 : width;
+    int boundsHeight = doubleSize ? height * 2 : height;
+
     int y = attr0 & 0xFFu;
     if (y >= 160) y -= 256;
     int x = (int)(attr1 & 0x1FFu);
     if (x >= 240) x -= 512;
 
     bool bpp8 = ((attr0 >> 13) & 1u) != 0;
-    bool hflip = ((attr1 >> 12) & 1u) != 0;
-    bool vflip = ((attr1 >> 13) & 1u) != 0;
+    /* attr1 bits12-13 are hflip/vflip only for non-affine OBJs -- for
+     * affine OBJs those same bits are the top two bits of the 5-bit affine
+     * parameter group index (attr1 bits9-13) instead, and flipping is
+     * instead expressed via the sign of the affine matrix itself (GBATek
+     * 6.4.4), so no separate flip here. */
+    bool hflip = !isAffine && (((attr1 >> 12) & 1u) != 0u);
+    bool vflip = !isAffine && (((attr1 >> 13) & 1u) != 0u);
     uint16_t baseTile = attr2 & 0x3FFu;
     uint8_t priority = (uint8_t)((attr2 >> 10) & 3u);
     uint8_t palBank = (uint8_t)((attr2 >> 12) & 0x0Fu);
 
-    if (y >= 160 || y + height <= 0 || x >= 240 || x + width <= 0) return;
+    if (y >= 160 || y + boundsHeight <= 0 || x >= 240 || x + boundsWidth <= 0) return;
+
+    WindowVis winVis = sWindowActive ? sLayerWinVis[4] : WIN_VIS_ALWAYS;
+    if (winVis == WIN_VIS_NEVER) return;
 
     const uint8_t* objBase = gVram + 0x10000u;
     const uint16_t* pal = (const uint16_t*)gObjPltt;
@@ -741,6 +849,76 @@ static void CollectSprite(int oamIndex, bool obj1D) {
     if (isFirstTarget && sBldEffect == 2) brightAdjust = BRIGHT_ADJUST_BRIGHTEN;
     else if (isFirstTarget && sBldEffect == 3) brightAdjust = BRIGHT_ADJUST_DARKEN;
     bool blendAlpha = isFirstTarget && sBldEffect == 1;
+
+    /* Priority inverted for the same reason as CollectBgLayer above
+     * (0=highest/on top, 3=lowest/backmost). OBJ draws above any BG of
+     * equal priority (tiebreak=4, higher than any BG's 0-3), and lower OAM
+     * index draws above higher index at equal priority -- callers iterate
+     * OAM back-to-front (127..0) so a stable sort already preserves that
+     * via insertion order. */
+    int sortKey = (3 - priority) * 10 + 4;
+
+    float affM00 = 1.0f, affM01 = 0.0f, affM10 = 0.0f, affM11 = 1.0f, affAngle = 0.0f;
+    float affScaleX = 1.0f, affScaleY = 1.0f;
+    float pivotX = 0.0f, pivotY = 0.0f;
+    if (isAffine) {
+        /* OBJ affine parameter groups reuse OAM's normally-unused 4th
+         * halfword (each OAM entry is 4 halfwords: attr0,1,2,pad) across 4
+         * consecutive entries -- group g's PA/PB/PC/PD live in that pad
+         * halfword of OAM entries g*4+0..3 respectively (GBATek 6.4.4),
+         * fixed-point 8.8 signed. Same values port/ppu/src/mode1.c's affine
+         * OBJ path reads (its own mode1_memory.oam_mem layout differs, but
+         * this project's gOamMem mirrors real GBA OAM layout directly, same
+         * as the non-affine attr0/1/2 reads just above). */
+        int affineGroup = (int)((attr1 >> 9) & 0x1Fu);
+        int16_t pa = (int16_t)oam[(affineGroup * 4 + 0) * 4 + 3];
+        int16_t pb = (int16_t)oam[(affineGroup * 4 + 1) * 4 + 3];
+        int16_t pc = (int16_t)oam[(affineGroup * 4 + 2) * 4 + 3];
+        int16_t pd = (int16_t)oam[(affineGroup * 4 + 3) * 4 + 3];
+        float mPa = (float)pa / 256.0f, mPb = (float)pb / 256.0f;
+        float mPc = (float)pc / 256.0f, mPd = (float)pd / 256.0f;
+
+        /* GBA's affine OBJ matrix is a BACKWARD (screen -> texture) mapping
+         * used for per-pixel sampling on real hardware (same formula
+         * mode1.c's software path applies: texRel = M * screenRel, see its
+         * affine OBJ pixel loop). This is a forward per-quad renderer, so
+         * the matrix needs inverting to get screenRel = M^-1 * texRel
+         * instead, placing each subtile at its correctly transformed screen
+         * position. */
+        float det = mPa * mPd - mPb * mPc;
+        if (det > -0.0001f && det < 0.0001f) {
+            /* Degenerate (non-invertible) matrix -- extremely rare
+             * (effectively zero scale on one axis); draw nothing rather
+             * than risk a divide-by-near-zero blowing up subtile positions
+             * off-screen. */
+            return;
+        }
+        affM00 = mPd / det;
+        affM01 = -mPb / det;
+        affM10 = -mPc / det;
+        affM11 = mPa / det;
+
+        /* Decompose the inverted matrix into rotation + independent x/y
+         * scale for C2D_DrawParams (which only supports rotation about a
+         * pivot plus axis-aligned w/h scale, no general shear) -- exact for
+         * the common rotate+uniform-scale case (explosions, zoom effects;
+         * see docs/3ds-gpu-renderer-window-affine-mosaic-feasibility-2026-08-21.md's
+         * "confirmed occurring" note), an approximation only when the
+         * source matrix also carries shear (rare in practice). Applying the
+         * FULL (non-decomposed) matrix to each subtile's pivot-relative
+         * center below keeps subtile PLACEMENT exact regardless of shear --
+         * only each subtile's own shape can't shear via C2D_DrawParams. */
+        affAngle = atan2f(affM10, affM00);
+        affScaleX = sqrtf(affM00 * affM00 + affM10 * affM10);
+        affScaleY = sqrtf(affM01 * affM01 + affM11 * affM11);
+        /* Preserve a pure axis flip (negative determinant, e.g. mirrored
+         * affine sprites) as a negated Y scale rather than losing it into
+         * an extra 180-degree rotation from atan2 alone. */
+        if (affM00 * affM11 - affM01 * affM10 < 0.0f) affScaleY = -affScaleY;
+
+        pivotX = (float)(x + boundsWidth / 2);
+        pivotY = (float)(y + boundsHeight / 2);
+    }
 
     for (int ty = 0; ty < tilesH; ++ty) {
         for (int tx = 0; tx < tilesW; ++tx) {
@@ -765,16 +943,27 @@ static void CollectSprite(int oamIndex, bool obj1D) {
             uint32_t byteOffset = (uint32_t)(objBase - gVram) + (uint32_t)tileIndex * bytesPerTile;
             int slot = GetOrDecodeTileSlot(byteOffset, bpp8, pal, palBank, hflip, vflip, true, brightAdjust);
 
-            float drawX = (float)(x + tx * 8);
-            float drawY = (float)(y + ty * 8);
-            /* Priority inverted for the same reason as CollectBgLayer above
-             * (0=highest/on top, 3=lowest/backmost). OBJ draws above any BG
-             * of equal priority (tiebreak=4, higher than any BG's 0-3), and
-             * lower OAM index draws above higher index at equal priority --
-             * callers iterate OAM back-to-front (127..0) so a stable sort
-             * already preserves that via insertion order. */
-            int sortKey = (3 - priority) * 10 + 4;
-            PushItem(slot, drawX, drawY, sortKey, 4, blendAlpha);
+            if (!isAffine) {
+                float drawX = (float)(x + tx * 8);
+                float drawY = (float)(y + ty * 8);
+                PushItem(slot, drawX, drawY, sortKey, 4, blendAlpha, winVis);
+                continue;
+            }
+
+            /* Subtile center relative to the sprite's own (unrotated)
+             * texture pivot, then mapped through the FULL inverted affine
+             * matrix (not the rotation/scale decomposition) to get this
+             * subtile's exact transformed center in screen space -- see the
+             * big comment above for why this keeps placement exact even
+             * when the source matrix carries shear. */
+            float relX = (float)(tx * 8 + 4) - (float)width * 0.5f;
+            float relY = (float)(ty * 8 + 4) - (float)height * 0.5f;
+            float dx = affM00 * relX + affM01 * relY;
+            float dy = affM10 * relX + affM11 * relY;
+            float screenCenterX = pivotX + dx;
+            float screenCenterY = pivotY + dy;
+            PushAffineItem(slot, screenCenterX, screenCenterY, affAngle, affScaleX, affScaleY, sortKey, 4, blendAlpha,
+                           winVis);
         }
     }
 }
@@ -787,11 +976,16 @@ static void CollectSprite(int oamIndex, bool obj1D) {
  * whatever half-updated VRAM content existed at the exact moment a
  * transition hit, which lines up with "the image was cut/corrupted right as
  * a scene changed" from testing), affine BG (GBA mode != 0, the Tourian
- * self-destruct sequence per docs/3ds-port-ppu-audit.md), any window that
- * actually clips the screen (a full-screen no-op WIN0/WIN1 -- the common
- * case in ordinary gameplay, see the WindowCoversFullScreen check below --
- * is allowed through; OBJ window is not approximated at all), BG or OBJ
- * mosaic, or any affine OBJ (attr0 bit8 set, rare -- rotated items/enemies).
+ * self-destruct sequence per docs/3ds-port-ppu-audit.md), BOTH WIN0 and WIN1
+ * simultaneously clipping the screen (a single active window -- WIN0 xor
+ * WIN1 -- that actually clips IS now supported via the PICA200 scissor test,
+ * see Port_GpuRenderer_RenderFrame's window-clip pass; two independently-
+ * shaped rects at once is a rect-minus-a-rect region, not expressible as a
+ * single scissor rect, so still falls back), OBJ window (attr0 objMode==2 /
+ * DISPCNT bit15, not approximated at all), or BG/OBJ mosaic. Affine OBJ
+ * (attr0 bit8 set, rotated/scaled items -- explosions, per the "What I
+ * actually measured" section of docs/3ds-gpu-renderer-window-affine-mosaic-feasibility-2026-08-21.md)
+ * is now handled directly in CollectSprite, not rejected here.
  * BLDCNT (alpha blend/brighten/darken) is NOT excluded here anymore --
  * transparency.c sets it routinely for ordinary rooms (water overlays,
  * layering), not just rare fades, so rejecting it meant real gameplay almost
@@ -833,25 +1027,32 @@ bool Port_GpuRenderer_CanRenderFrame(void) {
      * to the full screen (WIN1H=SCREEN_SIZE_X, WIN1V=SCREEN_SIZE_Y) and sets
      * WININ_H to 0x3F (every BG/OBJ/effect layer enabled inside it) -- it is
      * using the window purely as GBA's mechanism for gating BLDCNT special
-     * effects per layer, not to clip any region of the screen. Rejecting
-     * every frame with DCNT_WIN1 set meant gameplay (which is in this state
-     * almost all the time -- confirmed via GPU_REJECT diagnostics logged
-     * during real play) never reached the GPU renderer at all. Real
-     * clipping use (e.g. gSuitFlashEffect's shrunk WIN1 rect during the suit
-     * flash) still shrinks the rect below full-screen, so it still falls
-     * back correctly below. WININ != 0x3F while covering the full screen
-     * would mean a layer is being selectively disabled -- still rejected,
-     * conservatively, since that path isn't approximated. */
+     * effects per layer, not to clip any region of the screen; that
+     * full-screen-no-op case is allowed through unconditionally below (it
+     * needs no scissor at all -- Port_GpuRenderer_RenderFrame's
+     * sWindowActive stays false for it). A window that DOES shrink below
+     * full screen (e.g. gSuitFlashEffect's shrunk WIN1 rect during the suit
+     * flash, or file-select's reveal/wipe transition -- both confirmed via
+     * the KEY_Y-marked play session, see the feasibility doc referenced
+     * above) is now rendered via the PICA200 scissor test instead of falling
+     * back, as long as only ONE of WIN0/WIN1 is doing the clipping -- see
+     * the scope note in this function's header comment. */
     uint16_t win1h = (uint16_t)(gIoMem[0x42] | (gIoMem[0x43] << 8));
     uint16_t win1v = (uint16_t)(gIoMem[0x46] | (gIoMem[0x47] << 8));
-    uint16_t winin = (uint16_t)(gIoMem[0x48] | (gIoMem[0x49] << 8));
-    if (dispcnt & (1u << 13)) { /* WIN0 */
+    bool win0On = (dispcnt & (1u << 13)) != 0u;
+    bool win1On = (dispcnt & (1u << 14)) != 0u;
+    if (win0On && win1On) {
         uint16_t win0h = (uint16_t)(gIoMem[0x40] | (gIoMem[0x41] << 8));
         uint16_t win0v = (uint16_t)(gIoMem[0x44] | (gIoMem[0x45] << 8));
-        if (!WindowCoversFullScreen(win0h, win0v) || (winin & 0x3Fu) != 0x3Fu) REJECT("WIN0");
-    }
-    if (dispcnt & (1u << 14)) { /* WIN1 */
-        if (!WindowCoversFullScreen(win1h, win1v) || ((winin >> 8) & 0x3Fu) != 0x3Fu) REJECT("WIN1");
+        bool win0Clips = !WindowCoversFullScreen(win0h, win0v);
+        bool win1Clips = !WindowCoversFullScreen(win1h, win1v);
+        /* Both active and at least one actually clips: two independently-
+         * shaped rects isn't a single scissor rectangle (see this
+         * function's header comment) -- fall back. Both full-screen no-ops
+         * simultaneously is fine (nothing to clip, just per-layer gating,
+         * which RenderFrame's per-layer WININ/WINOUT handling below still
+         * approximates the same way the old full-screen-only path did). */
+        if (win0Clips || win1Clips) REJECT("WIN0+WIN1");
     }
     if (dispcnt & (1u << 15)) REJECT("OBJWIN");
 
@@ -860,13 +1061,6 @@ bool Port_GpuRenderer_CanRenderFrame(void) {
         for (int bg = 0; bg < 4; ++bg) {
             uint16_t bgcnt = (uint16_t)(gIoMem[0x08 + bg * 2] | (gIoMem[0x09 + bg * 2] << 8));
             if ((dispcnt & (1u << (8 + bg))) && ((bgcnt >> 6) & 1u)) REJECT("mosaic BG");
-        }
-    }
-    if (dispcnt & (1u << 12)) { /* OBJ layer enabled: reject if any affine OBJ is live */
-        const uint16_t* oam = (const uint16_t*)gOamMem;
-        for (int i = 0; i < 128; ++i) {
-            uint16_t attr0 = oam[i * 4 + 0];
-            if ((attr0 >> 8) & 1u) REJECT("affine OBJ"); /* affine flag set */
         }
     }
     return true;
@@ -894,6 +1088,50 @@ static float sLastTileCollectMs, sLastAtlasUploadMs; /* collectMs split in two, 
 void Port_GpuRenderer_GetLastFrameTimingMs(float* outCollectMs, float* outDrawMs) {
     if (outCollectMs) *outCollectMs = sLastCollectMs;
     if (outDrawMs) *outDrawMs = sLastDrawMs;
+}
+
+/* Builds this item's C2D_DrawParams. Non-affine items keep the original
+ * top-left placement (center at the origin, no rotation); affine OBJ
+ * subtiles (item->affine) are instead centered on their already-transformed
+ * screen position (item->x/y, see CollectSprite) and rotated about their own
+ * center by item->angle -- see DrawItem's comment for why x/y/w/h mean
+ * different things depending on this flag. */
+static inline C2D_DrawParams BuildDrawParams(const DrawItem* item, float screenBaseX, float eyeOffset, float scale) {
+    C2D_DrawParams params;
+    params.depth = 0.5f;
+    if (item->affine) {
+        float w = item->w * scale, h = item->h * scale;
+        params.pos.x = screenBaseX + eyeOffset + item->x * scale - w * 0.5f;
+        params.pos.y = item->y * scale - h * 0.5f;
+        params.pos.w = w;
+        params.pos.h = h;
+        params.center.x = w * 0.5f;
+        params.center.y = h * 0.5f;
+        params.angle = item->angle;
+    } else {
+        params.pos.x = screenBaseX + eyeOffset + item->x * scale;
+        params.pos.y = item->y * scale;
+        params.pos.w = item->w * scale;
+        params.pos.h = item->h * scale;
+        params.center.x = 0.0f;
+        params.center.y = 0.0f;
+        params.angle = 0.0f;
+    }
+    return params;
+}
+
+/* Whether this item should be drawn in the current window-clip scissor pass
+ * -- see the two-pass NORMAL/INVERT scheme in Port_GpuRenderer_RenderFrame's
+ * draw loop (an ALWAYS item is drawn in BOTH passes; since the two passes'
+ * scissor rects are exact complements of each other, each on-screen pixel
+ * only ever survives from one of the two draws, so this does not
+ * double-composite anything -- it just lets a single ALWAYS item span both
+ * the inside and outside regions correctly). When no window is active every
+ * item passes unconditionally (the common case, single unscissored pass). */
+static inline bool ItemPassesWindow(bool windowActive, WindowVis winVis, bool insidePass) {
+    if (!windowActive) return true;
+    if (winVis == WIN_VIS_ALWAYS) return true;
+    return insidePass ? (winVis == WIN_VIS_INSIDE_ONLY) : (winVis == WIN_VIS_OUTSIDE_ONLY);
 }
 
 void Port_GpuRenderer_RenderFrame(void) {
@@ -955,6 +1193,57 @@ void Port_GpuRenderer_RenderFrame(void) {
     if (sBldEvb > 16) sBldEvb = 16;
     sBldEvy = (int)(bldy & 0x1Fu);
     if (sBldEvy > 16) sBldEvy = 16;
+
+    /* Window-clip state (see sWindowActive's comment): exactly one of
+     * WIN0/WIN1 clipping is the only case Port_GpuRenderer_CanRenderFrame
+     * lets through (both simultaneously clipping still falls back), so at
+     * most one of these branches ever fires. WIN0 takes priority when both
+     * are enabled but neither clips (the ordinary full-screen WININ-gating
+     * case) -- matches GBA hardware's WIN0-over-WIN1 priority for pixels
+     * inside both, though here both cover the whole screen so priority
+     * between them doesn't actually matter for clipping, only which mask
+     * gates layers. */
+    sWindowActive = false;
+    {
+        bool win0On = (dispcnt & (1u << 13)) != 0u;
+        bool win1On = (dispcnt & (1u << 14)) != 0u;
+        uint16_t winin = (uint16_t)(gIoMem[0x48] | (gIoMem[0x49] << 8));
+        uint16_t winout = (uint16_t)(gIoMem[0x4A] | (gIoMem[0x4B] << 8));
+        uint16_t winH = 0, winV = 0;
+        uint8_t insideMask = 0, outsideMask = (uint8_t)(winout & 0xFFu);
+        if (win0On) {
+            winH = (uint16_t)(gIoMem[0x40] | (gIoMem[0x41] << 8));
+            winV = (uint16_t)(gIoMem[0x44] | (gIoMem[0x45] << 8));
+            insideMask = (uint8_t)(winin & 0xFFu);
+        } else if (win1On) {
+            winH = (uint16_t)(gIoMem[0x42] | (gIoMem[0x43] << 8));
+            winV = (uint16_t)(gIoMem[0x46] | (gIoMem[0x47] << 8));
+            insideMask = (uint8_t)((winin >> 8) & 0xFFu);
+        }
+        if ((win0On || win1On) && !WindowCoversFullScreen(winH, winV)) {
+            sWindowActive = true;
+            /* WINxH packs left in the high byte, right in the low byte;
+             * WINxV packs top high, bottom low (GBATEK). Clamp to the GBA
+             * screen bounds and to a non-negative width/height -- real
+             * hardware treats a right<left or bottom<top rect as an empty
+             * (zero-area) window rather than something to special-case
+             * here. */
+            int left = (int)(winH >> 8), right = (int)(winH & 0xFFu);
+            int top = (int)(winV >> 8), bottom = (int)(winV & 0xFFu);
+            if (left > 240) left = 240;
+            if (right > 240) right = 240;
+            if (top > 160) top = 160;
+            if (bottom > 160) bottom = 160;
+            if (right < left) right = left;
+            if (bottom < top) bottom = top;
+            sWinLeft = left;
+            sWinTop = top;
+            sWinRight = right;
+            sWinBottom = bottom;
+            for (int l = 0; l < 4; ++l) sLayerWinVis[l] = ComputeLayerWinVis(insideMask, outsideMask, l);
+            sLayerWinVis[4] = ComputeLayerWinVis(insideMask, outsideMask, 4);
+        }
+    }
 
     for (int bg = 3; bg >= 0; --bg) {
         if (dispcnt & (1u << (8 + bg))) CollectBgLayer(bg);
@@ -1059,6 +1348,35 @@ void Port_GpuRenderer_RenderFrame(void) {
     const float scale = 1.5f;
     const float screenBaseX = (400.0f - 240.0f * scale) * 0.5f;
 
+    /* Scissor rect for the window-clip passes below, in the SAME logical
+     * 400x240 landscape space citro2d's own draws already use (screenBaseX/
+     * scale, confirmed against this function's existing item-placement
+     * math) -- NOT applied per-eye (the window is a fixed 2D screen-space
+     * rect on real hardware, not something that shifts with stereo
+     * parallax; approximating it as eye-independent is low-risk since
+     * window-clipped content is typically UI/foreground, near the screen
+     * plane, per kTierEyeOffsetPx's BG0 entry already being 0). ASSUMPTION,
+     * NOT YET VERIFIED ON A REAL SCREEN: C3D_SetScissor's left/top/right/
+     * bottom are documented in citro3d only as "u32", with no confirmation
+     * anywhere in the installed headers of whether they're logical
+     * (citro2d's rotation-corrected space, used here) or physical (the top
+     * screen framebuffer's actual portrait-rotated memory layout) -- see
+     * the "one real unknown" section of
+     * docs/3ds-gpu-renderer-window-affine-mosaic-feasibility-2026-08-21.md.
+     * This environment has no display output to verify against, so this is
+     * a best-guess default (logical, matching the rest of this file's own
+     * coordinate math) rather than a confirmed-correct value -- if window-
+     * clipped scenes render with the wrong region clipped (or a rotated/
+     * mirrored clip) on real hardware or in an interactive Azahar session,
+     * swap this for the physical-framebuffer mapping instead. */
+    u32 scLeft = 0, scTop = 0, scRight = 0, scBottom = 0;
+    if (sWindowActive) {
+        scLeft = (u32)(screenBaseX + (float)sWinLeft * scale);
+        scTop = (u32)((float)sWinTop * scale);
+        scRight = (u32)(screenBaseX + (float)sWinRight * scale);
+        scBottom = (u32)((float)sWinBottom * scale);
+    }
+
     C3D_RenderTarget* leftTarget = PlatformGpu3DS_GetTopLeftTarget();
     C3D_RenderTarget* rightTarget = (slider3d > 0.01f) ? PlatformGpu3DS_GetTopRightTarget() : NULL;
 
@@ -1125,49 +1443,66 @@ void Port_GpuRenderer_RenderFrame(void) {
 
         int drawCount = 0;
         bool reassertedTexEnv = false;
-        for (int oi = 0; oi < sSortedCount; ++oi) {
-            const DrawItem* item = &sDrawItems[sSortedOrder[oi]];
-            if (item->blendAlpha) continue; /* second pass, below */
-            float eyeOffset = eyeSign * slider3d * kTierEyeOffsetPx[item->depthTier];
-            C2D_DrawParams params = {
-                .pos = { .x = screenBaseX + eyeOffset + item->x * scale, .y = item->y * scale,
-                         .w = item->w * scale, .h = item->h * scale },
-                .center = { 0.0f, 0.0f },
-                .depth = 0.5f,
-                .angle = 0.0f,
-            };
-            C2D_DrawImage(item->img, &params, NULL);
-            /* citro2d silently reprograms TEV unit 0 to its own default
-             * whenever it switches between "solid" (C2D_DrawRectSolid,
-             * used by the bottom-screen debug overlay in
-             * platform_gpu_3ds.c, drawn every frame now) and "textured"
-             * (C2D_DrawImage) draws -- it has no idea we hand-configured
-             * TEV0 above via ConfigureAtlasTextureEnv() for the PICA200's
-             * reversed RGBA8 byte order (see the big comment at the top of
-             * this file), so the very first textured draw after a solid
-             * draw clobbers it back to citro2d's default, which reads
-             * texture channels in the wrong order -- exactly the red/
-             * magenta-tinted screen from section 2.1 of
-             * docs/3ds-port-gpu-renderer-status-2026-08-20.md, now
-             * resurfacing every frame because the debug overlay guarantees
-             * the mode ends each frame as "solid". Reassert once right
-             * after the first draw of this loop (whether or not a clobber
-             * actually happened) rather than before it, since re-running
-             * it before would just get clobbered again by this same draw
-             * call. */
-            if (!reassertedTexEnv) {
-                ConfigureAtlasTextureEnv();
-                reassertedTexEnv = true;
+        /* Window-clip: when a single WIN0/WIN1 rect is actively clipping
+         * (sWindowActive -- see Port_GpuRenderer_CanRenderFrame's scope
+         * note), draw the opaque pass TWICE, once scissored to the rect's
+         * inside (GPU_SCISSOR_NORMAL) and once to its outside
+         * (GPU_SCISSOR_INVERT), each skipping items that don't belong to
+         * that region per their precomputed winVis (see
+         * ComputeLayerWinVis/ItemPassesWindow). The two scissor rects are
+         * exact complements, so an ALWAYS item -- drawn in both passes --
+         * ends up fully drawn exactly once per pixel, not double-composited
+         * (see ItemPassesWindow's comment). No window active is the common
+         * case and stays a single unscissored pass, identical to before. */
+        int scissorPasses = sWindowActive ? 2 : 1;
+        for (int sp = 0; sp < scissorPasses; ++sp) {
+            bool insidePass = (sp == 0);
+            if (sWindowActive) {
+                C3D_SetScissor(insidePass ? GPU_SCISSOR_NORMAL : GPU_SCISSOR_INVERT, scLeft, scTop, scRight, scBottom);
             }
-            /* Defensive: PlatformGpu3DS_Init sizes citro2d's shared vertex
-             * buffer for this renderer's documented worst case
-             * (MAX_DRAW_ITEMS), but a periodic flush here means a scene that
-             * somehow exceeds it degrades to an extra GPU submission instead
-             * of silently failing to draw past the buffer's capacity --
-             * exactly the bug that made every large scene show only its
-             * first ~128 quads (roughly the top of the screen) before the
-             * buffer was resized. */
-            if ((++drawCount % 512) == 0) C2D_Flush();
+            for (int oi = 0; oi < sSortedCount; ++oi) {
+                const DrawItem* item = &sDrawItems[sSortedOrder[oi]];
+                if (item->blendAlpha) continue; /* second pass, below */
+                if (!ItemPassesWindow(sWindowActive, item->winVis, insidePass)) continue;
+                float eyeOffset = eyeSign * slider3d * kTierEyeOffsetPx[item->depthTier];
+                C2D_DrawParams params = BuildDrawParams(item, screenBaseX, eyeOffset, scale);
+                C2D_DrawImage(item->img, &params, NULL);
+                /* citro2d silently reprograms TEV unit 0 to its own default
+                 * whenever it switches between "solid" (C2D_DrawRectSolid,
+                 * used by the bottom-screen debug overlay in
+                 * platform_gpu_3ds.c, drawn every frame now) and "textured"
+                 * (C2D_DrawImage) draws -- it has no idea we hand-configured
+                 * TEV0 above via ConfigureAtlasTextureEnv() for the PICA200's
+                 * reversed RGBA8 byte order (see the big comment at the top of
+                 * this file), so the very first textured draw after a solid
+                 * draw clobbers it back to citro2d's default, which reads
+                 * texture channels in the wrong order -- exactly the red/
+                 * magenta-tinted screen from section 2.1 of
+                 * docs/3ds-port-gpu-renderer-status-2026-08-20.md, now
+                 * resurfacing every frame because the debug overlay guarantees
+                 * the mode ends each frame as "solid". Reassert once right
+                 * after the first draw of this loop (whether or not a clobber
+                 * actually happened) rather than before it, since re-running
+                 * it before would just get clobbered again by this same draw
+                 * call. */
+                if (!reassertedTexEnv) {
+                    ConfigureAtlasTextureEnv();
+                    reassertedTexEnv = true;
+                }
+                /* Defensive: PlatformGpu3DS_Init sizes citro2d's shared vertex
+                 * buffer for this renderer's documented worst case
+                 * (MAX_DRAW_ITEMS), but a periodic flush here means a scene that
+                 * somehow exceeds it degrades to an extra GPU submission instead
+                 * of silently failing to draw past the buffer's capacity --
+                 * exactly the bug that made every large scene show only its
+                 * first ~128 quads (roughly the top of the screen) before the
+                 * buffer was resized. */
+                if ((++drawCount % 512) == 0) C2D_Flush();
+            }
+        }
+        if (sWindowActive) {
+            C2D_Flush();
+            C3D_SetScissor(GPU_SCISSOR_DISABLE, 0, 0, 0, 0);
         }
 
         /* BLDCNT effect 1 (alpha blend) second pass: GBA blends a
@@ -1185,38 +1520,50 @@ void Port_GpuRenderer_RenderFrame(void) {
          * the alpha-test above, not a blend factor. */
         if (sBldEffect == 1) {
             bool flushedForBlend = false;
-            for (int oi = 0; oi < sSortedCount; ++oi) {
-                const DrawItem* item = &sDrawItems[sSortedOrder[oi]];
-                if (!item->blendAlpha) continue;
-                if (!flushedForBlend) {
-                    C2D_Flush();
-                    C3D_BlendingColor(C2D_Color32(0, 0, 0, (u32)((sBldEva * 255) / 16)));
-                    C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_CONSTANT_ALPHA, GPU_ONE_MINUS_CONSTANT_ALPHA,
-                                   GPU_CONSTANT_ALPHA, GPU_ONE_MINUS_CONSTANT_ALPHA);
-                    flushedForBlend = true;
+            bool blendScissorSet = false;
+            for (int sp = 0; sp < scissorPasses; ++sp) {
+                bool insidePass = (sp == 0);
+                for (int oi = 0; oi < sSortedCount; ++oi) {
+                    const DrawItem* item = &sDrawItems[sSortedOrder[oi]];
+                    if (!item->blendAlpha) continue;
+                    if (!ItemPassesWindow(sWindowActive, item->winVis, insidePass)) continue;
+                    if (!flushedForBlend) {
+                        C2D_Flush();
+                        C3D_BlendingColor(C2D_Color32(0, 0, 0, (u32)((sBldEva * 255) / 16)));
+                        C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_CONSTANT_ALPHA, GPU_ONE_MINUS_CONSTANT_ALPHA,
+                                       GPU_CONSTANT_ALPHA, GPU_ONE_MINUS_CONSTANT_ALPHA);
+                        flushedForBlend = true;
+                    }
+                    if (sWindowActive && !blendScissorSet) {
+                        C3D_SetScissor(insidePass ? GPU_SCISSOR_NORMAL : GPU_SCISSOR_INVERT, scLeft, scTop, scRight,
+                                       scBottom);
+                        blendScissorSet = true;
+                    }
+                    float eyeOffset = eyeSign * slider3d * kTierEyeOffsetPx[item->depthTier];
+                    C2D_DrawParams params = BuildDrawParams(item, screenBaseX, eyeOffset, scale);
+                    C2D_DrawImage(item->img, &params, NULL);
+                    /* Same TEV-clobber concern as the pass-1 loop above -- only
+                     * relevant here if pass 1 drew zero items (mode could still
+                     * be "solid" entering this loop). */
+                    if (!reassertedTexEnv) {
+                        ConfigureAtlasTextureEnv();
+                        reassertedTexEnv = true;
+                    }
+                    if ((++drawCount % 512) == 0) C2D_Flush();
                 }
-                float eyeOffset = eyeSign * slider3d * kTierEyeOffsetPx[item->depthTier];
-                C2D_DrawParams params = {
-                    .pos = { .x = screenBaseX + eyeOffset + item->x * scale, .y = item->y * scale,
-                             .w = item->w * scale, .h = item->h * scale },
-                    .center = { 0.0f, 0.0f },
-                    .depth = 0.5f,
-                    .angle = 0.0f,
-                };
-                C2D_DrawImage(item->img, &params, NULL);
-                /* Same TEV-clobber concern as the pass-1 loop above -- only
-                 * relevant here if pass 1 drew zero items (mode could still
-                 * be "solid" entering this loop). */
-                if (!reassertedTexEnv) {
-                    ConfigureAtlasTextureEnv();
-                    reassertedTexEnv = true;
-                }
-                if ((++drawCount % 512) == 0) C2D_Flush();
+                /* Scissor mode must change between passes even if the first
+                 * pass never actually flushed into blend mode (e.g. every
+                 * blend item was outside-only and this is the inside pass)
+                 * -- reset the per-pass latch, not the outer flushedForBlend
+                 * one, so the NEXT pass's first blend draw still sets its
+                 * own scissor mode. */
+                blendScissorSet = false;
             }
             if (flushedForBlend) {
                 C2D_Flush();
                 C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_SRC_ALPHA,
                                GPU_ONE_MINUS_SRC_ALPHA);
+                if (sWindowActive) C3D_SetScissor(GPU_SCISSOR_DISABLE, 0, 0, 0, 0);
             }
         }
 #ifdef PORT_GPU_RENDERER_DIAG_LOG
