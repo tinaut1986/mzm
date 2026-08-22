@@ -65,7 +65,7 @@ int Port_LoadRom(const char* path) {
     }
     rewind(file);
 
-#if defined(__3DS__) || (defined(TMC_3DS) && !defined(PLATFORM_LINUX))
+#if defined(__3DS__) || (defined(MZM_3DS) && !defined(PLATFORM_LINUX))
 extern void* linearAlloc(size_t size);
 extern void linearFree(void* mem);
 #define PORT_ROM_ALLOC(sz) linearAlloc(sz)
@@ -100,7 +100,7 @@ extern void linearFree(void* mem);
     gRomSize = (u32)size;
     gRomRegion = region;
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
     {
         /* Diagnostic: on the 3DS, malloc()'d addresses (gRomData included)
          * can plausibly fall inside the 0x02000000-0x0A000000 window that
@@ -129,8 +129,7 @@ extern void linearFree(void* mem);
 /*
  * Minimal access logger: counts distinct ROM addresses seen, so a debug
  * build can report coverage without the overhead of tracking every caller.
- * TMC's Port_LogRomAccess also records caller strings for a detailed dump;
- * left out here until there's a concrete use case (this exists mainly to
+ * (Left minimal until there's a concrete use case; exists mainly to
  * satisfy the gba_TryMemPtr() call in port_gba_mem.h).
  */
 static u32 sRomAccessCount = 0;

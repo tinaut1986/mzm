@@ -1,12 +1,10 @@
 /*
- * Part of the The Minish Cap PC port — GPL-3.0-or-later.
+ * Software GBA PPU for native ports — GPL-3.0-or-later.
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * Software GBA PPU, vendored as first-party port source. Derived from
  * VirtuaPPU by Mathéo Vignaud (https://github.com/MatheoVignaud/VirtuaPPU,
- * commit 5cf5e99) and incorporating this project's 15 accuracy/portability
- * patches (formerly port/patches/viruappu-*.patch; preserved in git history).
- * Maintained here directly — not kept in sync with upstream.
+ * commit 5cf5e99) and incorporating accuracy and portability patches.
  */
 
 #include "virtuappu.h"
@@ -30,9 +28,7 @@ void virtuappu_reset(void)
  *   1 = tiled  — GBA mode 0: 4 text BGs + OBJ
  *   2 = affine — GBA modes 1/2: affine BG2 + text BGs + OBJ
  * Both are handled by virtuappu_mode1_render_frame, which branches on the mode
- * (BG2 drawn affine vs tiled). The Minish Cap only ever uses GBA modes 0 and 1.
- * The former VPPU mode 0 (a black-fill stub) and mode 7 (a misnamed Game Boy
- * DMG renderer) were dead on this path and have been removed. */
+ * (BG2 drawn affine vs tiled). */
 void virtuappu_render_frame(void)
 {
     switch (virtuappu_registers.mode) {

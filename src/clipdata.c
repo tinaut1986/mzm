@@ -22,7 +22,7 @@
  */
 void ClipdataSetupCode(void)
 {
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     gClipdataCodePointer = ClipdataConvertToCollision;
 #else
     // Copy code to RAM

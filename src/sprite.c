@@ -23,7 +23,7 @@
 #include "data/sprites/zoomer.h"
 #include "data/sprites/zeela.h"
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 #include "port_debug_log.h"
 #endif
 #include "data/sprites/ripper.h"
@@ -316,7 +316,7 @@ static Func_T sPrimarySpritesAIPointers[PSPRITE_COUNT] = {
     [PSPRITE_RINKA_MOTHER_BRAIN6] = RinkaMotherBrain 
 };
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 static const u32* sSpritesGraphicsPointers[PSPRITE_OFFSET_FOR_GRAPHICS(PSPRITE_COUNT)];
 static const u16* sSpritesPalettePointers[PSPRITE_OFFSET_FOR_GRAPHICS(PSPRITE_COUNT)];
 
@@ -897,7 +897,7 @@ static const u32* sSpritesGraphicsPointers[PSPRITE_OFFSET_FOR_GRAPHICS(PSPRITE_C
     [PSPRITE_OFFSET_FOR_GRAPHICS(PSPRITE_RINKA_MOTHER_BRAIN6)] = sRinkaZebetiteAndCannonGfx
 };
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 static const u16* sSpritesPalettePointers[PSPRITE_OFFSET_FOR_GRAPHICS(PSPRITE_COUNT)];
 void Init_sSpritesPalettePointers(void) {
     sSpritesPalettePointers[PSPRITE_OFFSET_FOR_GRAPHICS(PSPRITE_UNUSED16)] = sUnusedSpritesPal;
@@ -1367,7 +1367,7 @@ static Func_T sSecondarySpritesAIPointers[SSPRITE_COUNT] = {
     [SSPRITE_MOTHER_BRAIN_GLASS_BREAKING] = MotherBrainGlassBreaking 
 };
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 static const u8* sSpritesetPointers[MAX_AMOUNT_OF_SPRITESET];
 void Init_sSpritesetPointers(void) {
     sSpritesetPointers[0] = sSpriteset0;
@@ -1625,7 +1625,7 @@ void SpriteUpdate(void)
 
         SpriteDebrisProcessAll();
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
         {
             static u16 sTick = 0;
             static u8 sLastStop = 0xFF;
@@ -1710,7 +1710,7 @@ void SpriteUpdate(void)
                 else
                     sPrimarySpritesAIPointers[pCurrent->spriteId]();
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
                 {
                     static u8 sLogged = 0;
                     if (!sLogged && pCurrent->spriteId == PSPRITE_DEOREM_FIRST_LOCATION && pCurrent->pose == 9)
@@ -1733,7 +1733,7 @@ void SpriteUpdate(void)
                     SpriteCheckOnScreen(pCurrent);
                 }
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
                 {
                     static u8 sLogged2 = 0;
                     if (!sLogged2 && pCurrent->spriteId == PSPRITE_DEOREM_FIRST_LOCATION && pCurrent->pose == 9)
@@ -2119,7 +2119,7 @@ void SpriteDraw(struct SpriteData* pSprite, s32 slot)
 
     prevSlot = gNextOamSlot;
     src = pSprite->pOam[pSprite->currentAnimationFrame].pFrame;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     src = GBA_RESOLVE(src);
 #endif
     partCount = *src++;
@@ -2510,7 +2510,7 @@ void SpriteCheckOnScreen(struct SpriteData* pSprite)
  */
 void SpriteLoadAllData(void)
 {
-#ifdef TMC_3DS
+#ifdef MZM_3DS
     {
         extern void Port_DebugLog(const char* msg);
         extern u8 gCurrentArea;
@@ -2756,7 +2756,7 @@ void SpriteInitPrimary(u8 spritesetSlot, u16 yPosition, u16 xPosition, u8 roomSl
         pSprite->primarySpriteRamSlot = ramSlot;
         pSprite->freezeTimer = 0;
         pSprite->standingOnSprite = SAMUS_STANDING_ON_SPRITE_OFF;
-#ifdef TMC_3DS
+#ifdef MZM_3DS
         {
             char msg[160];
             __builtin_snprintf(msg, sizeof(msg), "SpriteInitPrimary: slot=%u spriteId=%u gfxSlot=%u y=%u x=%u",
@@ -2785,7 +2785,7 @@ u8 SpriteSpawnSecondary(u8 spriteId, u8 partNumber, u8 gfxSlot, u8 ramSlot, u16 
 {
     u8 newSlot;
     struct SpriteData* pSprite;
-#ifdef TMC_3DS
+#ifdef MZM_3DS
     u8 result = UCHAR_MAX;
 #endif
 
@@ -2822,7 +2822,7 @@ u8 SpriteSpawnSecondary(u8 spriteId, u8 partNumber, u8 gfxSlot, u8 ramSlot, u16 
         pSprite->freezeTimer = 0;
         pSprite->standingOnSprite = SAMUS_STANDING_ON_SPRITE_OFF;
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
         result = newSlot;
         {
             extern void Port_DebugLog(const char* msg);
@@ -2836,7 +2836,7 @@ u8 SpriteSpawnSecondary(u8 spriteId, u8 partNumber, u8 gfxSlot, u8 ramSlot, u16 
         return newSlot;
     }
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
     {
         extern void Port_DebugLog(const char* msg);
         char _msg[128];
@@ -2864,7 +2864,7 @@ u8 SpriteSpawnPrimary(u8 spriteId, u8 partNumber, u8 gfxSlot, u16 yPosition, u16
     u8 newSlot;
     struct SpriteData* pSprite;
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
     {
         extern void Port_DebugLog(const char* msg);
         char _msg[128];

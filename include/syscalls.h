@@ -3,7 +3,7 @@
 
 #include "types.h"
 
-#if defined(PORT_NATIVE) || defined(TMC_3DS)
+#if defined(PORT_NATIVE) || defined(MZM_3DS)
 void Port_Bios_Halt(void);
 #define SYSCALL(num) Port_Bios_Halt()
 #else

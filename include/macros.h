@@ -88,7 +88,7 @@
  * @param sizes Array sizes
  * @param ptr Address
  */
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 /* All current callers pass a raw EWRAM_BASE-relative GBA address; this port
  * doesn't map real GBA memory, so it needs translating to the emulated
  * EWRAM buffer (gEwram, see port_gba_mem.h) before use. See GBA_RESOLVE and

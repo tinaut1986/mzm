@@ -75,7 +75,7 @@
 #define EVENT_TRIGGER_DISCOVERED_IMAGO_PASSAGE_POSE_IDLE 0x8
 #define IMAGO_COCOON_AFTER_FIGHT_POSE_IDLE 0x9
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 static const struct FrameData* sImagoCocoonFrameDataPointers[IMAGO_COCOON_OAM_COUNT];
 void Init_sImagoCocoonFrameDataPointers(void) {
     sImagoCocoonFrameDataPointers[IMAGO_COCOON_OAM_CEILING_VINE_MOTIONLESS] = sImagoCocoonOam_CeilingVineMotionless;

@@ -53,7 +53,7 @@ u8 gba_read8(uint32_t addr) {
     if (addr >= 0x0E000000u && addr < 0x0E010000u)
         return gSramMem[addr - 0x0E000000u];
     if (gRomData && addr >= 0x08000000u && addr < 0x08000000u + gRomSize) {
-#ifndef TMC_3DS
+#ifndef MZM_3DS
         Port_LogRomAccess(addr, "gba_read8");
 #endif
         return gRomData[addr - 0x08000000u];
@@ -140,7 +140,7 @@ u16 gba_read16(uint32_t addr) {
         return gSramMem[off] | (gSramMem[off + 1] << 8);
     }
     if (gRomData && addr >= 0x08000000u) {
-#ifndef TMC_3DS
+#ifndef MZM_3DS
         Port_LogRomAccess(addr, "gba_read16");
 #endif
         u32 off = addr - 0x08000000u;
@@ -246,7 +246,7 @@ u32 gba_read32(uint32_t addr) {
         return gSramMem[off] | (gSramMem[off + 1] << 8) | (gSramMem[off + 2] << 16) | (gSramMem[off + 3] << 24);
     }
     if (gRomData && addr >= 0x08000000u) {
-#ifndef TMC_3DS
+#ifndef MZM_3DS
         Port_LogRomAccess(addr, "gba_read32");
 #endif
         u32 off = addr - 0x08000000u;
@@ -283,7 +283,7 @@ static bool IsWithinRomDataBuffer(uintptr_t val) {
     return gRomData != NULL && val >= (uintptr_t)gRomData && val < (uintptr_t)gRomData + gRomSize;
 }
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 /* True if the numeric value falls in a numeric range this port treats as a
  * raw GBA address (i.e. it could be a real GBA address to translate, or a
  * host pointer that merely collides numerically with one). */

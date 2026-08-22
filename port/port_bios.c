@@ -222,7 +222,7 @@ extern void gfxExit(void);
 extern void Platform_Linux_VBlank(void);
 #endif
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 extern void Port_DebugLog(const char* msg);
 extern void Port_PPU_RenderFrame(void);
 extern void Platform3DS_PollKeysIntoGba(void);
@@ -274,7 +274,7 @@ static void Port_Bios_PaceFrame(void) {
 void Port_Bios_Halt(void) {
 #if defined(PLATFORM_LINUX)
     Platform_Linux_VBlank();
-#elif defined(TMC_3DS)
+#elif defined(MZM_3DS)
 #ifdef PORT_VERBOSE_FRAME_LOG
     Port_DebugLog("Port_Bios_Halt: before aptMainLoop");
 #endif
@@ -295,14 +295,14 @@ void Port_Bios_Halt(void) {
      * testing now and can be swapped back once gfxSwapBuffers()-driven
      * presentation exists to investigate the gspWaitForEvent hang for real. */
 #endif
-#if defined(TMC_3DS) && !defined(PLATFORM_LINUX)
+#if defined(MZM_3DS) && !defined(PLATFORM_LINUX)
     Port_AudioStateLock_Release();
 #endif
     CallbackCallVblank();
 
 extern bool Port_PPU_3DS_LastFrameUsedGpu(void);
 
-#if defined(TMC_3DS) && !defined(PLATFORM_LINUX)
+#if defined(MZM_3DS) && !defined(PLATFORM_LINUX)
 #ifdef PORT_VERBOSE_FRAME_LOG
     Port_DebugLog("Port_Bios_Halt: after CallbackCallVblank");
 #endif

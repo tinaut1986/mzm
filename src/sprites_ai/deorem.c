@@ -21,7 +21,7 @@
 #include "structs/scroll.h"
 #include "structs/sprite.h"
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 #include "port_debug_log.h"
 #endif
 
@@ -659,24 +659,24 @@ static void DeoremSpawnGoingDown(void)
         DeoremSpriteDebrisSpawn(yPosition + BLOCK_SIZE, xPosition, timer);
         if (timer == 0)
         {
-#ifdef TMC_3DS
+#ifdef MZM_3DS
             Port_DebugLog("DeoremSpawnGoingDown: first frame, before ParticleSet");
 #endif
             // First frame of going down
             ParticleSet(yPosition + BLOCK_SIZE, xPosition, PE_TWO_MEDIUM_DUST);
-#ifdef TMC_3DS
+#ifdef MZM_3DS
             Port_DebugLog("DeoremSpawnGoingDown: before SoundPlay(SPAWN_GOING_DOWN)");
 #endif
             SoundPlay(SOUND_DEOREM_SPAWN_GOING_DOWN);
-#ifdef TMC_3DS
+#ifdef MZM_3DS
             Port_DebugLog("DeoremSpawnGoingDown: before SoundPlay(SCREAMING)");
 #endif
             SoundPlay(SOUND_DEOREM_SCREAMING);
-#ifdef TMC_3DS
+#ifdef MZM_3DS
             Port_DebugLog("DeoremSpawnGoingDown: before PlayMusic(WORMS_BATTLE)");
 #endif
             PlayMusic(MUSIC_WORMS_BATTLE, 0);
-#ifdef TMC_3DS
+#ifdef MZM_3DS
             Port_DebugLog("DeoremSpawnGoingDown: after PlayMusic(WORMS_BATTLE)");
 #endif
         }
@@ -830,7 +830,7 @@ static void DeoremSpawnDelayBeforeHead(void)
 
         if (eyeSlot == UCHAR_MAX)
         {
-#ifdef TMC_3DS
+#ifdef MZM_3DS
             {
                 u8 usedSlots = 0, i;
                 for (i = 0; i < MAX_AMOUNT_OF_SPRITES; i++)
@@ -2812,7 +2812,7 @@ static void DeoremThornMovement(void)
  */
 void Deorem(void)
 {
-#ifdef TMC_3DS
+#ifdef MZM_3DS
     {
         static u16 sLastPose = 0xFFFF;
         static u16 sLastSlot = 0xFFFF;
@@ -2927,7 +2927,7 @@ void Deorem(void)
         case DEOREM_POSE_CALL_SPAWN_CHARGE_BEAM:
             DeoremCallSpawnChargeBeam();
     }
-#ifdef TMC_3DS
+#ifdef MZM_3DS
     {
         static u8 sLoggedOnce = 0;
         if (!sLoggedOnce && gCurrentSprite.pose == DEOREM_POSE_SPAWN_GOING_DOWN)

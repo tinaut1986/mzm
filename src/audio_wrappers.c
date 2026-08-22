@@ -34,7 +34,7 @@ void InitializeAudio(void)
     WRITE_8(REG_SOUND3CNT_L, 0x0);
     WRITE_8(REG_SOUNDCNT_L, 0x77); // Sound 1-4 master volume left/right 100%
 
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     gSoundCodeAPointer = (SoundCodeAFunc_T)CallSoundCodeA;
     gSoundCodeBPointer = (SoundCodeBFunc_T)CallSoundCodeB;
     gSoundCodeCPointer = (SoundCodeCFunc_T)CallSoundCodeC;
@@ -51,7 +51,7 @@ void InitializeAudio(void)
 
     DMA3_FILL_16(0, &gMusicInfo, 28);
 
-#if defined(PORT_NATIVE) || defined(TMC_3DS)
+#if defined(PORT_NATIVE) || defined(MZM_3DS)
     // On native platforms with fast CPUs and asynchronous timing, disable
     // the GBA scanline budget cutoff so all active sound channels are always mixed.
     gMusicInfo.unk_9 = 0;
@@ -208,7 +208,7 @@ void SetupSoundTransfer(void)
     WRITE_16(REG_TM0CNT_H, 0);
     WRITE_16(REG_TM0CNT_L, -((u32)FRAME_DRAW_CYCLES / samplesPerFrame)); // cycle time to play each sample
 
-#if !defined(TMC_3DS) && !defined(PORT_NATIVE)
+#if !defined(MZM_3DS) && !defined(PORT_NATIVE)
     // Wait for VBLANK
     while (READ_8(REG_VCOUNT) == (SCREEN_SIZE_Y - 1)) {}
     while (READ_8(REG_VCOUNT) != (SCREEN_SIZE_Y - 1)) {}

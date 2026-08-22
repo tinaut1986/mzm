@@ -3,7 +3,7 @@
 #include "menus/pause_screen.h"
 #include "dma.h"
 
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "port_gba_mem.h"
 #endif
 
@@ -33,7 +33,7 @@
 extern const u8* sStatusScreenFlagsOrderPointers[4];
 
 #ifdef DEBUG
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 static const u8* sPauseDebugEventNamePointers[EVENT_COUNT];
 void Init_sPauseDebugEventNamePointers(void) {
     sPauseDebugEventNamePointers[EVENT_NONE] = sPauseDebug_Event00_Text;
@@ -1914,7 +1914,7 @@ u32 StatusScreenDrawItems(u8 row)
         for (j = 0; j < (tmp = sStatusScreenGroupsDimensions)[i][2]; j++, position++)
         {
             dst = VRAM_BASE + 0xC000;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
             dst = GBA_RESOLVE(dst);
 #endif
             dst[position] = PAUSE_SCREEN_EWRAM.statusScreenTilemap[position];

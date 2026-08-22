@@ -16,9 +16,7 @@ extern bool Platform3DS_CanUseCore1(void);
  * gMusicInfo.soundRawData u8 mono PCM into interleaved s16 stereo at
  * MZM_AUDIO_OUT_RATE and appends it to a lock-free ring. This file runs a
  * dedicated audio thread that drains that ring into NDSP wave buffers on
- * channel 0, mirroring the buffer-management pattern of the (TMC-coupled)
- * port_audio_3ds.c but sourcing samples from the mzm ring instead of the
- * agbplay/M4A backend.
+ * channel 0.
  */
 
 #define BUFFER_FRAMES 224

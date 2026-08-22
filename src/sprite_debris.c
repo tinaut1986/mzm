@@ -306,7 +306,7 @@ void SpriteDebrisDraw(struct SpriteDebris* pDebris)
 
     prevSlot = gNextOamSlot;
     src = pDebris->pOam[pDebris->currentAnimationFrame].pFrame;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     src = GBA_RESOLVE(src);
 #endif
     partCount = *src++;
@@ -407,7 +407,7 @@ void SpriteDebrisInit(u8 cloudType, u8 debrisType, u16 yPosition, u16 xPosition)
         if (prev_counter == UCHAR_MAX)
             return;
 
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
         /* The loop above always exits with pDebris one element PAST the end
          * of gSpriteDebris (gSpriteDebris + MAX_AMOUNT_OF_SPRITE_DEBRIS), not
          * pointing at prev_counter's slot as the comment above assumes -- a

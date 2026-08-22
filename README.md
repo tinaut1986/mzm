@@ -1,63 +1,80 @@
-# Metroid - Zero Mission Decomp
+# Metroid: Zero Mission — Nintendo 3DS Port
 
-This is a work in progress decompilation of Metroid - Zero Mission.
+A native, hardware-accelerated Nintendo 3DS port of **Metroid: Zero Mission**, built from the C decompilation codebase.
 
-2718/2721 functions decompiled (99.89%, [3 left](docs/non_matching_functions.md))
+---
 
-0x76b014/0x76b014 bytes of data not in blobs (100%, 0 left)
+## Features
 
-This repository can be used to build multiple ROMs. The ROMs are named like this: `mzm_{region}.gba` (or `mzm_{region}_debug.gba`)
+- **Dual-Screen Layout**:
+  - **Top Screen**: Smooth 60 FPS gameplay with selectable display modes (Pixel Perfect, Scaled, Fullscreen).
+  - **Bottom Screen**: Real-time area map, collectible item breakdown (Energy Tanks, Missiles, Super Missiles, Power Bombs), and a quick touch-activated Morph Ball toggle.
+- **Hardware Acceleration**: Custom PICA200 GPU renderer (`citro3d`/`citro2d`) for background tiles and sprites with automatic scanline CPU fallback when special GBA PPU effects are active (affine BG, windows, mosaic).
+- **Native Audio**: Powered by the decompiled MZM sound engine and output via the 3DS DSP (NDSP) hardware.
+- **Console Optimization**: Supports New 3DS 804 MHz CPU boost and L2 cache, along with frame pacing optimizations for Old 3DS and 2DS consoles.
 
-Region indicates which region the ROM targets:
-- us: USA, North America `sha1: 5de8536afe1f0078ee6fe1089f890e8c7aa0a6e8`
-- eu: Europe `sha1: 0fd107445a42e6f3a3e5ce8c865f412583179903`
-- jp: Japan `sha1: 096f07685a3dc9286e71aa0b761f233b5efa2fcd`
-- cn: China **(Not yet supported)**
-- us_beta: USA beta version `sha1: 58986c4d6f2e5ccdc04936cc8b7c9d378570710c`
-- eu_beta: Europe beta version `sha1: 3c0b7ccd303c30ac5c4ffc9fb0aa7137a533ad69`
+---
 
-Debug simply indicates whether the ROM contains the debug features, it is optional.
+## Installation
 
-The default built ROM is mzm_us.gba
+1. **Install the App**:
+   - Install `mzm-3ds.cia` using FBI or your preferred CIA installer.
+   - Alternatively, place `mzm-3ds.3dsx` in `sdmc:/3ds/` and launch it via the Homebrew Launcher.
 
-**Discords**: 
-- https://discord.gg/2MGB9Xbr9y Metroidret
-- https://discord.gg/WtekHKb MAGConst
+2. **ROM Placement**:
+   - Create the directory:
+     ```text
+     sdmc:/3ds/Metroid Zero Mission 3DS/
+     ```
+   - Copy a clean, legally obtained Game Boy Advance ROM of Metroid: Zero Mission into this directory. Any `.gba` filename is supported.
+   - **Supported Regions**:
+     - **USA** (`BMXE`): `sha1: 5de8536afe1f0078ee6fe1089f890e8c7aa0a6e8`
+     - **Europe** (`BMXP`): `sha1: 0fd107445a42e6f3a3e5ce8c865f412583179903`
 
-## Dependencies
+   *Note: The ROM is loaded dynamically from your SD card and is never packaged inside the executable.*
 
-- [agbcc](https://github.com/jiangzhengwenjz/agbcc)
-- `binutils-arm-none-eabi`
-- A baserom for each ROM desired to be built (i.e.`mzm_us_baserom.gba` if you wish to build `mzm_us.gba`).
-- `python3`
-- `g++`
+3. **Audio Setup**:
+   - Make sure you have dumped your console's DSP firmware (on Luma3DS: press `L + Down + Select` to open Rosalina Menu -> *Miscellaneous options* -> *Dump DSP firmware*).
 
-## Setup
+---
 
-- **WINDOWS ONLY**: Install and setup [WSL](https://docs.microsoft.com/en-us/windows/wsl/install)
-- Run `sudo apt update` just in case
-- Install `binutils-arm-none-eabi` by running this command: `sudo apt install binutils-arm-none-eabi` or `sudo dnf install arm-none-eabi-binutils-cs`
-- Install `git` by running this command: `sudo apt install git` or `sudo dnf install git`
-- Install `make` by running this command: `sudo apt install make` or `sudo dnf install make`
-- Clone [agbcc](https://github.com/jiangzhengwenjz/agbcc) by running this command: `git clone https://github.com/jiangzhengwenjz/agbcc.git`
-- Enter the agbcc folder (run `cd agbcc`) and build it (run `./build.sh`)
-- Either:
-  - Install agbcc into this project (by using its `./install.sh <path>` script, where `<path>` is the path to the root of this repository), or
-  - Add agbcc to your path (`export PATH="<agbcc_path>:$PATH"`, where `<agbcc_path>` is the full path to the agbcc directory)
+## Building
 
-## Build
+### Requirements
 
-- Run `make clean` if necessary
-  - Use `make clean DATA=1` to remove data as well
-- Run the data extractor if necessary: `python3 tools/extractor.py`
-  - Use the `-r` flag to specify a region other than `us` (ex: `-r jp`)
-  - Use the `-d` flag to extract only debug data from the US beta ROM (required for building a ROM with debug features)
-- Run `make` (using the `-j` option is recommended to speed up the process)
-- To build another version of the ROM you can do either of the following:
-  - Specify it directly (ex: `make us_debug` for the US ROM with debug features)
-  - Specify the flags, REGION (takes the region name, defaults to `us`) and DEBUG (takes 0 or 1, defaults to 0)
-- Optionally, you can combine the commands to make it easier: `python3 tools/extractor.py && make -j`
+- [devkitPro](https://devkitpro.org/) with `devkitARM`, `libctru`, `citro2d`, and `citro3d`.
+- `makerom` and `bannertool` (for `.cia` packaging).
 
-## Contributing
+### Build Commands
 
-See [CONTRIBUTING.md](CONTRIBUTING.md)
+To build the 3DS target:
+
+```sh
+cd platform/3ds
+make clean && make -j$(nproc)
+```
+
+Outputs will be generated in `platform/3ds/`:
+- `mzm-3ds.cia`
+- `mzm-3ds.3dsx`
+- `mzm-3ds.elf`
+
+For advanced build options, renderer selection, and debugging flags, see [platform/3ds/README.md](platform/3ds/README.md).
+
+---
+
+## Credits & Acknowledgments
+
+This port is made possible thanks to the work of multiple open-source projects:
+
+- **[metroidret/mzm](https://github.com/metroidret/mzm)** — The decompilation project of *Metroid: Zero Mission*, providing the reverse-engineered C source code.
+- **[EstebanPdN / zelda-tmc-3ds](https://github.com/EstebanPdN/zelda-tmc-3ds)** — The Nintendo 3DS port of *The Minish Cap*, whose platform architecture, 3DS frontend implementation, and Citro2D/Citro3D presentation pipeline served as the initial foundation for this port.
+- **[devkitPro](https://devkitpro.org/)** — For providing the homebrew toolchain, `libctru`, `citro2d`, and `citro3d`.
+- **VirtuaPPU** by Mathéo Vignaud — Upstream base for the software GBA Picture Processing Unit.
+
+---
+
+## License
+
+This project is licensed under the terms of the GNU General Public License v3.0 (GPL-3.0-or-later). See [LICENSE](LICENSE) for details.
+

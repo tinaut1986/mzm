@@ -128,7 +128,7 @@ MAKE_ENUM(u8, RidleyFireballType) {
 
 #define RIDLEY_FIREBALL_ASCENDING_Y_TARGET_OFFSET (THREE_QUARTER_BLOCK_SIZE + PIXEL_SIZE / 2)
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 static const struct FrameData* sRidleyFrameDataPointers[RIDLEY_OAM_COUNT];
 void Init_sRidleyFrameDataPointers(void) {
     sRidleyFrameDataPointers[RIDLEY_OAM_IDLE] = sRidleyOam_Idle;
@@ -2187,7 +2187,7 @@ static void RidleyPartWingSetPaletteOffset(void)
     u16 flag;
 
     const u16* pFrame = gCurrentSprite.pOam[gCurrentSprite.currentAnimationFrame].pFrame;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     pFrame = GBA_RESOLVE(pFrame);
 #endif
     part = pFrame[3];

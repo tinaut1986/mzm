@@ -21,7 +21,7 @@
  */
 void agbmain(void)
 {
-#if defined(TMC_3DS) && defined(PORT_VERBOSE_FRAME_LOG)
+#if defined(MZM_3DS) && defined(PORT_VERBOSE_FRAME_LOG)
     /* Temporary boot-hang diagnostic checkpoints, see port/port_debug_log.h.
      * Gated behind PORT_VERBOSE_FRAME_LOG (off by default) since this does a
      * flushed file write per call -- ~10x/frame between this file and
@@ -32,13 +32,13 @@ void agbmain(void)
     Port_DebugLog("agbmain: before InitializeGame()");
 #endif
     InitializeGame();
-#if defined(TMC_3DS) && defined(PORT_VERBOSE_FRAME_LOG)
+#if defined(MZM_3DS) && defined(PORT_VERBOSE_FRAME_LOG)
     Port_DebugLog("agbmain: InitializeGame() done, entering main loop");
 #endif
 
     while (TRUE)
     {
-#if defined(TMC_3DS) && defined(PORT_VERBOSE_FRAME_LOG)
+#if defined(MZM_3DS) && defined(PORT_VERBOSE_FRAME_LOG)
         {
             static int sLoopCount = 0;
             if (sLoopCount < 5) {
@@ -52,10 +52,10 @@ void agbmain(void)
         if (gMainGameMode == GM_INGAME || gMainGameMode == GM_DEMO)
             InGameIoWriteRegisters();
 #endif // REGION_EU
-#if defined(TMC_3DS) && defined(PORT_VERBOSE_FRAME_LOG)
+#if defined(MZM_3DS) && defined(PORT_VERBOSE_FRAME_LOG)
         Port_DebugLog("agbmain: before UpdateAudio()");
 #endif
-#if defined(TMC_3DS) && defined(__3DS__)
+#if defined(MZM_3DS) && defined(__3DS__)
         /* Audio production (the unk_10/unk_C/unk_E DMA2-IRQ-cadence
          * approximation, the SoundCodeC hook install, and UpdateAudio()
          * itself) no longer runs here. On real GBA hardware this is all
@@ -74,11 +74,11 @@ void agbmain(void)
             break;
 
         UpdateInput();
-#if defined(TMC_3DS) && defined(PORT_VERBOSE_FRAME_LOG)
+#if defined(MZM_3DS) && defined(PORT_VERBOSE_FRAME_LOG)
         Port_DebugLog("agbmain: UpdateInput() done");
 #endif
         SoftResetCheck();
-#if defined(TMC_3DS) && defined(PORT_VERBOSE_FRAME_LOG)
+#if defined(MZM_3DS) && defined(PORT_VERBOSE_FRAME_LOG)
         Port_DebugLog("agbmain: SoftResetCheck() done");
 #endif
 
@@ -139,7 +139,7 @@ void agbmain(void)
         APPLY_DELTA_TIME_INC(gFrameCounter8Bit);
         APPLY_DELTA_TIME_INC(gFrameCounter16Bit);
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
         {
             static u8 sLastGM = 0xFF;
             static u8 sLastSub1 = 0xFF;
@@ -495,7 +495,7 @@ void agbmain(void)
         }
         
 
-#if defined(TMC_3DS) && defined(PORT_VERBOSE_FRAME_LOG)
+#if defined(MZM_3DS) && defined(PORT_VERBOSE_FRAME_LOG)
         Port_DebugLog("agbmain: switch done, before Halt wait");
 #endif
         gVBlankRequestFlag &= ~TRUE;
@@ -504,7 +504,7 @@ void agbmain(void)
         do {
             SYSCALL(2); /* SYS_Halt */
         } while (!(gVBlankRequestFlag & 1));
-#if defined(TMC_3DS) && defined(PORT_VERBOSE_FRAME_LOG)
+#if defined(MZM_3DS) && defined(PORT_VERBOSE_FRAME_LOG)
         Port_DebugLog("agbmain: Halt wait done, looping");
 #endif
     }

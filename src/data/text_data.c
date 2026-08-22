@@ -49,7 +49,7 @@ const u16 sJapaneseText_Message_ActivateEasySleep[] = INCTEXT("{GAP(53)}スリ�
 const u16 sJapaneseText_Message_PressSelectLAndR[] = INCTEXT("{GAP(50)}{Select_button} と {L_button} と {R_button} を\n{GAP(67)}同時に押してください");
 const u16 sJapaneseText_Message_EasySleepPrompt[] = INCTEXT("{GAP(101)}Yes\n{GAP(104)}No");
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 static const u16* sJapaneseTextPointers_Message[MESSAGE_COUNT];
 void Init_sJapaneseTextPointers_Message(void) {
     sJapaneseTextPointers_Message[MESSAGE_DUMMY] = sJapaneseText_Message_Dummy;
@@ -163,7 +163,7 @@ const u16 sJapaneseText_Location_Unused16[] = INCTEXT("{GAP(93)}空き１６");
 const u16 sJapaneseText_Location_Unused17[] = INCTEXT("{GAP(93)}空き１７");
 const u16 sJapaneseText_Location_Unused18[] = INCTEXT("{GAP(93)}空き１８");
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 static const u16* sJapaneseTextPointers_Location[LT_COUNT];
 void Init_sJapaneseTextPointers_Location(void) {
     sJapaneseTextPointers_Location[LT_BRINSTAR] = sJapaneseText_Location_Brinstar;
@@ -264,7 +264,7 @@ const u16 sHiraganaText_Message_ActivateEasySleep[] = INCTEXT("{GAP(50)}スリ�
 const u16 sHiraganaText_Message_PressSelectLAndR[] = INCTEXT("{GAP(50)}{Select_button} と {L_button} と {R_button} を\n{GAP(66)}どうじにおしてください");
 const u16 sHiraganaText_Message_EasySleepPrompt[] = INCTEXT("{GAP(102)}はい\n{GAP(98)}いいえ");
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 static const u16* sHiraganaTextPointers_Message[MESSAGE_COUNT];
 void Init_sHiraganaTextPointers_Message(void) {
     sHiraganaTextPointers_Message[MESSAGE_DUMMY] = sHiraganaText_Message_Dummy;
@@ -378,7 +378,7 @@ const u16 sHiraganaText_Location_Unused16[] = INCTEXT("{GAP(93)}空き１６");
 const u16 sHiraganaText_Location_Unused17[] = INCTEXT("{GAP(93)}空き１７");
 const u16 sHiraganaText_Location_Unused18[] = INCTEXT("{GAP(93)}空き１８");
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 static const u16* sHiraganaTextPointers_Location[LT_COUNT];
 void Init_sHiraganaTextPointers_Location(void) {
     sHiraganaTextPointers_Location[LT_BRINSTAR] = sHiraganaText_Location_Brinstar;
@@ -522,7 +522,7 @@ const u16 sEnglishText_Message_PressSelectLAndR[] = INCTEXT("{GAP(37)}press {Sel
 const u16 sEnglishText_Message_EasySleepPrompt[] = INCTEXT("{GAP(101)}Yes\n{GAP(104)}No");
 #endif // REGION_EU
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 static const u16* sEnglishTextPointers_Message[MESSAGE_COUNT];
 void Init_sEnglishTextPointers_Message(void) {
     sEnglishTextPointers_Message[MESSAGE_DUMMY] = sEnglishText_Message_Dummy;
@@ -667,7 +667,7 @@ const u16 sEnglishText_Location_Unused17[] = INCTEXT("{GAP(66)}UNUSED OBJ 17");
 const u16 sEnglishText_Location_Unused18[] = INCTEXT("{GAP(66)}UNUSED OBJ 18");
 #endif // REGION_EU
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 static const u16* sEnglishTextPointers_Location[LT_COUNT];
 void Init_sEnglishTextPointers_Location(void) {
     sEnglishTextPointers_Location[LT_BRINSTAR] = sEnglishText_Location_Brinstar;
@@ -1357,7 +1357,7 @@ const u16 sJapaneseText_Description_SpaceJump[] = INCTEXT("回転ジャンプ中
 const u16 sJapaneseText_Description_UnknownItem[] = INCTEXT("{COLOR(6)}解析不能{COLOR(0)}\n現在のスーツに不適合");
 const u16 sJapaneseText_Description_Pistol[] = INCTEXT("自動で{COLOR(5)}パワーが充填される{COLOR(5)}短銃\n{COLOR(5)}パワー充填発射{COLOR(0)}で敵を{COLOR(6)}マヒ{COLOR(0)}させる");
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 const u16* sJapaneseTextPointers_Description[DESCRIPTION_TEXT_COUNT];
 void Init_sJapaneseTextPointers_Description(void) {
     sJapaneseTextPointers_Description[DESCRIPTION_TEXT_LONG_BEAM] = sJapaneseText_Description_LongBeam;
@@ -1411,7 +1411,7 @@ const u16 sJapaneseText_Story_Emergency[] = INCTEXT("{GAP(92)}緊急指令");
 const u16 sJapaneseText_Story_Exterminate[] = INCTEXT("{GAP(50)}惑星ゼーベスの「メトロイド」を\n{GAP(66)}殲滅せよ。そして・・・");
 const u16 sJapaneseText_Story_Defeat[] = INCTEXT("{GAP(25)}機械生命体「マザーブレイン」を破壊せよ。");
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 const u16* sJapaneseTextPointers_Story[STORY_TEXT_COUNT];
 void Init_sJapaneseTextPointers_Story(void) {
     sJapaneseTextPointers_Story[STORY_TEXT_PLANET_ZEBES] = sJapaneseText_Story_PlanetZebes;
@@ -1470,7 +1470,7 @@ const u16 sJapaneseText_FileScreen_TimeAttackRecordUnlock[] = INCTEXT("{COLOR(6)
 const u16 sJapaneseText_FileScreen_SoundTestUnlock[] = INCTEXT("{COLOR(6)}OPTIONS　[オプション]　{COLOR(0)}に\n{COLOR(5)}「サウンドテスト」{COLOR(0)}が\nついかされました。");
 const u16 sJapaneseText_FileScreen_NesMetroidUnlock[] = INCTEXT("{COLOR(6)}OPTIONS　[オプション]　{COLOR(0)}に\n{COLOR(5)}「オリジナルメトロイド」{COLOR(0)}が\nついかされました。");
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 const u16* sJapaneseTextPointers_FileScreen[FILE_SCREEN_TEXT_COUNT];
 void Init_sJapaneseTextPointers_FileScreen(void) {
     sJapaneseTextPointers_FileScreen[FILE_SCREEN_TEXT_START_GAME] = sJapaneseText_FileScreen_StartGame;
@@ -1575,7 +1575,7 @@ const u16 sHiraganaText_Description_SpaceJump[] = INCTEXT("かいてんジャン
 const u16 sHiraganaText_Description_UnknownItem[] = INCTEXT("{COLOR(6)}これがなにか、わかりません{COLOR(0)}\nいまのスーツでは、うごきません");
 const u16 sHiraganaText_Description_Pistol[] = INCTEXT("じどうで{COLOR(5)}パワーがたまる{COLOR(5)}ピストル\n{COLOR(5)}パワーをためてから、うつ{COLOR(0)}と　{COLOR(0)}てきが{COLOR(6)}しびれて、すこしとまる{COLOR(0)}");
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 const u16* sHiraganaTextPointers_Description[DESCRIPTION_TEXT_COUNT];
 void Init_sHiraganaTextPointers_Description(void) {
     sHiraganaTextPointers_Description[DESCRIPTION_TEXT_LONG_BEAM] = sHiraganaText_Description_LongBeam;
@@ -1629,7 +1629,7 @@ const u16 sHiraganaText_Story_Emergency[] = INCTEXT("{GAP(80)}きんきゅうし
 const u16 sHiraganaText_Story_Exterminate[] = INCTEXT("{GAP(44)}わくせいゼーベスの「メトロイド」を\n{GAP(52)}ぜんぶやっつけろ。そして・・・");
 const u16 sHiraganaText_Story_Defeat[] = INCTEXT("きかいじかけのいきもの「マザーブレイン」を、はかいせよ。");
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 const u16* sHiraganaTextPointers_Story[STORY_TEXT_COUNT];
 void Init_sHiraganaTextPointers_Story(void) {
     sHiraganaTextPointers_Story[STORY_TEXT_PLANET_ZEBES] = sHiraganaText_Story_PlanetZebes;
@@ -1688,7 +1688,7 @@ const u16 sHiraganaText_FileScreen_TimeAttackRecordUnlock[] = INCTEXT("{COLOR(6)
 const u16 sHiraganaText_FileScreen_SoundTestUnlock[] = INCTEXT("{COLOR(6)}OPTIONS　[オプション]　{COLOR(0)}に\n{COLOR(5)}「サウンドテスト」{COLOR(0)}が\nついかされました。");
 const u16 sHiraganaText_FileScreen_NesMetroidUnlock[] = INCTEXT("{COLOR(6)}OPTIONS　[オプション]　{COLOR(0)}に\n{COLOR(5)}「オリジナルメトロイド」{COLOR(0)}が\nついかされました。");
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 const u16* sHiraganaTextPointers_FileScreen[FILE_SCREEN_TEXT_COUNT];
 void Init_sHiraganaTextPointers_FileScreen(void) {
     sHiraganaTextPointers_FileScreen[FILE_SCREEN_TEXT_START_GAME] = sHiraganaText_FileScreen_StartGame;
@@ -1791,7 +1791,7 @@ const u16 sEnglishText_Description_SpaceJump[] = INCTEXT("Somersault continually
 const u16 sEnglishText_Description_UnknownItem[] = INCTEXT("{COLOR(6)}Analysis inconclusive.{COLOR(0)}\nItem incompatible with current suit.");
 const u16 sEnglishText_Description_Pistol[] = INCTEXT("An {COLOR(5)}auto-charging{COLOR(5)} pistol.\n{COLOR(6)}Stun{COLOR(0)} enemies with {COLOR(5)}charged shots{COLOR(0)}.");
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 const u16* sEnglishTextPointers_Description[DESCRIPTION_TEXT_COUNT];
 void Init_sEnglishTextPointers_Description(void) {
     sEnglishTextPointers_Description[DESCRIPTION_TEXT_LONG_BEAM] = sEnglishText_Description_LongBeam;
@@ -1857,7 +1857,7 @@ const u16 sEnglishText_Story_Exterminate[] = INCTEXT("Exterminate all Metroid or
 const u16 sEnglishText_Story_Defeat[] = INCTEXT("And defeat the mechanical life-form,\nMother Brain.");
 #endif // REGION_EU
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 const u16* sEnglishTextPointers_Story[STORY_TEXT_COUNT];
 void Init_sEnglishTextPointers_Story(void) {
     sEnglishTextPointers_Story[STORY_TEXT_PLANET_ZEBES] = sEnglishText_Story_PlanetZebes;
@@ -1936,7 +1936,7 @@ const u16 sEnglishText_FileScreen_TimeAttackRecordUnlock[] = INCTEXT("{COLOR(5)}
 const u16 sEnglishText_FileScreen_SoundTestUnlock[] = INCTEXT("{COLOR(5)}Sound Test{COLOR(0)} has\nbeen added to the\n{COLOR(6)}OPTIONS{COLOR(0)} screen.");
 const u16 sEnglishText_FileScreen_NesMetroidUnlock[] = INCTEXT("{COLOR(5)}Original Metroid{COLOR(0)} has\nbeen added to the\n{COLOR(6)}OPTIONS{COLOR(0)} screen.");
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 const u16* sEnglishTextPointers_FileScreen[FILE_SCREEN_TEXT_COUNT];
 void Init_sEnglishTextPointers_FileScreen(void) {
     sEnglishTextPointers_FileScreen[FILE_SCREEN_TEXT_START_GAME] = sEnglishText_FileScreen_StartGame;
@@ -2604,7 +2604,7 @@ const u16 sGermanText_Description_ScrewAttack[] = INCTEXT("回転ジャンプで
 const u16 sGermanText_Description_SpaceJump[] = INCTEXT("回転ジャンプ中に再びジャンプできる\n〈回転ジャンプ中にもう一度{A_button}〉");
 const u16 sGermanText_Description_UnknownItem[] = INCTEXT("Analysis is impossible.");
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 const u16* sGermanTextPointers_Description[DESCRIPTION_TEXT_COUNT - 1];
 void Init_sGermanTextPointers_Description(void) {
     sGermanTextPointers_Description[DESCRIPTION_TEXT_LONG_BEAM] = sGermanText_Description_LongBeam;
@@ -2658,7 +2658,7 @@ const u16 sGermanText_Story_Emergency[] = INCTEXT("{DEL}");
 const u16 sGermanText_Story_Exterminate[] = INCTEXT("{DELAY(16)}コンピュータの口調は、私にある人物を連想させた。\n\n「アダム・マルコビッチ」。連邦軍の優秀な司令官\n\nであった彼の下で、私は任務についた経験がある。\n\n冷徹なまでに任務に忠実な彼の判断は、常にすばやく、\n\nそして正しかった。ややデリカシーに乏しく、時折私を\n\n「レディー」と呼び、神経を逆なですることもあったが・・\n\n私は、大いなる敬意と、ささやかな皮肉を込め、\n\nあのコンピュータを「アダム」と呼ぶことにした。{AWAIT_INPUT}");
 const u16 sGermanText_Story_Defeat[] = INCTEXT("{DEL}");
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 const u16* sGermanTextPointers_Story[3];
 void Init_sGermanTextPointers_Story(void) {
     sGermanTextPointers_Story[0] = sGermanText_Story_PlanetZebes;
@@ -2694,7 +2694,7 @@ const u16 sFrenchText_Description_ScrewAttack[] = INCTEXT("回転ジャンプで
 const u16 sFrenchText_Description_SpaceJump[] = INCTEXT("回転ジャンプ中に再びジャンプできる\n〈回転ジャンプ中にもう一度{A_button}〉");
 const u16 sFrenchText_Description_UnknownItem[] = INCTEXT("Analysis is impossible.");
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 const u16* sFrenchTextPointers_Description[DESCRIPTION_TEXT_COUNT - 1];
 void Init_sFrenchTextPointers_Description(void) {
     sFrenchTextPointers_Description[DESCRIPTION_TEXT_LONG_BEAM] = sFrenchText_Description_LongBeam;
@@ -2748,7 +2748,7 @@ const u16 sFrenchText_Story_Emergency[] = INCTEXT("{DEL}");
 const u16 sFrenchText_Story_Exterminate[] = INCTEXT("{DELAY(16)}コンピュータの口調は、私にある人物を連想させた。\n\n「アダム・マルコビッチ」。連邦軍の優秀な司令官\n\nであった彼の下で、私は任務についた経験がある。\n\n冷徹なまでに任務に忠実な彼の判断は、常にすばやく、\n\nそして正しかった。ややデリカシーに乏しく、時折私を\n\n「レディー」と呼び、神経を逆なですることもあったが・・\n\n私は、大いなる敬意と、ささやかな皮肉を込め、\n\nあのコンピュータを「アダム」と呼ぶことにした。{AWAIT_INPUT}");
 const u16 sFrenchText_Story_Defeat[] = INCTEXT("{DEL}");
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 const u16* sFrenchTextPointers_Story[3];
 void Init_sFrenchTextPointers_Story(void) {
     sFrenchTextPointers_Story[0] = sFrenchText_Story_PlanetZebes;
@@ -2784,7 +2784,7 @@ const u16 sItalianText_Description_ScrewAttack[] = INCTEXT("回転ジャンプ�
 const u16 sItalianText_Description_SpaceJump[] = INCTEXT("回転ジャンプ中に再びジャンプできる\n〈回転ジャンプ中にもう一度{A_button}〉");
 const u16 sItalianText_Description_UnknownItem[] = INCTEXT("Analysis is impossible.");
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 const u16* sItalianTextPointers_Description[DESCRIPTION_TEXT_COUNT - 1];
 void Init_sItalianTextPointers_Description(void) {
     sItalianTextPointers_Description[DESCRIPTION_TEXT_LONG_BEAM] = sItalianText_Description_LongBeam;
@@ -2838,7 +2838,7 @@ const u16 sItalianText_Story_Emergency[] = INCTEXT("{DEL}");
 const u16 sItalianText_Story_Exterminate[] = INCTEXT("{DELAY(16)}コンピュータの口調は、私にある人物を連想させた。\n\n「アダム・マルコビッチ」。連邦軍の優秀な司令官\n\nであった彼の下で、私は任務についた経験がある。\n\n冷徹なまでに任務に忠実な彼の判断は、常にすばやく、\n\nそして正しかった。ややデリカシーに乏しく、時折私を\n\n「レディー」と呼び、神経を逆なですることもあったが・・\n\n私は、大いなる敬意と、ささやかな皮肉を込め、\n\nあのコンピュータを「アダム」と呼ぶことにした。{AWAIT_INPUT}");
 const u16 sItalianText_Story_Defeat[] = INCTEXT("{DEL}");
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 const u16* sItalianTextPointers_Story[3];
 void Init_sItalianTextPointers_Story(void) {
     sItalianTextPointers_Story[0] = sItalianText_Story_PlanetZebes;
@@ -2874,7 +2874,7 @@ const u16 sSpanishText_Description_ScrewAttack[] = INCTEXT("回転ジャンプ�
 const u16 sSpanishText_Description_SpaceJump[] = INCTEXT("回転ジャンプ中に再びジャンプできる\n〈回転ジャンプ中にもう一度{A_button}〉");
 const u16 sSpanishText_Description_UnknownItem[] = INCTEXT("Analysis is impossible.");
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 const u16* sSpanishTextPointers_Description[DESCRIPTION_TEXT_COUNT - 1];
 void Init_sSpanishTextPointers_Description(void) {
     sSpanishTextPointers_Description[DESCRIPTION_TEXT_LONG_BEAM] = sSpanishText_Description_LongBeam;
@@ -2928,7 +2928,7 @@ const u16 sSpanishText_Story_Emergency[] = INCTEXT("{DEL}");
 const u16 sSpanishText_Story_Exterminate[] = INCTEXT("{DELAY(16)}コンピュータの口調は、私にある人物を連想させた。\n\n「アダム・マルコビッチ」。連邦軍の優秀な司令官\n\nであった彼の下で、私は任務についた経験がある。\n\n冷徹なまでに任務に忠実な彼の判断は、常にすばやく、\n\nそして正しかった。ややデリカシーに乏しく、時折私を\n\n「レディー」と呼び、神経を逆なですることもあったが・・\n\n私は、大いなる敬意と、ささやかな皮肉を込め、\n\nあのコンピュータを「アダム」と呼ぶことにした。{AWAIT_INPUT}");
 const u16 sSpanishText_Story_Defeat[] = INCTEXT("{DEL}");
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 const u16* sSpanishTextPointers_Story[3];
 void Init_sSpanishTextPointers_Story(void) {
     sSpanishTextPointers_Story[0] = sSpanishText_Story_PlanetZebes;

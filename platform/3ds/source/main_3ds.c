@@ -3,14 +3,7 @@
 #include "port_debug_log.h"
 #include "port_rom.h"
 
-/* PPU (screen rendering) and audio init are not wired up yet -- this build
- * proves the rest of the pipeline (all gameplay logic, generated ROM data
- * shims, GBA BIOS reimplementation) compiles, links, and reaches agbmain()
- * on real 3DS hardware. See docs/3ds-port-rom-loading.md and
- * docs/3ds-port-skeleton-import.md for what's left: bridging port/ppu's
- * software renderer to citro2d/citro3d (port_ppu_3ds.c, currently still
- * TMC-coupled), and a real audio backend for mzm's own UpdateMusic/
- * TrackVariables engine (not M4A). */
+/* Metroid Zero Mission 3DS - Main Entrypoint */
 
 #include <ctype.h>
 #include <dirent.h>

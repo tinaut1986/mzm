@@ -22,7 +22,7 @@
 #include "structs/game_state.h"
 #include "structs/samus.h"
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 #include "port_debug_log.h"
 #endif
 
@@ -61,7 +61,7 @@ void BgClipSetBgBlockValue(u8 bg, u16 value, u16 yPosition, u16 xPosition)
     dst = (u16*)(VRAM_BASE + bg * 0x1000);
     if (xPosition & 0x10)
         dst = (u16*)(VRAM_BASE + 0x800 + bg * 0x1000);
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     dst = GBA_RESOLVE(dst);
 #endif
 
@@ -109,7 +109,7 @@ void BgClipSetBg1BlockValue(u16 value, u16 yPosition, u16 xPosition)
     dst = (u16*)(VRAM_BASE + 0x1000);
     if (xPosition & 0x10)
         dst = (u16*)(VRAM_BASE + 0x1800);
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     dst = GBA_RESOLVE(dst);
 #endif
 
@@ -508,7 +508,7 @@ void BgClipCheckTouchingTransitionOrTank(void)
         // Get item type
         i = sTankBehaviors[BEHAVIOR_TO_TANK(behaviors[j])].itemType;
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
         {
             char msg[160];
             __builtin_snprintf(msg, sizeof(msg),

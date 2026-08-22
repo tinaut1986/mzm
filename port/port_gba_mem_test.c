@@ -1,6 +1,6 @@
 /* Regression coverage for the explicit read, write, and copy-source address
  * resolvers used by the native ports (port_resolve_addr/port_resolve_write_addr/
- * port_resolve_copy_src in port_gba_mem.c), including the TMC_3DS-guarded
+ * port_resolve_copy_src in port_gba_mem.c), including the MZM_3DS-guarded
  * stack-vs-ROM-address disambiguation that caused the SRAM corruption bug in
  * docs/3ds-port-status-2026-08-17.md section 6i: a host stack pointer can
  * land numerically inside the GBA ROM range (0x08000000+), and if that's
@@ -8,7 +8,7 @@
  * garbage.
  *
  * Both real build targets (platform/linux and platform/3ds) always define
- * TMC_3DS, so this test does too -- it stands in for
+ * MZM_3DS, so this test does too -- it stands in for
  * Platform3DS_IsActiveStackAddress() with a test double instead of linking
  * the real one (ARM/3DS-only). */
 #include <stddef.h>

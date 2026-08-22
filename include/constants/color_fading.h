@@ -4,7 +4,7 @@
 #include "types.h"
 #include "macros.h"
 
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "port_gba_mem.h"
 #define COLOR_DATA_BG_EWRAM ((u16*)GBA_RESOLVE(EWRAM_BASE + 0x35000))
 #define COLOR_DATA_OBJ_EWRAM ((u16*)GBA_RESOLVE(EWRAM_BASE + 0x35200))

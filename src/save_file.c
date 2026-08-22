@@ -28,7 +28,7 @@
 #include "structs/save_file.h"
 #include "structs/visual_effects.h"
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 #include "port_debug_log.h"
 #endif
 
@@ -922,7 +922,7 @@ void SramTestFlash(void)
     if (flags)
         gSramCorruptFlag = flags;
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
     {
         extern struct Sram* sSramFlashPointer;
         char msg[200];

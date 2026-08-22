@@ -23,7 +23,7 @@
 #include "structs/power_bomb_explosion.h"
 #include "structs/room.h"
 
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 static const BackgroundEffectBehaviorEntry_T* sBackgroundEffectBehaviorPointers[BACKGROUND_EFFECT_COUNT];
 void Init_sBackgroundEffectBehaviorPointers(void) {
     sBackgroundEffectBehaviorPointers[BACKGROUND_EFFECT_NONE] = sBackgroundEffectBehavior_Lightning;

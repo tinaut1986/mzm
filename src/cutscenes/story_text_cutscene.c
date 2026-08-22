@@ -18,7 +18,7 @@
 #include "structs/game_state.h"
 #include "structs/text.h"
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 const u16** sStoryTextPointers[7];
 void Init_sStoryTextPointers(void) {
     sStoryTextPointers[LANGUAGE_JAPANESE] = sJapaneseTextPointers_Story;

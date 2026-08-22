@@ -47,7 +47,7 @@
 #define IMAGO_LARVA_SHELL_TAIL_HITBOX (BLOCK_SIZE * 2 + HALF_BLOCK_SIZE + EIGHTH_BLOCK_SIZE)
 #define IMAGO_LARVA_SHELL_HEAD_HITBOX (BLOCK_SIZE * 2 + QUARTER_BLOCK_SIZE + EIGHTH_BLOCK_SIZE)
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 static const struct FrameData* sImagoLarvaFrameDataPointers[IMAGO_LARVA_OAM_COUNT];
 void Init_sImagoLarvaFrameDataPointers(void) {
     sImagoLarvaFrameDataPointers[IMAGO_LARVA_OAM_SHELL_ATTACKING] = sImagoLarvaPartOam_ShellAttacking;

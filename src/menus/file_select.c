@@ -8,7 +8,7 @@
 #include "color_effects.h"
 #include "time_attack.h"
 
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "port_gba_mem.h"
 #endif
 
@@ -91,7 +91,7 @@ static s8 sSaveFileAreasId[12] = {
     [11] = AREA_BRINSTAR
 };
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 static const u32* sFileSelectOptionsTextGfxPointers[LANGUAGE_COUNT - LANGUAGE_ENGLISH];
 #ifdef REGION_EU
 static const u32* sFileSelectLargeTextGfxPointers[LANGUAGE_COUNT - LANGUAGE_ENGLISH];
@@ -143,7 +143,7 @@ static const u32* sFileSelectOptionsTextGfxPointers[LANGUAGE_COUNT - LANGUAGE_EN
 };
 
 #ifdef REGION_EU
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 static const u32* sFileSelectLargeTextGfxPointers[LANGUAGE_COUNT - LANGUAGE_ENGLISH];
 void Init_sFileSelectLargeTextGfxPointers(void) {
     sFileSelectLargeTextGfxPointers[LANGUAGE_ENGLISH - LANGUAGE_ENGLISH] = sFileSelectLargeTextEnglishGfx;
@@ -162,7 +162,7 @@ static const u32* sFileSelectLargeTextGfxPointers[LANGUAGE_COUNT - LANGUAGE_ENGL
 };
 #endif
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 static const u32* sFileSelectDifficultyTextGfxPointers[LANGUAGE_COUNT - LANGUAGE_ENGLISH];
 void Init_sFileSelectDifficultyTextGfxPointers(void) {
     sFileSelectDifficultyTextGfxPointers[LANGUAGE_ENGLISH - LANGUAGE_ENGLISH] = sFileSelectDifficultyTextEnglishGfx;
@@ -3970,7 +3970,7 @@ static void OptionsTimeAttackLoadRecord(u8 id)
     // HH:MM:SS
 
     dst = VRAM_BASE + 0xE108;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     dst = GBA_RESOLVE(dst);
 #endif
     // Palette 5
@@ -5710,7 +5710,7 @@ static u8 FileSelectProcessFileSelection(void)
     leaving = FALSE;
     FILE_SELECT_DATA.subMenuTimer++;
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
     {
         static u8 sLastStage = 0xFF;
         if (FILE_SELECT_DATA.subMenuStage != sLastStage) {
@@ -6693,7 +6693,7 @@ static u32 FileSelectUpdateTilemap(TilemapRequest request)
             break;
 
         case TILEMAP_REQUEST_START_GAME:
-#ifdef TMC_3DS
+#ifdef MZM_3DS
             {
                 static int sLogLim = 0;
                 if (++sLogLim % 30 == 0) {

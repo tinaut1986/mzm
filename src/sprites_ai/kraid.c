@@ -72,7 +72,7 @@ MAKE_ENUM(u8, KraidNailType) {
 
 #define KRAID_NAIL_POSE_MOVING 0x9
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 static const struct FrameData* sKraidFrameDataPointers[KRAID_OAM_COUNT];
 void Init_sKraidFrameDataPointers(void) {
     sKraidFrameDataPointers[KRAID_OAM_MOUTH_CLOSED] = sKraidOam_MouthClosed;

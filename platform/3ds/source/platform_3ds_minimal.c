@@ -1,19 +1,8 @@
 /*
- * Minimal Platform3DS implementation for the mzm 3DS port.
+ * Platform3DS implementation for the Metroid: Zero Mission 3DS port.
  *
- * zelda-tmc-3ds's own platform_3ds.c calls straight into its second-screen
- * and audio subsystems throughout its body (Port_SecondScreen_3DS_*,
- * Port_Audio_3DS*), not just in its includes -- neither exists yet for mzm
- * (see docs/3ds-port-skeleton-import.md). Rather than hollow out a file
- * that isn't ours line by line, this is a clean-room implementation of the
- * same platform_3ds.h contract: service init, New3DS detection, input,
- * timing, and a console-text-based fatal/splash screen (no citro2d/GPU
- * rendering yet -- that's port_ppu_3ds.c's job, still to be adapted).
- *
- * Every function declared in platform_3ds.h is implemented so the header's
- * contract stays valid for code that isn't compiled into this build yet;
- * the ones nothing currently calls are intentionally simple stubs, called
- * out below.
+ * Implements the platform_3ds.h contract: service init, New3DS detection,
+ * input handling, timing, and lifecycle management.
  */
 #include "platform_3ds.h"
 
@@ -75,6 +64,20 @@ int Platform3DS_Init(void) {
     gfxInitDefault();
 
     APT_CheckNew3DS(&sIsNew3DS);
+#ifdef PORT_FORCE_OLD3DS_PROFILE
+    /* Build-time override (see platform/3ds/Makefile's FORCE_OLD3DS) to make
+     * real New3DS hardware behave like an Old3DS for benchmarking: every
+     * downstream consumer of Platform3DS_IsNew3DS() (osSetSpeedupEnable
+     * below, the Core1 grant right after, virtuappu_mode1's old3ds profile
+     * and PlatformGpu3DS_Init's oldProfile flag in port_ppu_mzm.c, and
+     * adaptiveFrameskipEnabled) reads sIsNew3DS rather than re-detecting the
+     * console, so forcing it false here is enough to flip all of them at
+     * once. Note this genuinely changes the CPU's running clock (New3DS
+     * stays at Old3DS's base clock without osSetSpeedupEnable) and core
+     * count (no Core1 grant), not just a simulated slowdown -- this is what
+     * Old3DS hardware would actually give the game. */
+    sIsNew3DS = false;
+#endif
     if (sIsNew3DS) {
         osSetSpeedupEnable(true);
     }
@@ -377,9 +380,7 @@ uint64_t Platform3DS_TicksPerSecond(void) {
 
 int Platform3DS_IsNativeAddress(uintptr_t value) {
     (void)value;
-    return 0; /* Only meaningful for the PC_PORT host-pointer guard in
-               * zelda-tmc-3ds's port_rom.h, which mzm's own port_rom.h
-               * (this repo) doesn't use. */
+    return 0;
 }
 
 int Platform3DS_IsActiveStackAddress(uintptr_t value) {

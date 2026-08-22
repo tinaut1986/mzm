@@ -41,7 +41,7 @@ static const u8 sBuffer_754ab4[256] = {
 };
 #endif // !REGION_EU || REGION_EU_BETA
 
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "port_gba_mem.h"
 
 union EwramData* sEwramPointer = (union EwramData*)gEwram;

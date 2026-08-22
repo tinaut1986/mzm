@@ -602,7 +602,7 @@ void ProjectileDraw(struct ProjectileData* pProj)
     
     prevSlot = gNextOamSlot;
     src = pProj->pOam[pProj->currentAnimationFrame].pFrame;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     src = GBA_RESOLVE(src);
 #endif
     partCount = *src++;

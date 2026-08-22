@@ -1,16 +1,8 @@
 /*
- * Minimal PPU->GPU bridge for the mzm 3DS port. Not an adaptation of
- * port_ppu_3ds.c (that file is zelda-tmc-3ds's original, still deeply
- * coupled to TMC-only subsystems -- second screen, HDMA, widescreen, save
- * states, perf HUD -- see its own header comment and
- * docs/3ds-port-status-2026-08-17.md section 8). This is a first cut: bind
- * the port/ppu software renderer (port/ppu/src/{virtuappu,mode1}.c,
- * shared first-party source, not TMC-specific) directly to mzm's emulated
- * GBA memory (port_gba_mem.h's gIoMem/gVram/gBgPltt/gObjPltt/gOamMem) and
- * push the resulting frame to the top screen via platform_gpu_3ds.c (also
- * reused as-is -- it only touches citro2d/citro3d and raw pixel buffers,
- * no TMC coupling). No second-screen content, no HDMA, no widescreen: just
- * enough to get real gameplay visible on real hardware for the first time.
+ * PPU->GPU bridge for the Metroid: Zero Mission 3DS port. Binds
+ * the port/ppu software renderer (port/ppu/src/{virtuappu,mode1}.c)
+ * directly to mzm's emulated GBA memory and presents frames to the
+ * screen via Citro2D/Citro3D.
  */
 #include "virtuappu.h"
 #include "cpu/mode1.h"

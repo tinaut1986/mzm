@@ -30,7 +30,7 @@ void BgClipSetClipdataBlockValue(u16, u16, u16); // From bg_clip.h
 // bg_clip.h must not be included, as declaring the correct signature for some
 // of its functions produces non-matching code here.
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 static const struct HatchLockEvent* sHatchLockEventsPointers[AREA_NORMAL_COUNT];
 void Init_sHatchLockEventsPointers(void) {
     sHatchLockEventsPointers[AREA_BRINSTAR] = sHatchLockEventsBrinstar;

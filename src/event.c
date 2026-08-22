@@ -1,7 +1,7 @@
 #include "event.h"
 #include "constants/event.h"
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 u32 gEventsTriggered[8];
 #endif
 

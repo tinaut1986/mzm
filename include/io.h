@@ -3,7 +3,7 @@
 
 #include "types.h"
 
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "port_gba_mem.h"
 static inline u32 port_write32(uintptr_t addr, u32 val) {
     if ((addr >= 0x02000000u && addr < 0x08000000u) || (addr >= 0x0E000000u && addr < 0x0E010000u)) {

@@ -23,7 +23,7 @@
 #include "structs/screen_shake.h"
 #include "structs/scroll.h"
 
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "port_gba_mem.h"
 #define RESOLVE_SAMUS_PTR(p) GBA_RESOLVE(p)
 #else
@@ -1642,7 +1642,7 @@ void SamusUpdateEnvironmentalEffect(struct SamusData* pData)
 
         // Set oam frame pointer
         pEnv->pOamFrame = pOam->pFrame;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
         /* pOam->pFrame is a raw GBA ROM address baked into frame table
          * data. Resolved once here since pOamFrame gets dereferenced
          * directly downstream (e.g. src/samus.c's environmental effects
@@ -2769,7 +2769,7 @@ s16 SamusChangeVelocityOnSlope(struct SamusData* pData)
 void SamusCopyPalette(const u16* src, s32 offset, s32 nbrColors)
 {
     s32 i;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     src = GBA_RESOLVE(src);
 #endif
 

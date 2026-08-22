@@ -3519,7 +3519,7 @@ void SpriteUtilSyncCurrentSpritePositionWithSubSprite1Position(void)
     MultiSpriteDataInfo_T pData;
 
     pData = gSubSpriteData1.pMultiOam[gSubSpriteData1.currentAnimationFrame].pData;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     pData = GBA_RESOLVE(pData);
 #endif
 
@@ -3532,7 +3532,7 @@ void SpriteUtilSyncCurrentSpritePositionWithSubSpriteData1PositionAndOam(void)
     MultiSpriteDataInfo_T pData;
 
     pData = gSubSpriteData1.pMultiOam[gSubSpriteData1.currentAnimationFrame].pData;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     pData = GBA_RESOLVE(pData);
 #endif
 
@@ -3571,7 +3571,7 @@ void SpriteUtilSyncCurrentSpritePositionWithSubSpriteData2PositionAndOam(void)
     MultiSpriteDataInfo_T pData;
 
     pData = gSubSpriteData2.pMultiOam[gSubSpriteData2.currentAnimationFrame].pData;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     pData = GBA_RESOLVE(pData);
 #endif
 
@@ -3612,7 +3612,7 @@ void SpriteUtilSyncCurrentSpritePositionWithSubSpritePosition(struct SubSpriteDa
     MultiSpriteDataInfo_T pData;
 
     pData = pSub->pMultiOam[pSub->currentAnimationFrame].pData;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     pData = GBA_RESOLVE(pData);
 #endif
 
@@ -3630,7 +3630,7 @@ void SpriteUtilSyncCurrentSpritePositionWithSubSpritePositionAndOam(struct SubSp
     MultiSpriteDataInfo_T pData;
 
     pData = pSub->pMultiOam[pSub->currentAnimationFrame].pData;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     pData = GBA_RESOLVE(pData);
 #endif
 

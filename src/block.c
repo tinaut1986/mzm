@@ -4,7 +4,7 @@
 #include "gba.h"
 #include "bg_clip.h"
 
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "port_gba_mem.h"
 #endif
 
@@ -438,7 +438,7 @@ void BlockShiftNeverReformBlocks(void)
         return;
 
     dst = EWRAM_BASE;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     dst = GBA_RESOLVE(dst);
 #endif
     DmaTransfer(3, src, dst, NEVER_REFORM_BLOCKS_SIZE, 16);
@@ -466,7 +466,7 @@ void BlockShiftNeverReformBlocks(void)
         else if (var_0 == 10)
         {
             dst = EWRAM_BASE + gNumberOfNeverReformBlocks[gAreaBeforeTransition] * 2;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
             dst = GBA_RESOLVE(dst);
 #endif
             while (*dst != UCHAR_MAX)
@@ -477,7 +477,7 @@ void BlockShiftNeverReformBlocks(void)
 
             var_0 = 2;
             dst = EWRAM_BASE;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
             dst = GBA_RESOLVE(dst);
 #endif
         }
@@ -492,7 +492,7 @@ void BlockShiftNeverReformBlocks(void)
         }
 
         dst = EWRAM_BASE + gNumberOfNeverReformBlocks[gAreaBeforeTransition] * NEVER_REFORM_BLOCK_INFO_SIZE;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
         dst = GBA_RESOLVE(dst);
 #endif
         while (*dst != UCHAR_MAX)
@@ -974,7 +974,7 @@ void BlockUpdateBrokenBlockAnimation(struct BrokenBlock* pBlock)
     dst = VRAM_BASE + 0x1000;
     if (pBlock->xPosition & 0x10)
         dst = VRAM_BASE + 0x1800;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     dst = GBA_RESOLVE(dst);
 #endif
 
@@ -1475,7 +1475,7 @@ void BlockBrokenBlockRemoveCollision(u16 yPosition, u16 xPosition)
     dst = VRAM_BASE + 0x1000;
     if (xPosition & 0x10)
         dst = VRAM_BASE + 0x1800;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     dst = GBA_RESOLVE(dst);
 #endif
 

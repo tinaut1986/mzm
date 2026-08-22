@@ -1,14 +1,18 @@
-#ifndef TMC_PLATFORM_3DS_H
-#define TMC_PLATFORM_3DS_H
+#ifndef MZM_PLATFORM_3DS_H
+#define MZM_PLATFORM_3DS_H
 
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "old3ds_frame_pacer.h"
-
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+typedef enum Old3DSFramePacerDiscontinuity {
+    OLD3DS_FRAME_PACER_DISCONTINUITY_NONE = 0,
+    OLD3DS_FRAME_PACER_DISCONTINUITY_APT = 1u << 0,
+    OLD3DS_FRAME_PACER_DISCONTINUITY_DUMP = 1u << 1,
+} Old3DSFramePacerDiscontinuity;
 
 typedef struct Platform3DSRuntimeStats {
     uint32_t kernelVersion;

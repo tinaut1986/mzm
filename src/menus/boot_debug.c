@@ -27,7 +27,7 @@ extern const struct RoomEntryRom* sAreaRoomEntryPointers[AREA_ENTRY_COUNT];
 
 extern const u32* sMinimapDataPointers[AREA_COUNT];
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 static const u8* sBootDebugCutsceneBTextPointers[CUTSCENE_COUNT];
 void Init_sBootDebugCutsceneBTextPointers(void) {
     sBootDebugCutsceneBTextPointers[CUTSCENE_NONE] = sBootDebug_Cutscene_Blank_Text;

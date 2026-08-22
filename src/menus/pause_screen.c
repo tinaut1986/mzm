@@ -4,7 +4,7 @@
 #include "gba.h"
 #include "macros.h"
 
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "port_gba_mem.h"
 #endif
 #include "minimap.h"
@@ -47,7 +47,7 @@ static struct PauseScreenStateData sPauseScreenStateInfo_Empty = {
     .fadeWireframeTimer = 0
 };
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 static const u32* sMapScreenAreaNamesGfxPointers[LANGUAGE_COUNT];
 static const u32* sMapScreenChozoStatueAreaNamesGfxPointers[LANGUAGE_COUNT];
 static const u32* sMapScreenUnknownItemsNamesGfxPointers[LANGUAGE_COUNT];
@@ -127,7 +127,7 @@ static const u32* sMapScreenAreaNamesGfxPointers[LANGUAGE_COUNT] = {
     [LANGUAGE_SPANISH] = sMapScreenAreaNamesEnglishGfx
 };
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 static const u32* sMapScreenChozoStatueAreaNamesGfxPointers[LANGUAGE_COUNT];
 void Init_sMapScreenChozoStatueAreaNamesGfxPointers(void) {
     sMapScreenChozoStatueAreaNamesGfxPointers[LANGUAGE_JAPANESE] = sMapScreenChozoStatueAreaNamesEnglishGfx;
@@ -150,7 +150,7 @@ static const u32* sMapScreenChozoStatueAreaNamesGfxPointers[LANGUAGE_COUNT] = {
 };
 #endif
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 static const u32* sMapScreenUnknownItemsNamesGfxPointers[LANGUAGE_COUNT];
 void Init_sMapScreenUnknownItemsNamesGfxPointers(void) {
     sMapScreenUnknownItemsNamesGfxPointers[LANGUAGE_JAPANESE] = sMapScreenUnknownItemsNamesJapaneseGfx;
@@ -184,7 +184,7 @@ static const u32* sMapScreenUnknownItemsNamesGfxPointers[LANGUAGE_COUNT] = {
 };
 #endif
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 static const u32* sMapScreenEquipmentNamesGfxPointers[LANGUAGE_COUNT];
 void Init_sMapScreenEquipmentNamesGfxPointers(void) {
     sMapScreenEquipmentNamesGfxPointers[LANGUAGE_JAPANESE] = sEquipmentNamesJapaneseGfx;
@@ -218,7 +218,7 @@ static const u32* sMapScreenEquipmentNamesGfxPointers[LANGUAGE_COUNT] = {
 };
 #endif
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 static const u32* sMapScreenMenuNamesGfxPointers[LANGUAGE_COUNT];
 void Init_sMapScreenMenuNamesGfxPointers(void) {
     sMapScreenMenuNamesGfxPointers[LANGUAGE_JAPANESE] = sMenuNamesJapaneseGfx;
@@ -287,7 +287,7 @@ static u8 sUnused_7601cc[16] = {
     0x34, 0x0, 0x0, 0x0 
 };
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 const u8* sStatusScreenFlagsOrderPointers[4];
 const u32* sMinimapDataPointers[AREA_COUNT];
 #ifdef REGION_EU
@@ -325,7 +325,7 @@ const u8* sStatusScreenFlagsOrderPointers[4] = {
     [ABILITY_GROUP_MISC] = sStatusScreenMiscFlagsOrder
 };
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 const u32* sMinimapDataPointers[AREA_COUNT];
 void Init_sMinimapDataPointers(void) {
     sMinimapDataPointers[AREA_BRINSTAR] = sBrinstarMinimap;
@@ -357,7 +357,7 @@ const u32* sMinimapDataPointers[AREA_COUNT] = {
 #endif
 
 #ifdef REGION_EU
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 static const u8* sMaintainedInputDelaysPointers[MAINTAINED_INPUT_SPEED_COUNT];
 void Init_sMaintainedInputDelaysPointers(void) {
     sMaintainedInputDelaysPointers[MAINTAINED_INPUT_SPEED_FAST] = sMaintainedInputDelays_Fast;
@@ -1422,7 +1422,7 @@ void ProcessMenuOam(u8 length, struct MenuOamData* pOam, const struct OamArray* 
 
         // Get frame data
         pFrame = pOamData[pOam->oamId].pOam;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
                         pFrame = GBA_RESOLVE(pFrame);
 #endif
 
@@ -1504,7 +1504,7 @@ void ProcessMenuOam(u8 length, struct MenuOamData* pOam, const struct OamArray* 
                         pOam->oamId++;
                         pOam->currentAnimationFrame = 0;
                         pFrame = pOamData[pOam->oamId].pOam;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
                         pFrame = GBA_RESOLVE(pFrame);
 #endif
                     }
@@ -1523,7 +1523,7 @@ void ProcessMenuOam(u8 length, struct MenuOamData* pOam, const struct OamArray* 
                         // Lock on last frame, pretty unsafe as the number of frames need to be the same
                         pOam->currentAnimationFrame--;
                         pFrame = pOamData[pOam->oamId].pOam;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
                         pFrame = GBA_RESOLVE(pFrame);
 #endif
                     }
@@ -1541,7 +1541,7 @@ void ProcessMenuOam(u8 length, struct MenuOamData* pOam, const struct OamArray* 
                         pOam->oamId--;
                         pOam->currentAnimationFrame = 0;
                         pFrame = pOamData[pOam->oamId].pOam;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
                         pFrame = GBA_RESOLVE(pFrame);
 #endif
                     }
@@ -1583,7 +1583,7 @@ void ProcessMenuOam(u8 length, struct MenuOamData* pOam, const struct OamArray* 
                         pOam->oamId--;
                         pOam->currentAnimationFrame = 0;
                         pFrame = pOamData[pOam->oamId].pOam;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
                         pFrame = GBA_RESOLVE(pFrame);
 #endif
                     }
@@ -1635,7 +1635,7 @@ void ProcessMenuOam(u8 length, struct MenuOamData* pOam, const struct OamArray* 
 
         // Get raw data pointer
         src = pFrame->pFrame;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
         /* pFrame->pFrame is a raw GBA ROM address baked into the frame
          * table data (like sLanguageSelectGfx, see soft_reset.c section
          * 5.1/5.2), not translated when pFrame itself was resolved. */
@@ -1724,7 +1724,7 @@ void ProcessComplexMenuOam(u8 length, struct MenuOamData* pOam, const struct Oam
 
         // Get frame data
         pFrame = pOamData[pOam->oamId].pOam;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
                         pFrame = GBA_RESOLVE(pFrame);
 #endif
 
@@ -1806,7 +1806,7 @@ void ProcessComplexMenuOam(u8 length, struct MenuOamData* pOam, const struct Oam
                         pOam->oamId++;
                         pOam->currentAnimationFrame = 0;
                         pFrame = pOamData[pOam->oamId].pOam;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
                         pFrame = GBA_RESOLVE(pFrame);
 #endif
                     }
@@ -1825,7 +1825,7 @@ void ProcessComplexMenuOam(u8 length, struct MenuOamData* pOam, const struct Oam
                         // Lock on last frame, pretty unsafe as the number of frames need to be the same
                         pOam->currentAnimationFrame--;
                         pFrame = pOamData[pOam->oamId].pOam;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
                         pFrame = GBA_RESOLVE(pFrame);
 #endif
                     }
@@ -1843,7 +1843,7 @@ void ProcessComplexMenuOam(u8 length, struct MenuOamData* pOam, const struct Oam
                         pOam->oamId--;
                         pOam->currentAnimationFrame = 0;
                         pFrame = pOamData[pOam->oamId].pOam;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
                         pFrame = GBA_RESOLVE(pFrame);
 #endif
                     }
@@ -1885,7 +1885,7 @@ void ProcessComplexMenuOam(u8 length, struct MenuOamData* pOam, const struct Oam
                         pOam->oamId--;
                         pOam->currentAnimationFrame = 0;
                         pFrame = pOamData[pOam->oamId].pOam;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
                         pFrame = GBA_RESOLVE(pFrame);
 #endif
                     }
@@ -1937,7 +1937,7 @@ void ProcessComplexMenuOam(u8 length, struct MenuOamData* pOam, const struct Oam
 
         // Get raw data pointer
         src = pFrame->pFrame;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
         /* pFrame->pFrame is a raw GBA ROM address baked into the frame
          * table data (like sLanguageSelectGfx, see soft_reset.c section
          * 5.1/5.2), not translated when pFrame itself was resolved. */
@@ -2043,7 +2043,7 @@ void ProcessCutsceneOam(u8 length, struct CutsceneOamData* pOam, const struct Oa
 
         // Get frame data
         pFrame = pOamData[pOam->oamId].pOam;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
                         pFrame = GBA_RESOLVE(pFrame);
 #endif
 
@@ -2125,7 +2125,7 @@ void ProcessCutsceneOam(u8 length, struct CutsceneOamData* pOam, const struct Oa
                         pOam->oamId++;
                         pOam->currentAnimationFrame = 0;
                         pFrame = pOamData[pOam->oamId].pOam;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
                         pFrame = GBA_RESOLVE(pFrame);
 #endif
                     }
@@ -2144,7 +2144,7 @@ void ProcessCutsceneOam(u8 length, struct CutsceneOamData* pOam, const struct Oa
                         // Lock on last frame, pretty unsafe as the number of frames need to be the same
                         pOam->currentAnimationFrame--;
                         pFrame = pOamData[pOam->oamId].pOam;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
                         pFrame = GBA_RESOLVE(pFrame);
 #endif
                     }
@@ -2162,7 +2162,7 @@ void ProcessCutsceneOam(u8 length, struct CutsceneOamData* pOam, const struct Oa
                         pOam->oamId--;
                         pOam->currentAnimationFrame = 0;
                         pFrame = pOamData[pOam->oamId].pOam;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
                         pFrame = GBA_RESOLVE(pFrame);
 #endif
                     }
@@ -2204,7 +2204,7 @@ void ProcessCutsceneOam(u8 length, struct CutsceneOamData* pOam, const struct Oa
                         pOam->oamId--;
                         pOam->currentAnimationFrame = 0;
                         pFrame = pOamData[pOam->oamId].pOam;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
                         pFrame = GBA_RESOLVE(pFrame);
 #endif
                     }
@@ -2256,7 +2256,7 @@ void ProcessCutsceneOam(u8 length, struct CutsceneOamData* pOam, const struct Oa
 
         // Get raw data pointer
         src = pFrame->pFrame;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
         /* pFrame->pFrame is a raw GBA ROM address baked into the frame
          * table data (like sLanguageSelectGfx, see soft_reset.c section
          * 5.1/5.2), not translated when pFrame itself was resolved. */
@@ -2891,7 +2891,7 @@ void PauseScreenUpdateBottomVisorOverlay(u8 param_1, u8 param_2)
     u16* src;
 
     dst = VRAM_BASE + 0xCC40;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     dst = GBA_RESOLVE(dst);
 #endif
     src = &PAUSE_SCREEN_EWRAM.visorOverlayTilemap[0x380];

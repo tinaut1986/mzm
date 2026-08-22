@@ -34,7 +34,7 @@
 #define REG_DMA3_CNT_L (REG_DMA3 + 8)
 #define REG_DMA3_CNT_H (REG_DMA3 + 10)
 
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "dma.h"
 #define DMA_SET(channel, src, dst, cnt) do { (void)(channel); (void)(src); (void)(dst); (void)(cnt); } while(0)
 #define DMA3_COPY_16(src, dst, count)  { DmaTransfer(3, (src), (dst), (count) * 2, 16); }

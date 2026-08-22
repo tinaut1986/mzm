@@ -1,12 +1,10 @@
 /*
- * Part of the The Minish Cap PC port — GPL-3.0-or-later.
+ * Software GBA PPU for native ports — GPL-3.0-or-later.
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * Software GBA PPU, vendored as first-party port source. Derived from
  * VirtuaPPU by Mathéo Vignaud (https://github.com/MatheoVignaud/VirtuaPPU,
- * commit 5cf5e99) and incorporating this project's 15 accuracy/portability
- * patches (formerly port/patches/viruappu-*.patch; preserved in git history).
- * Maintained here directly — not kept in sync with upstream.
+ * commit 5cf5e99) and incorporating accuracy and portability patches.
  */
 
 #pragma once
@@ -20,7 +18,7 @@ extern "C" {
 #endif
 
 enum {
-#if defined(TMC_N64) || defined(TMC_3DS)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     /* Console ports only need the native 240x160 frame. Mode 1 binds the
      * engine's GBA VRAM, so the oversized desktop scratch buffers are unused. */
     VIRTUAPPU_MAX_FRAME_WIDTH = 240,

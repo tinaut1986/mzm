@@ -3,7 +3,7 @@
 #include "menus/status_screen.h"
 #include "dma.h"
 
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "port_gba_mem.h"
 #endif
 
@@ -314,7 +314,7 @@ void PauseScreenInitMapDownload(void)
     {
         ptr_1 = VRAM_BASE + 0xE000;
         ptr_2 = VRAM_BASE + 0xD800;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
         ptr_1 = GBA_RESOLVE(ptr_1);
         ptr_2 = GBA_RESOLVE(ptr_2);
 #endif
@@ -398,7 +398,7 @@ u32 PauseScreenMapDownloadInstant_Unused(void)
                 if (offset >= ARRAY_SIZE(sPauseScreen_7602b0))
                     offset = ARRAY_SIZE(sPauseScreen_7602b0) - 1;
 
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
                 GBA_RESOLVE(sPauseScreen_7602a8)[j] = ptr[j] & sPauseScreen_7602b0[offset];
 #else
                 sPauseScreen_7602a8[j] = ptr[j] & sPauseScreen_7602b0[offset];
@@ -458,7 +458,7 @@ u32 PauseScreenMapDownloadInstantWithLine_Unused(void)
             // Check on screen
             if (PAUSE_SCREEN_DATA.miscOam[2].yPosition >= -QUARTER_BLOCK_SIZE)
             {
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
                 GBA_RESOLVE(sPauseScreen_7602a8)[PAUSE_SCREEN_DATA.currentDownloadedLine] = 0;
 #else
                 sPauseScreen_7602a8[PAUSE_SCREEN_DATA.currentDownloadedLine] = 0;

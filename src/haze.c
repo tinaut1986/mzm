@@ -164,7 +164,7 @@ void HazeSetupCode(HazeValue hazeValue)
             break;
 
         case HAZE_VALUE_BG3:
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
             gHazeProcessCodePointer = (HazeFunc_T)Haze_Bg3;
 #else
             DmaTransfer(3, Haze_Bg3, gNonGameplayRam.inGame.hazeCode, sizeof(gNonGameplayRam.inGame.hazeCode), 16);
@@ -179,7 +179,7 @@ void HazeSetupCode(HazeValue hazeValue)
             break;
 
         case HAZE_VALUE_BG3_STRONG_WEAK:
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
             gHazeProcessCodePointer = (HazeFunc_T)Haze_Bg3StrongWeak;
 #else
             DmaTransfer(3, Haze_Bg3StrongWeak, gNonGameplayRam.inGame.hazeCode, sizeof(gNonGameplayRam.inGame.hazeCode), 16);
@@ -194,7 +194,7 @@ void HazeSetupCode(HazeValue hazeValue)
             break;
  
         case HAZE_VALUE_BG3_NONE_WEAK:
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
             gHazeProcessCodePointer = (HazeFunc_T)Haze_Bg3NoneWeak;
 #else
             DmaTransfer(3, Haze_Bg3NoneWeak, gNonGameplayRam.inGame.hazeCode, sizeof(gNonGameplayRam.inGame.hazeCode), 16);
@@ -209,7 +209,7 @@ void HazeSetupCode(HazeValue hazeValue)
             break;
 
         case HAZE_VALUE_BG3_BG2_STRONG_WEAK_MEDIUM:
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
             gHazeProcessCodePointer = (HazeFunc_T)Haze_Bg3Bg2StrongWeakMedium;
 #else
             DmaTransfer(3, Haze_Bg3Bg2StrongWeakMedium, gNonGameplayRam.inGame.hazeCode, sizeof(gNonGameplayRam.inGame.hazeCode), 16);
@@ -224,7 +224,7 @@ void HazeSetupCode(HazeValue hazeValue)
             break;
 
         case HAZE_VALUE_BG3_BG2_BG1:
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
             gHazeProcessCodePointer = (HazeFunc_T)Haze_Bg3Bg2Bg1;
 #else
             DmaTransfer(3, Haze_Bg3Bg2Bg1, gNonGameplayRam.inGame.hazeCode, sizeof(gNonGameplayRam.inGame.hazeCode), 16);
@@ -261,7 +261,7 @@ void HazeSetupCode(HazeValue hazeValue)
 
             gBackdropColor = COLOR_WHITE;
 
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
             gHazeProcessCodePointer = (HazeFunc_T)Haze_PowerBombExpanding;
 #else
             DmaTransfer(3, Haze_PowerBombExpanding, gNonGameplayRam.inGame.hazeCode, sizeof(gNonGameplayRam.inGame.hazeCode), 16);
@@ -279,7 +279,7 @@ void HazeSetupCode(HazeValue hazeValue)
             break;
 
         case HAZE_VALUE_POWER_BOMB_RETRACTING:
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
             gHazeProcessCodePointer = (HazeFunc_T)Haze_PowerBombRetracting;
 #else
             DmaTransfer(3, Haze_PowerBombRetracting, gNonGameplayRam.inGame.hazeCode, sizeof(gNonGameplayRam.inGame.hazeCode), 16);
@@ -507,7 +507,7 @@ void Haze_Bg3(void)
     gHazeLoops[1].unk_3 = FALSE;
 
     src = sHaze_Bg3_StrongEffect;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     src = GBA_RESOLVE(src);
 #endif
     mask = ARRAY_SIZE(sHaze_Bg3_StrongEffect) / 3 - 1;
@@ -565,7 +565,7 @@ void Haze_Bg3StrongWeak(void)
     gHazeLoops[2].unk_3 = FALSE;
 
     src1 = sHaze_Bg3_StrongEffect;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     src1 = GBA_RESOLVE(src1);
 #endif
     mask1 = 0xF;
@@ -580,7 +580,7 @@ void Haze_Bg3StrongWeak(void)
     }
 
     src2 = sHaze_Bg3_WeakOutside;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     src2 = GBA_RESOLVE(src2);
 #endif
     mask2 = 0xF;
@@ -635,7 +635,7 @@ void Haze_Bg3NoneWeak(void)
     gHazeLoops[1].unk_3 = FALSE;
 
     src = sHaze_Bg_WeakOutside;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     src = GBA_RESOLVE(src);
 #endif
     mask = ARRAY_SIZE(sHaze_Bg_WeakOutside) - 1;
@@ -673,7 +673,7 @@ void Haze_Bg3Bg2StrongWeakMedium(void)
     gHazeLoops[1].unk_3 = FALSE;
 
     src = sHaze_Bg_WeakOutside;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     src = GBA_RESOLVE(src);
 #endif
     mask = ARRAY_SIZE(sHaze_Bg_WeakOutside) - 1;
@@ -735,7 +735,7 @@ void Haze_Bg3Bg2Bg1(void)
     }
 
     src = sHaze_Bg3Bg2Bg1[gHazeLoops[2].unk_3];
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     src = GBA_RESOLVE(src);
 #endif
     mask = ARRAY_SIZE(sHaze_Bg3Bg2Bg1[0]) - 1;
@@ -790,7 +790,7 @@ u32 Haze_PowerBombExpanding(void)
         return FALSE;
 
     src = sHaze_PowerBomb_WindowValuesPointers[gCurrentPowerBomb.semiMinorAxis];
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     src = GBA_RESOLVE(src);
 #endif
     size = gCurrentPowerBomb.semiMinorAxis;
@@ -867,7 +867,7 @@ u32 Haze_PowerBombRetracting(void)
         return FALSE;
 
     src = sHaze_PowerBomb_WindowValuesPointers[gCurrentPowerBomb.semiMinorAxis];
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     src = GBA_RESOLVE(src);
 #endif
 

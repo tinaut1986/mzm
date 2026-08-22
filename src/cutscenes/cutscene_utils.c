@@ -262,7 +262,7 @@ u8 CutsceneHandler(void)
     switch (gSubGameModeStage)
     {
         case CUTSCENE_STAGE_STARTING:
-#ifdef TMC_3DS
+#ifdef MZM_3DS
             {
                 extern void Port_DebugLog(const char* msg);
                 char _msg[96];
@@ -453,7 +453,7 @@ void CutsceneInit(void)
     u8 temp;
 #endif // DEBUG
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
     {
         extern void Port_DebugLog(const char* msg);
         char _msg[128];

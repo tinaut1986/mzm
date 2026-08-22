@@ -53,7 +53,7 @@ static inline void* gba_TryMemPtr(uint32_t addr) {
     if (addr >= 0x0E000000u && addr < 0x0E010000u)
         return &gSramMem[addr - 0x0E000000u];
     if (gRomData && addr >= 0x08000000u && addr < 0x08000000u + gRomSize) {
-#ifndef TMC_3DS
+#ifndef MZM_3DS
         Port_LogRomAccess(addr, "gba_TryMemPtr");
 #endif
         return &gRomData[addr - 0x08000000u];
@@ -61,26 +61,10 @@ static inline void* gba_TryMemPtr(uint32_t addr) {
     return NULL;
 }
 
-#ifdef TMC_N64
-extern volatile uint32_t g_n64_last_bad_addr;
-extern volatile uint32_t g_n64_bad_count;
-#endif
-
 static inline void* gba_MemPtr(uint32_t addr) {
     void* ptr = gba_TryMemPtr(addr);
     if (ptr)
         return ptr;
-#ifdef TMC_N64
-    /* #N64: never abort on a stray GBA address (libdragon abort() draws the
-     * CPU-exception inspector and halts). Record it (surfaced on-screen by
-     * Port_N64_VBlank) and return a shared scratch page so the engine limps. */
-    {
-        static u8 sN64Scratch[0x10000];
-        g_n64_last_bad_addr = addr;
-        g_n64_bad_count++;
-        return sN64Scratch;
-    }
-#else
 #if defined(__GNUC__)
     void* caller = __builtin_return_address(0);
     fprintf(stderr, "FATAL: gba_MemPtr: invalid address 0x%08X (called from %p)\n", addr, caller);
@@ -91,7 +75,7 @@ static inline void* gba_MemPtr(uint32_t addr) {
     fprintf(stderr, "FATAL: gba_MemPtr: invalid address 0x%08X\n", addr);
 #endif
     fflush(stderr);
-#ifdef TMC_3DS
+#ifdef MZM_3DS
     /* stderr isn't visible on real hardware -- mirror the fatal message to
      * the file log (see port_debug_log.h) so it survives past the "Fatal
      * error" screen the 3DS shows on abort(). Always on regardless of
@@ -110,7 +94,6 @@ static inline void* gba_MemPtr(uint32_t addr) {
 #endif
     abort();
     return NULL;
-#endif
 }
 
 /* Resolve a GBA address or an already-native pointer for reads. */

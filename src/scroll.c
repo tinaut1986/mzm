@@ -21,7 +21,7 @@
 #include "structs/samus.h"
 #include "structs/room.h"
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 static const u8* sScrollPointer_Empty[1];
 static const u8* sBrinstarScrolls[20];
 static const u8* sKraidScrolls[12];
@@ -526,7 +526,7 @@ void ScrollLoad(void)
     const u8* const* ppSrc;
 
     ppSrc = sAreaScrollPointers[gCurrentArea];
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     ppSrc = GBA_RESOLVE(ppSrc);
 #endif
 
@@ -534,7 +534,7 @@ void ScrollLoad(void)
     for (; ; ppSrc++)
     {
         const u8* pData = *ppSrc;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
         pData = GBA_RESOLVE(pData);
 #endif
         if (!pData || *pData == gCurrentRoom)

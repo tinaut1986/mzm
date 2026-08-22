@@ -3,7 +3,7 @@
 #include "gba.h"
 #include "macros.h"
 
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "port_gba_mem.h"
 #endif
 
@@ -19,7 +19,7 @@
 
 extern u16** sStoryTextPointers[LANGUAGE_COUNT];
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 static const u16** sDescriptionTextPointers[LANGUAGE_COUNT];
 void Init_sDescriptionTextPointers(void) {
     sDescriptionTextPointers[LANGUAGE_JAPANESE] = sJapaneseTextPointers_Description;
@@ -170,7 +170,7 @@ void TextDrawCharacter(u16 charId, u32* dst, u16 indent, u8 color)
     u32 value;
     s32 i;
 
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     /* See GBA_RESOLVE comment in TextDrawMessageCharacter above. */
     dst = GBA_RESOLVE(dst);
 #endif
@@ -447,7 +447,7 @@ void TextDrawMessageCharacter(u16 charId, u32* dst, u16 indent, u8 color)
     u32 value;
     s32 i;
 
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     /* Callers pass a raw EWRAM_BASE-relative GBA address; this function
      * dereferences it directly below via dstGfx. See GBA_RESOLVE in
      * port_gba_mem.h. */
@@ -791,7 +791,7 @@ void TextDrawLocation(u8 locationText, u8 gfxSlot)
     BitFill(3, 0xFFFF, EWRAM_BASE, 0x800, 16);
 
     pText = sLocationTextPointers[gLanguage][locationText];
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     pText = (const u16*)port_resolve_addr((uintptr_t)pText);
 #endif
     TextDrawLocationTextCharacters(1, &pText);
@@ -1366,7 +1366,7 @@ u8 TextProcessCurrentMessage(struct Message* pMessage, const u16* pText, u32* ds
     s32 state;
     s32 width;
 
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     pText = (const u16*)port_resolve_addr((uintptr_t)pText);
     dst = (u32*)port_resolve_write_addr((uintptr_t)dst);
 #endif
@@ -1505,7 +1505,7 @@ void TextDrawYesNoEasySleep(void)
 
     // Get text pointer
     pText = sMessageTextPointers[gLanguage][MESSAGE_EASY_SLEEP_PROMPT];
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     pText = (const u16*)port_resolve_addr((uintptr_t)pText);
 #endif
 

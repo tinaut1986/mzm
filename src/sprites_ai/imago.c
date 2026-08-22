@@ -77,7 +77,7 @@ MAKE_ENUM(u8, ImagoMovementStage) {
 #define IMAGO_EGG_PART_NORMAL 0x0
 #define IMAGO_EGG_PART_LAST 0x80
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 static const struct FrameData* sImagoFrameDataPointers[IMAGO_OAM_COUNT];
 void Init_sImagoFrameDataPointers(void) {
     sImagoFrameDataPointers[IMAGO_OAM_BODY_IDLE] = sImagoPartOam_BodyIdle;

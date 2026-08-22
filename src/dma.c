@@ -2,7 +2,7 @@
 #include "gba.h"
 #include "macros.h"
 
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include <string.h>
 #include "port_gba_mem.h"
 

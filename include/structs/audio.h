@@ -269,7 +269,7 @@ extern struct MusicTrackInfo gMusicTrackInfo;
 extern struct MusicInfo gMusicInfo;
 
 // Linker variables
-#if defined(PORT_NATIVE) || defined(TMC_3DS)
+#if defined(PORT_NATIVE) || defined(MZM_3DS)
 #define gNumMusicPlayers ((char*)9)
 #define gUnk_Audio0x64 ((char*)0x64)
 #define gUnk_Audio0x194F700 ((char*)0x194F700)

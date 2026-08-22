@@ -5,7 +5,7 @@
 #include "oam_id.h"
 #include "temp_globals.h"
 
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "port_gba_mem.h"
 #endif
 
@@ -244,7 +244,7 @@ static void GameOverUpdateTextGfx(void)
     s32 i;
 
     dst = VRAM_BASE + 0x340;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     dst = GBA_RESOLVE(dst);
 #endif
 
@@ -267,7 +267,7 @@ static void GameOverUpdateTextGfx(void)
         *dst = (*dst & 0xFFF) | palette << 12;
 }
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 static const u32* sGameOverTextPromptGfxPointers[LANGUAGE_COUNT];
 void Init_sGameOverTextPromptGfxPointers(void) {
     sGameOverTextPromptGfxPointers[LANGUAGE_JAPANESE] = sGameOverTextPromptEnglishGfx;

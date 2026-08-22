@@ -14,7 +14,7 @@
 #include "structs/minimap.h"
 #include "structs/save_file.h"
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 const struct SaveDemo* sDemoRamDataPointers[MAX_AMOUNT_OF_DEMOS];
 void Init_sDemoRamDataPointers(void) {
     sDemoRamDataPointers[0] = &sDemo0_Ram;

@@ -30,7 +30,7 @@
 
 #define DELAY_BEFORE_HINT (CONVERT_SECONDS(2.f))
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 static const struct FrameData* sChozoStatueFrameDataPointers[CHOZO_STATUE_OAM_COUNT];
 void Init_sChozoStatueFrameDataPointers(void) {
     sChozoStatueFrameDataPointers[CHOZO_STATUE_OAM_LEG_STANDING] = sChozoStatuePartOam_LegStanding;
@@ -81,7 +81,7 @@ static void ChozoStatueSyncSubSprites(void)
     u16 oamIdx;
 
     pData = gSubSpriteData1.pMultiOam[gSubSpriteData1.currentAnimationFrame].pData;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     pData = GBA_RESOLVE(pData);
 #endif
     oamIdx = pData[gCurrentSprite.roomSlot][MULTI_SPRITE_DATA_ELEMENT_OAM_INDEX];

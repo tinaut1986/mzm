@@ -150,7 +150,7 @@ if (gSubSpriteData1.health < maxHealth * 3 / 4)                     \
  */
 
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 static const struct FrameData* sMechaRidleyFrameDataPointers[MECHA_RIDLEY_OAM_COUNT];
 void Init_sMechaRidleyFrameDataPointers(void) {
     sMechaRidleyFrameDataPointers[MECHA_RIDLEY_OAM_TAIL] = sMechaRidleyPartOam_Tail;

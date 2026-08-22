@@ -5,7 +5,7 @@
 #include "oam_id.h"
 #include "gba/rom_header.h"
 
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "port_gba_mem.h"
 #endif
 
@@ -58,7 +58,7 @@ static struct TitleScreenAnimatedPalette sTitleScreenAnimatedPaletteTemplates[4]
     }
 };
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 #ifdef REGION_EU
 static const u8* sRomInfoStringPointers[1];
 static const u32* sTitleScreenMenuGfxPointers[(LANGUAGE_COUNT - LANGUAGE_ENGLISH) * 2];
@@ -1477,7 +1477,7 @@ static void TitleScreenSetMenuPalette(TitleScreenMenuOption option)
     dst1 = VRAM_BASE + 0x352 + sTitleScreenPageData[0].tiletablePage * 0x800;
     dst2 = dst1 + 0x20;
 
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     /* Same VRAM_BASE-raw-pointer issue as TitleScreenSetCopyrightSymbol
      * above and LanguageSelectChangeHighlight in soft_reset.c. */
     dst1 = (u16*)gba_MemPtr((uintptr_t)dst1);
@@ -1505,7 +1505,7 @@ static void TitleScreenSetMenuPalette(TitleScreenMenuOption option)
     dst1 = VRAM_BASE + 0x3D6 + sTitleScreenPageData[0].tiletablePage * 0x800;
     dst2 = dst1 + 0x20;
 
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     dst1 = (u16*)gba_MemPtr((uintptr_t)dst1);
     dst2 = (u16*)gba_MemPtr((uintptr_t)dst2);
 #endif
@@ -1558,7 +1558,7 @@ void TitleScreenSetCopyrightSymbol(TitleScreenCopyrightSymbol symbol)
     mask = 0xFC00;
     dst = VRAM_BASE + 0x178 + bgOffset;
 
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     /* VRAM_BASE is a raw GBA address (0x06000000), not a real host pointer
      * on this port. Same issue as LanguageSelectChangeHighlight in
      * soft_reset.c: this function does its own pointer arithmetic + direct
@@ -1586,7 +1586,7 @@ void TitleScreenDrawString(const u8* pString, u16* dst, u8 palette)
 {
     u16 tile;
 
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     /* Callers pass a raw VRAM_BASE-relative GBA address (see call sites
      * below), and this function dereferences dst directly instead of going
      * through WRITE_16 -- same issue as TitleScreenSetCopyrightSymbol. */

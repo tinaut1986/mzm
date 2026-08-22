@@ -62,12 +62,10 @@ SRCS_ROOT := \
 
 # Motor de audio real de mzm: UpdateAudio/InitTrack/UpdateTrack viven en
 # asm/audio_internal.s (ARM Thumb sin descompilar) y el mezclador PCM en
-# asm/soundcode.s. Ya incluyen el fix de port_resolve_addr() en InitTrack
-# (docs/3ds-port-status-2026-08-17.md seccion 6). Se enlazan en el build 3DS
-# para que el sonido use el engine propio de mzm (no M4A/TMC); el PCM se
-# consume desde gMusicInfo.soundRawData por el pegamento NDSP
-# (port_audio_3ds.c). port_audio_stubs.c queda fuera (ver PORT_NATIVE_AUDIO_STUBS
-# arriba) igual que en el resto de builds.
+# asm/soundcode.s. Ya incluyen el fix de port_resolve_addr() en InitTrack.
+# Se enlazan en el build 3DS para que el sonido use el engine propio de mzm;
+# el PCM se consume desde gMusicInfo.soundRawData por el pegamento NDSP
+# (port_mzm_audio_3ds.c).
 SRCS_ASM := \
 	$(ROOT)/asm/intr_main.s \
 	$(ROOT)/asm/linker_symbols.s \
@@ -92,7 +90,7 @@ DEPS      := $(C_OBJS:.o=.d)
 
 ARCH    := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
 CFLAGS  := -O2 -fomit-frame-pointer -Wall -mword-relocations -ffunction-sections -fdata-sections \
-           -DREGION_EU -DMZM_PORT_VERSION='"0.0-dev"' -D__3DS__ -DTMC_3DS \
+           -DREGION_EU -DMZM_PORT_VERSION='"0.0-dev"' -D__3DS__ -DMZM_3DS \
            -DNON_MATCHING=1 \
            -Wno-implicit-function-declaration -Wno-implicit-int -Wno-builtin-declaration-mismatch \
            -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function \
@@ -117,6 +115,25 @@ ifeq ($(RENDERER),gpu)
   CFLAGS += -DPORT_GPU_TILE_RENDERER
 else ifneq ($(RENDERER),cpu)
   $(error Unknown RENDERER '$(RENDERER)' -- expected 'gpu' or 'cpu')
+endif
+
+# Force the Old3DS performance profile even when actually running on New3DS
+# hardware: no CPU/L2 clock speedup (osSetSpeedupEnable is skipped, so the
+# CPU stays at Old3DS's base clock instead of jumping to New3DS's 804MHz),
+# no extra Core1 worker thread (APT_SetAppCpuTimeLimit is skipped), and the
+# PPU/GPU renderers pick their Old3DS render profile (adaptive frameskip
+# enabled, virtuappu_mode1's old3ds mode1 profile) -- see the sIsNew3DS
+# override in Platform3DS_Init (platform_3ds_minimal.c). Lets you benchmark
+# how the game would actually run on an Old3DS/2DS by building and
+# installing this on a New3DS you already own, no separate console needed:
+#   make clean && make FORCE_OLD3DS=1
+# The clean matters: changing flags alone does not invalidate existing
+# objects, which is exactly the stale-.o trap documented in section 6l.
+FORCE_OLD3DS ?= 0
+ifeq ($(FORCE_OLD3DS),1)
+  CFLAGS += -DPORT_FORCE_OLD3DS_PROFILE
+else ifneq ($(FORCE_OLD3DS),0)
+  $(error Unknown FORCE_OLD3DS '$(FORCE_OLD3DS)' -- expected '0' or '1')
 endif
 
 # Extra flags from the command line, e.g. to turn on the audio diagnostics that
@@ -145,11 +162,13 @@ LIBS     := -L$(CTRULIB)/lib -L$(PORTLIBS)/lib -lcitro2d -lcitro3d -lctru -lm
 MAKEROM    ?= $(shell which makerom 2>/dev/null || echo /home/tinaut1986/tools/bin/makerom)
 BANNERTOOL ?= $(shell which bannertool 2>/dev/null || echo /home/tinaut1986/tools/bin/bannertool)
 
-.PHONY: all clean cia elf
+.PHONY: all clean cia elf 3dsx
 
 all: $(TARGET).cia
 
 cia: $(TARGET).cia
+
+3dsx: $(TARGET).3dsx
 
 elf: $(TARGET).elf
 

@@ -27,7 +27,7 @@
 #include "structs/sprite.h"
 #include "structs/projectile.h"
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 #include "port_debug_log.h"
 #endif
 
@@ -594,7 +594,7 @@ static void RuinsTestInit(void)
     gSubSpriteData1.health = 0;
     gSubSpriteData1.work1 = 0;
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
     {
         char msg[160];
         __builtin_snprintf(msg, sizeof(msg),
@@ -1584,7 +1584,7 @@ static void RuinsTestGhostSymbolDelayBeforePlacingAtEndOfFight(void)
  */
 void RuinsTest(void)
 {
-#ifdef TMC_3DS
+#ifdef MZM_3DS
     {
         static u16 sLastPose = 0xFFFF;
         if (gCurrentSprite.pose != sLastPose)

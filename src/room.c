@@ -3,7 +3,7 @@
 #include "gba.h"
 #include "event.h"
 
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "port_gba_mem.h"
 #endif
 
@@ -44,7 +44,7 @@
 #include "structs/screen_shake.h"
 #include "structs/visual_effects.h"
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 const struct Door* sAreaDoorsPointers[AREA_ENTRY_COUNT];
 const struct RoomEntryRom* sAreaRoomEntryPointers[AREA_ENTRY_COUNT];
 void Init_sAreaPointers(void) {
@@ -93,7 +93,7 @@ const struct Door* sAreaDoorsPointers[AREA_ENTRY_COUNT] = {
 #endif // DEBUG
 };
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 const struct RoomEntryRom* sAreaRoomEntryPointers[AREA_ENTRY_COUNT];
 void Init_sAreaRoomEntryPointers(void) {
     sAreaRoomEntryPointers[AREA_BRINSTAR] = sBrinstarRoomEntries;
@@ -133,7 +133,7 @@ const struct RoomEntryRom* sAreaRoomEntryPointers[AREA_ENTRY_COUNT] = {
  */
 void RoomLoad(void)
 {
-#ifdef TMC_3DS
+#ifdef MZM_3DS
     extern void Port_DebugLog(const char* msg);
     {
         char _msg[160];
@@ -148,11 +148,11 @@ void RoomLoad(void)
     if (gPauseScreenFlag == PAUSE_SCREEN_NONE)
     {
         // No PSF, fully load room
-#ifdef TMC_3DS
+#ifdef MZM_3DS
         Port_DebugLog("RoomLoad: before RoomLoadEntry");
 #endif
         RoomLoadEntry();
-#ifdef TMC_3DS
+#ifdef MZM_3DS
         Port_DebugLog("RoomLoad: before ScrollLoad");
 #endif
         ScrollLoad();
@@ -199,11 +199,11 @@ void RoomLoad(void)
         PlayMusic(MUSIC_CHOZO_RUINS, 0x10);
 
     // Load graphics
-#ifdef TMC_3DS
+#ifdef MZM_3DS
     Port_DebugLog("RoomLoad: before RoomLoadTileset");
 #endif
     RoomLoadTileset();
-#ifdef TMC_3DS
+#ifdef MZM_3DS
     Port_DebugLog("RoomLoad: before RoomLoadBackgrounds");
 #endif
     RoomLoadBackgrounds();
@@ -225,12 +225,12 @@ void RoomLoad(void)
     // Load states, entities
     AnimatedGraphicsCheckPlayLightningEffect();
     RoomUpdateBackgroundsPosition();
-#ifdef TMC_3DS
+#ifdef MZM_3DS
     Port_DebugLog("RoomLoad: before ConnectionLoadDoors");
 #endif
     ConnectionLoadDoors();
     ConnectionCheckHatchLockEvents();
-#ifdef TMC_3DS
+#ifdef MZM_3DS
     Port_DebugLog("RoomLoad: before RoomSetInitialTilemap");
 #endif
     RoomSetInitialTilemap(0);
@@ -241,7 +241,7 @@ void RoomLoad(void)
     HazeSetBackgroundEffect();
     HazeProcess();
     MinimapCheckOnTransition();
-#ifdef TMC_3DS
+#ifdef MZM_3DS
     Port_DebugLog("RoomLoad: finished");
 #endif
 
@@ -281,9 +281,9 @@ void RoomLoad(void)
     }
 }
 
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "port_gba_mem.h"
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 #include "port_debug_log.h"
 #endif
 
@@ -436,7 +436,7 @@ void RoomLoadEntry(void)
         gSpriteset = entry.defaultSpriteset;
     }
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
     {
         extern u32 gEventsTriggered[8];
         char msg[256];
@@ -667,7 +667,7 @@ void RoomReset(void)
     gDisableAnimatedGraphicsTimer = 0;
 
     ptr = EWRAM_BASE + 0x27780;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     ptr = GBA_RESOLVE(ptr);
 #endif
     for (xOffset = 64; xOffset != 0; xOffset--)
@@ -845,7 +845,7 @@ void RoomSetInitialTilemap(u8 bgNumber)
                 tmpOffset = 0x800; // Needed to produce matching ASM.
                 if (tmpX & 0x10)
                     dst = VRAM_BASE + tmpOffset + bgNumber * 0x1000;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
                 dst = GBA_RESOLVE(dst);
 #endif
 
@@ -1329,7 +1329,7 @@ void RoomUpdateVerticalTilemap(s32 offset)
         tilemapOffset = yPosition * gBgPointersAndDimensions.backgrounds[i].width + xPosition;
         
         dst = VRAM_BASE + i * 4096;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
         dst = GBA_RESOLVE(dst);
 #endif
         dst += (yPosition & 0xF) * 32;
@@ -1415,7 +1415,7 @@ void RoomUpdateHorizontalTilemap(s32 offset)
         dst = VRAM_BASE + i * 4096;
         if (xPosition & 0x10)
             dst = VRAM_BASE + 0x800 + i * 4096;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
         dst = GBA_RESOLVE(dst);
 #endif
         dst += (xPosition & 0xF);

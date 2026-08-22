@@ -58,7 +58,7 @@
 
 #define UNKNOWN_ITEM_CHOZO_STATUE_REFILL_POSE_IDLE 0x9
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 static const struct FrameData* sUnknownItemChozoStatueFrameDataPointers[UNKNOWN_ITEM_CHOZO_STATUE_OAM_COUNT];
 void Init_sUnknownItemChozoStatueFrameDataPointers(void) {
     sUnknownItemChozoStatueFrameDataPointers[UNKNOWN_ITEM_CHOZO_STATUE_OAM_LEG_STANDING] = sUnknownItemChozoStatuePartOam_LegStanding;
@@ -109,7 +109,7 @@ static void UnknownItemChozoStatueSyncSubSprites(void)
     u16 oamIdx;
 
     pData = gSubSpriteData1.pMultiOam[gSubSpriteData1.currentAnimationFrame].pData;
-#if defined(TMC_3DS) || defined(PORT_NATIVE)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     pData = GBA_RESOLVE(pData);
 #endif
     oamIdx = pData[gCurrentSprite.roomSlot][MULTI_SPRITE_DATA_ELEMENT_OAM_INDEX];

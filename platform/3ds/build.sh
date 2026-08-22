@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 VERSION="$(tr -d '\r\n' < "${ROOT}/platform/3ds/version.txt")"
 DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
 BUILD="${ROOT}/build-3ds/game"
-TOOLS_ROOT="${TMC3DS_TOOLS_ROOT:-${ROOT}/../Tools/bin}"
+TOOLS_ROOT="${MZM3DS_TOOLS_ROOT:-${ROOT}/../Tools/bin}"
 MAKEROM="${MAKEROM:-${TOOLS_ROOT}/makerom}"
 BANNERTOOL="${BANNERTOOL:-${TOOLS_ROOT}/bannertool}"
 
@@ -26,7 +26,7 @@ export DEVKITPRO
 cmake -S "${ROOT}/platform/3ds" -B "${BUILD}" \
   -DCMAKE_TOOLCHAIN_FILE="${DEVKITPRO}/cmake/3DS.cmake" \
   -DCMAKE_BUILD_TYPE=Release
-cmake --build "${BUILD}" --parallel "${TMC3DS_JOBS:-4}"
+cmake --build "${BUILD}" --parallel "${MZM3DS_JOBS:-4}"
 
 if [[ ! -x "${MAKEROM}" || ! -x "${BANNERTOOL}" ]]; then
   printf '3DSX ready; makerom/bannertool are unavailable for CIA packaging.\n'
@@ -34,26 +34,27 @@ if [[ ! -x "${MAKEROM}" || ! -x "${BANNERTOOL}" ]]; then
 fi
 
 "${BANNERTOOL}" makesmdh \
-  -s "The Minish Cap 3DS v${VERSION}" \
-  -l "The Minish Cap 3DS v${VERSION}" \
-  -p "Esteban PDN / Project Picori / samyost1" \
+  -s "Metroid Zero Mission 3DS v${VERSION}" \
+  -l "Metroid Zero Mission 3DS v${VERSION}" \
+  -p "metroidret + community" \
   -i "${ROOT}/platform/3ds/assets/icon-48.png" \
   -f visible,nosavebackups \
-  -o "${BUILD}/tmc-3ds.icn"
+  -o "${BUILD}/mzm-3ds.icn"
 
 "${BANNERTOOL}" makebanner \
   -i "${ROOT}/platform/3ds/assets/banner.png" \
   -a "${ROOT}/platform/3ds/assets/banner.wav" \
-  -o "${BUILD}/tmc-3ds.bnr"
+  -o "${BUILD}/mzm-3ds.bnr"
 
 (
 cd "${ROOT}"
-"${MAKEROM}" -f cia -o "${BUILD}/tmc-3ds-v${VERSION}.cia" \
+"${MAKEROM}" -f cia -o "${BUILD}/mzm-3ds-v${VERSION}.cia" \
   -DAPP_ROMFS="${BUILD#"${ROOT}/"}/romfs" \
-  -rsf "${ROOT}/platform/3ds/cia/tmc3ds.rsf" -target t -exefslogo \
-  -elf "${BUILD}/tmc-3ds.elf" -icon "${BUILD}/tmc-3ds.icn" \
-  -banner "${BUILD}/tmc-3ds.bnr"
+  -rsf "${ROOT}/platform/3ds/cia/mzm3ds.rsf" -target t -exefslogo \
+  -elf "${BUILD}/mzm-3ds.elf" -icon "${BUILD}/mzm-3ds.icn" \
+  -banner "${BUILD}/mzm-3ds.bnr"
 )
 
 printf 'Ready:\n  %s\n  %s\n' \
-  "${BUILD}/tmc-3ds-v${VERSION}.3dsx" "${BUILD}/tmc-3ds-v${VERSION}.cia"
+  "${BUILD}/mzm-3ds-v${VERSION}.3dsx" "${BUILD}/mzm-3ds-v${VERSION}.cia"
+

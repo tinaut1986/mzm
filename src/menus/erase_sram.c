@@ -25,7 +25,7 @@ static void EraseSramVBlank(void);
 static void EraseSramVBlank_Empty(void);
 static void EraseSramProcessOam(void);
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 static const u32* sEraseSramTextGfxPointers[LANGUAGE_COUNT][2];
 void Init_sEraseSramTextGfxPointers(void) {
     sEraseSramTextGfxPointers[LANGUAGE_JAPANESE][0] = sEraseSramMenuQuestionJapaneseGfx;

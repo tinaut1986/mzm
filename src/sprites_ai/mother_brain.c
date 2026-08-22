@@ -54,7 +54,7 @@ MAKE_ENUM(u8, MotherBrainFightStage) {
 // Damage threshold at which mother closes her eye
 #define MOTHER_BRAIN_DAMAGE_THRESHOLD (SUPER_MISSILE_DAMAGE)
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 static const struct FrameData* sMotherBrainFrameDataPointers[MOTHER_BRAIN_OAM_COUNT];
 void Init_sMotherBrainFrameDataPointers(void) {
     sMotherBrainFrameDataPointers[MOTHER_BRAIN_OAM_IDLE] = sMotherBrainOam_Idle;

@@ -1,5 +1,5 @@
-#ifndef TMC_PORT_MZM_AUDIO_GLUE_H
-#define TMC_PORT_MZM_AUDIO_GLUE_H
+#ifndef MZM_PORT_MZM_AUDIO_GLUE_H
+#define MZM_PORT_MZM_AUDIO_GLUE_H
 
 /*
  * Shared contract between the mzm audio producer (port_mzm_audio_glue.c,

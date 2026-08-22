@@ -16,7 +16,7 @@
 #include "structs/game_state.h"
 #include "structs/multiboot.h"
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 static const u8* sPlayerNumbersStringPointers[4];
 void Init_sPlayerNumbersStringPointers(void) {
     sPlayerNumbersStringPointers[0] = sPlayer1String;

@@ -16,7 +16,7 @@
 #define CROCOMIRE_PART_POSE_IDLE 0x9
 #define CROCOMIRE_PART_POSE_DYING 0x67
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 static const struct FrameData* sCrocomireFrameDataPointers[CROCOMIRE_OAM_COUNT];
 void Init_sCrocomireFrameDataPointers(void) {
     sCrocomireFrameDataPointers[CROCOMIRE_OAM_PART_BODY_IDLE] = sCrocomirePartOam_BodyIdle;

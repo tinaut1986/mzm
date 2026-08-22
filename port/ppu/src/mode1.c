@@ -1,12 +1,10 @@
 /*
- * Part of the The Minish Cap PC port — GPL-3.0-or-later.
+ * Software GBA PPU for native ports — GPL-3.0-or-later.
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * Software GBA PPU, vendored as first-party port source. Derived from
  * VirtuaPPU by Mathéo Vignaud (https://github.com/MatheoVignaud/VirtuaPPU,
- * commit 5cf5e99) and incorporating this project's 15 accuracy/portability
- * patches (formerly port/patches/viruappu-*.patch; preserved in git history).
- * Maintained here directly — not kept in sync with upstream.
+ * commit 5cf5e99) and incorporating accuracy and portability patches.
  */
 
 #include "cpu/mode1.h"
@@ -16,7 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 #include <3ds.h>
 #endif
 
@@ -404,14 +402,7 @@ void virtuappu_mode1_get_bound_gba_memory(VirtuaPPUMode1GbaMemory* memory) {
  * threads while still seeing the correct HDMA-mutated register state
  * (BG SCROLL, BLDY, etc.) for that scanline. NULL on the main / setup
  * thread keeps the existing single-threaded behavior intact. */
-#ifdef TMC_N64
-/* N64: single-threaded (no OpenMP) and bare-metal (no TLS). __thread compiles to
- * RDHWR $29, which the VR4300 (MIPS III) doesn't implement -> Reserved Instruction.
- * Single-threaded rendering makes plain file-scope storage correct here. */
-#define VPPU_TLS
-#else
 #define VPPU_TLS __thread
-#endif
 VPPU_TLS const uint8_t* virtuappu_mode1_io_thread_override = NULL;
 
 /* Per-scanline scratch (one slot per screen column) marking which OBJ pixels
@@ -440,11 +431,7 @@ int virtuappu_mode1_obj_clip_enable;
 
 uint16_t virtuappu_mode1_io_read16(uint16_t offset) {
     const uint8_t* src = virtuappu_mode1_io_thread_override ? virtuappu_mode1_io_thread_override : mode1_memory.io_mem;
-#ifdef TMC_N64
-    return *(const uint16_t*)(src + offset); /* native: engine stores IO regs in host order (BE on N64) */
-#else
     return (uint16_t)src[offset] | ((uint16_t)src[offset + 1u] << 8u);
-#endif
 }
 
 uint32_t virtuappu_mode1_io_read32(uint16_t offset) {
@@ -476,7 +463,7 @@ static const uint8_t mode1_gba_lcd_lut[32] = {
     0, 0, 0, 0, 1, 2, 4, 8, 13, 19, 25, 32, 39, 46, 54, 63,
     71, 80, 90, 100, 110, 120, 131, 142, 154, 165, 178, 190, 203, 216, 229, 243,
 };
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 static uint8_t mode1_obj_line_indices[MODE1_GBA_HEIGHT][MODE1_GBA_OAM_COUNT];
 static uint8_t mode1_obj_line_counts[MODE1_GBA_HEIGHT];
 #endif
@@ -561,7 +548,7 @@ static void virtuappu_mode1_publish_palette_luts(void) {
     }
 }
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 static void virtuappu_mode1_publish_obj_line_lists(void) {
     memset(mode1_obj_line_counts, 0, sizeof(mode1_obj_line_counts));
     for (int i = MODE1_GBA_OAM_COUNT - 1; i >= 0; --i) {
@@ -590,34 +577,23 @@ static void virtuappu_mode1_publish_obj_line_lists(void) {
 }
 #endif
 
-/* Native-width TMC gameplay overwhelmingly uses 4bpp text backgrounds with
- * mosaic disabled.  Walk those scanlines a tile fragment at a time instead of
+/* Native-width gameplay overwhelmingly uses 4bpp text backgrounds with
+ * mosaic disabled. Walk those scanlines a tile fragment at a time instead of
  * recomputing the tilemap address, tile attributes, and bounds for every
- * pixel.  A fragment is at most the remainder of one 8-pixel tile, so scroll
+ * pixel. A fragment is at most the remainder of one 8-pixel tile, so scroll
  * wrapping and screen-block selection stay identical to the generic path.
  *
- * The row load is deliberately little-endian: GBA character data stores the
- * leftmost pixel in the low nibble.  memcpy becomes one aligned word load on
- * ARM11/x86 while the explicit N64 assembly keeps the big-endian target
- * byte-exact. */
+ * The row load is little-endian: GBA character data stores the
+ * leftmost pixel in the low nibble. memcpy becomes one aligned word load on
+ * ARM11/x86. */
 static uint32_t mode1_read_tile_row_4bpp(const uint8_t* bytes) {
-#ifdef TMC_N64
-    return (uint32_t)bytes[0] | ((uint32_t)bytes[1] << 8u) | ((uint32_t)bytes[2] << 16u) |
-           ((uint32_t)bytes[3] << 24u);
-#else
     uint32_t value;
     memcpy(&value, bytes, sizeof(value));
     return value;
-#endif
 }
 
 static void mode1_store_bg_color_pair(uint32_t* destination, uint64_t colors) {
-#ifdef TMC_N64
-    destination[0] = (uint32_t)colors;
-    destination[1] = (uint32_t)(colors >> 32u);
-#else
     memcpy(destination, &colors, sizeof(colors));
-#endif
 }
 
 static uint64_t mode1_bg_color_pair(unsigned palette_bank, uint8_t packed_pair) {
@@ -740,15 +716,9 @@ static void mode1_render_text_bg_native_4bpp(int bg_index, uint32_t char_base, u
  * below performs the ABGR lookup only for layers that actually win.
  *
  * The packed-pair lookup turns each source byte (two 4bpp pixels) into one
- * 32-bit token pair on little-endian hosts.  The explicit big-endian stores
- * retain N64 portability without putting byte-order work in the ARM11 loop. */
+ * 32-bit token pair on little-endian hosts. */
 static void mode1_store_bg_token_pair(uint16_t* destination, uint32_t tokens) {
-#ifdef TMC_N64
-    destination[0] = (uint16_t)tokens;
-    destination[1] = (uint16_t)(tokens >> 16u);
-#else
     memcpy(destination, &tokens, sizeof(tokens));
-#endif
 }
 
 static uint32_t mode1_bg_token_pair(unsigned palette_bank, uint8_t packed_pair) {
@@ -999,9 +969,8 @@ void virtuappu_mode1_render_text_bg_line(int bg_index, int line, uint32_t* line_
     }
 
     /* Enabling BG mosaic with a 1x1 MOSAIC block is an identity operation.
-     * TMC leaves BG1's enable bit set in normal field/castle gameplay while
-     * MOSAIC itself is zero, so key the fast path on the effective dimensions
-     * instead of needlessly falling back on that inert flag. */
+     * When MOSAIC itself is zero/identity, key the fast path on the effective dimensions
+     * instead of needlessly falling back on an inert flag. */
     if (MODE1_NATIVE_FAST_PATHS_ENABLED() && !bpp8 &&
         (!mosaic_on || (mode1_old3ds_profile && mosaic_h == 1 && mosaic_v == 1)) &&
         !ws_hud_right_anchor && !ws_msg_line) {
@@ -1136,7 +1105,7 @@ void virtuappu_mode1_render_obj_line(int line, bool obj_1d, uint32_t* line_buffe
     memset(virtuappu_mode1_obj_semitrans, 0, (size_t)obj_frame_width);
     memset(virtuappu_mode1_obj_window, 0, (size_t)obj_frame_width);
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
     const int line_object_count = mode1_obj_line_counts[line];
     for (int line_object = 0; line_object < line_object_count; ++line_object) {
         i = mode1_obj_line_indices[line][line_object];
@@ -2282,13 +2251,11 @@ static bool mode1_render_native_compact_line(int line, uint16_t dispcnt, int fra
  * S*S nearest-replicated into `dst` (a 240*S by 160*S buffer). For each
  * affine OAM entry we re-run the matrix at sub-pixel density and write
  * straight to `dst`, which produces visibly smoother diagonals on rotated
- * sprites (Vaati's tornado, screen-shrink cinematic, every spinning enemy).
+ * sprites (e.g. rotated bosses, spinning hazards).
  *
  * Caveats:
  *   * No priority/blend layering — affine pixels overwrite whatever's at
- *     the target. Acceptable for a first pass because the affine sprite
- *     was already top-of-stack at scale 1; in TMC there are very few
- *     scenes where a non-affine sprite occludes an affine one.
+ *     the target.
  *   * Source texture is still 1x pixel art — no information to "recover".
  *     What you gain is sub-pixel sampling at the screen-space rotation,
  *     which trades the 240-grid staircase for an S*240-grid one.
@@ -2717,7 +2684,7 @@ static void mode1_render_lines(const Mode1RenderLinesContext* context, int first
     }
 }
 
-#ifdef TMC_3DS
+#ifdef MZM_3DS
 typedef struct Mode1Worker {
     LightEvent start;
     LightEvent done;
@@ -2936,12 +2903,8 @@ void virtuappu_mode1_render_frame(const PPUMemory* ppu) {
             /* Display rendering only reads registers through BLDY (0x54). */
             memcpy(io_snapshots[line], mode1_memory.io_mem, MODE1_IO_BLDY + 2u);
             per_line_dispcnt[line] =
-#ifdef TMC_N64
-                *(const uint16_t*)&io_snapshots[line][MODE1_IO_DISPCNT];
-#else
                 (uint16_t)io_snapshots[line][MODE1_IO_DISPCNT] |
                 ((uint16_t)io_snapshots[line][MODE1_IO_DISPCNT + 1] << 8);
-#endif
         } else {
             per_line_dispcnt[line] = dispcnt;
         }
@@ -2965,14 +2928,14 @@ void virtuappu_mode1_render_frame(const PPUMemory* ppu) {
      * the ABGR LUTs once so the parallel per-pixel loops below do a single table
      * load instead of the rgb555->ABGR math. */
     virtuappu_mode1_publish_palette_luts();
-#ifdef TMC_3DS
+#ifdef MZM_3DS
     virtuappu_mode1_publish_obj_line_lists();
 #endif
 
     const Mode1RenderLinesContext render_context = {
         affine, per_line_io, dispcnt, frame_width, per_line_dispcnt, io_snapshots, aff_ref_x, aff_ref_y,
     };
-#ifdef TMC_3DS
+#ifdef MZM_3DS
     mode1_render_lines_3ds(&render_context);
 #else
 #pragma omp parallel for schedule(static)
