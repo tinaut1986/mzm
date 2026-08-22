@@ -1,0 +1,65 @@
+name: Build 3DS Release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-3ds:
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkitarm:latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build 3DS Port (Release)
+        run: |
+          export DEVKITPRO=/opt/devkitpro
+          export DEVKITARM=/opt/devkitpro/devkitARM
+          make -C platform/3ds clean
+          make -C platform/3ds -j$(nproc) RENDERER=gpu
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mzm-3ds-build
+          path: |
+            platform/3ds/mzm-3ds.cia
+            platform/3ds/mzm-3ds.3dsx
+
+      - name: Generate Release Tag Name
+        id: vars
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          GIT_TAG=$(git describe --tags --always)
+          echo "tag=$GIT_TAG" >> $GITHUB_OUTPUT
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            echo "is_tag=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_tag=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create / Update GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.vars.outputs.tag }}
+          name: Release ${{ steps.vars.outputs.tag }}
+          draft: false
+          prerelease: ${{ steps.vars.outputs.is_tag == 'false' }}
+          files: |
+            platform/3ds/mzm-3ds.cia
+            platform/3ds/mzm-3ds.3dsx
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

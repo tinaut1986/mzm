@@ -88,9 +88,12 @@ OBJS_3DS  := $(patsubst $(CURDIR)/%.c, $(BUILD)/3ds/%.o, $(SRCS_3DS))
 C_OBJS    := $(OBJS_ROOT) $(OBJS_ASM) $(OBJS_3DS)
 DEPS      := $(C_OBJS:.o=.d)
 
+GIT_VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "0.0-dev")
+VERSION ?= $(GIT_VERSION)
+
 ARCH    := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
 CFLAGS  := -O2 -fomit-frame-pointer -Wall -mword-relocations -ffunction-sections -fdata-sections \
-           -DREGION_EU -DMZM_PORT_VERSION='"0.0-dev"' -D__3DS__ -DMZM_3DS \
+           -DREGION_EU -DMZM_PORT_VERSION='\"$(VERSION)\"' -D__3DS__ -DMZM_3DS \
            -DNON_MATCHING=1 \
            -Wno-implicit-function-declaration -Wno-implicit-int -Wno-builtin-declaration-mismatch \
            -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function \
