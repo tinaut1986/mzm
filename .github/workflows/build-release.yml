@@ -20,20 +20,18 @@ jobs:
     steps:
       - name: Install build tools (makerom & bannertool)
         run: |
-          apt-get update -y
-          apt-get install -y wget unzip
           mkdir -p /opt/devkitpro/tools/bin
-          wget -q https://github.com/Steveice10/bannertool/releases/download/v1.2.0/bannertool.zip
-          unzip -q bannertool.zip linux-x86_64/bannertool -d /tmp
+          curl -sL https://github.com/Steveice10/bannertool/releases/download/v1.2.0/bannertool.zip -o bannertool.zip
+          unzip -q -o bannertool.zip linux-x86_64/bannertool -d /tmp
           mv /tmp/linux-x86_64/bannertool /opt/devkitpro/tools/bin/bannertool
           chmod +x /opt/devkitpro/tools/bin/bannertool
           rm -f bannertool.zip
           
-          wget -q https://github.com/3DSGuy/Project_CTR/releases/download/makerom-v0.18.4/makerom-v0.18.4-ubuntu_x86_64.zip
-          unzip -q makerom-v0.18.4-ubuntu_x86_64.zip -d /tmp
+          curl -sL https://github.com/3DSGuy/Project_CTR/releases/download/makerom-v0.18.4/makerom-v0.18.4-ubuntu_x86_64.zip -o makerom.zip
+          unzip -q -o makerom.zip -d /tmp
           mv /tmp/makerom-v0.18.4-ubuntu_x86_64 /opt/devkitpro/tools/bin/makerom
           chmod +x /opt/devkitpro/tools/bin/makerom
-          rm -f makerom-v0.18.4-ubuntu_x86_64.zip
+          rm -f makerom.zip
 
       - name: Checkout repository
         uses: actions/checkout@v4
