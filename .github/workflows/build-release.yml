@@ -18,21 +18,6 @@ jobs:
       image: devkitpro/devkitarm:latest
 
     steps:
-      - name: Install build tools (makerom & bannertool)
-        run: |
-          mkdir -p /opt/devkitpro/tools/bin
-          curl -sL https://github.com/Steveice10/bannertool/releases/download/v1.2.0/bannertool.zip -o bannertool.zip
-          unzip -q -o bannertool.zip linux-x86_64/bannertool -d /tmp
-          mv /tmp/linux-x86_64/bannertool /opt/devkitpro/tools/bin/bannertool
-          chmod +x /opt/devkitpro/tools/bin/bannertool
-          rm -f bannertool.zip
-          
-          curl -sL https://github.com/3DSGuy/Project_CTR/releases/download/makerom-v0.18.4/makerom-v0.18.4-ubuntu_x86_64.zip -o makerom.zip
-          unzip -q -o makerom.zip -d /tmp
-          mv /tmp/makerom-v0.18.4-ubuntu_x86_64 /opt/devkitpro/tools/bin/makerom
-          chmod +x /opt/devkitpro/tools/bin/makerom
-          rm -f makerom.zip
-
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
@@ -40,11 +25,13 @@ jobs:
 
       - name: Build 3DS Port (Release)
         run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           export DEVKITPRO=/opt/devkitpro
           export DEVKITARM=/opt/devkitpro/devkitARM
-          export PATH=/opt/devkitpro/tools/bin:$PATH
+          chmod +x tools/bin/bannertool tools/bin/makerom
+          export PATH=$GITHUB_WORKSPACE/tools/bin:/opt/devkitpro/tools/bin:$PATH
           make -C platform/3ds clean
-          make -C platform/3ds -j$(nproc) RENDERER=gpu BANNERTOOL=/opt/devkitpro/tools/bin/bannertool MAKEROM=/opt/devkitpro/tools/bin/makerom
+          make -C platform/3ds -j$(nproc) RENDERER=gpu BANNERTOOL=$GITHUB_WORKSPACE/tools/bin/bannertool MAKEROM=$GITHUB_WORKSPACE/tools/bin/makerom
 
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
