@@ -174,45 +174,163 @@ extern void gba_write16(uint32_t addr, uint16_t v);
 #define MZM_REG_KEY_INPUT 0x04000130u
 #define MZM_KEY_MASK 0x3FFu
 
-/* KEY_X (bit 10) falls outside MZM_KEY_MASK (bits 0-9, GBA's own button
- * set), so it never reaches the game and is free to repurpose as a
- * diagnostic hotkey: dump the actual GPU-rendered content of the left/right/
- * bottom render targets to the SD card (PlatformGpu3DS_DumpScreens, in
- * platform_gpu_3ds.c) -- added to inspect what the right-eye stereo target
- * really contains when the 3D slider is on, since the CPU-side debug log
- * alone couldn't explain reported content missing there. Declared extern
- * rather than #include "platform_gpu_3ds.h" purely out of consistency with
- * this file's existing style of narrow forward declarations. */
+/* KEY_X and KEY_Y (bits 10/11) fall outside MZM_KEY_MASK (bits 0-9, GBA's
+ * own button set), so neither reaches the game directly -- both are
+ * user-configurable action buttons instead (see ProcessButtonAction below).
+ * They also each carry a secondary diagnostics function, gated behind
+ * holding L+R at the same time (see the lrHeld block in
+ * Platform3DS_PollKeysIntoGba) so it doesn't collide with whatever gameplay
+ * action X/Y are currently assigned to: L+R+X dumps the actual GPU-rendered
+ * content of the left/right/bottom render targets to the SD card
+ * (PlatformGpu3DS_DumpScreens, in platform_gpu_3ds.c) -- added to inspect
+ * what the right-eye stereo target really contains when the 3D slider is on,
+ * since the CPU-side debug log alone couldn't explain reported content
+ * missing there. Declared extern rather than #include "platform_gpu_3ds.h"
+ * purely out of consistency with this file's existing style of narrow
+ * forward declarations. */
 extern void PlatformGpu3DS_DumpScreens(void);
 
-/* KEY_Y (also outside MZM_KEY_MASK, same reasoning as KEY_X above): drops a
- * numbered, timestamped marker line into mzm-debug.log so a play session can
- * flag "something happened right here" (e.g. a visible CPU/GPU renderer
- * fallback) without having to describe timing after the fact -- grep the log
- * for "USER MARK" and read the surrounding GPU_REJECT/GPUDIAG lines (needs
- * -DPORT_GPU_RENDERER_DIAG_LOG for those) or ModeChange lines to see what the
- * game was doing at that exact moment. Unbuffered (Port_DebugLog, not
- * Port_DebugLogBuffered) so the mark is flushed to disk immediately even if
- * the app is killed moments later. */
+/* L+R+Y drops a timestamped "USER MARK" line into mzm-debug.log so a play
+ * session can flag "something happened right here" (e.g. a visible CPU/GPU
+ * renderer fallback) without having to describe timing after the fact --
+ * grep the log for "USER MARK" and read the surrounding GPU_REJECT/GPUDIAG
+ * lines (needs -DPORT_GPU_RENDERER_DIAG_LOG for those) or ModeChange lines
+ * to see what the game was doing at that exact moment. Unbuffered
+ * (Port_DebugLog, not Port_DebugLogBuffered) so the mark is flushed to disk
+ * immediately even if the app is killed moments later. */
 extern void Port_DebugLog(const char* msg);
 
+extern int Port_Config_GetButtonMapping(int buttonIndex);
+extern int Port_Samus_GetPoseClass(void); /* 0 = normal, 1 = crouching, 2 = morphed */
+
+static uint16_t ProcessButtonAction(int action, uint32_t keysHeld, uint32_t keysDown, uint32_t buttonMask, bool* outMorphPulse) {
+    if (!(keysHeld & buttonMask)) return 0;
+
+    switch (action) {
+        case 1: { /* AUTODISPARO (RAPID FIRE) */
+            static uint32_t sRapidCounter = 0;
+            ++sRapidCounter;
+            /* Pulse KEY_B every other frame (30 shots/sec) */
+            return (sRapidCounter & 1) ? (1 << 1) : 0;
+        }
+        case 2: { /* MORFOSFERA RAPIDA (QUICK MORPH) */
+            if (keysDown & buttonMask) {
+                if (outMorphPulse) *outMorphPulse = true;
+            }
+            return 0;
+        }
+        case 3: return (1 << 1); /* DISPARO (KEY_B) */
+        case 4: return (1 << 0); /* SALTO (KEY_A) */
+        case 5: return (1 << 2); /* MISILES (KEY_SELECT) */
+        case 6: return (1 << 8); /* APUNTAR ARRIBA (KEY_R) */
+        case 7: return (1 << 9); /* APUNTAR ABAJO (KEY_L) */
+        default: return 0;
+    }
+}
+
 void Platform3DS_PollKeysIntoGba(void) {
-    const uint16_t held = Platform3DS_ReadKeyInput() & MZM_KEY_MASK;
-    gba_write16(MZM_REG_KEY_INPUT, (uint16_t)(~held & MZM_KEY_MASK));
-    if (hidKeysDown() & KEY_X) {
-        PlatformGpu3DS_DumpScreens();
+    hidScanInput();
+    const uint32_t held3ds = hidKeysHeld();
+    const uint32_t down3ds = hidKeysDown();
+
+    /* Standard GBA buttons from 3DS D-Pad / Face buttons */
+    uint16_t gbaKeys = (uint16_t)(held3ds & MZM_KEY_MASK);
+
+    /* 1. Circle Pad input (analog stick -> D-Pad) */
+    circlePosition circle;
+    hidCircleRead(&circle);
+    const int16_t deadzone = 40;
+    if (circle.dx > deadzone) gbaKeys |= (1 << 4);  /* KEY_RIGHT */
+    if (circle.dx < -deadzone) gbaKeys |= (1 << 5); /* KEY_LEFT */
+    if (circle.dy > deadzone) gbaKeys |= (1 << 6);  /* KEY_UP */
+    if (circle.dy < -deadzone) gbaKeys |= (1 << 7); /* KEY_DOWN */
+
+    /* 2. C-Stick / New 3DS Right Analog Stick (Aim / Directions) */
+    circlePosition cstick;
+    irrstCstickRead(&cstick);
+    if (cstick.dx > deadzone) gbaKeys |= (1 << 4);
+    if (cstick.dx < -deadzone) gbaKeys |= (1 << 5);
+    if (cstick.dy > deadzone) gbaKeys |= (1 << 8);  /* C-Stick Up -> Aim Up (R) */
+    if (cstick.dy < -deadzone) gbaKeys |= (1 << 9); /* C-Stick Down -> Aim Down (L) */
+
+    /* L+R held together is reserved as a diagnostics modifier, freeing X/Y
+     * up from their normal configurable gameplay actions for that instant:
+     * L+R+X dumps the real GPU-rendered screen content to the SD card
+     * (PlatformGpu3DS_DumpScreens -- this used to be plain KEY_X before X
+     * became a user-configurable action button, see the comment below),
+     * L+R+Y drops a timestamped "USER MARK" line into mzm-debug.log so a
+     * play session can flag a moment for later grep'ing without describing
+     * timing after the fact. Edge-triggered on down3ds so each physical
+     * press dumps/logs exactly once. */
+    const bool lrHeld = (held3ds & KEY_L) && (held3ds & KEY_R);
+    if (lrHeld) {
+        if (down3ds & KEY_X) PlatformGpu3DS_DumpScreens();
+        if (down3ds & KEY_Y) Port_DebugLog("USER MARK: L+R+Y pressed");
     }
-    if (hidKeysDown() & KEY_Y) {
-        static unsigned sMarkCount;
-        char msg[48];
-        __builtin_snprintf(msg, sizeof(msg), "=== USER MARK #%u (t=%llums) ===",
-                           ++sMarkCount, (unsigned long long)osGetTime());
-        Port_DebugLog(msg);
+
+    /* 3. Configurable Extra Buttons: X, Y, ZL, ZR (suppressed while L+R is
+     * held, so the diagnostics combo above doesn't also fire whatever
+     * gameplay action the player has assigned to X/Y). */
+    bool quickMorphPulse = false;
+    if (!lrHeld) {
+        gbaKeys |= ProcessButtonAction(Port_Config_GetButtonMapping(0), held3ds, down3ds, KEY_X, &quickMorphPulse);
+        gbaKeys |= ProcessButtonAction(Port_Config_GetButtonMapping(1), held3ds, down3ds, KEY_Y, &quickMorphPulse);
     }
-    if (hidKeysHeld() & KEY_TOUCH) {
+    gbaKeys |= ProcessButtonAction(Port_Config_GetButtonMapping(2), held3ds, down3ds, KEY_ZL, &quickMorphPulse);
+    gbaKeys |= ProcessButtonAction(Port_Config_GetButtonMapping(3), held3ds, down3ds, KEY_ZR, &quickMorphPulse);
+
+    /* Quick Morph toggle handling.
+     *
+     * This is goal-directed rather than a fixed-length pulse, because both
+     * directions need a *variable* number of KEY_DOWN/KEY_UP edges depending
+     * on animation timing, not just one:
+     *   - Entering ball form: standing -> crouching on the first DOWN edge,
+     *     crouching -> morphing on a second DOWN edge (samus.c's
+     *     SamusStanding/SamusCrouching). Goal: pose class reaches MORPHED.
+     *   - Leaving ball form: one UP edge starts unmorphing
+     *     (SamusMorphball's "Check unmorphing" block), but that only lands
+     *     Samus in CROUCHING once the animation ends (SamusUnmorphingGfx
+     *     hard-sets it) -- a *second* UP edge is then needed to actually
+     *     stand up (SamusCrouching's own KEY_UP check). Goal: pose class
+     *     reaches NORMAL (not just "no longer morphed"), so Samus doesn't
+     *     end up stuck crouching after unmorphing.
+     * Each attempted edge is a short press with a release gap after it (so
+     * a held key still produces a fresh gChangedInput edge next attempt),
+     * repeated every frame the goal isn't met yet, with a safety frame cap
+     * in case a pose transition doesn't behave as expected. */
+    static int sQuickMorphGoalClass = -1; /* -1 = idle, else target Port_Samus_GetPoseClass() value */
+    static int sQuickMorphPhaseTimer = 0; /* frames left in the current press or release micro-step */
+    static bool sQuickMorphPressing = false;
+    static int sQuickMorphSafetyFrames = 0;
+    if (quickMorphPulse && sQuickMorphGoalClass < 0) {
+        sQuickMorphGoalClass = (Port_Samus_GetPoseClass() == 2) ? 0 : 2;
+        sQuickMorphPhaseTimer = 0;
+        sQuickMorphPressing = false;
+        sQuickMorphSafetyFrames = 120; /* ~2s at 60fps */
+    }
+    if (sQuickMorphGoalClass >= 0) {
+        const uint16_t morphKey = (sQuickMorphGoalClass == 2) ? (1 << 7) /* DOWN */ : (1 << 6) /* UP */;
+        if (Port_Samus_GetPoseClass() == sQuickMorphGoalClass || --sQuickMorphSafetyFrames <= 0) {
+            sQuickMorphGoalClass = -1;
+        } else if (sQuickMorphPhaseTimer > 0) {
+            --sQuickMorphPhaseTimer;
+            if (sQuickMorphPressing) gbaKeys |= morphKey;
+        } else if (sQuickMorphPressing) {
+            sQuickMorphPressing = false;
+            sQuickMorphPhaseTimer = 4; /* release gap before the next edge */
+        } else {
+            sQuickMorphPressing = true;
+            sQuickMorphPhaseTimer = 4;
+            gbaKeys |= morphKey;
+        }
+    }
+
+    gba_write16(MZM_REG_KEY_INPUT, (uint16_t)(~gbaKeys & MZM_KEY_MASK));
+
+    if (held3ds & KEY_TOUCH) {
         touchPosition touch;
         hidTouchRead(&touch);
-        bool isNewTap = (hidKeysDown() & KEY_TOUCH) != 0;
+        bool isNewTap = (down3ds & KEY_TOUCH) != 0;
         extern void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap);
         Port_BottomUI_HandleTouchDrag(touch.px, touch.py, isNewTap);
     } else if (hidKeysUp() & KEY_TOUCH) {

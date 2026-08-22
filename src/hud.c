@@ -50,170 +50,188 @@ void HudUpdateOam(void)
     {
         dst = (u16*)gOamData;
 
-        // Left part of health bar
-        *dst++ = 0;
-        gOamData[oamSlot].split.y = HUD_HEALTH_BAR_Y;
-        gOamData[oamSlot].split.shape = OAM_SHAPE_HORIZONTAL;
+#ifdef __3DS__
+        extern int Port_BottomUI_GetTab(void);
+        extern bool Port_Config_GetAutoHideHud(void);
+        int currentTab = Port_BottomUI_GetTab();
+        bool autoHide = Port_Config_GetAutoHideHud();
+        bool showStatusHud = !autoHide || (currentTab != 1); /* Hide health/weapons on top only if autoHide is active */
+        bool showMapHud = !autoHide || (currentTab != 0);    /* Hide minimap on top only if autoHide is active */
+#else
+        bool showStatusHud = true;
+        bool showMapHud = true;
+#endif
 
-        *dst++ = 0;
-        gOamData[oamSlot].split.x = HUD_HEALTH_BAR_X;
-        gOamData[oamSlot].split.size = OAM_SIZE_H_32x8;
-        
-        *dst++ = 0;
-        gOamData[oamSlot].split.tileNum = 0x20 * 2 + 0x10;
-        gOamData[oamSlot].split.paletteNum = 4;
-
-        dst++;
-        oamSlot++;
-
-        // Right part of health bar
-        *dst++ = 0;
-        gOamData[oamSlot].split.y = HUD_HEALTH_BAR_Y;
-        gOamData[oamSlot].split.shape = OAM_SHAPE_HORIZONTAL;
-
-        *dst++ = 0;
-        gOamData[oamSlot].split.x = HUD_HEALTH_BAR_X + 32;
-        gOamData[oamSlot].split.size = OAM_SIZE_H_32x8;
-        
-        *dst++ = 0;
-        gOamData[oamSlot].split.tileNum = 0x20 * 2 + 0x14;
-        gOamData[oamSlot].split.paletteNum = 4;
-
-        dst++;
-        oamSlot++;
-
-        if (pEquipment->suitType == SUIT_SUITLESS)
+        if (showStatusHud)
         {
-            // Left part of charge bar
+            // Left part of health bar
             *dst++ = 0;
-            gOamData[oamSlot].split.y = HUD_CHARGE_BAR_Y;
+            gOamData[oamSlot].split.y = HUD_HEALTH_BAR_Y;
             gOamData[oamSlot].split.shape = OAM_SHAPE_HORIZONTAL;
-            
+
             *dst++ = 0;
-            gOamData[oamSlot].split.x = HUD_CHARGE_BAR_X;
+            gOamData[oamSlot].split.x = HUD_HEALTH_BAR_X;
             gOamData[oamSlot].split.size = OAM_SIZE_H_32x8;
             
             *dst++ = 0;
-            gOamData[oamSlot].split.tileNum = 0x20 * 4 + 0x8;
+            gOamData[oamSlot].split.tileNum = 0x20 * 2 + 0x10;
             gOamData[oamSlot].split.paletteNum = 4;
 
             dst++;
             oamSlot++;
-            
-            // Right part of charge bar
+
+            // Right part of health bar
             *dst++ = 0;
-            gOamData[oamSlot].split.y = HUD_CHARGE_BAR_Y;
+            gOamData[oamSlot].split.y = HUD_HEALTH_BAR_Y;
             gOamData[oamSlot].split.shape = OAM_SHAPE_HORIZONTAL;
-            
+
             *dst++ = 0;
-            gOamData[oamSlot].split.x = HUD_CHARGE_BAR_X + 32;
+            gOamData[oamSlot].split.x = HUD_HEALTH_BAR_X + 32;
             gOamData[oamSlot].split.size = OAM_SIZE_H_32x8;
             
             *dst++ = 0;
-            gOamData[oamSlot].split.tileNum = 0x20 * 4 + 0xC;
+            gOamData[oamSlot].split.tileNum = 0x20 * 2 + 0x14;
             gOamData[oamSlot].split.paletteNum = 4;
 
             dst++;
             oamSlot++;
-        }
-        else
-        {
-            if (pEquipment->maxMissiles != 0)
+
+            if (pEquipment->suitType == SUIT_SUITLESS)
             {
-                // Missile digits
+                // Left part of charge bar
+                *dst++ = 0;
+                gOamData[oamSlot].split.y = HUD_CHARGE_BAR_Y;
+                gOamData[oamSlot].split.shape = OAM_SHAPE_HORIZONTAL;
                 
                 *dst++ = 0;
-                gOamData[oamSlot].split.y = HUD_MISSILES_Y;
-                gOamData[oamSlot].split.shape = OAM_SHAPE_HORIZONTAL;
-
-                *dst++ = 0;
-                gOamData[oamSlot].split.x = HUD_MISSILES_X;
+                gOamData[oamSlot].split.x = HUD_CHARGE_BAR_X;
                 gOamData[oamSlot].split.size = OAM_SIZE_H_32x8;
-
+                
                 *dst++ = 0;
-                gOamData[oamSlot].split.tileNum = 0x20 * 3 + 0x10;
+                gOamData[oamSlot].split.tileNum = 0x20 * 4 + 0x8;
+                gOamData[oamSlot].split.paletteNum = 4;
+
+                dst++;
+                oamSlot++;
+                
+                // Right part of charge bar
+                *dst++ = 0;
+                gOamData[oamSlot].split.y = HUD_CHARGE_BAR_Y;
+                gOamData[oamSlot].split.shape = OAM_SHAPE_HORIZONTAL;
+                
+                *dst++ = 0;
+                gOamData[oamSlot].split.x = HUD_CHARGE_BAR_X + 32;
+                gOamData[oamSlot].split.size = OAM_SIZE_H_32x8;
+                
+                *dst++ = 0;
+                gOamData[oamSlot].split.tileNum = 0x20 * 4 + 0xC;
                 gOamData[oamSlot].split.paletteNum = 4;
 
                 dst++;
                 oamSlot++;
             }
-
-            if (pEquipment->maxSuperMissiles != 0)
+            else
             {
-                // Super missile digits
+                if (pEquipment->maxMissiles != 0)
+                {
+                    // Missile digits
+                    
+                    *dst++ = 0;
+                    gOamData[oamSlot].split.y = HUD_MISSILES_Y;
+                    gOamData[oamSlot].split.shape = OAM_SHAPE_HORIZONTAL;
 
-                *dst++ = 0;
-                gOamData[oamSlot].split.y = HUD_SUPER_MISSILES_Y;
-                gOamData[oamSlot].split.shape = OAM_SHAPE_HORIZONTAL;
+                    *dst++ = 0;
+                    gOamData[oamSlot].split.x = HUD_MISSILES_X;
+                    gOamData[oamSlot].split.size = OAM_SIZE_H_32x8;
 
-                *dst++ = 0;
-                gOamData[oamSlot].split.x = HUD_SUPER_MISSILES_X;
-                gOamData[oamSlot].split.size = OAM_SIZE_H_32x8;
+                    *dst++ = 0;
+                    gOamData[oamSlot].split.tileNum = 0x20 * 3 + 0x10;
+                    gOamData[oamSlot].split.paletteNum = 4;
 
-                *dst++ = 0;
-                gOamData[oamSlot].split.tileNum = 0x20 * 3 + 0x14;
-                gOamData[oamSlot].split.paletteNum = 4;
+                    dst++;
+                    oamSlot++;
+                }
 
-                dst++;
-                oamSlot++;
-            }
+                if (pEquipment->maxSuperMissiles != 0)
+                {
+                    // Super missile digits
 
-            if (pEquipment->maxPowerBombs != 0)
-            {
-                // Power bomb digits
+                    *dst++ = 0;
+                    gOamData[oamSlot].split.y = HUD_SUPER_MISSILES_Y;
+                    gOamData[oamSlot].split.shape = OAM_SHAPE_HORIZONTAL;
 
-                *dst++ = 0;
-                gOamData[oamSlot].split.y = HUD_POWER_BOMBS_Y;
-                gOamData[oamSlot].split.shape = OAM_SHAPE_HORIZONTAL;
+                    *dst++ = 0;
+                    gOamData[oamSlot].split.x = HUD_SUPER_MISSILES_X;
+                    gOamData[oamSlot].split.size = OAM_SIZE_H_32x8;
 
-                *dst++ = 0;
-                gOamData[oamSlot].split.x = HUD_POWER_BOMBS_X;
-                gOamData[oamSlot].split.size = OAM_SIZE_H_32x8;
+                    *dst++ = 0;
+                    gOamData[oamSlot].split.tileNum = 0x20 * 3 + 0x14;
+                    gOamData[oamSlot].split.paletteNum = 4;
 
-                *dst++ = 0;
-                gOamData[oamSlot].split.tileNum = 0x20 * 2 + 0x18;
-                gOamData[oamSlot].split.paletteNum = 4;
+                    dst++;
+                    oamSlot++;
+                }
 
-                dst++;
-                oamSlot++;
+                if (pEquipment->maxPowerBombs != 0)
+                {
+                    // Power bomb digits
+
+                    *dst++ = 0;
+                    gOamData[oamSlot].split.y = HUD_POWER_BOMBS_Y;
+                    gOamData[oamSlot].split.shape = OAM_SHAPE_HORIZONTAL;
+
+                    *dst++ = 0;
+                    gOamData[oamSlot].split.x = HUD_POWER_BOMBS_X;
+                    gOamData[oamSlot].split.size = OAM_SIZE_H_32x8;
+
+                    *dst++ = 0;
+                    gOamData[oamSlot].split.tileNum = 0x20 * 2 + 0x18;
+                    gOamData[oamSlot].split.paletteNum = 4;
+
+                    dst++;
+                    oamSlot++;
+                }
             }
         }
 
-        // Minimap white square
-        *dst++ = 0;
-        gOamData[oamSlot].split.y = HUD_MINIMAP_SQUARE_Y;
-        gOamData[oamSlot].split.shape = OAM_SHAPE_SQUARE;
+        if (showMapHud)
+        {
+            // Minimap white square
+            *dst++ = 0;
+            gOamData[oamSlot].split.y = HUD_MINIMAP_SQUARE_Y;
+            gOamData[oamSlot].split.shape = OAM_SHAPE_SQUARE;
 
-        *dst++ = 0;
-        gOamData[oamSlot].split.x = HUD_MINIMAP_SQUARE_X;
-        gOamData[oamSlot].split.size = OAM_SIZE_S_8x8;
+            *dst++ = 0;
+            gOamData[oamSlot].split.x = HUD_MINIMAP_SQUARE_X;
+            gOamData[oamSlot].split.size = OAM_SIZE_S_8x8;
 
-        *dst++ = 0;
+            *dst++ = 0;
 
-        if (MOD_BLOCK_AND(gFrameCounter8Bit, CONVERT_SECONDS(2.f / 15)))
-            gOamData[oamSlot].split.tileNum = 0x20 * 5 + 0x1F;
-        else
-            gOamData[oamSlot].split.tileNum = 0x20 * 10;
+            if (MOD_BLOCK_AND(gFrameCounter8Bit, CONVERT_SECONDS(2.f / 15)))
+                gOamData[oamSlot].split.tileNum = 0x20 * 5 + 0x1F;
+            else
+                gOamData[oamSlot].split.tileNum = 0x20 * 10;
 
-        gOamData[oamSlot].split.paletteNum = 5;
+            gOamData[oamSlot].split.paletteNum = 5;
 
-        dst++;
-        oamSlot++;
+            dst++;
+            oamSlot++;
 
-        // Minimap
-        *dst++ = 0;
-        gOamData[oamSlot].split.y = HUD_MINIMAP_Y;
-        gOamData[oamSlot].split.shape = OAM_SHAPE_SQUARE;
+            // Minimap
+            *dst++ = 0;
+            gOamData[oamSlot].split.y = HUD_MINIMAP_Y;
+            gOamData[oamSlot].split.shape = OAM_SHAPE_SQUARE;
 
-        *dst++ = 0;
-        gOamData[oamSlot].split.x = HUD_MINIMAP_X;
-        gOamData[oamSlot].split.size = OAM_SIZE_S_32x32;
+            *dst++ = 0;
+            gOamData[oamSlot].split.x = HUD_MINIMAP_X;
+            gOamData[oamSlot].split.size = OAM_SIZE_S_32x32;
 
-        *dst = 0;
-        gOamData[oamSlot].split.tileNum = 0x20 * 6 + 0x1C;
-        gOamData[oamSlot].split.paletteNum = 5;
-        
-        oamSlot++;
+            *dst = 0;
+            gOamData[oamSlot].split.tileNum = 0x20 * 6 + 0x1C;
+            gOamData[oamSlot].split.paletteNum = 5;
+            
+            oamSlot++;
+        }
     }
 
     gNextOamSlot = oamSlot;

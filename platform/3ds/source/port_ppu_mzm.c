@@ -16,6 +16,11 @@
 #include "cpu/mode1.h"
 #include "port_gba_mem.h"
 #include "platform_gpu_3ds.h"
+#include "structs/samus.h"
+#include "constants/samus.h"
+#include "gba/memory.h"
+#include "structs/bg_clip.h"
+#include "constants/block.h"
 
 #ifdef PORT_GPU_TILE_RENDERER
 #include "port_gpu_renderer.h"
@@ -108,12 +113,204 @@ static void UpdateFpsWindow(void) {
     }
 }
 
+#include "port_bottom_ui_3ds.h"
+#include <stdio.h>
+
 static bool sShowFps = true;
 static int sAspectRatio = 0; /* 0 = WIDE, 1 = ORIGINAL, 2 = STRETCH */
 static int sDisplayStyle = 0; /* 0 = PIXEL PERFECT, 1 = SCALED, 2 = BLUR */
+static const char* const sConfigPath = "mzm3ds.ini";
+
+static bool sAutoHideHud = true;
+/* Button Actions:
+ * 0 = NINGUNA (NONE)
+ * 1 = AUTODISPARO (RAPID FIRE)
+ * 2 = MORFOSFERA (QUICK MORPH BALL)
+ * 3 = DISPARO (FIRE / B)
+ * 4 = SALTO (JUMP / A)
+ * 5 = MISILES (SELECT)
+ * 6 = APUNTAR ARRIBA (AIM UP / R)
+ * 7 = APUNTAR ABAJO (AIM DOWN / L)
+ */
+static int sBtnMapX = 1;  /* Default X: Rapid Fire */
+static int sBtnMapY = 2;  /* Default Y: Quick Morph */
+static int sBtnMapZL = 7; /* Default ZL: Aim Down (L) */
+static int sBtnMapZR = 6; /* Default ZR: Aim Up (R) */
+
+void Port_Config_Save(void) {
+    FILE* file = fopen(sConfigPath, "wb");
+    if (!file) return;
+    fprintf(file, "# Metroid Zero Mission 3DS runtime settings\n");
+    fprintf(file, "aspect_ratio=%d\n", sAspectRatio);
+    fprintf(file, "display_style=%d\n", sDisplayStyle);
+    fprintf(file, "show_fps=%u\n", sShowFps ? 1u : 0u);
+    fprintf(file, "auto_hide_hud=%u\n", sAutoHideHud ? 1u : 0u);
+    fprintf(file, "btn_map_x=%d\n", sBtnMapX);
+    fprintf(file, "btn_map_y=%d\n", sBtnMapY);
+    fprintf(file, "btn_map_zl=%d\n", sBtnMapZL);
+    fprintf(file, "btn_map_zr=%d\n", sBtnMapZR);
+    fprintf(file, "bottom_tab=%d\n", (int)Port_BottomUI_GetTab());
+    fprintf(file, "bottom_zoom=%d\n", Port_BottomUI_GetZoom());
+    fprintf(file, "bottom_area=%d\n", Port_BottomUI_GetViewArea());
+    fprintf(file, "bottom_follow=%u\n", Port_BottomUI_GetFollowSamus() ? 1u : 0u);
+    fclose(file);
+}
+
+void Port_Config_Load(void) {
+    FILE* file = fopen(sConfigPath, "rb");
+    if (!file) return;
+    char line[128];
+    while (fgets(line, sizeof(line), file) != NULL) {
+        char key[64];
+        int val = 0;
+        if (line[0] == '#' || sscanf(line, " %63[^=]=%d", key, &val) != 2) continue;
+        if (strcmp(key, "aspect_ratio") == 0) {
+            if (val >= 0 && val < 3) sAspectRatio = val;
+        } else if (strcmp(key, "display_style") == 0) {
+            if (val >= 0 && val < 3) sDisplayStyle = val;
+        } else if (strcmp(key, "show_fps") == 0) {
+            sShowFps = (val != 0);
+        } else if (strcmp(key, "auto_hide_hud") == 0) {
+            sAutoHideHud = (val != 0);
+        } else if (strcmp(key, "btn_map_x") == 0) {
+            if (val >= 0 && val < 8) sBtnMapX = val;
+        } else if (strcmp(key, "btn_map_y") == 0) {
+            if (val >= 0 && val < 8) sBtnMapY = val;
+        } else if (strcmp(key, "btn_map_zl") == 0) {
+            if (val >= 0 && val < 8) sBtnMapZL = val;
+        } else if (strcmp(key, "btn_map_zr") == 0) {
+            if (val >= 0 && val < 8) sBtnMapZR = val;
+        } else if (strcmp(key, "bottom_tab") == 0) {
+            if (val >= 0 && val < BOTTOM_TAB_COUNT) Port_BottomUI_SetTab((PortBottomTab)val);
+        } else if (strcmp(key, "bottom_zoom") == 0) {
+            Port_BottomUI_SetZoom(val);
+        } else if (strcmp(key, "bottom_area") == 0) {
+            Port_BottomUI_SetViewArea(val);
+        } else if (strcmp(key, "bottom_follow") == 0) {
+            Port_BottomUI_SetFollowSamus(val != 0);
+        }
+    }
+    fclose(file);
+}
+
+bool Port_Config_GetAutoHideHud(void) { return sAutoHideHud; }
+void Port_Config_SetAutoHideHud(bool on) { sAutoHideHud = on; Port_Config_Save(); }
+
+/* Quick Morph (platform_3ds_minimal.c) needs to know Samus's current pose
+ * "class" to decide which key to simulate and when it's done:
+ *  - entering ball form takes KEY_DOWN TWICE (standing -> crouching on the
+ *    first gChangedInput edge, crouching -> morphing on the second -- see
+ *    samus.c's SamusCrouching), so the caller must keep sending DOWN edges
+ *    until the class becomes MORPHED;
+ *  - leaving it takes KEY_UP once to start unmorphing (SamusMorphball's
+ *    "Check unmorphing" block), but that only lands Samus in CROUCHING
+ *    (SamusUnmorphingGfx hard-sets SPOSE_CROUCHING once the animation ends)
+ *    -- a second UP edge is needed from there to actually stand up
+ *    (SamusCrouching's own KEY_UP check), so the caller must keep sending UP
+ *    edges until the class becomes NORMAL, not just until it leaves MORPHED.
+ * A previous version only checked "is Samus in the ball family" and fired a
+ * single fixed-length KEY_DOWN pulse, which produces just one edge -- Samus
+ * would crouch and get stuck, i.e. behave like a plain Down button. */
+int Port_Samus_GetPoseClass(void) {
+    switch (gSamusData.pose) {
+        case SPOSE_MORPHING:
+        case SPOSE_MORPH_BALL:
+        case SPOSE_ROLLING:
+        case SPOSE_UNMORPHING:
+        case SPOSE_MORPH_BALL_MIDAIR:
+        case SPOSE_MORPH_BALL_ON_ZIPLINE:
+        case SPOSE_PULLING_YOURSELF_INTO_A_MORPH_BALL_TUNNEL:
+        case SPOSE_GETTING_HURT_IN_MORPH_BALL:
+        case SPOSE_GETTING_KNOCKED_BACK_IN_MORPH_BALL:
+            return 2; /* morphed (or mid-transition into/out of ball form) */
+        case SPOSE_CROUCHING:
+        case SPOSE_UNCROUCHING_FROM_CRAWLING:
+        case SPOSE_UNCROUCHING_SUITLESS:
+            return 1; /* crouching (or standing back up from it) */
+        default:
+            return 0; /* normal (standing, walking, jumping, shooting, ...) */
+    }
+}
+
+/* Per-area, per-tank-type collected counts for the bottom-screen collectibles
+ * breakdown (port_bottom_ui_3ds.c's RenderCollectiblesModal). The map's
+ * "obtained item" bitmap (gMinimapTilesWithObtainedItems) only says a tile
+ * had *something* collected, not what -- BgClipSetItemAsCollected (bg_clip.c)
+ * is the thing that actually knows the type, and it logs every pickup (tanks
+ * and major items alike) into gItemsCollected[area][0..gNumberOfItemsCollected[area]),
+ * so walk that log and tally by type instead. Major items (ITEM_TYPE_ABILITY)
+ * are logged too but deliberately not counted here -- this is a tank/ammo
+ * breakdown, matching the per-area totals table (sTotalTanksTable) it's
+ * compared against. */
+void Port_GetAreaItemTypeCounts(int area, int* outEnergy, int* outMissile, int* outSuper, int* outPowerBomb) {
+    *outEnergy = 0;
+    *outMissile = 0;
+    *outSuper = 0;
+    *outPowerBomb = 0;
+    if (area < 0 || area >= MAX_AMOUNT_OF_AREAS) return;
+
+    int count = gNumberOfItemsCollected[area];
+    if (count > MAX_AMOUNT_OF_ITEMS_PER_AREA) count = MAX_AMOUNT_OF_ITEMS_PER_AREA;
+    for (int i = 0; i < count; i++) {
+        switch (gItemsCollected[area][i].type) {
+            case ITEM_TYPE_ENERGY: (*outEnergy)++; break;
+            case ITEM_TYPE_MISSILE: (*outMissile)++; break;
+            case ITEM_TYPE_SUPER_MISSILE: (*outSuper)++; break;
+            case ITEM_TYPE_POWER_BOMB: (*outPowerBomb)++; break;
+            default: break;
+        }
+    }
+}
+
+int Port_Config_GetButtonMapping(int buttonIndex) {
+    switch (buttonIndex) {
+        case 0: return sBtnMapX;
+        case 1: return sBtnMapY;
+        case 2: return sBtnMapZL;
+        case 3: return sBtnMapZR;
+        default: return 0;
+    }
+}
+
+void Port_Config_CycleButtonMapping(int buttonIndex) {
+    switch (buttonIndex) {
+        case 0: sBtnMapX = (sBtnMapX + 1) % 8; break;
+        case 1: sBtnMapY = (sBtnMapY + 1) % 8; break;
+        case 2: sBtnMapZL = (sBtnMapZL + 1) % 8; break;
+        case 3: sBtnMapZR = (sBtnMapZR + 1) % 8; break;
+    }
+    Port_Config_Save();
+}
+
+const char* Port_Config_GetActionName(int action, int lang) {
+    if (lang == 6) {
+        switch (action) {
+            case 0: return "NINGUNA";
+            case 1: return "AUTODISPARO";
+            case 2: return "MORFOSFERA RAPIDA";
+            case 3: return "DISPARAR (B)";
+            case 4: return "SALTAR (A)";
+            case 5: return "MISILES (SELECT)";
+            case 6: return "APUNTAR ARRIBA (R)";
+            case 7: return "APUNTAR ABAJO (L)";
+            default: return "NINGUNA";
+        }
+    }
+    switch (action) {
+        case 0: return "NONE";
+        case 1: return "RAPID FIRE";
+        case 2: return "QUICK MORPH";
+        case 3: return "FIRE (B)";
+        case 4: return "JUMP (A)";
+        case 5: return "MISSILES (SELECT)";
+        case 6: return "AIM UP (R)";
+        case 7: return "AIM DOWN (L)";
+        default: return "NONE";
+    }
+}
 
 bool Port_Config_GetShowFps(void) { return sShowFps; }
-void Port_Config_SetShowFps(bool on) { sShowFps = on; }
+void Port_Config_SetShowFps(bool on) { sShowFps = on; Port_Config_Save(); }
 
 int Port_Config_Get3DSAspectRatio(void) { return sAspectRatio; }
 const char* Port_Config_Get3DSAspectRatioName(void) {
@@ -122,6 +319,7 @@ const char* Port_Config_Get3DSAspectRatioName(void) {
 }
 void Port_Config_Cycle3DSAspectRatio(void) {
     sAspectRatio = (sAspectRatio + 1) % 3;
+    Port_Config_Save();
 }
 
 int Port_Config_Get3DSDisplayStyle(void) { return sDisplayStyle; }
@@ -131,6 +329,7 @@ const char* Port_Config_Get3DSDisplayStyleName(void) {
 }
 void Port_Config_Cycle3DSDisplayStyle(void) {
     sDisplayStyle = (sDisplayStyle + 1) % 3;
+    Port_Config_Save();
 }
 
 double Port_PPU_3DS_CurrentFps(void) { return sCurrentFps; }

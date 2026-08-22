@@ -82,6 +82,17 @@ extern void Port_GpuRenderer_GetLastFrameStats(int* outItems, int* outObjItems, 
 static PortBottomTab sCurrentTab = BOTTOM_TAB_MAP;
 static uint32_t sFrameCounter = 0;
 
+/* Modals & Overlays */
+static bool sShowRemapModal = false;
+static bool sShowCollectiblesModal = false;
+
+/* Config & Display Helper Externs */
+extern bool Port_Config_GetAutoHideHud(void);
+extern void Port_Config_SetAutoHideHud(bool on);
+extern int Port_Config_GetButtonMapping(int buttonIndex);
+extern void Port_Config_CycleButtonMapping(int buttonIndex);
+extern const char* Port_Config_GetActionName(int action, int lang);
+
 /* Area selector & zoom state */
 static uint8_t sViewArea = 0;
 static bool sFollowSamus = true;
@@ -91,6 +102,19 @@ static float sScrollY = 0.0f;
 static int sLastTouchX = -1;
 static int sLastTouchY = -1;
 static bool sIsDragging = false;
+
+int Port_BottomUI_GetZoom(void) { return sZoomLevel; }
+void Port_BottomUI_SetZoom(int zoom) { if (zoom >= 0 && zoom <= 2) sZoomLevel = zoom; }
+
+int Port_BottomUI_GetViewArea(void) { return (int)sViewArea; }
+void Port_BottomUI_SetViewArea(int area) { if (area >= 0 && area <= 6) sViewArea = (uint8_t)area; }
+
+bool Port_BottomUI_GetFollowSamus(void) { return sFollowSamus; }
+void Port_BottomUI_SetFollowSamus(bool follow) { sFollowSamus = follow; }
+
+static const char* GetAspectRatioDisplayName(int lang);
+static const char* GetDisplayStyleDisplayName(int lang);
+static const char* GetFpsOverlayDisplayName(int lang);
 
 /* Cached buffer for viewing other areas */
 static uint16_t sOtherAreaTiles[32 * 32];
@@ -301,14 +325,18 @@ static bool GetActiveChozoTarget(uint8_t* outArea, uint8_t* outX, uint8_t* outY)
     return false;
 }
 
+extern void Port_Config_Save(void);
+
 void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
     /* 4-Tab Top Navigation Bar (Y: 2 to 24) */
     if (y >= 2 && y <= 24) {
         if (isNewTap) {
+            PortBottomTab prevTab = sCurrentTab;
             if (x >= 4 && x <= 78) sCurrentTab = BOTTOM_TAB_MAP;
             else if (x >= 82 && x <= 156) sCurrentTab = BOTTOM_TAB_STATUS;
             else if (x >= 160 && x <= 234) sCurrentTab = BOTTOM_TAB_DEBUG;
             else if (x >= 238 && x <= 316) sCurrentTab = BOTTOM_TAB_OPTIONS;
+            if (sCurrentTab != prevTab) Port_Config_Save();
         }
         sLastTouchX = -1;
         sLastTouchY = -1;
@@ -321,45 +349,51 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
         if (y >= 26 && y <= 46) {
             if (isNewTap) {
                 /* Previous Area [ < ] */
-                if (x >= 4 && x <= 22) {
+                if (x >= 4 && x <= 20) {
                     sFollowSamus = false;
                     sViewArea = (sViewArea == 0) ? 6 : (sViewArea - 1);
                     CenterMapOnTile(16, 16);
-                }
-                /* Next Area [ > ] */
-                else if (x >= 100 && x <= 120) {
-                    sFollowSamus = false;
-                    sViewArea = (sViewArea + 1) % 7;
-                    CenterMapOnTile(16, 16);
+                    Port_Config_Save();
                 }
                 /* Area Title Box -> toggle back to current area */
-                else if (x > 22 && x < 100) {
+                else if (x > 20 && x < 92) {
                     sFollowSamus = true;
                     sViewArea = gCurrentArea;
                     CenterMapOnTile(gMinimapX, gMinimapY);
+                    Port_Config_Save();
                 }
-                /* Zoom Button [ ZOOM ] */
-                else if (x >= 124 && x <= 190) {
+                /* Next Area [ > ] */
+                else if (x >= 92 && x <= 110) {
+                    sFollowSamus = false;
+                    sViewArea = (sViewArea + 1) % 7;
+                    CenterMapOnTile(16, 16);
+                    Port_Config_Save();
+                }
+                /* Zoom Button [ 1X / 2X / 3X ] */
+                else if (x >= 156 && x <= 196) {
                     sZoomLevel = (sZoomLevel + 1) % 3;
                     if (sFollowSamus && gCurrentArea < 7) {
                         CenterMapOnTile(gMinimapX, gMinimapY);
                     } else {
                         CenterMapOnTile(16, 16);
                     }
+                    Port_Config_Save();
                 }
                 /* Center on Samus Button [ SAMUS ] */
-                else if (x >= 194 && x <= 248) {
+                else if (x >= 198 && x <= 250) {
                     sFollowSamus = true;
                     sViewArea = gCurrentArea;
                     CenterMapOnTile(gMinimapX, gMinimapY);
+                    Port_Config_Save();
                 }
-                /* Target Button [ ! OBJ / TARGET ] */
+                /* Target Button [ ! OBJ / COORDS ] */
                 else if (x >= 252 && x <= 316) {
                     uint8_t tArea = 0, tX = 0, tY = 0;
                     if (GetActiveChozoTarget(&tArea, &tX, &tY)) {
                         sFollowSamus = (tArea == gCurrentArea);
                         sViewArea = tArea;
                         CenterMapOnTile(tX, tY);
+                        Port_Config_Save();
                     }
                 }
             }
@@ -398,14 +432,43 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
         }
     }
 
+    /* Status Tab Interactive Taps (Collectibles breakdown modal toggle) */
+    if (sCurrentTab == BOTTOM_TAB_STATUS && isNewTap) {
+        if (sShowCollectiblesModal) {
+            sShowCollectiblesModal = false;
+            return;
+        }
+        if (x >= 180 && x <= 310 && y >= 166 && y <= 186) {
+            sShowCollectiblesModal = true;
+            return;
+        }
+    }
+
     /* Options Tab Interactive Row Taps */
-    if (sCurrentTab == BOTTOM_TAB_OPTIONS && isNewTap && x >= 12 && x <= 308) {
-        if (y >= 38 && y <= 70) {
-            Port_Config_Cycle3DSAspectRatio();
-        } else if (y >= 76 && y <= 108) {
-            Port_Config_Cycle3DSDisplayStyle();
-        } else if (y >= 114 && y <= 146) {
-            Port_Config_SetShowFps(!Port_Config_GetShowFps());
+    if (sCurrentTab == BOTTOM_TAB_OPTIONS && isNewTap) {
+        if (sShowRemapModal) {
+            if (x >= 16 && x <= 304) {
+                if (y >= 50 && y <= 76) Port_Config_CycleButtonMapping(0); /* X */
+                else if (y >= 82 && y <= 108) Port_Config_CycleButtonMapping(1); /* Y */
+                else if (y >= 114 && y <= 140) Port_Config_CycleButtonMapping(2); /* ZL */
+                else if (y >= 146 && y <= 172) Port_Config_CycleButtonMapping(3); /* ZR */
+                else if (y >= 200 && y <= 230) sShowRemapModal = false; /* Close */
+            }
+            return;
+        }
+
+        if (x >= 12 && x <= 308) {
+            if (y >= 44 && y <= 68) {
+                Port_Config_Cycle3DSAspectRatio();
+            } else if (y >= 72 && y <= 96) {
+                Port_Config_Cycle3DSDisplayStyle();
+            } else if (y >= 100 && y <= 124) {
+                Port_Config_SetShowFps(!Port_Config_GetShowFps());
+            } else if (y >= 128 && y <= 152) {
+                Port_Config_SetAutoHideHud(!Port_Config_GetAutoHideHud());
+            } else if (y >= 156 && y <= 188) {
+                sShowRemapModal = true;
+            }
         }
     }
 }
@@ -454,7 +517,7 @@ static void RenderTabBar(void) {
 
 /* Decodes and draws an authentic 8x8 4bpp GBA minimap tile with correct ROM palette */
 static void DrawAuthenticMapTile(float dstX, float dstY, float tileSize, uint16_t tileData,
-                                float clipX0, float clipY0, float clipX1, float clipY1) {
+                                float clipX0, float clipY0, float clipX1, float clipY1, float zDepth) {
     if (tileData == 0 || tileData == 0x140) return;
 
     uint32_t rawTileId = tileData & 0x3FF;
@@ -480,7 +543,7 @@ static void DrawAuthenticMapTile(float dstX, float dstY, float tileSize, uint16_
         float ry1 = (dstY + tileSize) > clipY1 ? clipY1 : (dstY + tileSize);
         if (rx1 > rx0 && ry1 > ry0) {
             uint32_t fbCol = (palId == 1) ? C2D_Color32(30, 140, 60, 255) : C2D_Color32(20, 50, 110, 255);
-            C2D_DrawRectSolid(rx0, ry0, 0.5f, rx1 - rx0, ry1 - ry0, fbCol);
+            C2D_DrawRectSolid(rx0, ry0, zDepth, rx1 - rx0, ry1 - ry0, fbCol);
         }
         return;
     }
@@ -525,13 +588,13 @@ static void DrawAuthenticMapTile(float dstX, float dstY, float tileSize, uint16_
             float drawY1 = py1 > clipY1 ? clipY1 : py1;
 
             uint32_t color = Bgr555ToRgba8(palette[colorIdx], false);
-            C2D_DrawRectSolid(drawX0, drawY0, 0.5f, drawX1 - drawX0, drawY1 - drawY0, color);
+            C2D_DrawRectSolid(drawX0, drawY0, zDepth, drawX1 - drawX0, drawY1 - drawY0, color);
         }
     }
 }
 
 /* Authentic HUD Item Sprites */
-static void DrawEnergyTankIcon(float x, float y) {
+static void DrawEnergyIcon(float x, float y) {
     C2D_DrawRectSolid(x, y, 0.6f, 14.0f, 10.0f, C2D_Color32(30, 45, 70, 255));
     C2D_DrawRectSolid(x + 1.0f, y + 1.0f, 0.65f, 12.0f, 8.0f, C2D_Color32(10, 20, 35, 255));
     C2D_DrawRectSolid(x, y + 2.0f, 0.7f, 2.0f, 6.0f, C2D_Color32(180, 195, 220, 255));
@@ -568,6 +631,201 @@ static void DrawPowerBombIcon(float x, float y) {
     C2D_DrawRectSolid(x + 5.0f, y + 4.0f, 0.75f, 2.0f, 2.0f, C2D_Color32(255, 255, 255, 255));
 }
 
+static const char* GetAspectRatioDisplayName(int lang) {
+    int ar = Port_Config_Get3DSAspectRatio();
+    if (lang == 6) {
+        switch (ar) {
+            case 0: return "PANORAMICO";
+            case 1: return "ORIGINAL (3:2)";
+            case 2: return "ESTIRADO (16:9)";
+            default: return "ORIGINAL";
+        }
+    }
+    switch (ar) {
+        case 0: return "WIDE";
+        case 1: return "ORIGINAL (3:2)";
+        case 2: return "STRETCH";
+        default: return "ORIGINAL";
+    }
+}
+
+static const char* GetDisplayStyleDisplayName(int lang) {
+    int ds = Port_Config_Get3DSDisplayStyle();
+    if (lang == 6) {
+        switch (ds) {
+            case 0: return "PIXEL PERFECT (1:1)";
+            case 1: return "ESCALADO NITIDO";
+            case 2: return "SUAVIZADO";
+            default: return "ESCALADO";
+        }
+    }
+    switch (ds) {
+        case 0: return "PIXEL PERFECT (1:1)";
+        case 1: return "SCALED (SHARP)";
+        case 2: return "BLUR (SMOOTH)";
+        default: return "SCALED";
+    }
+}
+
+static const char* GetFpsOverlayDisplayName(int lang) {
+    bool on = Port_Config_GetShowFps();
+    if (lang == 6) {
+        return on ? "ACTIVADO" : "DESACTIVADO";
+    }
+    return on ? "ON" : "OFF";
+}
+
+struct AreaItemStats {
+    uint8_t energyObtained;
+    uint8_t energyTotal;
+    uint8_t missileObtained;
+    uint8_t missileTotal;
+    uint8_t superObtained;
+    uint8_t superTotal;
+    uint8_t powerBombObtained;
+    uint8_t powerBombTotal;
+    uint8_t totalObtained;
+    uint8_t totalItems;
+};
+
+static const uint8_t sTotalTanksTable[7][4] = {
+    { 3, 10, 1, 0 }, /* Brinstar */
+    { 2,  9, 0, 0 }, /* Kraid */
+    { 1, 13, 2, 1 }, /* Norfair */
+    { 3, 13, 3, 0 }, /* Ridley */
+    { 0,  1, 0, 1 }, /* Tourian */
+    { 0,  3, 1, 1 }, /* Crateria */
+    { 3,  1, 8, 6 }, /* Chozodia */
+};
+
+extern void Port_GetAreaItemTypeCounts(int area, int* outEnergy, int* outMissile, int* outSuper, int* outPowerBomb);
+
+static void GetAreaStats(int area, struct AreaItemStats* outStats) {
+    if (!outStats) return;
+    memset(outStats, 0, sizeof(struct AreaItemStats));
+    if (area < 0 || area >= 7) return;
+
+    outStats->energyTotal = sTotalTanksTable[area][0];
+    outStats->missileTotal = sTotalTanksTable[area][1];
+    outStats->superTotal = sTotalTanksTable[area][2];
+    outStats->powerBombTotal = sTotalTanksTable[area][3];
+    outStats->totalItems = outStats->energyTotal + outStats->missileTotal + outStats->superTotal + outStats->powerBombTotal;
+
+    int energyGot = 0, missileGot = 0, superGot = 0, powerBombGot = 0;
+    Port_GetAreaItemTypeCounts(area, &energyGot, &missileGot, &superGot, &powerBombGot);
+    outStats->energyObtained = (uint8_t)energyGot;
+    outStats->missileObtained = (uint8_t)missileGot;
+    outStats->superObtained = (uint8_t)superGot;
+    outStats->powerBombObtained = (uint8_t)powerBombGot;
+
+    /* Count bits from gMinimapTilesWithObtainedItems for this area */
+    for (int row = 0; row < 32; ++row) {
+        uint32_t bits = gMinimapTilesWithObtainedItems[area * 32 + row];
+        while (bits) {
+            if (bits & 1) outStats->totalObtained++;
+            bits >>= 1;
+        }
+    }
+}
+
+static void GetGlobalItemStats(struct AreaItemStats* outStats) {
+    if (!outStats) return;
+    memset(outStats, 0, sizeof(struct AreaItemStats));
+
+    outStats->energyTotal = 12;
+    outStats->missileTotal = 50;
+    outStats->superTotal = 15;
+    outStats->powerBombTotal = 9;
+    outStats->totalItems = 86;
+
+    for (int a = 0; a < 7; ++a) {
+        struct AreaItemStats aStats;
+        GetAreaStats(a, &aStats);
+        outStats->totalObtained += aStats.totalObtained;
+        outStats->energyObtained += aStats.energyObtained;
+        outStats->missileObtained += aStats.missileObtained;
+        outStats->superObtained += aStats.superObtained;
+        outStats->powerBombObtained += aStats.powerBombObtained;
+    }
+}
+
+/* Render Collectibles Per-Area Breakdown Modal */
+static void RenderCollectiblesModal(int lang) {
+    C2D_DrawRectSolid(10.0f, 26.0f, 0.85f, 300.0f, 206.0f, C2D_Color32(10, 14, 24, 252));
+    C2D_DrawRectSolid(10.0f, 26.0f, 0.84f, 300.0f, 206.0f, C2D_Color32(40, 70, 120, 255));
+
+    struct AreaItemStats globalStats;
+    GetGlobalItemStats(&globalStats);
+    char globTitle[64];
+    unsigned pct = globalStats.totalItems > 0 ? (globalStats.totalObtained * 100 / globalStats.totalItems) : 0;
+    snprintf(globTitle, sizeof(globTitle), (lang == 6) ? "COLECCIONABLES POR ZONA: %u/%u (%u%%)" : "COLLECTIBLES BY AREA: %u/%u (%u%%)",
+             globalStats.totalObtained, globalStats.totalItems, pct);
+    DrawText(18.0f, 32.0f, 1.0f, globTitle, C2D_Color32(255, 215, 0, 255));
+
+    /* Table Headers */
+    DrawText(18.0f, 48.0f, 1.0f, (lang == 6) ? "ZONA" : "AREA", C2D_Color32(100, 220, 255, 255));
+    DrawEnergyIcon(108.0f, 46.0f);
+    DrawMissileIcon(148.0f, 46.0f);
+    DrawSuperMissileIcon(193.0f, 46.0f);
+    DrawPowerBombIcon(233.0f, 46.0f);
+    DrawText(272.0f, 48.0f, 1.0f, "TOT", C2D_Color32(255, 255, 255, 255));
+
+    for (int a = 0; a < 7; ++a) {
+        struct AreaItemStats aStats;
+        GetAreaStats(a, &aStats);
+        float py = 64.0f + (float)a * 19.0f;
+
+        C2D_DrawRectSolid(16.0f, py, 0.88f, 288.0f, 17.0f, (a % 2 == 0) ? C2D_Color32(20, 26, 40, 255) : C2D_Color32(14, 18, 30, 255));
+
+        DrawText(20.0f, py + 3.0f, 1.0f, AreaName(a), C2D_Color32(220, 235, 255, 255));
+
+        char cBuf[16];
+        snprintf(cBuf, sizeof(cBuf), "%u/%u", aStats.energyObtained, aStats.energyTotal);
+        DrawText(105.0f, py + 3.0f, 1.0f, cBuf, aStats.energyObtained == aStats.energyTotal ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 215, 0, 255));
+
+        snprintf(cBuf, sizeof(cBuf), "%u/%u", aStats.missileObtained, aStats.missileTotal);
+        DrawText(145.0f, py + 3.0f, 1.0f, cBuf, aStats.missileObtained == aStats.missileTotal ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 140, 140, 255));
+
+        snprintf(cBuf, sizeof(cBuf), "%u/%u", aStats.superObtained, aStats.superTotal);
+        DrawText(190.0f, py + 3.0f, 1.0f, cBuf, aStats.superObtained == aStats.superTotal ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(100, 255, 140, 255));
+
+        snprintf(cBuf, sizeof(cBuf), "%u/%u", aStats.powerBombObtained, aStats.powerBombTotal);
+        DrawText(230.0f, py + 3.0f, 1.0f, cBuf, aStats.powerBombObtained == aStats.powerBombTotal ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 225, 80, 255));
+
+        snprintf(cBuf, sizeof(cBuf), "%u/%u", aStats.totalObtained, aStats.totalItems);
+        DrawText(268.0f, py + 3.0f, 1.0f, cBuf, aStats.totalObtained == aStats.totalItems ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 255, 255, 255));
+    }
+
+    C2D_DrawRectSolid(100.0f, 204.0f, 0.9f, 120.0f, 20.0f, C2D_Color32(20, 70, 130, 255));
+    DrawTextCentered(160.0f, 209.0f, 1.0f, (lang == 6) ? "CERRAR" : "CLOSE", C2D_Color32(255, 255, 255, 255));
+}
+
+/* Render Button Remap Modal */
+static void RenderRemapModal(int lang) {
+    C2D_DrawRectSolid(10.0f, 26.0f, 0.85f, 300.0f, 206.0f, C2D_Color32(10, 14, 24, 250));
+    C2D_DrawRectSolid(10.0f, 26.0f, 0.84f, 300.0f, 206.0f, C2D_Color32(40, 70, 120, 255));
+
+    DrawText(20.0f, 32.0f, 1.0f, (lang == 6) ? "REASIGNAR BOTONES (TOCA PARA CAMBIAR)" : "BUTTON REMAPPING (TOUCH TO CYCLE)", C2D_Color32(255, 215, 0, 255));
+
+    const char* btnNames[4] = { "BOTON X:", "BOTON Y:", "BOTON ZL:", "BOTON ZR:" };
+    const char* btnNamesEN[4] = { "BUTTON X:", "BUTTON Y:", "BUTTON ZL:", "BUTTON ZR:" };
+
+    for (int i = 0; i < 4; ++i) {
+        float py = 50.0f + (float)i * 32.0f;
+        C2D_DrawRectSolid(16.0f, py, 0.9f, 288.0f, 26.0f, C2D_Color32(24, 32, 50, 255));
+        C2D_DrawRectSolid(16.0f, py, 0.88f, 288.0f, 1.0f, C2D_Color32(60, 85, 130, 255));
+
+        DrawText(24.0f, py + 8.0f, 1.0f, (lang == 6) ? btnNames[i] : btnNamesEN[i], C2D_Color32(255, 255, 255, 255));
+        int act = Port_Config_GetButtonMapping(i);
+        DrawText(130.0f, py + 8.0f, 1.0f, Port_Config_GetActionName(act, lang), C2D_Color32(255, 215, 0, 255));
+    }
+
+    DrawText(16.0f, 180.0f, 1.0f, (lang == 6) ? "STICK IZQ/DCHO: MOVIMIENTO Y APUNTAR" : "ANALOG STICKS: MOVEMENT & AIMING", C2D_Color32(120, 220, 180, 255));
+
+    C2D_DrawRectSolid(100.0f, 204.0f, 0.9f, 120.0f, 20.0f, C2D_Color32(20, 70, 130, 255));
+    DrawTextCentered(160.0f, 209.0f, 1.0f, (lang == 6) ? "GUARDAR Y VOLVER" : "SAVE & RETURN", C2D_Color32(255, 255, 255, 255));
+}
+
 /* Render Map View */
 static void RenderMapView(void) {
     int lang = GetLang();
@@ -575,28 +833,39 @@ static void RenderMapView(void) {
         sViewArea = gCurrentArea;
     }
 
+    /* Area Stats for current/viewed area */
+    struct AreaItemStats areaStats;
+    GetAreaStats(sViewArea, &areaStats);
+
     /* 1. Sub-header bar controls (Y: 26 to 45) */
     /* Area selector [ < ] AreaName [ > ] */
-    C2D_DrawRectSolid(4.0f, 26.0f, 0.4f, 18.0f, 18.0f, C2D_Color32(30, 40, 60, 255));
-    DrawTextCentered(13.0f, 31.0f, 1.0f, "<", C2D_Color32(100, 220, 255, 255));
+    C2D_DrawRectSolid(4.0f, 26.0f, 0.4f, 16.0f, 18.0f, C2D_Color32(30, 40, 60, 255));
+    DrawTextCentered(12.0f, 31.0f, 1.0f, "<", C2D_Color32(100, 220, 255, 255));
 
-    C2D_DrawRectSolid(24.0f, 26.0f, 0.4f, 76.0f, 18.0f, sFollowSamus ? C2D_Color32(16, 50, 95, 255) : C2D_Color32(26, 32, 48, 255));
-    DrawTextCentered(62.0f, 31.0f, 1.0f, AreaName(sViewArea), sFollowSamus ? C2D_Color32(255, 255, 255, 255) : C2D_Color32(180, 205, 235, 255));
+    C2D_DrawRectSolid(22.0f, 26.0f, 0.4f, 70.0f, 18.0f, sFollowSamus ? C2D_Color32(16, 50, 95, 255) : C2D_Color32(26, 32, 48, 255));
+    DrawTextCentered(57.0f, 31.0f, 1.0f, AreaName(sViewArea), sFollowSamus ? C2D_Color32(255, 255, 255, 255) : C2D_Color32(180, 205, 235, 255));
 
-    C2D_DrawRectSolid(102.0f, 26.0f, 0.4f, 18.0f, 18.0f, C2D_Color32(30, 40, 60, 255));
-    DrawTextCentered(111.0f, 31.0f, 1.0f, ">", C2D_Color32(100, 220, 255, 255));
+    C2D_DrawRectSolid(94.0f, 26.0f, 0.4f, 16.0f, 18.0f, C2D_Color32(30, 40, 60, 255));
+    DrawTextCentered(102.0f, 31.0f, 1.0f, ">", C2D_Color32(100, 220, 255, 255));
+
+    /* Area Items Badge (Shows e.g. "5/12") */
+    char itemBadge[24];
+    snprintf(itemBadge, sizeof(itemBadge), "%u/%u", areaStats.totalObtained, areaStats.totalItems);
+    C2D_DrawRectSolid(112.0f, 26.0f, 0.4f, 44.0f, 18.0f, C2D_Color32(20, 45, 35, 255));
+    C2D_DrawRectSolid(113.0f, 27.0f, 0.45f, 42.0f, 16.0f, C2D_Color32(12, 28, 20, 255));
+    DrawTextCentered(134.0f, 31.0f, 1.0f, itemBadge, C2D_Color32(120, 255, 160, 255));
 
     /* Zoom Toggle Button */
-    const char* zoomLabels[] = { "ZOOM 1X", "ZOOM 2X", "ZOOM 3X" };
-    C2D_DrawRectSolid(124.0f, 26.0f, 0.4f, 66.0f, 18.0f, C2D_Color32(24, 45, 75, 255));
-    C2D_DrawRectSolid(125.0f, 27.0f, 0.45f, 64.0f, 16.0f, C2D_Color32(14, 25, 45, 255));
-    DrawTextCentered(157.0f, 31.0f, 1.0f, zoomLabels[sZoomLevel], C2D_Color32(255, 215, 0, 255));
+    const char* zoomLabels[] = { "1X", "2X", "3X" };
+    C2D_DrawRectSolid(156.0f, 26.0f, 0.4f, 40.0f, 18.0f, C2D_Color32(24, 45, 75, 255));
+    C2D_DrawRectSolid(157.0f, 27.0f, 0.45f, 38.0f, 16.0f, C2D_Color32(14, 25, 45, 255));
+    DrawTextCentered(176.0f, 31.0f, 1.0f, zoomLabels[sZoomLevel], C2D_Color32(255, 215, 0, 255));
 
     /* Center on Samus Button */
-    C2D_DrawRectSolid(194.0f, 26.0f, 0.4f, 54.0f, 18.0f, sFollowSamus ? C2D_Color32(20, 80, 140, 255) : C2D_Color32(26, 35, 55, 255));
-    DrawTextCentered(221.0f, 31.0f, 1.0f, "SAMUS", sFollowSamus ? C2D_Color32(255, 255, 255, 255) : C2D_Color32(140, 160, 190, 255));
+    C2D_DrawRectSolid(198.0f, 26.0f, 0.4f, 52.0f, 18.0f, sFollowSamus ? C2D_Color32(20, 80, 140, 255) : C2D_Color32(26, 35, 55, 255));
+    DrawTextCentered(224.0f, 31.0f, 1.0f, "SAMUS", sFollowSamus ? C2D_Color32(255, 255, 255, 255) : C2D_Color32(140, 160, 190, 255));
 
-    /* Chozo Objective Badge */
+    /* Chozo Objective / Coords Badge */
     uint8_t targetArea = 0, targetX = 0, targetY = 0;
     bool hasTarget = GetActiveChozoTarget(&targetArea, &targetX, &targetY);
     const char* objLabel = (lang == 6) ? "! OBJETIVO" : ((lang == 3) ? "! ZIEL" : "! TARGET");
@@ -669,7 +938,7 @@ static void RenderMapView(void) {
 
             uint16_t tileData = mapTiles[x + y * 32];
             if (tileData != 0 && tileData != 0x140) {
-                DrawAuthenticMapTile(tileDrawX, tileDrawY, tileSize, tileData, clipX0, clipY0, clipX1, clipY1);
+                DrawAuthenticMapTile(tileDrawX, tileDrawY, tileSize, tileData, clipX0, clipY0, clipX1, clipY1, 0.5f);
             }
         }
     }
@@ -708,6 +977,7 @@ static void RenderMapView(void) {
             }
         }
     }
+
 }
 
 /* Render Status (Estado) View */
@@ -722,21 +992,20 @@ static void RenderStatusView(void) {
         "SAMUS ARAN - STATUS & EQUIPMENT",
         "SAMUS ARAN - STATUS & EQUIPMENT",
         "SAMUS ARAN - STATUS & AUSRUESTUNG",
-        "SAMUS ARAN - STATUT ET EQUIPEMENT",
+        "SAMUS ARAN - STATUT & EQUIPEMENT",
         "SAMUS ARAN - STATO ED EQUIPAGGIAMENTO",
         "SAMUS ARAN - ESTADO Y EQUIPAMIENTO"
     };
-    DrawText(12.0f, 32.0f, 1.0f, titles[lang], C2D_Color32(100, 220, 255, 255));
+    DrawText(12.0f, 30.0f, 1.0f, titles[lang], C2D_Color32(100, 220, 255, 255));
 
-    /* 1. Health & Ammunition Card (Y: 46 to 74) */
-    C2D_DrawRectSolid(8.0f, 46.0f, 0.45f, 304.0f, 28.0f, C2D_Color32(20, 26, 40, 255));
-    C2D_DrawRectSolid(8.0f, 46.0f, 0.4f, 304.0f, 1.0f, C2D_Color32(50, 65, 95, 255));
+    /* 1. Header Resource Card (X: 8, Y: 44 to 72, W: 304, H: 28) */
+    C2D_DrawRectSolid(8.0f, 44.0f, 0.45f, 304.0f, 30.0f, C2D_Color32(20, 26, 40, 255));
 
-    /* Energy */
-    DrawEnergyTankIcon(14.0f, 55.0f);
+    /* Health */
+    DrawEnergyIcon(14.0f, 55.0f);
     char eBuf[32];
-    snprintf(eBuf, sizeof(eBuf), "%03u/%03u", gEquipment.currentEnergy, gEquipment.maxEnergy);
-    DrawText(31.0f, 56.0f, 1.0f, eBuf, C2D_Color32(255, 255, 255, 255));
+    snprintf(eBuf, sizeof(eBuf), "%02u/%02u", gEquipment.currentEnergy, gEquipment.maxEnergy);
+    DrawText(31.0f, 56.0f, 1.0f, eBuf, C2D_Color32(255, 215, 0, 255));
 
     /* Missiles */
     DrawMissileIcon(90.0f, 55.0f);
@@ -768,8 +1037,8 @@ static void RenderStatusView(void) {
         DrawText(254.0f, 56.0f, 1.0f, "--/--", C2D_Color32(100, 110, 130, 255));
     }
 
-    /* 2. Beams & Weapons Column (X: 8, W: 148, Y: 78 to 166) */
-    C2D_DrawRectSolid(8.0f, 78.0f, 0.45f, 148.0f, 88.0f, C2D_Color32(18, 22, 34, 255));
+    /* 2. Beams & Weapons Column (X: 8, W: 148, Y: 78 to 162) */
+    C2D_DrawRectSolid(8.0f, 78.0f, 0.45f, 148.0f, 84.0f, C2D_Color32(18, 22, 34, 255));
     const char* beamColTitles[7] = {
         "BEAMS & BOMBS", "BEAMS & BOMBS", "BEAMS & BOMBS",
         "BEAMS & BOMBEN", "RAYONS & BOMBES", "RAGGI E BOMBE", "RAYOS Y BOMBAS"
@@ -790,13 +1059,13 @@ static void RenderStatusView(void) {
     for (int i = 0; i < 6; ++i) {
         bool has = (gEquipment.beamBombs & beams[i].flag) != 0;
         uint32_t col = has ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(75, 85, 105, 255);
-        float py = 95.0f + (float)i * 11.0f;
+        float py = 95.0f + (float)i * 10.0f;
         DrawText(14.0f, py, 1.0f, beams[i].name[lang], col);
-        DrawText(130.0f, py, 1.0f, has ? "ON" : "--", col);
+        DrawText(130.0f, py, 1.0f, has ? "OK" : "--", col);
     }
 
-    /* 3. Suits & Upgrades Column (X: 164, W: 148, Y: 78 to 166) */
-    C2D_DrawRectSolid(164.0f, 78.0f, 0.45f, 148.0f, 88.0f, C2D_Color32(18, 22, 34, 255));
+    /* 3. Suits & Movement Column (X: 164, W: 148, Y: 78 to 162) */
+    C2D_DrawRectSolid(164.0f, 78.0f, 0.45f, 148.0f, 84.0f, C2D_Color32(18, 22, 34, 255));
     const char* suitColTitles[7] = {
         "SUITS & MISC", "SUITS & MISC", "SUITS & MISC",
         "ANZUEGE & ITEMS", "COMBINAISONS", "TUTE E OGGETTI", "TRAJES Y EQUIPO"
@@ -823,19 +1092,31 @@ static void RenderStatusView(void) {
         DrawText(286.0f, py, 1.0f, has ? "OK" : "--", col);
     }
 
-    /* 4. Area Map Downloads Card (Y: 170 to 232) */
-    C2D_DrawRectSolid(8.0f, 170.0f, 0.45f, 304.0f, 62.0f, C2D_Color32(16, 20, 30, 255));
+    /* 4. Area Map Downloads Card & Collectibles Button (Y: 168 to 234) */
+    C2D_DrawRectSolid(8.0f, 168.0f, 0.45f, 304.0f, 66.0f, C2D_Color32(16, 20, 30, 255));
+
     const char* mapHeaderTitles[7] = {
         "DOWNLOADED MAPS:", "DOWNLOADED MAPS:", "DOWNLOADED MAPS:",
         "HERUNTERGELADENE KARTEN:", "CARTES TELECHARGEES:", "MAPPE SCARICATE:", "MAPAS DESCARGADOS:"
     };
-    DrawText(14.0f, 174.0f, 1.0f, mapHeaderTitles[lang], C2D_Color32(100, 220, 255, 255));
+    DrawText(14.0f, 172.0f, 1.0f, mapHeaderTitles[lang], C2D_Color32(100, 220, 255, 255));
+
+    /* Button for opening Collectibles Detail Modal */
+    struct AreaItemStats globalStats;
+    GetGlobalItemStats(&globalStats);
+    char globBtn[48];
+    unsigned pct = globalStats.totalItems > 0 ? (globalStats.totalObtained * 100 / globalStats.totalItems) : 0;
+    snprintf(globBtn, sizeof(globBtn), (lang == 6) ? "ITEMS: %u/%u (%u%%)" : "ITEMS: %u/%u (%u%%)",
+             globalStats.totalObtained, globalStats.totalItems, pct);
+    C2D_DrawRectSolid(182.0f, 170.0f, 0.5f, 126.0f, 14.0f, C2D_Color32(20, 50, 90, 255));
+    C2D_DrawRectSolid(183.0f, 171.0f, 0.55f, 124.0f, 12.0f, C2D_Color32(12, 30, 60, 255));
+    DrawTextCentered(245.0f, 173.0f, 1.0f, globBtn, C2D_Color32(255, 215, 0, 255));
 
     /* Row 1: 4 areas (Brinstar, Kraid, Norfair, Ridley) */
     for (int i = 0; i < 4; ++i) {
         bool dl = (gEquipment.downloadedMapStatus & (1 << i)) != 0;
         float bx = 14.0f + (float)i * 73.0f;
-        float by = 186.0f;
+        float by = 188.0f;
         uint32_t boxBg = dl ? C2D_Color32(16, 50, 95, 255) : C2D_Color32(22, 26, 38, 255);
         uint32_t boxBorder = dl ? C2D_Color32(40, 160, 250, 255) : C2D_Color32(45, 52, 70, 255);
         uint32_t textCol = dl ? C2D_Color32(255, 255, 255, 255) : C2D_Color32(90, 100, 120, 255);
@@ -849,7 +1130,7 @@ static void RenderStatusView(void) {
     for (int i = 4; i < 7; ++i) {
         bool dl = (gEquipment.downloadedMapStatus & (1 << i)) != 0;
         float bx = 14.0f + (float)(i - 4) * 98.0f;
-        float by = 208.0f;
+        float by = 210.0f;
         uint32_t boxBg = dl ? C2D_Color32(16, 50, 95, 255) : C2D_Color32(22, 26, 38, 255);
         uint32_t boxBorder = dl ? C2D_Color32(40, 160, 250, 255) : C2D_Color32(45, 52, 70, 255);
         uint32_t textCol = dl ? C2D_Color32(255, 255, 255, 255) : C2D_Color32(90, 100, 120, 255);
@@ -857,6 +1138,79 @@ static void RenderStatusView(void) {
         C2D_DrawRectSolid(bx, by, 0.5f, 92.0f, 18.0f, boxBorder);
         C2D_DrawRectSolid(bx + 1.0f, by + 1.0f, 0.55f, 90.0f, 16.0f, boxBg);
         DrawTextCentered(bx + 46.0f, by + 5.0f, 1.0f, AreaName(i), textCol);
+    }
+
+    if (sShowCollectiblesModal) {
+        RenderCollectiblesModal(lang);
+    }
+}
+
+/* Render Options View */
+static void RenderOptionsView(void) {
+    int lang = GetLang();
+
+    C2D_DrawRectSolid(8.0f, 28.0f, 0.4f, 304.0f, 204.0f, C2D_Color32(14, 18, 28, 255));
+
+    const char* optTitles[7] = {
+        "SETTINGS (TOUCH AN OPTION TO CHANGE)",
+        "SETTINGS (TOUCH AN OPTION TO CHANGE)",
+        "SETTINGS (TOUCH AN OPTION TO CHANGE)",
+        "EINSTELLUNGEN (ZUM AENDERN BERUEHREN)",
+        "PARAMETRES (TOUCHER POUR MODIFIER)",
+        "IMPOSTAZIONI (TOCCA PER MODIFICARE)",
+        "AJUSTES (TOCA UNA OPCION PARA CAMBIAR)"
+    };
+    DrawText(16.0f, 32.0f, 1.0f, optTitles[lang], C2D_Color32(100, 220, 255, 255));
+
+    /* Option 1: Aspect Ratio */
+    C2D_DrawRectSolid(12.0f, 44.0f, 0.45f, 296.0f, 24.0f, C2D_Color32(26, 32, 48, 255));
+    C2D_DrawRectSolid(12.0f, 44.0f, 0.4f, 296.0f, 1.0f, C2D_Color32(60, 75, 110, 255));
+    const char* arLabels[7] = {
+        "ASPECT RATIO:", "ASPECT RATIO:", "ASPECT RATIO:",
+        "BILDVERHAELTNIS:", "FORMAT IMAGE:", "FORMATO SCHERMO:", "RELACION DE ASPECTO:"
+    };
+    DrawText(20.0f, 51.0f, 1.0f, arLabels[lang], C2D_Color32(255, 255, 255, 255));
+    DrawText(170.0f, 51.0f, 1.0f, GetAspectRatioDisplayName(lang), C2D_Color32(255, 215, 0, 255));
+
+    /* Option 2: Display Style */
+    C2D_DrawRectSolid(12.0f, 72.0f, 0.45f, 296.0f, 24.0f, C2D_Color32(26, 32, 48, 255));
+    C2D_DrawRectSolid(12.0f, 72.0f, 0.4f, 296.0f, 1.0f, C2D_Color32(60, 75, 110, 255));
+    const char* dsLabels[7] = {
+        "DISPLAY STYLE:", "DISPLAY STYLE:", "DISPLAY STYLE:",
+        "ANZEIGE-STIL:", "STYLE AFFICHAGE:", "STILE DISPLAY:", "ESTILO DE PANTALLA:"
+    };
+    DrawText(20.0f, 79.0f, 1.0f, dsLabels[lang], C2D_Color32(255, 255, 255, 255));
+    DrawText(170.0f, 79.0f, 1.0f, GetDisplayStyleDisplayName(lang), C2D_Color32(255, 215, 0, 255));
+
+    /* Option 3: FPS Overlay */
+    C2D_DrawRectSolid(12.0f, 100.0f, 0.45f, 296.0f, 24.0f, C2D_Color32(26, 32, 48, 255));
+    C2D_DrawRectSolid(12.0f, 100.0f, 0.4f, 296.0f, 1.0f, C2D_Color32(60, 75, 110, 255));
+    const char* fpsLabels[7] = {
+        "FPS OVERLAY:", "FPS OVERLAY:", "FPS OVERLAY:",
+        "FPS-ANZEIGE:", "COMPTEUR FPS:", "OVERLAY FPS:", "CONTADOR FPS:"
+    };
+    DrawText(20.0f, 107.0f, 1.0f, fpsLabels[lang], C2D_Color32(255, 255, 255, 255));
+    DrawText(170.0f, 107.0f, 1.0f, GetFpsOverlayDisplayName(lang),
+             Port_Config_GetShowFps() ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 100, 100, 255));
+
+    /* Option 4: Auto-Hide HUD Option */
+    C2D_DrawRectSolid(12.0f, 128.0f, 0.45f, 296.0f, 24.0f, C2D_Color32(26, 32, 48, 255));
+    C2D_DrawRectSolid(12.0f, 128.0f, 0.4f, 296.0f, 1.0f, C2D_Color32(60, 75, 110, 255));
+    DrawText(20.0f, 135.0f, 1.0f, (lang == 6) ? "AUTOESCONDER HUD:" : "AUTO-HIDE HUD:", C2D_Color32(255, 255, 255, 255));
+    bool autoHide = Port_Config_GetAutoHideHud();
+    DrawText(170.0f, 135.0f, 1.0f, autoHide ? ((lang == 6) ? "ACTIVADO" : "ON") : ((lang == 6) ? "DESACTIVADO" : "OFF"),
+             autoHide ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 100, 100, 255));
+
+    /* Option 5: Button Remapping Submenu Button */
+    C2D_DrawRectSolid(12.0f, 156.0f, 0.45f, 296.0f, 32.0f, C2D_Color32(20, 48, 80, 255));
+    C2D_DrawRectSolid(12.0f, 156.0f, 0.4f, 296.0f, 1.0f, C2D_Color32(50, 100, 180, 255));
+    DrawTextCentered(160.0f, 166.0f, 1.0f, (lang == 6) ? "CONFIGURAR CONTROLES Y BOTONES (X / Y / ZL / ZR)" : "CUSTOMIZE BUTTON CONTROLS (X / Y / ZL / ZR)", C2D_Color32(255, 220, 100, 255));
+
+    /* Informational bottom footer */
+    DrawTextCentered(160.0f, 202.0f, 1.0f, (lang == 6) ? "STICK Y C-STICK CONFIGURADOS AUTOMATICAMENTE" : "CIRCLE PAD & C-STICK ENABLED AUTOMATICALLY", C2D_Color32(130, 160, 190, 255));
+
+    if (sShowRemapModal) {
+        RenderRemapModal(lang);
     }
 }
 
@@ -937,117 +1291,6 @@ static void RenderDebugView(void) {
     DrawText(16.0f, 171.0f, 1.0f, buf, C2D_Color32(180, 240, 160, 255));
 
     DrawText(16.0f, 212.0f, 1.0f, (GetLang() == 6) ? "TOCA LA PESTANA [MAPA] PARA VOLVER" : "TOUCH [MAP] TAB TO RETURN TO MAP VIEW", C2D_Color32(120, 140, 170, 255));
-}
-
-static const char* GetAspectRatioDisplayName(int lang) {
-    int ar = Port_Config_Get3DSAspectRatio();
-    if (lang == 6) {
-        switch (ar) {
-            case 0: return "PANORAMICO";
-            case 1: return "ORIGINAL (3:2)";
-            case 2: return "ESTIRADO (16:9)";
-            default: return "ORIGINAL";
-        }
-    }
-    switch (ar) {
-        case 0: return "WIDE";
-        case 1: return "ORIGINAL (3:2)";
-        case 2: return "STRETCH";
-        default: return "ORIGINAL";
-    }
-}
-
-static const char* GetDisplayStyleDisplayName(int lang) {
-    int ds = Port_Config_Get3DSDisplayStyle();
-    if (lang == 6) {
-        switch (ds) {
-            case 0: return "PIXEL PERFECT (1:1)";
-            case 1: return "ESCALADO NITIDO";
-            case 2: return "SUAVIZADO";
-            default: return "ESCALADO";
-        }
-    }
-    switch (ds) {
-        case 0: return "PIXEL PERFECT (1:1)";
-        case 1: return "SCALED (SHARP)";
-        case 2: return "BLUR (SMOOTH)";
-        default: return "SCALED";
-    }
-}
-
-static const char* GetFpsOverlayDisplayName(int lang) {
-    bool on = Port_Config_GetShowFps();
-    if (lang == 6) {
-        return on ? "ACTIVADO" : "DESACTIVADO";
-    }
-    return on ? "ON" : "OFF";
-}
-
-/* Render Options View */
-static void RenderOptionsView(void) {
-    int lang = GetLang();
-
-    C2D_DrawRectSolid(8.0f, 28.0f, 0.4f, 304.0f, 204.0f, C2D_Color32(14, 18, 28, 255));
-
-    const char* optTitles[7] = {
-        "SETTINGS (TOUCH AN OPTION TO CHANGE)",
-        "SETTINGS (TOUCH AN OPTION TO CHANGE)",
-        "SETTINGS (TOUCH AN OPTION TO CHANGE)",
-        "EINSTELLUNGEN (ZUM AENDERN BERUEHREN)",
-        "PARAMETRES (TOUCHER POUR MODIFIER)",
-        "IMPOSTAZIONI (TOCCA PER MODIFICARE)",
-        "AJUSTES (TOCA UNA OPCION PARA CAMBIAR)"
-    };
-    DrawText(16.0f, 32.0f, 1.0f, optTitles[lang], C2D_Color32(100, 220, 255, 255));
-
-    /* Option 1: Aspect Ratio */
-    C2D_DrawRectSolid(12.0f, 44.0f, 0.45f, 296.0f, 26.0f, C2D_Color32(26, 32, 48, 255));
-    C2D_DrawRectSolid(12.0f, 44.0f, 0.4f, 296.0f, 1.0f, C2D_Color32(60, 75, 110, 255));
-    const char* arLabels[7] = {
-        "ASPECT RATIO:", "ASPECT RATIO:", "ASPECT RATIO:",
-        "BILDVERHAELTNIS:", "FORMAT IMAGE:", "FORMATO SCHERMO:", "RELACION DE ASPECTO:"
-    };
-    DrawText(20.0f, 52.0f, 1.0f, arLabels[lang], C2D_Color32(255, 255, 255, 255));
-    DrawText(170.0f, 52.0f, 1.0f, GetAspectRatioDisplayName(lang), C2D_Color32(255, 215, 0, 255));
-
-    /* Option 2: Display Style */
-    C2D_DrawRectSolid(12.0f, 76.0f, 0.45f, 296.0f, 26.0f, C2D_Color32(26, 32, 48, 255));
-    C2D_DrawRectSolid(12.0f, 76.0f, 0.4f, 296.0f, 1.0f, C2D_Color32(60, 75, 110, 255));
-    const char* dsLabels[7] = {
-        "DISPLAY STYLE:", "DISPLAY STYLE:", "DISPLAY STYLE:",
-        "ANZEIGE-STIL:", "STYLE AFFICHAGE:", "STILE DISPLAY:", "ESTILO DE PANTALLA:"
-    };
-    DrawText(20.0f, 84.0f, 1.0f, dsLabels[lang], C2D_Color32(255, 255, 255, 255));
-    DrawText(170.0f, 84.0f, 1.0f, GetDisplayStyleDisplayName(lang), C2D_Color32(255, 215, 0, 255));
-
-    /* Option 3: FPS Overlay */
-    C2D_DrawRectSolid(12.0f, 108.0f, 0.45f, 296.0f, 26.0f, C2D_Color32(26, 32, 48, 255));
-    C2D_DrawRectSolid(12.0f, 108.0f, 0.4f, 296.0f, 1.0f, C2D_Color32(60, 75, 110, 255));
-    const char* fpsLabels[7] = {
-        "FPS OVERLAY:", "FPS OVERLAY:", "FPS OVERLAY:",
-        "FPS-ANZEIGE:", "COMPTEUR FPS:", "OVERLAY FPS:", "CONTADOR FPS:"
-    };
-    DrawText(20.0f, 116.0f, 1.0f, fpsLabels[lang], C2D_Color32(255, 255, 255, 255));
-    DrawText(170.0f, 116.0f, 1.0f, GetFpsOverlayDisplayName(lang),
-             Port_Config_GetShowFps() ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 100, 100, 255));
-
-    /* Informational Notes Box */
-    C2D_DrawRectSolid(12.0f, 142.0f, 0.45f, 296.0f, 84.0f, C2D_Color32(18, 22, 34, 255));
-    C2D_DrawRectSolid(12.0f, 142.0f, 0.4f, 296.0f, 1.0f, C2D_Color32(50, 65, 95, 255));
-
-    if (lang == 6) {
-        DrawText(20.0f, 150.0f, 1.0f, "NOTAS Y CONSEJOS:", C2D_Color32(100, 220, 255, 255));
-        DrawText(20.0f, 166.0f, 1.0f, "- ARRASTRA EL STYLUS PARA MOVER EL MAPA", C2D_Color32(180, 195, 215, 255));
-        DrawText(20.0f, 180.0f, 1.0f, "- USA [<] Y [>] PARA VER OTRAS ZONAS", C2D_Color32(180, 195, 215, 255));
-        DrawText(20.0f, 194.0f, 1.0f, "- TOCA [SAMUS] PARA CENTRARTE EN TU POSICION", C2D_Color32(180, 195, 215, 255));
-        DrawText(20.0f, 210.0f, 1.0f, "- TOCA [ESTADO] PARA VER EL EQUIPO AL COMPLETO", C2D_Color32(140, 220, 160, 255));
-    } else {
-        DrawText(20.0f, 150.0f, 1.0f, "NOTES & TIPS:", C2D_Color32(100, 220, 255, 255));
-        DrawText(20.0f, 166.0f, 1.0f, "- DRAG WITH STYLUS TO PAN ACROSS ZOOMED MAPS", C2D_Color32(180, 195, 215, 255));
-        DrawText(20.0f, 180.0f, 1.0f, "- USE [<] AND [>] TO VIEW UNLOCKED AREAS", C2D_Color32(180, 195, 215, 255));
-        DrawText(20.0f, 194.0f, 1.0f, "- TAP [SAMUS] TO INSTANTLY RE-CENTER ON PLAYER", C2D_Color32(180, 195, 215, 255));
-        DrawText(20.0f, 210.0f, 1.0f, "- TAP [STATUS] TO VIEW DETAILED SAMUS EQUIPMENT", C2D_Color32(140, 220, 160, 255));
-    }
 }
 
 void Port_BottomUI_Render(void) {

@@ -19,6 +19,12 @@ typedef enum {
 void Port_BottomUI_Init(void);
 void Port_BottomUI_SetTab(PortBottomTab tab);
 PortBottomTab Port_BottomUI_GetTab(void);
+int Port_BottomUI_GetZoom(void);
+void Port_BottomUI_SetZoom(int zoom);
+int Port_BottomUI_GetViewArea(void);
+void Port_BottomUI_SetViewArea(int area);
+bool Port_BottomUI_GetFollowSamus(void);
+void Port_BottomUI_SetFollowSamus(bool follow);
 void Port_BottomUI_HandleTouchDrag(int touchX, int touchY, bool isNewTap);
 void Port_BottomUI_TouchReleased(void);
 void Port_BottomUI_Render(void);

@@ -878,19 +878,15 @@ static void CollectBgLayer(int bgIndex) {
     if (isFirstTarget && sBldEffect == 2) brightAdjust = BRIGHT_ADJUST_BRIGHTEN;
     else if (isFirstTarget && sBldEffect == 3) brightAdjust = BRIGHT_ADJUST_DARKEN;
     bool blendAlpha = isFirstTarget && sBldEffect == 1;
-
-    /* 240x160 screen -> 30x20 visible tiles, +1 in each axis to cover the
-     * partial tile at the scroll fraction on both edges. */
     int startTileX = scrollX / 8;
     int startTileY = scrollY / 8;
     int fineX = scrollX % 8;
     int fineY = scrollY % 8;
-
     for (int ty = 0; ty <= 20; ++ty) {
         int tileRow = (startTileY + ty) & (mapHeightTiles - 1);
         int screenBlockY = tileRow / 32;
         int localRow = tileRow % 32;
-        for (int tx = 0; tx <= 30; ++tx) {
+        for (int tx = -1; tx <= 31; ++tx) {
             int tileCol = (startTileX + tx) & (mapWidthTiles - 1);
             int screenBlockX = tileCol / 32;
             int localCol = tileCol % 32;
@@ -903,7 +899,7 @@ static void CollectBgLayer(int bgIndex) {
             int palBank = (entry >> 12) & 0x0Fu;
             float drawX = (float)(tx * 8 - fineX);
             float drawY = (float)(ty * 8 - fineY);
-            if (drawY <= -8.0f || drawY >= 160.0f || drawX <= -8.0f || drawX >= 240.0f) continue;
+            if (drawY <= -8.0f || drawY >= 160.0f || drawX <= -16.0f || drawX >= 248.0f) continue;
 
             uint32_t byteOffset = charBase + (uint32_t)tileId * bytesPerTile;
             if (!TileHasOpaquePixel(byteOffset, bpp8)) continue;
@@ -1566,13 +1562,16 @@ void Port_GpuRenderer_RenderFrame(void) {
     const int style = Port_Config_Get3DSDisplayStyle();
     const int aspect = Port_Config_Get3DSAspectRatio();
 
-    C3D_TexSetFilter(&sAtlasTexture, (style == 2) ? GPU_LINEAR : GPU_NEAREST,
-                     (style == 2) ? GPU_LINEAR : GPU_NEAREST);
+    /* Emulated GBA main game mode (GM_INGAME == 4, GM_DEMO == 11, etc.) */
+    extern s16 gMainGameMode;
+    bool isGameplay = (gMainGameMode == 4 || gMainGameMode == 11);
 
     float scaleX = 1.5f;
     float scaleY = 1.5f;
     float screenBaseX = 20.0f;
     float screenBaseY = 0.0f;
+    float nativeWidth = 240.0f;
+    float nativeHeight = 160.0f;
 
     if (style == 0) { /* PIXEL PERFECT (1:1) */
         scaleX = 1.0f;
@@ -1596,14 +1595,6 @@ void Port_GpuRenderer_RenderFrame(void) {
             screenBaseX = 20.0f;
             screenBaseY = 0.0f;
         }
-    }
-
-    u32 scLeft = 0, scTop = 0, scRight = 0, scBottom = 0;
-    if (sWindowActive) {
-        scLeft = (u32)(screenBaseX + (float)sWinLeft * scaleX);
-        scTop = (u32)(screenBaseY + (float)sWinTop * scaleY);
-        scRight = (u32)(screenBaseX + (float)sWinRight * scaleX);
-        scBottom = (u32)(screenBaseY + (float)sWinBottom * scaleY);
     }
 
     C3D_RenderTarget* leftTarget = PlatformGpu3DS_GetTopLeftTarget();
@@ -1641,9 +1632,6 @@ void Port_GpuRenderer_RenderFrame(void) {
         int scissorPasses = sWindowActive ? 2 : 1;
         for (int sp = 0; sp < scissorPasses; ++sp) {
             bool insidePass = (sp == 0);
-            if (sWindowActive) {
-                C3D_SetScissor(insidePass ? GPU_SCISSOR_NORMAL : GPU_SCISSOR_INVERT, scLeft, scTop, scRight, scBottom);
-            }
             for (int oi = 0; oi < sOpaqueCount; ++oi) {
                 const DrawItem* item = &sDrawItems[sOpaqueOrder[oi]];
                 if (!ItemPassesWindow(sWindowActive, item->winVis, insidePass)) continue;
@@ -1657,10 +1645,6 @@ void Port_GpuRenderer_RenderFrame(void) {
                 }
             }
         }
-        if (sWindowActive) {
-            C2D_Flush();
-            C3D_SetScissor(GPU_SCISSOR_DISABLE, 0, 0, 0, 0);
-        }
 
         if (sBldEffect == 1 && sBlendCount > 0) {
             C2D_Flush();
@@ -1670,10 +1654,6 @@ void Port_GpuRenderer_RenderFrame(void) {
 
             for (int sp = 0; sp < scissorPasses; ++sp) {
                 bool insidePass = (sp == 0);
-                if (sWindowActive) {
-                    C3D_SetScissor(insidePass ? GPU_SCISSOR_NORMAL : GPU_SCISSOR_INVERT, scLeft, scTop, scRight,
-                                   scBottom);
-                }
                 for (int oi = 0; oi < sBlendCount; ++oi) {
                     const DrawItem* item = &sDrawItems[sBlendOrder[oi]];
                     if (!ItemPassesWindow(sWindowActive, item->winVis, insidePass)) continue;
@@ -1689,7 +1669,30 @@ void Port_GpuRenderer_RenderFrame(void) {
             }
             C2D_Flush();
             C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
-            if (sWindowActive) C3D_SetScissor(GPU_SCISSOR_DISABLE, 0, 0, 0, 0);
+        }
+
+        /* Draw solid black border masks over letterbox/pillarbox areas (covers any
+         * tiles or 3D stereo parallax layers that extend beyond the GBA frame). */
+        if (screenBaseX > 0.0f || screenBaseY > 0.0f) {
+            float gameW = 240.0f * scaleX;
+            float gameH = 160.0f * scaleY;
+            float topY = screenBaseY;
+            float bottomY = screenBaseY + gameH;
+            float leftX = screenBaseX;
+            float rightX = screenBaseX + gameW;
+
+            if (leftX > 0.0f) {
+                C2D_DrawRectSolid(0.0f, 0.0f, 0.6f, leftX, 240.0f, C2D_Color32(0, 0, 0, 255));
+            }
+            if (rightX < 400.0f) {
+                C2D_DrawRectSolid(rightX, 0.0f, 0.6f, 400.0f - rightX, 240.0f, C2D_Color32(0, 0, 0, 255));
+            }
+            if (topY > 0.0f) {
+                C2D_DrawRectSolid(0.0f, 0.0f, 0.6f, 400.0f, topY, C2D_Color32(0, 0, 0, 255));
+            }
+            if (bottomY < 240.0f) {
+                C2D_DrawRectSolid(0.0f, bottomY, 0.6f, 400.0f, 240.0f - bottomY, C2D_Color32(0, 0, 0, 255));
+            }
         }
 
         if (Port_Config_GetShowFps()) {
