@@ -319,19 +319,22 @@ void* port_resolve_addr(uintptr_t val)
     if (IsWithinRomDataBuffer(val)) {
         return (void*)val;
     }
-    if (IsActiveStackPtr(val)) {
-        return (void*)val;
-    }
     /* GBA-range values (EWRAM/IWRAM/IO/palette/VRAM/OAM/ROM/SRAM) are
      * address-mapped through gba_TryMemPtr; anything outside that window is
      * already a native host pointer (e.g. a local scalar or struct whose
      * address happens to get passed through the same code path as a real
-     * GBA address) and is returned unchanged. */
+     * GBA address) and is returned unchanged.
+     * Note: on 3DS, gba_TryMemPtr must take priority over IsActiveStackPtr
+     * so that valid GBA ROM addresses (e.g. 0x08179FF0) are resolved into
+     * gRomData instead of mistakenly treated as stack addresses. */
     if (InGbaNumericRange(val)) {
         void* p = gba_TryMemPtr((uint32_t)val);
         if (p) {
             return p;
         }
+    }
+    if (IsActiveStackPtr(val)) {
+        return (void*)val;
     }
     return (void*)val;
 }
