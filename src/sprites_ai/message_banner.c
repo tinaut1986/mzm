@@ -186,9 +186,12 @@ static void MessageBannerPopUp(void)
                 if (MESSAGE_IS_TANK(msg))
                 {
                     BackupTrackData2SoundChannels();
+                    InsertMusicAndQueueCurrent(MUSIC_GETTING_TANK_JINGLE, FALSE);
                 }
-
-                SoundPlay(MUSIC_GETTING_TANK_JINGLE);
+                else
+                {
+                    SoundPlay(MUSIC_GETTING_TANK_JINGLE);
+                }
             }
             
             // Check is one line message (new item/ability, save complete, map text)
