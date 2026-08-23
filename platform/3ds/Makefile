@@ -93,7 +93,7 @@ VERSION ?= $(GIT_VERSION)
 
 ARCH    := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
 CFLAGS  := -O2 -fomit-frame-pointer -Wall -mword-relocations -ffunction-sections -fdata-sections \
-           -DREGION_EU -DMZM_PORT_VERSION='\"$(VERSION)\"' -D__3DS__ -DMZM_3DS \
+           -DREGION_EU -DMZM_PORT_VERSION=\"$(VERSION)\" -D__3DS__ -DMZM_3DS \
            -DNON_MATCHING=1 \
            -Wno-implicit-function-declaration -Wno-implicit-int -Wno-builtin-declaration-mismatch \
            -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function \

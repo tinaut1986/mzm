@@ -158,6 +158,9 @@ static void StepEnvelope(int* volume, unsigned int envPeriod, int envDir,
     if (v >= 0 && v <= 15) *volume = v;
 }
 
+static int sScaleL, sScaleR;
+static bool sAnyVoiceActive;
+
 void PortPsg_BeginBlock(unsigned int rate) {
     if (rate == 0) return;
 
@@ -308,10 +311,19 @@ void PortPsg_BeginBlock(unsigned int rate) {
             if (ctrl & 0x8000) sNoise.lfsr = 0x7FFF;
         }
     }
-}
 
-static int sScaleL, sScaleR;
-static bool sAnyVoiceActive;
+    /* Compute master output scale for left and right (replaces software division in NextSample) */
+    sScaleL = (PSG_UNIT_SCALE * sPsgRatioNum * (sMasterVolL + 1));
+    sScaleR = (PSG_UNIT_SCALE * sPsgRatioNum * (sMasterVolR + 1));
+
+    /* Check if any voice is actually producing sound */
+    sAnyVoiceActive = sMasterOn && (
+        ((sSq[0].enabledL || sSq[0].enabledR) && sSq[0].inc != 0 && sSq[0].volume != 0) ||
+        ((sSq[1].enabledL || sSq[1].enabledR) && sSq[1].inc != 0 && sSq[1].volume != 0) ||
+        (sWave.enabled && (sWave.enabledL || sWave.enabledR) && sWave.inc != 0 && sWave.volumeShift != 4) ||
+        ((sNoise.enabledL || sNoise.enabledR) && sNoise.inc != 0 && sNoise.volume != 0)
+    );
+}
 
 bool PortPsg_IsAnyVoiceActive(void) {
     return sAnyVoiceActive;

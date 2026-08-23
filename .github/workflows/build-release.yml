@@ -25,10 +25,13 @@ jobs:
 
       - name: Build 3DS Port (Release)
         run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           export DEVKITPRO=/opt/devkitpro
           export DEVKITARM=/opt/devkitpro/devkitARM
+          chmod +x tools/bin/bannertool tools/bin/makerom
+          export PATH=$GITHUB_WORKSPACE/tools/bin:/opt/devkitpro/tools/bin:$PATH
           make -C platform/3ds clean
-          make -C platform/3ds -j$(nproc) RENDERER=gpu
+          make -C platform/3ds -j$(nproc) RENDERER=gpu BANNERTOOL=$GITHUB_WORKSPACE/tools/bin/bannertool MAKEROM=$GITHUB_WORKSPACE/tools/bin/makerom
 
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
