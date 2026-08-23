@@ -316,12 +316,13 @@ static const uint8_t kObjHeights[3][4] = { { 8, 16, 32, 64 }, { 8, 8, 16, 32 }, 
  * parallax shift at full slider; sign flips between eyes in the caller.
  * Samus (OBJ) is placed slightly behind BG1 platforms so platforms appear
  * with depth/thickness in front of Samus. */
-static const float kTierEyeOffsetPx[5] = {
-    -4.0f, /* BG3: far background / sky */
-    -2.0f, /* BG2: mid background / caves */
-    -0.3f, /* BG1: platforms / interactive ground (closer to viewer) */
-    0.0f,  /* BG0: HUD / UI / screen plane */
-    -0.8f, /* OBJ: Samus / enemies (slightly behind BG1 platforms) */
+static const float kTierEyeOffsetPx[6] = {
+    -4.0f, /* 0: BG3: far background / sky */
+    -2.0f, /* 1: BG2: mid background / caves */
+    -0.3f, /* 2: BG1: platforms / interactive ground / scenery */
+    +1.8f, /* 3: BG0: text overlay / dialogs */
+    -0.8f, /* 4: World OBJ: Samus / enemies / particles (priority 1..3) */
+    +2.0f, /* 5: HUD OBJ: Health bar, missiles, tanks, minimap sprites (priority 0) */
 };
 
 bool Port_GpuRenderer_IsActive(void) { return sGpuRendererActive; }
@@ -919,24 +920,24 @@ static void CollectBgLayer(int bgIndex) {
              * tiebreak: lower BG index draws later (on top), matching GBA
              * hardware (BG0 > BG1 > BG2 > BG3 at equal priority). */
             int sortKey = (3 - priority) * 10 + (3 - bgIndex);
-            /* depthTier indexes kTierEyeOffsetPx (far to near). It must track
-             * the same `priority` that sortKey uses, not the fixed bgIndex:
-             * in ordinary gameplay BG3/BG2/BG1/BG0 happen to be drawn at
-             * priority 3/2/1/0 respectively, so a bgIndex-based tier looked
-             * right there -- but non-gameplay screens can and do reorder
-             * priority independently of bgIndex. Confirmed against real
-             * hardware (GBA side-by-side) that stereo depth must follow
-             * actual on-screen occlusion, not a fixed per-BG-index role:
-             * with a bgIndex-fixed tier the chozo-hint screen's swirl (BG3,
-             * occluding the map correctly in 2D) got the *farthest* stereo
-             * depth while the occluded BG1 map got a *nearer* depth --
-             * occlusion and stereo depth disagreeing. See pause_screen.c's
-             * CHOZO_STATUE_HINT branch for the matching 2D-occlusion fix
-             * (BG3's priority moved behind BG1's there) -- that fix and
-             * this one both had to land together: this alone (tried first)
-             * fixed depth but left 2D occlusion wrong, since depthTier
-             * never touches sortKey/draw order at all. */
-            PushItem(slot, drawX, drawY, sortKey, 3 - priority, blendAlpha, rectWinVis);
+            /* Determine depthTier:
+             * BG0 is the game HUD/UI layer (or dialog/text). It MUST ALWAYS be
+             * the topmost foreground layer (tier 3, +1.8f offset) regardless of
+             * transparency priority tweaks.
+             * For world BG layers (BG1..BG3), map priority to background tiers (0..2). */
+            int depthTier;
+            if (bgIndex == 0) {
+                depthTier = 3; /* Topmost foreground (HUD) */
+            } else {
+                /* Map remaining world BGs into far/mid/near tiers:
+                 * priority 0/1 -> tier 2 (platforms / foreground world, -0.3f)
+                 * priority 2   -> tier 1 (mid background, -2.0f)
+                 * priority 3   -> tier 0 (far background / sky, -4.0f) */
+                if (priority <= 1) depthTier = 2;
+                else if (priority == 2) depthTier = 1;
+                else depthTier = 0;
+            }
+            PushItem(slot, drawX, drawY, sortKey, depthTier, blendAlpha, rectWinVis);
         }
     }
 }
@@ -1107,13 +1108,14 @@ static void CollectSprite(int oamIndex, bool obj1D) {
             uint32_t byteOffset = (uint32_t)(objBase - gVram) + (uint32_t)tileIndex * bytesPerTile;
             if (!TileHasOpaquePixel(byteOffset, bpp8)) continue;
 
+            int depthTier = (priority == 0) ? 5 : 4;
             if (!isAffine) {
                 float drawX = (float)(x + tx * 8);
                 float drawY = (float)(y + ty * 8);
                 if (drawY <= -8.0f || drawY >= 160.0f || drawX <= -8.0f || drawX >= 240.0f) continue;
                 if (sObjWindowActive && !ObjWinItemVisible(objWinVis, drawX, drawY)) continue;
                 int slot = GetOrDecodeTileSlot(byteOffset, bpp8, pal, palBank, hflip, vflip, true, brightAdjust);
-                PushItem(slot, drawX, drawY, sortKey, 4, blendAlpha, rectWinVis);
+                PushItem(slot, drawX, drawY, sortKey, depthTier, blendAlpha, rectWinVis);
                 continue;
             }
 
@@ -1132,7 +1134,7 @@ static void CollectSprite(int oamIndex, bool obj1D) {
             float screenCenterX = pivotX + dx;
             float screenCenterY = pivotY + dy;
             if (sObjWindowActive && !ObjWinItemVisible(objWinVis, screenCenterX, screenCenterY)) continue;
-            PushAffineItem(slot, screenCenterX, screenCenterY, affAngle, affScaleX, affScaleY, sortKey, 4, blendAlpha,
+            PushAffineItem(slot, screenCenterX, screenCenterY, affAngle, affScaleX, affScaleY, sortKey, depthTier, blendAlpha,
                            rectWinVis);
         }
     }
@@ -1710,8 +1712,9 @@ void Port_GpuRenderer_RenderFrame(void) {
             unsigned rounded = fps > 0.0 ? (unsigned)(fps + 0.5) : 0u;
             if (rounded > 999u) rounded = 999u;
             snprintf(label, sizeof(label), "FPS %u", rounded);
-            C2D_DrawRectSolid(5.0f, 216.0f, 0.7f, 65.0f, 18.0f, C2D_Color32(0, 0, 0, 200));
-            PlatformGpu3DS_DrawStatusText(8.0f, 220.0f, 1.5f, label);
+            float fpsEyeOffset = eyeSign * slider3d * (+1.0f);
+            C2D_DrawRectSolid(5.0f + fpsEyeOffset, 216.0f, 0.7f, 65.0f, 18.0f, C2D_Color32(0, 0, 0, 200));
+            PlatformGpu3DS_DrawStatusText(8.0f + fpsEyeOffset, 220.0f, 1.5f, label);
         }
 #ifdef PORT_GPU_RENDERER_DIAG_LOG
         {

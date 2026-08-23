@@ -668,16 +668,41 @@ static void DumpOneTarget(C3D_RenderTarget* target, const char* path) {
     linearFree(buf);
 }
 
+static void WriteBlob(const char* path, const void* data, size_t size) {
+    FILE* f = fopen(path, "wb");
+    if (!f) return;
+    fwrite(data, 1, size, f);
+    fclose(f);
+}
+
 void PlatformGpu3DS_DumpScreens(void) {
     if (!sReady) return;
     DumpOneTarget(sTopTarget, "sdmc:/3ds/mzm-dump-left.rgb");
     DumpOneTarget(sTopRightTarget, "sdmc:/3ds/mzm-dump-right.rgb");
     DumpOneTarget(sBottomTarget, "sdmc:/3ds/mzm-dump-bottom.rgb");
-    char msg[128];
-    snprintf(msg, sizeof(msg), "DUMP: left=%ux%u right=%ux%u bottom=%ux%u", sTopTarget->frameBuf.width,
-             sTopTarget->frameBuf.height, sTopRightTarget ? sTopRightTarget->frameBuf.width : 0u,
-             sTopRightTarget ? sTopRightTarget->frameBuf.height : 0u, sBottomTarget->frameBuf.width,
-             sBottomTarget->frameBuf.height);
+
+    extern u8 gIoMem[0x400];
+    extern u16 gBgPltt[256];
+    extern u16 gObjPltt[256];
+    extern u16 gOamMem[0x400 / 2];
+    extern u8 gVram[0x18000];
+    WriteBlob("sdmc:/3ds/mzm-dump-vram.bin", gVram, sizeof(gVram));
+    WriteBlob("sdmc:/3ds/mzm-dump-io.bin", gIoMem, sizeof(gIoMem));
+    WriteBlob("sdmc:/3ds/mzm-dump-bgpltt.bin", gBgPltt, sizeof(gBgPltt));
+    WriteBlob("sdmc:/3ds/mzm-dump-objpltt.bin", gObjPltt, sizeof(gObjPltt));
+    WriteBlob("sdmc:/3ds/mzm-dump-oam.bin", gOamMem, sizeof(gOamMem));
+
+    uint16_t dispcnt = (uint16_t)(gIoMem[0x00] | (gIoMem[0x01] << 8));
+    uint16_t bg0cnt  = (uint16_t)(gIoMem[0x08] | (gIoMem[0x09] << 8));
+    uint16_t bg1cnt  = (uint16_t)(gIoMem[0x0A] | (gIoMem[0x0B] << 8));
+    uint16_t bg2cnt  = (uint16_t)(gIoMem[0x0C] | (gIoMem[0x0D] << 8));
+    uint16_t bg3cnt  = (uint16_t)(gIoMem[0x0E] | (gIoMem[0x0F] << 8));
+    uint16_t bldcnt  = (uint16_t)(gIoMem[0x50] | (gIoMem[0x51] << 8));
+
+    char msg[256];
+    snprintf(msg, sizeof(msg),
+        "DUMP: DISPCNT=%04X BG0CNT=%04X(prio=%u) BG1CNT=%04X(prio=%u) BG2CNT=%04X(prio=%u) BG3CNT=%04X(prio=%u) BLDCNT=%04X",
+        dispcnt, bg0cnt, bg0cnt & 3, bg1cnt, bg1cnt & 3, bg2cnt, bg2cnt & 3, bg3cnt, bg3cnt & 3, bldcnt);
     extern void Port_DebugLog(const char* msg);
     Port_DebugLog(msg);
 }

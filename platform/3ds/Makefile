@@ -88,7 +88,18 @@ OBJS_3DS  := $(patsubst $(CURDIR)/%.c, $(BUILD)/3ds/%.o, $(SRCS_3DS))
 C_OBJS    := $(OBJS_ROOT) $(OBJS_ASM) $(OBJS_3DS)
 DEPS      := $(C_OBJS:.o=.d)
 
-GIT_VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "0.0-dev")
+GIT_BRANCH  := $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null)
+EXACT_TAG   := $(shell git describe --tags --exact-match 2>/dev/null)
+ifneq ($(strip $(EXACT_TAG)),)
+  GIT_VERSION := $(EXACT_TAG)
+else ifneq ($(filter release/%,$(GIT_BRANCH)),)
+  REL_VER     := $(patsubst release/%,%,$(GIT_BRANCH))
+  REL_CNT     := $(shell git rev-list --count main..HEAD 2>/dev/null || echo 1)
+  REL_HASH    := $(shell git rev-parse --short HEAD 2>/dev/null || echo dev)
+  GIT_VERSION := $(REL_VER)-dev.$(REL_CNT)+$(REL_HASH)
+else
+  GIT_VERSION := $(shell git describe --tags --always 2>/dev/null || echo "0.0-dev")
+endif
 VERSION ?= $(GIT_VERSION)
 
 ARCH    := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
@@ -165,15 +176,14 @@ LIBS     := -L$(CTRULIB)/lib -L$(PORTLIBS)/lib -lcitro2d -lcitro3d -lctru -lm
 MAKEROM    ?= $(shell which makerom 2>/dev/null || echo /home/tinaut1986/tools/bin/makerom)
 BANNERTOOL ?= $(shell which bannertool 2>/dev/null || echo /home/tinaut1986/tools/bin/bannertool)
 
-.PHONY: all clean cia elf 3dsx
+.PHONY: all clean cia elf 3dsx print-version ftp
 
-all: $(TARGET).cia
+print-version:
+	@echo $(VERSION)
 
-cia: $(TARGET).cia
-
-3dsx: $(TARGET).3dsx
-
-elf: $(TARGET).elf
+ftp: $(TARGET).cia
+	@echo "Uploading $(TARGET).cia as mzm-3ds-$(VERSION).cia to FTP..."
+	curl -T $(TARGET).cia "ftp://$(FTP_HOST):$(FTP_PORT)/cias/mzm-3ds-$(VERSION).cia"
 
 $(TARGET).cia: $(TARGET).elf $(BUILD)/mzm-3ds.smdh $(BUILD)/banner.bnr
 	@echo "Creating CIA: $(notdir $@)"
