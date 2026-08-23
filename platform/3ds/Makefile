@@ -90,15 +90,26 @@ DEPS      := $(C_OBJS:.o=.d)
 
 GIT_BRANCH  := $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null)
 EXACT_TAG   := $(shell git describe --tags --exact-match 2>/dev/null)
+# Rama release/* más reciente que contiene HEAD (local u origin): permite
+# que ramas laterales (p.ej. PRs basados en release) hereden su versión
+REL_MERGED := $(shell git for-each-ref --format='%(refname:short)' --merged HEAD refs/heads/'release/*' refs/remotes/'origin/release/*' 2>/dev/null | sort -V | tail -1)
+REL_BASE    := $(shell git rev-parse --verify -q refs/remotes/origin/main >/dev/null && echo refs/remotes/origin/main || echo main)
+
 ifneq ($(strip $(EXACT_TAG)),)
   GIT_VERSION := $(EXACT_TAG)
-else ifneq ($(filter release/%,$(GIT_BRANCH)),)
-  REL_VER     := $(patsubst release/%,%,$(GIT_BRANCH))
-  REL_CNT     := $(shell git rev-list --count main..HEAD 2>/dev/null || echo 1)
+else
+ifeq ($(filter release/%,$(GIT_BRANCH)),)
+  REL_NAME    := $(subst origin/,,$(REL_MERGED))
+else
+  REL_NAME    := $(GIT_BRANCH)
+endif
+ifneq ($(filter release/%,$(REL_NAME)),)
+  REL_CNT     := $(shell git rev-list --count $(REL_BASE)..HEAD 2>/dev/null || echo 1)
   REL_HASH    := $(shell git rev-parse --short HEAD 2>/dev/null || echo dev)
-  GIT_VERSION := $(REL_VER)-dev.$(REL_CNT)+$(REL_HASH)
+  GIT_VERSION := $(patsubst release/%,%,$(REL_NAME))-dev.$(REL_CNT)+$(REL_HASH)
 else
   GIT_VERSION := $(shell git describe --tags --always 2>/dev/null || echo "0.0-dev")
+endif
 endif
 VERSION ?= $(GIT_VERSION)
 
