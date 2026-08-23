@@ -301,6 +301,12 @@ static int32_t sOpaqueOrder[MAX_DRAW_ITEMS];
 static int sOpaqueCount;
 static int32_t sBlendOrder[MAX_DRAW_ITEMS];
 static int sBlendCount;
+/* True back-to-front draw sequence across BOTH opaque and blend items
+ * together, in real GBA sortKey order -- see the single merged draw loop in
+ * Port_GpuRenderer_RenderFrame for why this exists instead of the old
+ * opaque-pass-then-blend-pass split. */
+static int32_t sDrawOrder[MAX_DRAW_ITEMS];
+static int sDrawOrderCount;
 
 /* GBA sprite shape/size -> pixel dimensions (attr0 bits14-15 = shape,
  * attr1 bits14-15 = size). Same table as port/ppu/src/mode1.c's
@@ -919,15 +925,24 @@ static void CollectBgLayer(int bgIndex) {
              * tiebreak: lower BG index draws later (on top), matching GBA
              * hardware (BG0 > BG1 > BG2 > BG3 at equal priority). */
             int sortKey = (3 - priority) * 10 + (3 - bgIndex);
-            /* depthTier indexes kTierEyeOffsetPx, which is laid out
-             * BG3,BG2,BG1,BG0,OBJ (far to near) -- the inverse of bgIndex
-             * (BG0..BG3). Passing bgIndex directly here meant BG0 (meant
-             * to get 0.0f/no stereo offset, being the HUD/foreground
-             * plane) was instead reading kTierEyeOffsetPx[0] == -3.5f (the
-             * far-background BG3 offset), and BG3 read index 3 == 0.0f --
-             * silently swapping stereo depth between the nearest and
-             * farthest layers. */
-            PushItem(slot, drawX, drawY, sortKey, 3 - bgIndex, blendAlpha, rectWinVis);
+            /* depthTier indexes kTierEyeOffsetPx (far to near). It must track
+             * the same `priority` that sortKey uses, not the fixed bgIndex:
+             * in ordinary gameplay BG3/BG2/BG1/BG0 happen to be drawn at
+             * priority 3/2/1/0 respectively, so a bgIndex-based tier looked
+             * right there -- but non-gameplay screens can and do reorder
+             * priority independently of bgIndex. Confirmed against real
+             * hardware (GBA side-by-side) that stereo depth must follow
+             * actual on-screen occlusion, not a fixed per-BG-index role:
+             * with a bgIndex-fixed tier the chozo-hint screen's swirl (BG3,
+             * occluding the map correctly in 2D) got the *farthest* stereo
+             * depth while the occluded BG1 map got a *nearer* depth --
+             * occlusion and stereo depth disagreeing. See pause_screen.c's
+             * CHOZO_STATUE_HINT branch for the matching 2D-occlusion fix
+             * (BG3's priority moved behind BG1's there) -- that fix and
+             * this one both had to land together: this alone (tried first)
+             * fixed depth but left 2D occlusion wrong, since depthTier
+             * never touches sortKey/draw order at all. */
+            PushItem(slot, drawX, drawY, sortKey, 3 - priority, blendAlpha, rectWinVis);
         }
     }
 }
@@ -1459,8 +1474,15 @@ void Port_GpuRenderer_RenderFrame(void) {
     }
     sOpaqueCount = 0;
     sBlendCount = 0;
+    sDrawOrderCount = 0;
     for (int b = 0; b < SORT_KEY_BUCKETS; ++b) {
         for (int32_t i = sBucketHead[b]; i >= 0; i = sBucketNext[i]) {
+            /* sDrawOrder keeps every item (opaque and blend) in one true
+             * back-to-front sortKey sequence -- see its declaration and the
+             * draw loop for why this replaced two fully separate passes.
+             * sOpaqueOrder/sBlendOrder are still built for the stats/diag
+             * log below (sBlendCount) and are otherwise unused now. */
+            sDrawOrder[sDrawOrderCount++] = i;
             if (sDrawItems[i].blendAlpha) {
                 sBlendOrder[sBlendCount++] = i;
             } else {
@@ -1627,14 +1649,41 @@ void Port_GpuRenderer_RenderFrame(void) {
          * massive memory bandwidth during scaled / full-screen rendering. */
         C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
 
+        /* Single pass over sDrawOrder (true back-to-front GBA priority
+         * order, opaque and blend items interleaved), toggling the GPU
+         * blend equation per item instead of running two fully separate
+         * passes (all opaque, then unconditionally all blend on top).
+         * The old two-pass split always painted every blend (first-target)
+         * item on top of the ENTIRE opaque scene, regardless of its real
+         * priority -- so a blend layer behind a higher-priority opaque
+         * layer (e.g. pause_screen.c's chozo-hint screen, where the grid
+         * is BG1 at priority 2 behind the map's BG3 at priority 1) painted
+         * over that opaque layer instead of being occluded by it. Confirmed
+         * against a real-hardware VRAM dump: the grid must respect BG3's
+         * priority, not always win. */
         int drawCount = 0;
         bool reassertedTexEnv = false;
         int scissorPasses = sWindowActive ? 2 : 1;
+        bool blendModeActive = false;
         for (int sp = 0; sp < scissorPasses; ++sp) {
             bool insidePass = (sp == 0);
-            for (int oi = 0; oi < sOpaqueCount; ++oi) {
-                const DrawItem* item = &sDrawItems[sOpaqueOrder[oi]];
+            for (int oi = 0; oi < sDrawOrderCount; ++oi) {
+                const DrawItem* item = &sDrawItems[sDrawOrder[oi]];
                 if (!ItemPassesWindow(sWindowActive, item->winVis, insidePass)) continue;
+                bool wantBlend = item->blendAlpha && sBldEffect == 1;
+                if (wantBlend != blendModeActive) {
+                    C2D_Flush();
+                    if (wantBlend) {
+                        C3D_BlendingColor(C2D_Color32(0, 0, 0, (u32)((sBldEva * 255) / 16)));
+                        C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_CONSTANT_ALPHA, GPU_ONE_MINUS_CONSTANT_ALPHA,
+                                       GPU_CONSTANT_ALPHA, GPU_ONE_MINUS_CONSTANT_ALPHA);
+                    } else {
+                        /* Opaque mode: ONE/ZERO, see the comment above the
+                         * initial C3D_AlphaBlend call before this loop. */
+                        C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
+                    }
+                    blendModeActive = wantBlend;
+                }
                 float eyeOffset = eyeSign * slider3d * kTierEyeOffsetPx[item->depthTier];
                 C2D_DrawParams params = BuildDrawParams(item, screenBaseX, screenBaseY, eyeOffset, scaleX, scaleY);
                 C2D_DrawImage(item->img, &params, NULL);
@@ -1645,28 +1694,7 @@ void Port_GpuRenderer_RenderFrame(void) {
                 }
             }
         }
-
-        if (sBldEffect == 1 && sBlendCount > 0) {
-            C2D_Flush();
-            C3D_BlendingColor(C2D_Color32(0, 0, 0, (u32)((sBldEva * 255) / 16)));
-            C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_CONSTANT_ALPHA, GPU_ONE_MINUS_CONSTANT_ALPHA,
-                           GPU_CONSTANT_ALPHA, GPU_ONE_MINUS_CONSTANT_ALPHA);
-
-            for (int sp = 0; sp < scissorPasses; ++sp) {
-                bool insidePass = (sp == 0);
-                for (int oi = 0; oi < sBlendCount; ++oi) {
-                    const DrawItem* item = &sDrawItems[sBlendOrder[oi]];
-                    if (!ItemPassesWindow(sWindowActive, item->winVis, insidePass)) continue;
-                    float eyeOffset = eyeSign * slider3d * kTierEyeOffsetPx[item->depthTier];
-                    C2D_DrawParams params = BuildDrawParams(item, screenBaseX, screenBaseY, eyeOffset, scaleX, scaleY);
-                    C2D_DrawImage(item->img, &params, NULL);
-                    ++drawCount;
-                    if (!reassertedTexEnv) {
-                        ConfigureAtlasTextureEnv();
-                        reassertedTexEnv = true;
-                    }
-                }
-            }
+        if (blendModeActive) {
             C2D_Flush();
             C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
         }

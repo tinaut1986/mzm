@@ -2753,6 +2753,19 @@ void PauseScreenInit(void)
         PAUSE_SCREEN_DATA.unk_78 = 0;
         PAUSE_SCREEN_DATA.unk_7A = 0;
         PAUSE_SCREEN_DATA.unk_6E = 0;
+        /* Do NOT "fix" this to BGCNT_LOW_PRIORITY -- that was tried and is
+         * wrong. Decoded straight from a real-hardware VRAM dump (gVram +
+         * BG1/2/3 CNT) during this exact screen: BG1 (blend first-target,
+         * BLDCNT alpha 7:9) is the green grid; BG2 (BGCNT_LOW_PRIORITY) is
+         * the chozo-statue background art; BG3 -- this one, at
+         * BGCNT_HIGH_MID_PRIORITY -- is the room map/platform preview +
+         * energy bar the hint draws over the art. So BG3 in front of BG1/
+         * BG2 is correct 2D occlusion (map visible, grid blended on top of
+         * everything as designed); lowering it made the near-full-coverage
+         * statue art (BG2) paint over the sparse map (BG3) instead, hiding
+         * it almost entirely. The real bug this screen had was stereo-3D
+         * depth ordering, not 2D occlusion -- see port_gpu_renderer.c's
+         * CollectBgLayer depthTier comment. */
         PAUSE_SCREEN_DATA.unk_6C = CREATE_BGCNT(2, 28, sPauseScreen_BgCntPriority[BGCNT_HIGH_MID_PRIORITY], BGCNT_SIZE_512x512) | (1 << 6);
         PAUSE_SCREEN_DATA.bg3cnt = PAUSE_SCREEN_DATA.unk_6C;
         PAUSE_SCREEN_DATA.bg2cnt = CREATE_BGCNT(0, 23, sPauseScreen_BgCntPriority[BGCNT_LOW_PRIORITY], BGCNT_SIZE_256x256);
