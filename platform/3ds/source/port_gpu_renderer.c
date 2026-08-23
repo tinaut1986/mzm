@@ -322,13 +322,21 @@ static const uint8_t kObjHeights[3][4] = { { 8, 16, 32, 64 }, { 8, 8, 16, 32 }, 
  * parallax shift at full slider; sign flips between eyes in the caller.
  * Samus (OBJ) is placed slightly behind BG1 platforms so platforms appear
  * with depth/thickness in front of Samus. */
-static const float kTierEyeOffsetPx[6] = {
+static const float kTierEyeOffsetPx[7] = {
     -4.0f, /* 0: BG3: far background / sky */
     -2.0f, /* 1: BG2: mid background / caves */
     -0.3f, /* 2: BG1: platforms / interactive ground / scenery */
     +1.8f, /* 3: BG0: text overlay / dialogs */
-    -0.8f, /* 4: World OBJ: Samus / enemies / particles (priority 1..3) */
+    -0.8f, /* 4: World OBJ: Samus / enemies / particles (priority 1..3), gameplay only */
     +2.0f, /* 5: HUD OBJ: Health bar, missiles, tanks, minimap sprites (priority 0) */
+    +1.2f, /* 6: Map/pause-screen OBJ (priority 1..3): the pause map's Samus
+            * position marker and similar icons. Tier 4's -0.8f barely read
+            * as separated from the map BG's own -0.3f (tier 2) once the
+            * map/grid occlusion bug was fixed and the marker was actually
+            * visible against it -- confirmed on hardware. Kept as its own
+            * tier instead of just raising tier 4's magnitude so real
+            * gameplay Samus/enemy depth (tier 4, used every frame during
+            * play) stays untouched by a change aimed only at map screens. */
 };
 
 bool Port_GpuRenderer_IsActive(void) { return sGpuRendererActive; }
@@ -1114,7 +1122,42 @@ static void CollectSprite(int oamIndex, bool obj1D) {
             uint32_t byteOffset = (uint32_t)(objBase - gVram) + (uint32_t)tileIndex * bytesPerTile;
             if (!TileHasOpaquePixel(byteOffset, bpp8)) continue;
 
-            int depthTier = (priority == 0) ? 5 : 4;
+            /* GM_MAP_SCREEN == 5 (include/constants/game_state.h's GameMode
+             * enum) covers every PauseScreenXxx variant -- plain map, chozo
+             * hint, map download, item pickup -- not just gameplay. Tier 6
+             * only applies there so real in-game Samus/enemy depth is
+             * untouched. */
+            extern s16 gMainGameMode;
+            bool inMapOrPauseScreen = gMainGameMode == 5;
+            /* Two earlier signals for "this is real HUD, elevate it" both
+             * failed on hardware: OAM priority 0 also catches explosions/
+             * shot-impacts/reload-flashes/bombs (they use priority 0 too,
+             * just as a "draw above everything" compositing tool, not
+             * because they're HUD); gNextOamSlot turned out to be a running
+             * cursor every sprite system keeps advancing all frame, not a
+             * fixed post-HUD boundary, so it ended up covering Samus,
+             * enemies, and even save/map stations.
+             * src/hud.c hardcodes OBJ palette bank 4 or 5 (paletteNum = 4/5)
+             * for every HUD element it draws -- health/charge bars, missile/
+             * super-missile/power-bomb counts, the minimap icon -- and nothing
+             * else in the codebase assigns those banks literally (dynamic
+             * gameplay sprites go through a separate palette-slot allocator).
+             * Confirmed on hardware this alone still isn't enough: the Morph
+             * Ball bomb sprite (tile 335) genuinely also sits on palette
+             * bank 4 -- not a random allocator collision, that's just the
+             * real ROM data. What does differ: every bank-4 HUD element in
+             * hud.c is drawn OAM_SHAPE_WIDE (health/charge/missile/super-
+             * missile/power-bomb count bars, shape == 1); the bomb sprite is
+             * OAM_SHAPE_SQUARE (shape == 0). Bank 5 (minimap icons) is
+             * always OAM_SHAPE_SQUARE in hud.c, so it doesn't need the
+             * shape check. */
+            bool isRealHud = (palBank == 4 && shape == 1) || palBank == 5;
+            int depthTier;
+            if (inMapOrPauseScreen) {
+                depthTier = (priority == 0) ? 5 : 6;
+            } else {
+                depthTier = isRealHud ? 5 : 4;
+            }
             if (!isAffine) {
                 float drawX = (float)(x + tx * 8);
                 float drawY = (float)(y + ty * 8);
