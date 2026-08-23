@@ -1,6 +1,8 @@
 #ifndef PORT_PSG_SYNTH_H
 #define PORT_PSG_SYNTH_H
 
+#include <stdbool.h>
+
 /*
  * Software synthesis of the GBA's four PSG voices for the 3DS port.
  *
