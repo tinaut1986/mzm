@@ -2753,18 +2753,7 @@ void PauseScreenInit(void)
         PAUSE_SCREEN_DATA.unk_78 = 0;
         PAUSE_SCREEN_DATA.unk_7A = 0;
         PAUSE_SCREEN_DATA.unk_6E = 0;
-        /* BG3 (the swirling 3D-effect backdrop, 512x512 + mosaic) was
-         * BGCNT_HIGH_MID_PRIORITY here -- numerically closer to the front
-         * than BG1's BGCNT_LOW_MID_PRIORITY below, so GBA's priority rule
-         * (lower number = drawn on top) puts the swirl in front of the map/
-         * hint art on BG1. Confirmed against real hardware (GBA side-by-
-         * side) that the swirl belongs behind the map, not in front of it;
-         * dropping it to BGCNT_LOW_PRIORITY (tied with BG2, broken by BG
-         * index so BG2 still wins that tie) fixes the occlusion. Scoped to
-         * this branch only -- PAUSE_SCREEN_TYPE_DOWNLOADING_MAP below uses
-         * the same BG3 setup for a screen that isn't reported broken, so it
-         * keeps BGCNT_HIGH_MID_PRIORITY untouched. */
-        PAUSE_SCREEN_DATA.unk_6C = CREATE_BGCNT(2, 28, sPauseScreen_BgCntPriority[BGCNT_LOW_PRIORITY], BGCNT_SIZE_512x512) | (1 << 6);
+        PAUSE_SCREEN_DATA.unk_6C = CREATE_BGCNT(2, 28, sPauseScreen_BgCntPriority[BGCNT_HIGH_MID_PRIORITY], BGCNT_SIZE_512x512) | (1 << 6);
         PAUSE_SCREEN_DATA.bg3cnt = PAUSE_SCREEN_DATA.unk_6C;
         PAUSE_SCREEN_DATA.bg2cnt = CREATE_BGCNT(0, 23, sPauseScreen_BgCntPriority[BGCNT_LOW_PRIORITY], BGCNT_SIZE_256x256);
         PAUSE_SCREEN_DATA.bg1cnt = CREATE_BGCNT(2, 24, sPauseScreen_BgCntPriority[BGCNT_LOW_MID_PRIORITY], BGCNT_SIZE_256x256);

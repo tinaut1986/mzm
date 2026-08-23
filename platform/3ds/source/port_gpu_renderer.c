@@ -919,24 +919,15 @@ static void CollectBgLayer(int bgIndex) {
              * tiebreak: lower BG index draws later (on top), matching GBA
              * hardware (BG0 > BG1 > BG2 > BG3 at equal priority). */
             int sortKey = (3 - priority) * 10 + (3 - bgIndex);
-            /* depthTier indexes kTierEyeOffsetPx (far to near). It must track
-             * the same `priority` that sortKey uses, not the fixed bgIndex:
-             * in ordinary gameplay BG3/BG2/BG1/BG0 happen to be drawn at
-             * priority 3/2/1/0 respectively, so a bgIndex-based tier looked
-             * right there -- but non-gameplay screens can and do reorder
-             * priority independently of bgIndex. Confirmed against real
-             * hardware (GBA side-by-side) that stereo depth must follow
-             * actual on-screen occlusion, not a fixed per-BG-index role:
-             * with a bgIndex-fixed tier the chozo-hint screen's swirl (BG3,
-             * occluding the map correctly in 2D) got the *farthest* stereo
-             * depth while the occluded BG1 map got a *nearer* depth --
-             * occlusion and stereo depth disagreeing. See pause_screen.c's
-             * CHOZO_STATUE_HINT branch for the matching 2D-occlusion fix
-             * (BG3's priority moved behind BG1's there) -- that fix and
-             * this one both had to land together: this alone (tried first)
-             * fixed depth but left 2D occlusion wrong, since depthTier
-             * never touches sortKey/draw order at all. */
-            PushItem(slot, drawX, drawY, sortKey, 3 - priority, blendAlpha, rectWinVis);
+            /* depthTier indexes kTierEyeOffsetPx, which is laid out
+             * BG3,BG2,BG1,BG0,OBJ (far to near) -- the inverse of bgIndex
+             * (BG0..BG3). Passing bgIndex directly here meant BG0 (meant
+             * to get 0.0f/no stereo offset, being the HUD/foreground
+             * plane) was instead reading kTierEyeOffsetPx[0] == -3.5f (the
+             * far-background BG3 offset), and BG3 read index 3 == 0.0f --
+             * silently swapping stereo depth between the nearest and
+             * farthest layers. */
+            PushItem(slot, drawX, drawY, sortKey, 3 - bgIndex, blendAlpha, rectWinVis);
         }
     }
 }
