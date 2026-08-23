@@ -23,7 +23,7 @@ MAKE_ENUM(u16, SpriteStatus) ENUM_FLAG {
     SPRITE_STATUS_IGNORE_PROJECTILES      = 1 << 15
 };
 
-MAKE_ENUM(u8, SpritePropery) ENUM_FLAG {
+MAKE_ENUM(u8, SpriteProperty) ENUM_FLAG {
     SP_ALWAYS_ACTIVE         = 1 << 0,
     SP_DAMAGED               = 1 << 1,
     SP_KILL_OFF_SCREEN       = 1 << 2,
