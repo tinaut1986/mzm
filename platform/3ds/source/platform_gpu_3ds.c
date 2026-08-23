@@ -1,4 +1,5 @@
 #include "platform_gpu_3ds.h"
+#include "port_gpu_renderer.h"
 
 #include <3ds.h>
 #include <citro2d.h>
@@ -691,6 +692,13 @@ void PlatformGpu3DS_DumpScreens(void) {
     WriteBlob("sdmc:/3ds/mzm-dump-bgpltt.bin", gBgPltt, sizeof(gBgPltt));
     WriteBlob("sdmc:/3ds/mzm-dump-objpltt.bin", gObjPltt, sizeof(gObjPltt));
     WriteBlob("sdmc:/3ds/mzm-dump-oam.bin", gOamMem, sizeof(gOamMem));
+
+#ifdef PORT_GPU_RENDERER_DIAG_LOG
+    /* TEMP (issue #4 investigation) -- see the declarations' comments in
+     * port_gpu_renderer.h/.c. */
+    Port_GpuRenderer_DumpAtlasPPM("sdmc:/3ds/mzm-dump-atlas.ppm");
+    Port_GpuRenderer_DumpCacheKeys("sdmc:/3ds/mzm-dump-atlas-keys.csv");
+#endif
 
     uint16_t dispcnt = (uint16_t)(gIoMem[0x00] | (gIoMem[0x01] << 8));
     uint16_t bg0cnt  = (uint16_t)(gIoMem[0x08] | (gIoMem[0x09] << 8));

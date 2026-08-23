@@ -79,6 +79,7 @@ SRCS_3DS := \
 	$(CURDIR)/source/port_bottom_ui_3ds.c \
 	$(CURDIR)/source/port_ppu_mzm.c \
 	$(CURDIR)/source/port_gpu_renderer.c \
+	$(CURDIR)/source/depth_tier.c \
 	$(CURDIR)/source/port_mzm_audio_3ds.c
 
 # Generar objetos
