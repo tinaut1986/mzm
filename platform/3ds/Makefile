@@ -178,6 +178,14 @@ BANNERTOOL ?= $(shell which bannertool 2>/dev/null || echo /home/tinaut1986/tool
 
 .PHONY: all clean cia elf 3dsx print-version ftp
 
+all: $(TARGET).cia
+
+cia: $(TARGET).cia
+
+3dsx: $(TARGET).3dsx
+
+elf: $(TARGET).elf
+
 print-version:
 	@echo $(VERSION)
 
