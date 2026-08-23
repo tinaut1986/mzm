@@ -70,8 +70,8 @@ jobs:
             echo
             echo "## Downloads"
             echo
-            echo "- [mzm-3ds.cia](${BASE}/mzm-3ds.cia)"
-            echo "- [mzm-3ds.3dsx](${BASE}/mzm-3ds.3dsx)"
+            echo "- [mzm-3ds-${TAG}.cia](${BASE}/mzm-3ds-${TAG}.cia)"
+            echo "- [mzm-3ds-${TAG}.3dsx](${BASE}/mzm-3ds-${TAG}.3dsx)"
             echo
             echo "## Changelog"
             echo
@@ -79,7 +79,12 @@ jobs:
           } > release_notes.md
 
           apt-get update -qq && apt-get install -y -qq qrencode > /dev/null
-          qrencode -s 10 -o "QR-${TAG}.png" "${BASE}/mzm-3ds.cia"
+          qrencode -s 10 -o "QR-${TAG}.png" "${BASE}/mzm-3ds-${TAG}.cia"
+
+          # Versioned filenames for distribution assets (canonical build
+          # names stay fixed inside the tree)
+          cp platform/3ds/mzm-3ds.cia "mzm-3ds-${TAG}.cia"
+          [ -f platform/3ds/mzm-3ds.3dsx ] && cp platform/3ds/mzm-3ds.3dsx "mzm-3ds-${TAG}.3dsx" || true
 
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
@@ -99,8 +104,8 @@ jobs:
           generate_release_notes: true
           body_path: release_notes.md
           files: |
-            platform/3ds/mzm-3ds.cia
-            platform/3ds/mzm-3ds.3dsx
+            mzm-3ds-${{ steps.vars.outputs.tag }}.cia
+            mzm-3ds-${{ steps.vars.outputs.tag }}.3dsx
             QR-${{ steps.vars.outputs.tag }}.png
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
