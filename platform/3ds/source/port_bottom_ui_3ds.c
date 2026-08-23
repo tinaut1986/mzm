@@ -1206,8 +1206,9 @@ static void RenderOptionsView(void) {
     C2D_DrawRectSolid(12.0f, 156.0f, 0.4f, 296.0f, 1.0f, C2D_Color32(50, 100, 180, 255));
     DrawTextCentered(160.0f, 166.0f, 1.0f, (lang == 6) ? "CONFIGURAR CONTROLES Y BOTONES (X / Y / ZL / ZR)" : "CUSTOMIZE BUTTON CONTROLS (X / Y / ZL / ZR)", C2D_Color32(255, 220, 100, 255));
 
-    /* Informational bottom footer */
-    DrawTextCentered(160.0f, 202.0f, 1.0f, (lang == 6) ? "STICK Y C-STICK CONFIGURADOS AUTOMATICAMENTE" : "CIRCLE PAD & C-STICK ENABLED AUTOMATICALLY", C2D_Color32(130, 160, 190, 255));
+    /* Informational bottom footer with version */
+    DrawTextCentered(160.0f, 198.0f, 1.0f, (lang == 6) ? "STICK Y C-STICK CONFIGURADOS AUTOMATICAMENTE" : "CIRCLE PAD & C-STICK ENABLED AUTOMATICALLY", C2D_Color32(130, 160, 190, 255));
+    DrawTextCentered(160.0f, 214.0f, 1.0f, "METROID ZERO MISSION 3DS " MZM_PORT_VERSION, C2D_Color32(90, 115, 145, 255));
 
     if (sShowRemapModal) {
         RenderRemapModal(lang);
@@ -1219,7 +1220,7 @@ static void RenderDebugView(void) {
     C2D_DrawRectSolid(8.0f, 28.0f, 0.4f, 304.0f, 204.0f, C2D_Color32(14, 18, 28, 255));
     C2D_DrawRectSolid(8.0f, 28.0f, 0.35f, 304.0f, 204.0f, C2D_Color32(40, 60, 90, 255));
 
-    DrawText(16.0f, 32.0f, 1.0f, "PERFORMANCE & MAP TILE DEBUG", C2D_Color32(100, 220, 255, 255));
+    DrawText(16.0f, 32.0f, 1.0f, "PERFORMANCE & MAP DEBUG (" MZM_PORT_VERSION ")", C2D_Color32(100, 220, 255, 255));
 
     char buf[80];
     double fps = Port_PPU_3DS_CurrentFps();
