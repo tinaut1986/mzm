@@ -145,6 +145,16 @@ void Port_Config_Save(void) {
     fprintf(file, "bottom_zoom=%d\n", Port_BottomUI_GetZoom());
     fprintf(file, "bottom_area=%d\n", Port_BottomUI_GetViewArea());
     fprintf(file, "bottom_follow=%u\n", Port_BottomUI_GetFollowSamus() ? 1u : 0u);
+    extern bool Port_RA_IsEnabled(void);
+    extern bool Port_RA_IsHardcore(void);
+    extern bool Port_RA_GetNotificationSound(void);
+    extern const char* Port_RA_GetUsername(void);
+    extern const char* Port_RA_GetToken(void);
+    fprintf(file, "ra_enabled=%u\n", Port_RA_IsEnabled() ? 1u : 0u);
+    fprintf(file, "ra_hardcore=%u\n", Port_RA_IsHardcore() ? 1u : 0u);
+    fprintf(file, "ra_sound=%u\n", Port_RA_GetNotificationSound() ? 1u : 0u);
+    fprintf(file, "ra_username=%s\n", Port_RA_GetUsername());
+    fprintf(file, "ra_token=%s\n", Port_RA_GetToken());
     fclose(file);
 }
 
@@ -155,8 +165,28 @@ void Port_Config_Load(void) {
     while (fgets(line, sizeof(line), file) != NULL) {
         char key[64];
         int val = 0;
-        if (line[0] == '#' || sscanf(line, " %63[^=]=%d", key, &val) != 2) continue;
-        if (strcmp(key, "aspect_ratio") == 0) {
+        if (line[0] == '#') continue;
+        if (sscanf(line, " ra_username=%63[^\r\n]", key) == 1) {
+            extern void Port_RA_SetUsername(const char*);
+            Port_RA_SetUsername(key);
+            continue;
+        }
+        if (sscanf(line, " ra_token=%63[^\r\n]", key) == 1) {
+            extern void Port_RA_SetToken(const char*);
+            Port_RA_SetToken(key);
+            continue;
+        }
+        if (sscanf(line, " %63[^=]=%d", key, &val) != 2) continue;
+        if (strcmp(key, "ra_enabled") == 0) {
+            extern void Port_RA_SetEnabled(bool);
+            Port_RA_SetEnabled(val != 0);
+        } else if (strcmp(key, "ra_hardcore") == 0) {
+            extern void Port_RA_SetHardcore(bool);
+            Port_RA_SetHardcore(val != 0);
+        } else if (strcmp(key, "ra_sound") == 0) {
+            extern void Port_RA_SetNotificationSound(bool);
+            Port_RA_SetNotificationSound(val != 0);
+        } else if (strcmp(key, "aspect_ratio") == 0) {
             if (val >= 0 && val < 3) sAspectRatio = val;
         } else if (strcmp(key, "display_style") == 0) {
             if (val >= 0 && val < 3) sDisplayStyle = val;

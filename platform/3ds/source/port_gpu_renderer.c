@@ -15,7 +15,6 @@
  */
 #include "port_gpu_renderer.h"
 #include "platform_gpu_3ds.h"
-#include "depth_tier.h"
 
 #include <3ds.h>
 #include <citro2d.h>
@@ -856,11 +855,6 @@ static inline void PushAffineItem(int slot, float centerX, float centerY, float 
 /* Text-mode BG tilemap addressing, byte-identical to the formula validated
  * in port/ppu/src/mode1.c (screen_block_x/y + blocks_per_row quadrant
  * layout for the 32x32/64x32/32x64/64x64 GBA screen sizes). */
-#ifdef PORT_GPU_RENDERER_DIAG_LOG
-/* TEMP (issue #4 investigation), see the GPUDIAG log line's comment below. */
-static int sBgDiagItems[4];
-#endif
-
 static void CollectBgLayer(int bgIndex) {
     /* Two independent, mutually-exclusive window-clip sources tag/gate this
      * layer differently: rectWinVis (WIN0/WIN1) is carried on each pushed
@@ -939,26 +933,25 @@ static void CollectBgLayer(int bgIndex) {
              * layer was the only thing visible on screen. Same-priority
              * tiebreak: lower BG index draws later (on top), matching GBA
              * hardware (BG0 > BG1 > BG2 > BG3 at equal priority). */
-            int sortKey = SortKeyForBg(bgIndex, priority);
-            /* Determine depthTier via DepthTierForBg (depth_tier.c):
-             * BG0 is the game HUD/UI layer (or dialog/text) and MUST ALWAYS be
-             * the topmost foreground layer (tier 3, +1.8f offset) during normal
-             * gameplay/menus, regardless of transparency priority tweaks --
-             * EXCEPT during cutscenes (GM_CUTSCENE), where BG0 is not
-             * guaranteed to be the HUD (e.g. the Mother Brain close-up uses
-             * BG0 as the elevator-shaft foreground with Samus drawn on BG1
-             * behind it -- see GitHub issue #4), so it falls through to the
-             * same priority-based world-BG tier mapping as BG1..BG3 instead.
-             * gMainGameMode == 10 is GM_CUTSCENE (include/constants/
-             * game_state.h) -- inlined as a literal to match this file's
-             * existing style for gMainGameMode checks (e.g. the
-             * GM_MAP_SCREEN == 5 check in CollectSprite below). */
-            extern s16 gMainGameMode;
-            int depthTier = DepthTierForBg(bgIndex, priority, gMainGameMode == 10);
+            int sortKey = (3 - priority) * 10 + (3 - bgIndex);
+            /* Determine depthTier:
+             * BG0 is the game HUD/UI layer (or dialog/text). It MUST ALWAYS be
+             * the topmost foreground layer (tier 3, +1.8f offset) regardless of
+             * transparency priority tweaks.
+             * For world BG layers (BG1..BG3), map priority to background tiers (0..2). */
+            int depthTier;
+            if (bgIndex == 0) {
+                depthTier = 3; /* Topmost foreground (HUD) */
+            } else {
+                /* Map remaining world BGs into far/mid/near tiers:
+                 * priority 0/1 -> tier 2 (platforms / foreground world, -0.3f)
+                 * priority 2   -> tier 1 (mid background, -2.0f)
+                 * priority 3   -> tier 0 (far background / sky, -4.0f) */
+                if (priority <= 1) depthTier = 2;
+                else if (priority == 2) depthTier = 1;
+                else depthTier = 0;
+            }
             PushItem(slot, drawX, drawY, sortKey, depthTier, blendAlpha, rectWinVis);
-#ifdef PORT_GPU_RENDERER_DIAG_LOG
-            ++sBgDiagItems[bgIndex];
-#endif
         }
     }
 }
@@ -1042,7 +1035,7 @@ static void CollectSprite(int oamIndex, bool obj1D) {
      * index draws above higher index at equal priority -- callers iterate
      * OAM back-to-front (127..0) so a stable sort already preserves that
      * via insertion order. */
-    int sortKey = SortKeyForSprite(priority);
+    int sortKey = (3 - priority) * 10 + 4;
 
     float affM00 = 1.0f, affM01 = 0.0f, affM10 = 0.0f, affM11 = 1.0f, affAngle = 0.0f;
     float affScaleX = 1.0f, affScaleY = 1.0f;
@@ -1158,7 +1151,13 @@ static void CollectSprite(int oamIndex, bool obj1D) {
              * OAM_SHAPE_SQUARE (shape == 0). Bank 5 (minimap icons) is
              * always OAM_SHAPE_SQUARE in hud.c, so it doesn't need the
              * shape check. */
-            int depthTier = DepthTierForSprite(palBank, shape, priority, inMapOrPauseScreen);
+            bool isRealHud = (palBank == 4 && shape == 1) || palBank == 5;
+            int depthTier;
+            if (inMapOrPauseScreen) {
+                depthTier = (priority == 0) ? 5 : 6;
+            } else {
+                depthTier = isRealHud ? 5 : 4;
+            }
             if (!isAffine) {
                 float drawX = (float)(x + tx * 8);
                 float drawY = (float)(y + ty * 8);
@@ -1330,55 +1329,6 @@ void Port_GpuRenderer_GetLastFrameTimingMs(float* outCollectMs, float* outDrawMs
     if (outDrawMs) *outDrawMs = sLastDrawMs;
 }
 
-#ifdef PORT_GPU_RENDERER_DIAG_LOG
-/* TEMP (issue #4 investigation), see the declaration's comment in
- * port_gpu_renderer.h. Reads straight from sAtlasTexture.data -- the same
- * CPU-writable memory DecodeTileIntoSlot writes into and the GPU samples
- * from -- after making sure any pending writes are flushed, so this shows
- * exactly what the GPU would see. Un-swizzles via kSwizzleLUT (its own
- * comment has the inverse-index reasoning) into a plain row-major PPM. */
-void Port_GpuRenderer_DumpAtlasPPM(const char* path) {
-    if (sAnyDirtySlot) {
-        FlushAtlasRange(sAtlasTexture.data, (size_t)ATLAS_DIM * ATLAS_DIM * sizeof(u32));
-        sAnyDirtySlot = false;
-        sDirtyRowMask = 0;
-    }
-    FILE* f = fopen(path, "wb");
-    if (!f) return;
-    fprintf(f, "P6\n%d %d\n255\n", ATLAS_DIM, ATLAS_DIM);
-    const u32* data = (const u32*)sAtlasTexture.data;
-    for (int blockRow = 0; blockRow < ATLAS_TILES_PER_ROW; ++blockRow) {
-        for (int py = 0; py < 8; ++py) {
-            for (int blockCol = 0; blockCol < ATLAS_TILES_PER_ROW; ++blockCol) {
-                int slot = blockRow * ATLAS_TILES_PER_ROW + blockCol;
-                const u32* blockBase = data + (size_t)slot * 64;
-                for (int px = 0; px < 8; ++px) {
-                    u32 texel = blockBase[kSwizzleLUT[py * 8 + px]];
-                    uint8_t rgb[3] = { (uint8_t)(texel & 0xFFu), (uint8_t)((texel >> 8) & 0xFFu),
-                                       (uint8_t)((texel >> 16) & 0xFFu) };
-                    fwrite(rgb, 1, 3, f);
-                }
-            }
-        }
-    }
-    fclose(f);
-}
-
-/* TEMP (issue #4 investigation): dumps (byteOffset,palBank,isObj) for every
- * live cache slot, so a slot's position in the atlas PPM above can be
- * correlated back to which VRAM tile/BG it holds (e.g. BG1's Samus tiles
- * live in byteOffset 0x8000-0x9FE0, per CollectBgLayer's charBase calc). */
-void Port_GpuRenderer_DumpCacheKeys(const char* path) {
-    FILE* f = fopen(path, "wb");
-    if (!f) return;
-    for (int i = 0; i < sCacheCount; ++i) {
-        fprintf(f, "%d,0x%lx,%d,%d\n", i, (unsigned long)sCacheKeys[i].byteOffset, (int)sCacheKeys[i].palBank,
-                (int)sCacheKeys[i].isObj);
-    }
-    fclose(f);
-}
-#endif
-
 /* Builds this item's C2D_DrawParams. Non-affine items keep the original
  * top-left placement (center at the origin, no rotation); affine OBJ
  * subtiles (item->affine) are instead centered on their already-transformed
@@ -1453,9 +1403,6 @@ void Port_GpuRenderer_RenderFrame(void) {
         sCacheCount = 0;
     }
     sDrawItemCount = 0;
-#ifdef PORT_GPU_RENDERER_DIAG_LOG
-    for (int i = 0; i < 4; ++i) sBgDiagItems[i] = 0;
-#endif
     sAnyDirtySlot = false;
     sDirtyRowMask = 0;
     for (int i = 0; i < SORT_KEY_BUCKETS; ++i) sBucketHead[i] = -1;
@@ -1603,25 +1550,18 @@ void Port_GpuRenderer_RenderFrame(void) {
         if ((sDiagCounter++ % 5u) == 0u) {
             char msg[512];
             int objItems = 0, cacheSlots = sCacheCount;
-            /* TEMP (issue #4 investigation): per-bgIndex opaque-item count,
-             * to tell "BG1 collected 0 items this frame" (collection-side
-             * bug) apart from "BG1 collected N items but never reaches the
-             * screen" (draw-side bug) -- remove once root-caused. */
-            int bgItemCounts[4] = { 0, 0, 0, 0 };
             float minY = 999.0f, maxY = -999.0f;
             for (int i = 0; i < sDrawItemCount; ++i) {
                 if (sDrawItems[i].depthTier == 4) ++objItems;
                 if (sDrawItems[i].y < minY) minY = sDrawItems[i].y;
                 if (sDrawItems[i].y > maxY) maxY = sDrawItems[i].y;
             }
-            for (int i = 0; i < 4; ++i) bgItemCounts[i] = sBgDiagItems[i];
             int blendItems = sBlendCount;
             int off = __builtin_snprintf(msg, sizeof(msg),
                                          "GPUDIAG dispcnt=%04x items=%d obj=%d cache=%d yrange=[%.0f,%.0f] "
-                                         "bldcnt=%04x eff=%d eva=%d evb=%d blend=%d bgN=[%d,%d,%d,%d]",
+                                         "bldcnt=%04x eff=%d eva=%d evb=%d blend=%d",
                                          dispcnt, sDrawItemCount, objItems, cacheSlots, (double)minY, (double)maxY,
-                                         sIoBldcnt, sBldEffect, sBldEva, sBldEvb, blendItems, bgItemCounts[0],
-                                         bgItemCounts[1], bgItemCounts[2], bgItemCounts[3]);
+                                         sIoBldcnt, sBldEffect, sBldEva, sBldEvb, blendItems);
             for (int bg = 0; bg < 4; ++bg) {
                 if (!(dispcnt & (1u << (8 + bg)))) continue;
                 uint16_t bgcnt = (uint16_t)(gIoMem[0x08 + bg * 2] | (gIoMem[0x09 + bg * 2] << 8));

@@ -142,6 +142,8 @@ int main(int argc, char** argv) {
     }
     extern void Port_Config_Load(void);
     Port_Config_Load();
+    extern void Port_RA_Init(void);
+    Port_RA_Init();
     extern void Port_LoadSram(void);
     Port_LoadSram();
 
