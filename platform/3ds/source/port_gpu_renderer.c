@@ -1142,8 +1142,16 @@ static void CollectSprite(int oamIndex, bool obj1D) {
              * super-missile/power-bomb counts, the minimap icon -- and nothing
              * else in the codebase assigns those banks literally (dynamic
              * gameplay sprites go through a separate palette-slot allocator).
-             * Trying that as the HUD signal instead. */
-            bool isRealHud = palBank == 4 || palBank == 5;
+             * Confirmed on hardware this alone still isn't enough: the Morph
+             * Ball bomb sprite (tile 335) genuinely also sits on palette
+             * bank 4 -- not a random allocator collision, that's just the
+             * real ROM data. What does differ: every bank-4 HUD element in
+             * hud.c is drawn OAM_SHAPE_WIDE (health/charge/missile/super-
+             * missile/power-bomb count bars, shape == 1); the bomb sprite is
+             * OAM_SHAPE_SQUARE (shape == 0). Bank 5 (minimap icons) is
+             * always OAM_SHAPE_SQUARE in hud.c, so it doesn't need the
+             * shape check. */
+            bool isRealHud = (palBank == 4 && shape == 1) || palBank == 5;
             int depthTier;
             if (inMapOrPauseScreen) {
                 depthTier = (priority == 0) ? 5 : 6;
