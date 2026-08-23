@@ -31,18 +31,25 @@ jobs:
           make -C platform/3ds clean
           make -C platform/3ds -j$(nproc) RENDERER=gpu BANNERTOOL=$GITHUB_WORKSPACE/tools/bin/bannertool MAKEROM=$GITHUB_WORKSPACE/tools/bin/makerom
 
+      # NOTE: container default shell is dash/sh -- no [[ ]], use POSIX case
       - name: Determine release tag
         id: vars
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
-            TAG="${GITHUB_REF#refs/tags/}"
-            echo "is_tag=true" >> "$GITHUB_OUTPUT"
-          else
-            TAG=$(git describe --tags --always)
-            echo "is_tag=false" >> "$GITHUB_OUTPUT"
-          fi
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          case "$GITHUB_REF" in
+            refs/tags/*)
+              TAG="${GITHUB_REF#refs/tags/}"
+              IS_TAG=true
+              ;;
+            *)
+              TAG=$(git describe --tags --always)
+              IS_TAG=false
+              ;;
+          esac
+          {
+            echo "tag=$TAG"
+            echo "is_tag=$IS_TAG"
+          } >> "$GITHUB_OUTPUT"
 
       # Release notes: QR code (scannable with Universal-Updater / phone to get
       # the CIA download URL) plus an auto-generated changelog covering every
@@ -88,7 +95,7 @@ jobs:
           tag_name: ${{ steps.vars.outputs.tag }}
           name: Release ${{ steps.vars.outputs.tag }}
           draft: false
-          prerelease: ${{ steps.vars.outputs.is_tag == 'false' }}
+          prerelease: ${{ steps.vars.outputs.is_tag != 'true' }}
           generate_release_notes: true
           body_path: release_notes.md
           files: |
