@@ -7,7 +7,7 @@ A native, hardware-accelerated Nintendo 3DS port of **Metroid: Zero Mission**, b
 ## Features
 
 - **Dual-Screen Layout**:
-  - **Top Screen**: Smooth 60 FPS gameplay with selectable display modes (Pixel Perfect, Scaled, Fullscreen).
+  - **Top Screen**: Smooth 60 FPS gameplay with selectable display modes (Pixel Perfect, Scaled, Fullscreen) and **Stereoscopic 3D** support with multi-layer depth parallax (foreground HUD, interactive platforms, Samus, background scenery).
   - **Bottom Screen**: Real-time area map, collectible item breakdown (Energy Tanks, Missiles, Super Missiles, Power Bombs), and a quick touch-activated Morph Ball toggle.
 - **Hardware Acceleration**: Custom PICA200 GPU renderer (`citro3d`/`citro2d`) for background tiles and sprites with automatic scanline CPU fallback when special GBA PPU effects are active (affine BG, windows, mosaic).
 - **Native Audio**: Powered by the decompiled MZM sound engine and output via the 3DS DSP (NDSP) hardware.
