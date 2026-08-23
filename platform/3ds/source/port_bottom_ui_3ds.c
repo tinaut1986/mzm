@@ -390,7 +390,7 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
                 else if (x >= 252 && x <= 316) {
                     uint8_t tArea = 0, tX = 0, tY = 0;
                     if (GetActiveChozoTarget(&tArea, &tX, &tY)) {
-                        sFollowSamus = (tArea == gCurrentArea);
+                        sFollowSamus = false;
                         sViewArea = tArea;
                         CenterMapOnTile(tX, tY);
                         Port_Config_Save();
@@ -409,6 +409,9 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
                 if (!isNewTap && sLastTouchX >= 0 && sLastTouchY >= 0) {
                     float dx = (float)(sLastTouchX - x);
                     float dy = (float)(sLastTouchY - y);
+                    if (dx != 0.0f || dy != 0.0f) {
+                        sFollowSamus = false;
+                    }
                     sScrollX += dx;
                     sScrollY += dy;
 
@@ -831,6 +834,9 @@ static void RenderMapView(void) {
     int lang = GetLang();
     if (sFollowSamus) {
         sViewArea = gCurrentArea;
+        if (gCurrentArea < 7) {
+            CenterMapOnTile(gMinimapX, gMinimapY);
+        }
     }
 
     /* Area Stats for current/viewed area */
