@@ -85,6 +85,7 @@ static uint32_t sFrameCounter = 0;
 /* Modals & Overlays */
 static bool sShowRemapModal = false;
 static bool sShowCollectiblesModal = false;
+static bool sShowAchievementsModal = false;
 
 /* Config & Display Helper Externs */
 extern bool Port_Config_GetAutoHideHud(void);
@@ -93,15 +94,23 @@ extern int Port_Config_GetButtonMapping(int buttonIndex);
 extern void Port_Config_CycleButtonMapping(int buttonIndex);
 extern const char* Port_Config_GetActionName(int action, int lang);
 
+/* RetroAchievements Helpers */
+#include "port_retroachievements_3ds.h"
+
 /* Area selector & zoom state */
 static uint8_t sViewArea = 0;
 static bool sFollowSamus = true;
 static int sZoomLevel = 1; /* 0 = 1x (Overview), 1 = 2x (Detail), 2 = 3x (Ultra) */
 static float sScrollX = 0.0f;
 static float sScrollY = 0.0f;
+static float sOptionsScrollY = 0.0f;
+static float sAchievementsScrollY = 0.0f;
 static int sLastTouchX = -1;
 static int sLastTouchY = -1;
+static int sTouchStartX = -1;
+static int sTouchStartY = -1;
 static bool sIsDragging = false;
+static bool sIsTouchDragging = false;
 
 int Port_BottomUI_GetZoom(void) { return sZoomLevel; }
 void Port_BottomUI_SetZoom(int zoom) { if (zoom >= 0 && zoom <= 2) sZoomLevel = zoom; }
@@ -217,12 +226,15 @@ static const uint8_t* GetGlyph(char c) {
     return NULL;
 }
 
-static void DrawText(float x, float y, float scale, const char* text, uint32_t color) {
+static void DrawTextClipped(float x, float y, float scale, const char* text, uint32_t color, float clipY0, float clipY1) {
+    if (y + 7.0f * scale <= clipY0 || y >= clipY1) return;
     float charW = 6.0f * scale;
     for (; *text; ++text, x += charW) {
         const uint8_t* glyph = GetGlyph(*text);
         if (!glyph) continue;
         for (int row = 0; row < 7; ++row) {
+            float py = y + (float)row * scale;
+            if (py < clipY0 || py + scale > clipY1) continue;
             uint8_t rowVal = glyph[row];
             for (int col = 0; col < 5;) {
                 if ((rowVal & (1u << (4 - col))) == 0) {
@@ -231,7 +243,7 @@ static void DrawText(float x, float y, float scale, const char* text, uint32_t c
                 }
                 int end = col + 1;
                 while (end < 5 && (rowVal & (1u << (4 - end))) != 0) ++end;
-                C2D_DrawRectSolid(x + (float)col * scale, y + (float)row * scale, 0.85f,
+                C2D_DrawRectSolid(x + (float)col * scale, py, 0.85f,
                                   (float)(end - col) * scale, scale, color);
                 col = end;
             }
@@ -239,9 +251,116 @@ static void DrawText(float x, float y, float scale, const char* text, uint32_t c
     }
 }
 
+static void DrawTextMaxWClipped(float x, float y, float scale, const char* text, uint32_t color, float clipY0, float clipY1, float maxW) {
+    if (y + 7.0f * scale <= clipY0 || y >= clipY1) return;
+    float charW = 6.0f * scale;
+    float startX = x;
+    for (; *text; ++text, x += charW) {
+        if (x + charW > startX + maxW) break;
+        const uint8_t* glyph = GetGlyph(*text);
+        if (!glyph) continue;
+        for (int row = 0; row < 7; ++row) {
+            float py = y + (float)row * scale;
+            if (py < clipY0 || py + scale > clipY1) continue;
+            uint8_t rowVal = glyph[row];
+            for (int col = 0; col < 5;) {
+                if ((rowVal & (1u << (4 - col))) == 0) {
+                    ++col;
+                    continue;
+                }
+                int end = col + 1;
+                while (end < 5 && (rowVal & (1u << (4 - end))) != 0) ++end;
+                C2D_DrawRectSolid(x + (float)col * scale, py, 0.85f,
+                                  (float)(end - col) * scale, scale, color);
+                col = end;
+            }
+        }
+    }
+}
+
+static int MeasureWrappedTextLines(const char* text, float maxWidth, float scale) {
+    if (!text || !*text) return 1;
+    float charW = 6.0f * scale;
+    int maxCharsPerLine = (int)(maxWidth / charW);
+    if (maxCharsPerLine < 10) maxCharsPerLine = 10;
+
+    int lines = 1;
+    int curLineLen = 0;
+    const char* ptr = text;
+
+    while (*ptr) {
+        /* find next word */
+        const char* wordStart = ptr;
+        while (*ptr && *ptr != ' ') ++ptr;
+        int wordLen = (int)(ptr - wordStart);
+
+        if (curLineLen == 0) {
+            curLineLen = wordLen;
+        } else if (curLineLen + 1 + wordLen <= maxCharsPerLine) {
+            curLineLen += 1 + wordLen;
+        } else {
+            ++lines;
+            curLineLen = wordLen;
+        }
+        while (*ptr == ' ') ++ptr;
+    }
+    return lines;
+}
+
+static void DrawWrappedTextClipped(float x, float y, float scale, const char* text, float maxWidth, float lineHeight, uint32_t color, float clipY0, float clipY1) {
+    if (!text || !*text) return;
+    float charW = 6.0f * scale;
+    int maxCharsPerLine = (int)(maxWidth / charW);
+    if (maxCharsPerLine < 10) maxCharsPerLine = 10;
+
+    char lineBuf[128];
+    int lineBufLen = 0;
+    float curY = y;
+    const char* ptr = text;
+
+    while (*ptr) {
+        const char* wordStart = ptr;
+        while (*ptr && *ptr != ' ') ++ptr;
+        int wordLen = (int)(ptr - wordStart);
+
+        if (lineBufLen == 0) {
+            if (wordLen < (int)sizeof(lineBuf) - 1) {
+                memcpy(lineBuf, wordStart, wordLen);
+                lineBufLen = wordLen;
+                lineBuf[lineBufLen] = '\0';
+            }
+        } else if (lineBufLen + 1 + wordLen <= maxCharsPerLine && lineBufLen + 1 + wordLen < (int)sizeof(lineBuf) - 1) {
+            lineBuf[lineBufLen++] = ' ';
+            memcpy(lineBuf + lineBufLen, wordStart, wordLen);
+            lineBufLen += wordLen;
+            lineBuf[lineBufLen] = '\0';
+        } else {
+            /* flush current line */
+            DrawTextClipped(x, curY, scale, lineBuf, color, clipY0, clipY1);
+            curY += lineHeight;
+            memcpy(lineBuf, wordStart, wordLen);
+            lineBufLen = wordLen;
+            lineBuf[lineBufLen] = '\0';
+        }
+        while (*ptr == ' ') ++ptr;
+    }
+    if (lineBufLen > 0) {
+        DrawTextClipped(x, curY, scale, lineBuf, color, clipY0, clipY1);
+    }
+}
+
+static void DrawText(float x, float y, float scale, const char* text, uint32_t color) {
+    DrawTextClipped(x, y, scale, text, color, -1000.0f, 1000.0f);
+}
+
 static void DrawTextCentered(float cx, float y, float scale, const char* text, uint32_t color) {
     float length = (float)strlen(text) * 6.0f * scale;
     DrawText(cx - (length / 2.0f), y, scale, text, color);
+}
+
+static void DrawTextCenteredClipped(float cx, float y, float scale, const char* text, uint32_t color, float clipY0, float clipY1) {
+    float length = (float)strlen(text) * 6.0f * scale;
+    DrawTextClipped(cx - (length / 2.0f), y, scale, text, color, clipY0, clipY1);
 }
 
 static inline uint32_t Bgr555ToRgba8(uint16_t bgr, bool transparent) {
@@ -447,10 +566,64 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
         }
     }
 
-    /* Options Tab Interactive Row Taps */
-    if (sCurrentTab == BOTTOM_TAB_OPTIONS && isNewTap) {
+    /* Modal: Achievements View Scrolling & Close */
+    if (sCurrentTab == BOTTOM_TAB_OPTIONS && sShowAchievementsModal) {
+        uint32_t achCount = Port_RA_GetAchievementCount();
+        float totalContentH = 0.0f;
+        for (uint32_t i = 0; i < achCount; ++i) {
+            const RetroAchievementItem* ach = Port_RA_GetAchievement(i);
+            if (!ach) continue;
+            int lines = MeasureWrappedTextLines(ach->description, 230.0f, 1.0f);
+            float cardH = 24.0f + (float)lines * 9.0f + 6.0f;
+            if (cardH < 38.0f) cardH = 38.0f;
+            totalContentH += cardH + 6.0f;
+        }
+        float maxAchScroll = (totalContentH > 154.0f) ? (totalContentH - 154.0f) : 0.0f;
+
+        if (isNewTap) {
+            if (x >= 100 && x <= 220 && y >= 204 && y <= 230) {
+                sShowAchievementsModal = false;
+                sLastTouchX = -1;
+                sLastTouchY = -1;
+                return;
+            }
+            /* Direct scrollbar touch on right (x >= 300) */
+            if (x >= 300 && maxAchScroll > 0.0f) {
+                float trackY = (float)y - 48.0f;
+                if (trackY < 0.0f) trackY = 0.0f;
+                if (trackY > 124.0f) trackY = 124.0f;
+                sAchievementsScrollY = (trackY / 124.0f) * maxAchScroll;
+                sIsTouchDragging = true;
+            } else {
+                sTouchStartX = x;
+                sTouchStartY = y;
+                sLastTouchX = x;
+                sLastTouchY = y;
+                sIsTouchDragging = false;
+            }
+        } else if (x >= 300 && maxAchScroll > 0.0f) {
+            /* Dragging scrollbar directly */
+            float trackY = (float)y - 48.0f;
+            if (trackY < 0.0f) trackY = 0.0f;
+            if (trackY > 124.0f) trackY = 124.0f;
+            sAchievementsScrollY = (trackY / 124.0f) * maxAchScroll;
+            sIsTouchDragging = true;
+        } else if (sLastTouchX >= 0 && sLastTouchY >= 0) {
+            float dy = (float)(sLastTouchY - y);
+            sAchievementsScrollY += dy;
+            if (sAchievementsScrollY < 0.0f) sAchievementsScrollY = 0.0f;
+            if (sAchievementsScrollY > maxAchScroll) sAchievementsScrollY = maxAchScroll;
+            sLastTouchX = x;
+            sLastTouchY = y;
+            sIsTouchDragging = true;
+        }
+        return;
+    }
+
+    /* Options Tab Interactive Rows & Touch Scrolling */
+    if (sCurrentTab == BOTTOM_TAB_OPTIONS) {
         if (sShowRemapModal) {
-            if (x >= 16 && x <= 304) {
+            if (isNewTap && x >= 16 && x <= 304) {
                 if (y >= 50 && y <= 76) Port_Config_CycleButtonMapping(0); /* X */
                 else if (y >= 82 && y <= 108) Port_Config_CycleButtonMapping(1); /* Y */
                 else if (y >= 114 && y <= 140) Port_Config_CycleButtonMapping(2); /* ZL */
@@ -460,26 +633,96 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
             return;
         }
 
-        if (x >= 12 && x <= 308) {
-            if (y >= 44 && y <= 68) {
-                Port_Config_Cycle3DSAspectRatio();
-            } else if (y >= 72 && y <= 96) {
-                Port_Config_Cycle3DSDisplayStyle();
-            } else if (y >= 100 && y <= 124) {
-                Port_Config_SetShowFps(!Port_Config_GetShowFps());
-            } else if (y >= 128 && y <= 152) {
-                Port_Config_SetAutoHideHud(!Port_Config_GetAutoHideHud());
-            } else if (y >= 156 && y <= 188) {
-                sShowRemapModal = true;
+        /* Options scrolling drag handling */
+        const float maxScroll = 166.0f;
+        if (y >= 28 && y <= 236 && x >= 4 && x <= 316) {
+            if (isNewTap) {
+                /* Direct scrollbar touch on right (x >= 305) */
+                if (x >= 305) {
+                    float trackY = (float)(y - 28) - 17.5f;
+                    if (trackY < 0.0f) trackY = 0.0f;
+                    if (trackY > 169.0f) trackY = 169.0f;
+                    sOptionsScrollY = (trackY / 169.0f) * maxScroll;
+                    sIsTouchDragging = true;
+                } else {
+                    sTouchStartX = x;
+                    sTouchStartY = y;
+                    sLastTouchX = x;
+                    sLastTouchY = y;
+                    sIsTouchDragging = false;
+                }
+            } else if (x >= 305) {
+                /* Dragging scrollbar directly */
+                float trackY = (float)(y - 28) - 17.5f;
+                if (trackY < 0.0f) trackY = 0.0f;
+                if (trackY > 169.0f) trackY = 169.0f;
+                sOptionsScrollY = (trackY / 169.0f) * maxScroll;
+                sIsTouchDragging = true;
+            } else if (sLastTouchX >= 0 && sLastTouchY >= 0) {
+                float dy = (float)(sLastTouchY - y);
+                if (dy != 0.0f) {
+                    sOptionsScrollY += dy;
+                    if (sOptionsScrollY < 0.0f) sOptionsScrollY = 0.0f;
+                    if (sOptionsScrollY > maxScroll) sOptionsScrollY = maxScroll;
+                    if (dy > 2.0f || dy < -2.0f) {
+                        sIsTouchDragging = true;
+                    }
+                }
+                sLastTouchX = x;
+                sLastTouchY = y;
             }
         }
     }
 }
 
 void Port_BottomUI_TouchReleased(void) {
+    if (sCurrentTab == BOTTOM_TAB_OPTIONS && !sShowRemapModal && !sShowAchievementsModal && !sIsTouchDragging && sTouchStartX >= 0 && sTouchStartY >= 0) {
+        int x = sTouchStartX;
+        int y = sTouchStartY + (int)sOptionsScrollY;
+
+        if (x >= 10 && x <= 308) {
+            if (y >= 48 && y <= 72) {
+                Port_Config_Cycle3DSAspectRatio();
+            } else if (y >= 76 && y <= 100) {
+                Port_Config_Cycle3DSDisplayStyle();
+            } else if (y >= 104 && y <= 128) {
+                Port_Config_SetShowFps(!Port_Config_GetShowFps());
+            } else if (y >= 132 && y <= 156) {
+                Port_Config_SetAutoHideHud(!Port_Config_GetAutoHideHud());
+            } else if (y >= 160 && y <= 186) {
+                sShowRemapModal = true;
+            } else if (y >= 198 && y <= 216) {
+                /* Touch RetroAchievements header -> trigger swkbd login */
+                Port_RA_PromptLogin();
+            } else if (y >= 218 && y <= 242) {
+                /* User Login Row (FIRST) */
+                Port_RA_PromptLogin();
+            } else if (y >= 246 && y <= 270) {
+                /* Enable / Disable */
+                Port_RA_SetEnabled(!Port_RA_IsEnabled());
+                Port_Config_Save();
+            } else if (y >= 274 && y <= 298) {
+                /* Hardcore Mode */
+                Port_RA_SetHardcore(!Port_RA_IsHardcore());
+                Port_Config_Save();
+            } else if (y >= 302 && y <= 326) {
+                /* Notification Sound */
+                Port_RA_SetNotificationSound(!Port_RA_GetNotificationSound());
+                Port_Config_Save();
+            } else if (y >= 330 && y <= 358) {
+                /* View achievements modal */
+                sAchievementsScrollY = 0.0f;
+                sShowAchievementsModal = true;
+            }
+        }
+    }
+
     sLastTouchX = -1;
     sLastTouchY = -1;
+    sTouchStartX = -1;
+    sTouchStartY = -1;
     sIsDragging = false;
+    sIsTouchDragging = false;
 }
 
 /* Render 4-Tab Navigation Bar */
@@ -801,6 +1044,226 @@ static void RenderCollectiblesModal(int lang) {
 
     C2D_DrawRectSolid(100.0f, 204.0f, 0.9f, 120.0f, 20.0f, C2D_Color32(20, 70, 130, 255));
     DrawTextCentered(160.0f, 209.0f, 1.0f, (lang == 6) ? "CERRAR" : "CLOSE", C2D_Color32(255, 255, 255, 255));
+}
+
+/* Render RetroAchievements List Modal with Touch Scrolling */
+static void RenderAchievementsModal(int lang) {
+    const float mX = 10.0f;
+    const float mY = 26.0f;
+    const float mW = 300.0f;
+    const float mH = 206.0f;
+    const float clipY0 = mY + 22.0f; /* 48.0f */
+    const float clipY1 = mY + mH - 30.0f; /* 202.0f */
+
+    C2D_DrawRectSolid(mX, mY, 0.85f, mW, mH, C2D_Color32(10, 14, 24, 250));
+    C2D_DrawRectSolid(mX, mY, 0.84f, mW, mH, C2D_Color32(40, 70, 120, 255));
+
+    const char* titles[7] = {
+        "RETROACHIEVEMENTS LIST", "RETROACHIEVEMENTS LIST", "RETROACHIEVEMENTS LIST",
+        "ERFOLGSLISTE", "LISTE DES SUCCES", "LISTA DEGLI OBIETTIVI", "LISTA DE LOGROS"
+    };
+    DrawText(20.0f, 32.0f, 1.0f, titles[lang], C2D_Color32(255, 215, 0, 255));
+
+    uint32_t count = Port_RA_GetAchievementCount();
+    uint32_t unlocked = Port_RA_GetUnlockedCount();
+    uint32_t hardcore = Port_RA_GetHardcoreUnlockedCount();
+    uint32_t totalPts = Port_RA_GetTotalPoints();
+    uint32_t unlPts = Port_RA_GetUnlockedPoints();
+
+    char summaryBuf[64];
+    if (hardcore > 0) {
+        snprintf(summaryBuf, sizeof(summaryBuf), "%u/%u (%u HC) %uP", (unsigned)unlocked, (unsigned)count, (unsigned)hardcore, (unsigned)unlPts);
+    } else {
+        snprintf(summaryBuf, sizeof(summaryBuf), "%u/%u (%u/%u PTS)", (unsigned)unlocked, (unsigned)count, (unsigned)unlPts, (unsigned)totalPts);
+    }
+    DrawText(160.0f, 32.0f, 1.0f, summaryBuf, hardcore > 0 ? C2D_Color32(255, 215, 0, 255) : C2D_Color32(80, 255, 120, 255));
+
+    /* Calculate total content height dynamically based on wrapped description lines */
+    float totalContentH = 0.0f;
+    for (uint32_t i = 0; i < count; ++i) {
+        const RetroAchievementItem* ach = Port_RA_GetAchievement(i);
+        if (!ach) continue;
+        int lines = MeasureWrappedTextLines(ach->description, 230.0f, 1.0f);
+        float cardH = 24.0f + (float)lines * 9.0f + 6.0f;
+        if (cardH < 38.0f) cardH = 38.0f;
+        totalContentH += cardH + 6.0f;
+    }
+
+    float viewH = clipY1 - clipY0;
+    float maxAchScroll = (totalContentH > viewH) ? (totalContentH - viewH) : 0.0f;
+    if (sAchievementsScrollY > maxAchScroll) sAchievementsScrollY = maxAchScroll;
+
+    /* Clip and draw dynamic achievement cards */
+    float curCardY = clipY0 - sAchievementsScrollY;
+    for (uint32_t i = 0; i < count; ++i) {
+        const RetroAchievementItem* ach = Port_RA_GetAchievement(i);
+        if (!ach) continue;
+
+        int descLines = MeasureWrappedTextLines(ach->description, 230.0f, 1.0f);
+        float cardH = 24.0f + (float)descLines * 9.0f + 6.0f;
+        if (cardH < 38.0f) cardH = 38.0f;
+
+        float py = curCardY;
+        curCardY += cardH + 6.0f;
+
+        if (py + cardH < clipY0 || py > clipY1) continue;
+
+        float drawY0 = (py < clipY0) ? clipY0 : py;
+        float drawY1 = (py + cardH > clipY1) ? clipY1 : (py + cardH);
+        float drawH  = drawY1 - drawY0;
+        if (drawH <= 0.0f) continue;
+
+        /* Visual hierarchy: Hardcore (Gold), Softcore (Emerald Green), Locked (Slate/Navy) */
+        uint32_t boxBg = ach->hardcoreUnlocked ? C2D_Color32(36, 30, 10, 255) :
+                         (ach->unlocked ? C2D_Color32(14, 38, 26, 255) : C2D_Color32(20, 26, 40, 255));
+        uint32_t boxBorder = ach->hardcoreUnlocked ? C2D_Color32(255, 200, 40, 255) :
+                             (ach->unlocked ? C2D_Color32(40, 180, 90, 255) : C2D_Color32(45, 60, 90, 255));
+
+        C2D_DrawRectSolid(14.0f, drawY0, 0.9f, 292.0f, drawH, boxBg);
+        if (py >= clipY0 && py <= clipY1) {
+            C2D_DrawRectSolid(14.0f, py, 0.88f, 292.0f, 1.0f, boxBorder);
+        }
+        if (ach->hardcoreUnlocked) {
+            float btmY = py + cardH - 1.0f;
+            if (btmY >= clipY0 && btmY <= clipY1) {
+                /* Extra bottom glow border for hardcore, properly clipped */
+                C2D_DrawRectSolid(14.0f, btmY, 0.88f, 292.0f, 1.0f, C2D_Color32(200, 150, 20, 255));
+            }
+        }
+
+        /* 1. Badge Icon / Artwork Frame on Left */
+        float iconBoxY = py + 4.0f;
+        float iconBoxH = cardH - 8.0f;
+        float drawIconY0 = (iconBoxY < clipY0) ? clipY0 : iconBoxY;
+        float drawIconY1 = (iconBoxY + iconBoxH > clipY1) ? clipY1 : (iconBoxY + iconBoxH);
+        if (drawIconY1 > drawIconY0) {
+            uint32_t iconBg = ach->hardcoreUnlocked ? C2D_Color32(65, 50, 15, 255) :
+                              (ach->unlocked ? C2D_Color32(25, 65, 38, 255) : C2D_Color32(20, 24, 35, 255));
+            uint32_t iconBord = ach->hardcoreUnlocked ? C2D_Color32(255, 215, 0, 255) :
+                                (ach->unlocked ? C2D_Color32(80, 220, 120, 255) : C2D_Color32(50, 65, 90, 255));
+
+            C2D_DrawRectSolid(18.0f, drawIconY0, 0.91f, 24.0f, drawIconY1 - drawIconY0, iconBg);
+            if (iconBoxY >= clipY0) {
+                C2D_DrawRectSolid(18.0f, iconBoxY, 0.92f, 24.0f, 1.0f, iconBord);
+            }
+
+            /* Draw real 20x20 RetroAchievements Badge Artwork */
+            const uint32_t* badgePixels = Port_RA_GetBadgePixels(ach->badgeName);
+            float badgeX = 20.0f;
+            float badgeY = py + (cardH - 20.0f) / 2.0f;
+
+            if (badgePixels) {
+                for (int by = 0; by < 20; ++by) {
+                    float rY = badgeY + (float)by;
+                    if (rY < clipY0 || rY >= clipY1) continue;
+                    for (int bx = 0; bx < 20; ++bx) {
+                        uint32_t pColor = badgePixels[by * 20 + bx];
+                        /* If locked, display in dim grayscale */
+                        if (!ach->unlocked) {
+                            uint32_t r = pColor & 0xFF;
+                            uint32_t g = (pColor >> 8) & 0xFF;
+                            uint32_t b = (pColor >> 16) & 0xFF;
+                            uint32_t gray = (r * 30 + g * 59 + b * 11) / 250; /* slightly darker grayscale */
+                            pColor = C2D_Color32((uint8_t)gray, (uint8_t)gray, (uint8_t)gray, 255);
+                        }
+                        C2D_DrawRectSolid(badgeX + (float)bx, rY, 0.93f, 1.0f, 1.0f, pColor);
+                    }
+                }
+            } else {
+                /* Fallback if badge pixel data unavailable */
+                float iconCenterY = py + (cardH / 2.0f);
+                if (iconCenterY >= clipY0 + 6.0f && iconCenterY <= clipY1 - 6.0f) {
+                    if (ach->hardcoreUnlocked) {
+                        C2D_DrawRectSolid(24.0f, iconCenterY - 4.0f, 0.93f, 12.0f, 8.0f, C2D_Color32(255, 215, 0, 255));
+                    } else if (ach->unlocked) {
+                        C2D_DrawRectSolid(25.0f, iconCenterY - 2.0f, 0.93f, 10.0f, 4.0f, C2D_Color32(80, 255, 140, 255));
+                    } else {
+                        C2D_DrawRectSolid(25.0f, iconCenterY - 2.0f, 0.93f, 10.0f, 7.0f, C2D_Color32(70, 90, 120, 255));
+                    }
+                }
+            }
+        }
+
+        /* 2. Graphical Status Mini-Icon on Top-Right */
+        float statX = 286.0f;
+        float statY = py + 5.0f;
+        if (statY >= clipY0 && statY + 8.0f <= clipY1) {
+            if (ach->hardcoreUnlocked) {
+                /* Hardcore Mini Crown (Gold) */
+                uint32_t cGold = C2D_Color32(255, 215, 0, 255);
+                C2D_DrawRectSolid(statX, statY + 3.0f, 0.93f, 8.0f, 4.0f, cGold);
+                C2D_DrawRectSolid(statX + 1.0f, statY + 1.0f, 0.93f, 2.0f, 2.0f, cGold);
+                C2D_DrawRectSolid(statX + 3.0f, statY, 0.93f, 2.0f, 2.0f, cGold);
+                C2D_DrawRectSolid(statX + 5.0f, statY + 1.0f, 0.93f, 2.0f, 2.0f, cGold);
+            } else if (ach->unlocked) {
+                /* Softcore Unlocked Mini Padlock Open / Checkmark (Green) */
+                uint32_t cGreen = C2D_Color32(80, 255, 120, 255);
+                /* Open shackle */
+                C2D_DrawRectSolid(statX + 3.0f, statY, 0.93f, 4.0f, 1.0f, cGreen);
+                C2D_DrawRectSolid(statX + 6.0f, statY + 1.0f, 0.93f, 1.0f, 2.0f, cGreen);
+                /* Body */
+                C2D_DrawRectSolid(statX + 1.0f, statY + 3.0f, 0.93f, 6.0f, 4.0f, cGreen);
+            } else {
+                /* Locked Mini Padlock Closed (Slate Gray) */
+                uint32_t cLock = C2D_Color32(110, 130, 160, 255);
+                /* Closed shackle */
+                C2D_DrawRectSolid(statX + 2.0f, statY, 0.93f, 4.0f, 1.0f, cLock);
+                C2D_DrawRectSolid(statX + 2.0f, statY + 1.0f, 0.93f, 1.0f, 2.0f, cLock);
+                C2D_DrawRectSolid(statX + 5.0f, statY + 1.0f, 0.93f, 1.0f, 2.0f, cLock);
+                /* Body */
+                C2D_DrawRectSolid(statX + 1.0f, statY + 3.0f, 0.93f, 6.0f, 4.0f, cLock);
+            }
+        }
+
+        /* 3. Graphical Type Mini-Icon on Bottom-Right (Missable / Progression / Win) */
+        float tagX = 286.0f;
+        float tagY = py + cardH - 12.0f;
+        if (tagY >= clipY0 && tagY + 8.0f <= clipY1) {
+            if (ach->type == RA_ACH_TYPE_MISSABLE) {
+                /* Warning Triangle / Hourglass (Orange/Coral) */
+                uint32_t cMiss = C2D_Color32(255, 120, 60, 255);
+                C2D_DrawRectSolid(tagX + 3.0f, tagY, 0.93f, 2.0f, 2.0f, cMiss);
+                C2D_DrawRectSolid(tagX + 2.0f, tagY + 2.0f, 0.93f, 4.0f, 2.0f, cMiss);
+                C2D_DrawRectSolid(tagX + 1.0f, tagY + 4.0f, 0.93f, 6.0f, 2.0f, cMiss);
+                C2D_DrawRectSolid(tagX, tagY + 6.0f, 0.93f, 8.0f, 2.0f, cMiss);
+                C2D_DrawRectSolid(tagX + 3.0f, tagY + 3.0f, 0.94f, 2.0f, 3.0f, C2D_Color32(20, 26, 40, 255));
+            } else if (ach->type == RA_ACH_TYPE_PROGRESSION) {
+                /* Story Progression Flag / Bookmark (Cyan / Sky Blue) */
+                uint32_t cProg = C2D_Color32(80, 200, 255, 255);
+                C2D_DrawRectSolid(tagX + 1.0f, tagY, 0.93f, 2.0f, 8.0f, cProg);
+                C2D_DrawRectSolid(tagX + 3.0f, tagY, 0.93f, 5.0f, 4.0f, cProg);
+                C2D_DrawRectSolid(tagX + 7.0f, tagY + 1.0f, 0.94f, 1.0f, 2.0f, C2D_Color32(20, 26, 40, 255));
+            } else if (ach->type == RA_ACH_TYPE_WIN_CONDITION) {
+                /* Trophy / Laurel (Gold) */
+                uint32_t cWin = C2D_Color32(255, 215, 0, 255);
+                C2D_DrawRectSolid(tagX + 1.0f, tagY, 0.93f, 6.0f, 5.0f, cWin);
+                C2D_DrawRectSolid(tagX + 3.0f, tagY + 5.0f, 0.93f, 2.0f, 2.0f, cWin);
+                C2D_DrawRectSolid(tagX + 2.0f, tagY + 7.0f, 0.93f, 4.0f, 1.0f, cWin);
+            }
+        }
+
+        /* 4. Title + Points (Full width up to statX - 6.0f = 232px) */
+        char titleBuf[80];
+        snprintf(titleBuf, sizeof(titleBuf), "%s (%uP)", ach->title, (unsigned)ach->points);
+        uint32_t titleCol = ach->hardcoreUnlocked ? C2D_Color32(255, 225, 80, 255) :
+                            (ach->unlocked ? C2D_Color32(140, 240, 170, 255) : C2D_Color32(220, 235, 255, 255));
+        DrawTextMaxWClipped(48.0f, py + 4.0f, 1.0f, titleBuf, titleCol, clipY0, clipY1, 232.0f);
+
+        /* 5. Multi-line Word-Wrapped Description */
+        DrawWrappedTextClipped(48.0f, py + 16.0f, 1.0f, ach->description, 232.0f, 9.0f, C2D_Color32(145, 165, 195, 255), clipY0, clipY1);
+    }
+
+    /* Achievements modal scrollbar */
+    if (maxAchScroll > 0.0f) {
+        float trackH = (clipY1 - clipY0);
+        float thumbH = 30.0f;
+        float thumbY = clipY0 + (sAchievementsScrollY / maxAchScroll) * (trackH - thumbH);
+        C2D_DrawRectSolid(306.0f, clipY0, 0.92f, 2.0f, trackH, C2D_Color32(25, 35, 55, 255));
+        C2D_DrawRectSolid(306.0f, thumbY, 0.94f, 2.0f, thumbH, C2D_Color32(80, 160, 240, 255));
+    }
+
+    C2D_DrawRectSolid(100.0f, 204.0f, 0.96f, 120.0f, 20.0f, C2D_Color32(20, 70, 130, 255));
+    DrawTextCentered(160.0f, 209.0f, 1.0f, (lang == 6) ? "VOLVER" : "BACK", C2D_Color32(255, 255, 255, 255));
 }
 
 /* Render Button Remap Modal */
@@ -1151,73 +1614,172 @@ static void RenderStatusView(void) {
     }
 }
 
-/* Render Options View */
+/* Render Options View with Smooth Touch Scrolling & RetroAchievements Group Box */
 static void RenderOptionsView(void) {
     int lang = GetLang();
 
-    C2D_DrawRectSolid(8.0f, 28.0f, 0.4f, 304.0f, 204.0f, C2D_Color32(14, 18, 28, 255));
+    const float viewX0 = 8.0f;
+    const float viewY0 = 28.0f;
+    const float viewW  = 304.0f;
+    const float viewH  = 204.0f;
+    const float viewY1 = viewY0 + viewH;
 
+    /* Background panel */
+    C2D_DrawRectSolid(viewX0, viewY0, 0.4f, viewW, viewH, C2D_Color32(14, 18, 28, 255));
+    C2D_DrawRectSolid(viewX0, viewY0, 0.38f, viewW, viewH, C2D_Color32(35, 45, 70, 255));
+
+    float baseY = 34.0f - sOptionsScrollY;
+
+    /* Section 1: General Display & System Settings */
     const char* optTitles[7] = {
-        "SETTINGS (TOUCH AN OPTION TO CHANGE)",
-        "SETTINGS (TOUCH AN OPTION TO CHANGE)",
-        "SETTINGS (TOUCH AN OPTION TO CHANGE)",
-        "EINSTELLUNGEN (ZUM AENDERN BERUEHREN)",
-        "PARAMETRES (TOUCHER POUR MODIFIER)",
-        "IMPOSTAZIONI (TOCCA PER MODIFICARE)",
-        "AJUSTES (TOCA UNA OPCION PARA CAMBIAR)"
+        "DISPLAY & SYSTEM SETTINGS", "DISPLAY & SYSTEM SETTINGS", "DISPLAY & SYSTEM SETTINGS",
+        "ANZEIGE- & SYSTEMEINSTELLUNGEN", "PARAMETRES D'AFFICHAGE", "IMPOSTAZIONI SISTEMA",
+        "AJUSTES DE PANTALLA Y SISTEMA"
     };
-    DrawText(16.0f, 32.0f, 1.0f, optTitles[lang], C2D_Color32(100, 220, 255, 255));
+    DrawTextClipped(16.0f, baseY, 1.0f, optTitles[lang], C2D_Color32(100, 220, 255, 255), viewY0, viewY1);
+
+    /* Helper macro/lambda for clipped box drawing */
+    #define DRAW_CLIPPED_ROW(y, h, bgCol, borderCol) do { \
+        float dy0 = (y < viewY0) ? viewY0 : y; \
+        float dy1 = (y + h > viewY1) ? viewY1 : (y + h); \
+        if (dy1 > dy0) { \
+            C2D_DrawRectSolid(12.0f, dy0, 0.45f, 296.0f, dy1 - dy0, bgCol); \
+            if (y >= viewY0 && y <= viewY1) { \
+                C2D_DrawRectSolid(12.0f, y, 0.4f, 296.0f, 1.0f, borderCol); \
+            } \
+        } \
+    } while(0)
 
     /* Option 1: Aspect Ratio */
-    C2D_DrawRectSolid(12.0f, 44.0f, 0.45f, 296.0f, 24.0f, C2D_Color32(26, 32, 48, 255));
-    C2D_DrawRectSolid(12.0f, 44.0f, 0.4f, 296.0f, 1.0f, C2D_Color32(60, 75, 110, 255));
+    float rY = 48.0f - sOptionsScrollY;
+    DRAW_CLIPPED_ROW(rY, 24.0f, C2D_Color32(26, 32, 48, 255), C2D_Color32(60, 75, 110, 255));
     const char* arLabels[7] = {
         "ASPECT RATIO:", "ASPECT RATIO:", "ASPECT RATIO:",
         "BILDVERHAELTNIS:", "FORMAT IMAGE:", "FORMATO SCHERMO:", "RELACION DE ASPECTO:"
     };
-    DrawText(20.0f, 51.0f, 1.0f, arLabels[lang], C2D_Color32(255, 255, 255, 255));
-    DrawText(170.0f, 51.0f, 1.0f, GetAspectRatioDisplayName(lang), C2D_Color32(255, 215, 0, 255));
+    DrawTextClipped(20.0f, rY + 7.0f, 1.0f, arLabels[lang], C2D_Color32(255, 255, 255, 255), viewY0, viewY1);
+    DrawTextClipped(170.0f, rY + 7.0f, 1.0f, GetAspectRatioDisplayName(lang), C2D_Color32(255, 215, 0, 255), viewY0, viewY1);
 
     /* Option 2: Display Style */
-    C2D_DrawRectSolid(12.0f, 72.0f, 0.45f, 296.0f, 24.0f, C2D_Color32(26, 32, 48, 255));
-    C2D_DrawRectSolid(12.0f, 72.0f, 0.4f, 296.0f, 1.0f, C2D_Color32(60, 75, 110, 255));
+    rY = 76.0f - sOptionsScrollY;
+    DRAW_CLIPPED_ROW(rY, 24.0f, C2D_Color32(26, 32, 48, 255), C2D_Color32(60, 75, 110, 255));
     const char* dsLabels[7] = {
         "DISPLAY STYLE:", "DISPLAY STYLE:", "DISPLAY STYLE:",
         "ANZEIGE-STIL:", "STYLE AFFICHAGE:", "STILE DISPLAY:", "ESTILO DE PANTALLA:"
     };
-    DrawText(20.0f, 79.0f, 1.0f, dsLabels[lang], C2D_Color32(255, 255, 255, 255));
-    DrawText(170.0f, 79.0f, 1.0f, GetDisplayStyleDisplayName(lang), C2D_Color32(255, 215, 0, 255));
+    DrawTextClipped(20.0f, rY + 7.0f, 1.0f, dsLabels[lang], C2D_Color32(255, 255, 255, 255), viewY0, viewY1);
+    DrawTextClipped(170.0f, rY + 7.0f, 1.0f, GetDisplayStyleDisplayName(lang), C2D_Color32(255, 215, 0, 255), viewY0, viewY1);
 
     /* Option 3: FPS Overlay */
-    C2D_DrawRectSolid(12.0f, 100.0f, 0.45f, 296.0f, 24.0f, C2D_Color32(26, 32, 48, 255));
-    C2D_DrawRectSolid(12.0f, 100.0f, 0.4f, 296.0f, 1.0f, C2D_Color32(60, 75, 110, 255));
+    rY = 104.0f - sOptionsScrollY;
+    DRAW_CLIPPED_ROW(rY, 24.0f, C2D_Color32(26, 32, 48, 255), C2D_Color32(60, 75, 110, 255));
     const char* fpsLabels[7] = {
         "FPS OVERLAY:", "FPS OVERLAY:", "FPS OVERLAY:",
         "FPS-ANZEIGE:", "COMPTEUR FPS:", "OVERLAY FPS:", "CONTADOR FPS:"
     };
-    DrawText(20.0f, 107.0f, 1.0f, fpsLabels[lang], C2D_Color32(255, 255, 255, 255));
-    DrawText(170.0f, 107.0f, 1.0f, GetFpsOverlayDisplayName(lang),
-             Port_Config_GetShowFps() ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 100, 100, 255));
+    DrawTextClipped(20.0f, rY + 7.0f, 1.0f, fpsLabels[lang], C2D_Color32(255, 255, 255, 255), viewY0, viewY1);
+    DrawTextClipped(170.0f, rY + 7.0f, 1.0f, GetFpsOverlayDisplayName(lang),
+             Port_Config_GetShowFps() ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 100, 100, 255), viewY0, viewY1);
 
     /* Option 4: Auto-Hide HUD Option */
-    C2D_DrawRectSolid(12.0f, 128.0f, 0.45f, 296.0f, 24.0f, C2D_Color32(26, 32, 48, 255));
-    C2D_DrawRectSolid(12.0f, 128.0f, 0.4f, 296.0f, 1.0f, C2D_Color32(60, 75, 110, 255));
-    DrawText(20.0f, 135.0f, 1.0f, (lang == 6) ? "AUTOESCONDER HUD:" : "AUTO-HIDE HUD:", C2D_Color32(255, 255, 255, 255));
+    rY = 132.0f - sOptionsScrollY;
+    DRAW_CLIPPED_ROW(rY, 24.0f, C2D_Color32(26, 32, 48, 255), C2D_Color32(60, 75, 110, 255));
+    DrawTextClipped(20.0f, rY + 7.0f, 1.0f, (lang == 6) ? "AUTOESCONDER HUD:" : "AUTO-HIDE HUD:", C2D_Color32(255, 255, 255, 255), viewY0, viewY1);
     bool autoHide = Port_Config_GetAutoHideHud();
-    DrawText(170.0f, 135.0f, 1.0f, autoHide ? ((lang == 6) ? "ACTIVADO" : "ON") : ((lang == 6) ? "DESACTIVADO" : "OFF"),
-             autoHide ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 100, 100, 255));
+    DrawTextClipped(170.0f, rY + 7.0f, 1.0f, autoHide ? ((lang == 6) ? "ACTIVADO" : "ON") : ((lang == 6) ? "DESACTIVADO" : "OFF"),
+             autoHide ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 100, 100, 255), viewY0, viewY1);
 
     /* Option 5: Button Remapping Submenu Button */
-    C2D_DrawRectSolid(12.0f, 156.0f, 0.45f, 296.0f, 32.0f, C2D_Color32(20, 48, 80, 255));
-    C2D_DrawRectSolid(12.0f, 156.0f, 0.4f, 296.0f, 1.0f, C2D_Color32(50, 100, 180, 255));
-    DrawTextCentered(160.0f, 166.0f, 1.0f, (lang == 6) ? "CONFIGURAR CONTROLES Y BOTONES (X / Y / ZL / ZR)" : "CUSTOMIZE BUTTON CONTROLS (X / Y / ZL / ZR)", C2D_Color32(255, 220, 100, 255));
+    rY = 160.0f - sOptionsScrollY;
+    DRAW_CLIPPED_ROW(rY, 26.0f, C2D_Color32(20, 48, 80, 255), C2D_Color32(50, 100, 180, 255));
+    DrawTextCenteredClipped(160.0f, rY + 8.0f, 1.0f, (lang == 6) ? "CONFIGURAR CONTROLES (X / Y / ZL / ZR)" : "CUSTOMIZE BUTTON CONTROLS (X / Y / ZL / ZR)", C2D_Color32(255, 220, 100, 255), viewY0, viewY1);
+
+    /* Section 2: RetroAchievements Group Box */
+    float gbY = 196.0f - sOptionsScrollY;
+    float gbH = 166.0f;
+    float gbDrawY0 = (gbY < viewY0) ? viewY0 : gbY;
+    float gbDrawY1 = (gbY + gbH > viewY1) ? viewY1 : (gbY + gbH);
+    if (gbDrawY1 > gbDrawY0) {
+        /* Groupbox background & frame */
+        C2D_DrawRectSolid(10.0f, gbDrawY0, 0.42f, 300.0f, gbDrawY1 - gbDrawY0, C2D_Color32(18, 22, 36, 255));
+        if (gbY >= viewY0 && gbY <= viewY1) {
+            C2D_DrawRectSolid(10.0f, gbY, 0.41f, 300.0f, 1.0f, C2D_Color32(70, 95, 140, 255));
+        }
+        if (gbY + gbH - 1.0f >= viewY0 && gbY + gbH - 1.0f <= viewY1) {
+            C2D_DrawRectSolid(10.0f, gbY + gbH - 1.0f, 0.41f, 300.0f, 1.0f, C2D_Color32(70, 95, 140, 255));
+        }
+    }
+
+    /* Groupbox Header */
+    float raHeaderY = 202.0f - sOptionsScrollY;
+    DrawTextClipped(18.0f, raHeaderY, 1.0f, (lang == 6) ? "RETROACHIEVEMENTS" : "RETROACHIEVEMENTS", C2D_Color32(255, 215, 0, 255), viewY0, viewY1);
+    uint32_t statusCol = C2D_Color32(140, 160, 190, 255);
+    switch (Port_RA_GetStatus()) {
+        case RA_STATUS_CONNECTED: statusCol = C2D_Color32(80, 255, 120, 255); break;
+        case RA_STATUS_CONNECTING: statusCol = C2D_Color32(255, 220, 80, 255); break;
+        case RA_STATUS_ERROR: statusCol = C2D_Color32(255, 90, 90, 255); break;
+        default: statusCol = C2D_Color32(140, 160, 190, 255); break;
+    }
+    DrawTextClipped(210.0f, raHeaderY, 1.0f, Port_RA_GetStatusString(lang), statusCol, viewY0, viewY1);
+
+    /* RA Option 1: User Login (FIRST OPTION) */
+    rY = 218.0f - sOptionsScrollY;
+    DRAW_CLIPPED_ROW(rY, 24.0f, C2D_Color32(26, 32, 48, 255), C2D_Color32(60, 75, 110, 255));
+    DrawTextClipped(20.0f, rY + 7.0f, 1.0f, (lang == 6) ? "USUARIO:" : "USER:", C2D_Color32(255, 255, 255, 255), viewY0, viewY1);
+    const char* user = Port_RA_GetUsername();
+    if (user && user[0] != '\0') {
+        DrawTextClipped(170.0f, rY + 7.0f, 1.0f, user, C2D_Color32(255, 215, 0, 255), viewY0, viewY1);
+    } else {
+        DrawTextClipped(170.0f, rY + 7.0f, 1.0f, (lang == 6) ? "INICIAR SESION" : "LOGIN", C2D_Color32(255, 140, 80, 255), viewY0, viewY1);
+    }
+
+    /* RA Option 2: Enable / Disable */
+    rY = 246.0f - sOptionsScrollY;
+    DRAW_CLIPPED_ROW(rY, 24.0f, C2D_Color32(26, 32, 48, 255), C2D_Color32(60, 75, 110, 255));
+    DrawTextClipped(20.0f, rY + 7.0f, 1.0f, (lang == 6) ? "SISTEMA DE LOGROS:" : "RETROACHIEVEMENTS:", C2D_Color32(255, 255, 255, 255), viewY0, viewY1);
+    bool raEn = Port_RA_IsEnabled();
+    DrawTextClipped(170.0f, rY + 7.0f, 1.0f, raEn ? ((lang == 6) ? "ACTIVADO" : "ENABLED") : ((lang == 6) ? "DESACTIVADO" : "DISABLED"),
+             raEn ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 100, 100, 255), viewY0, viewY1);
+
+    /* RA Option 3: Hardcore Mode */
+    rY = 274.0f - sOptionsScrollY;
+    DRAW_CLIPPED_ROW(rY, 24.0f, C2D_Color32(26, 32, 48, 255), C2D_Color32(60, 75, 110, 255));
+    DrawTextClipped(20.0f, rY + 7.0f, 1.0f, (lang == 6) ? "MODO HARDCORE:" : "HARDCORE MODE:", C2D_Color32(255, 255, 255, 255), viewY0, viewY1);
+    bool hc = Port_RA_IsHardcore();
+    DrawTextClipped(170.0f, rY + 7.0f, 1.0f, hc ? ((lang == 6) ? "ACTIVADO" : "ON") : ((lang == 6) ? "DESACTIVADO" : "OFF"),
+             hc ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 100, 100, 255), viewY0, viewY1);
+
+    /* RA Option 4: Sound Popup Notification */
+    rY = 302.0f - sOptionsScrollY;
+    DRAW_CLIPPED_ROW(rY, 24.0f, C2D_Color32(26, 32, 48, 255), C2D_Color32(60, 75, 110, 255));
+    DrawTextClipped(20.0f, rY + 7.0f, 1.0f, (lang == 6) ? "SONIDO DE LOGRO:" : "ACHIEVEMENT SOUND:", C2D_Color32(255, 255, 255, 255), viewY0, viewY1);
+    bool snd = Port_RA_GetNotificationSound();
+    DrawTextClipped(170.0f, rY + 7.0f, 1.0f, snd ? ((lang == 6) ? "ACTIVADO" : "ON") : ((lang == 6) ? "DESACTIVADO" : "OFF"),
+             snd ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 100, 100, 255), viewY0, viewY1);
+
+    /* RA Option 5: View Achievements List */
+    rY = 330.0f - sOptionsScrollY;
+    DRAW_CLIPPED_ROW(rY, 28.0f, C2D_Color32(28, 50, 40, 255), C2D_Color32(60, 160, 100, 255));
+    DrawTextCenteredClipped(160.0f, rY + 8.0f, 1.0f, (lang == 6) ? "VER LISTA Y ESTADO DE LOGROS" : "VIEW ACHIEVEMENTS & PROGRESS", C2D_Color32(120, 255, 180, 255), viewY0, viewY1);
 
     /* Informational bottom footer with version */
-    DrawTextCentered(160.0f, 198.0f, 1.0f, (lang == 6) ? "STICK Y C-STICK CONFIGURADOS AUTOMATICAMENTE" : "CIRCLE PAD & C-STICK ENABLED AUTOMATICALLY", C2D_Color32(130, 160, 190, 255));
-    DrawTextCentered(160.0f, 214.0f, 1.0f, "METROID ZERO MISSION 3DS " MZM_PORT_VERSION, C2D_Color32(90, 115, 145, 255));
+    float footY2 = 376.0f - sOptionsScrollY;
+    DrawTextCenteredClipped(160.0f, footY2, 1.0f, "METROID ZERO MISSION 3DS " MZM_PORT_VERSION, C2D_Color32(90, 115, 145, 255), viewY0, viewY1);
+
+    /* Scroll Bar Indicator (Right side) - Supports direct scrollbar dragging */
+    const float maxScroll = 166.0f;
+    float thumbH = 35.0f;
+    float trackH = viewH - thumbH;
+    float thumbY = viewY0 + (sOptionsScrollY / maxScroll) * trackH;
+    C2D_DrawRectSolid(310.0f, viewY0, 0.5f, 3.0f, viewH, C2D_Color32(25, 32, 50, 255));
+    C2D_DrawRectSolid(310.0f, thumbY, 0.55f, 3.0f, thumbH, C2D_Color32(80, 160, 240, 255));
+
+    #undef DRAW_CLIPPED_ROW
 
     if (sShowRemapModal) {
         RenderRemapModal(lang);
+    } else if (sShowAchievementsModal) {
+        RenderAchievementsModal(lang);
     }
 }
 
@@ -1297,6 +1859,11 @@ static void RenderDebugView(void) {
     snprintf(buf, sizeof(buf), "TOTAL ITEMS OBTAINED: %lu", (unsigned long)totalItems);
     DrawText(16.0f, 171.0f, 1.0f, buf, C2D_Color32(180, 240, 160, 255));
 
+    /* RetroAchievements Network & Session Diagnostics */
+    char raDiag[80];
+    snprintf(raDiag, sizeof(raDiag), "RA: %s (%s)", Port_RA_GetStatusString(GetLang()), Port_RA_GetLastDebugLog());
+    DrawText(16.0f, 186.0f, 1.0f, raDiag, C2D_Color32(255, 220, 100, 255));
+
     DrawText(16.0f, 212.0f, 1.0f, (GetLang() == 6) ? "TOCA LA PESTANA [MAPA] PARA VOLVER" : "TOUCH [MAP] TAB TO RETURN TO MAP VIEW", C2D_Color32(120, 140, 170, 255));
 }
 
@@ -1327,4 +1894,8 @@ void Port_BottomUI_Render(void) {
             RenderMapView();
             break;
     }
+
+    /* Update and render RetroAchievements toast if active */
+    Port_RA_Update();
+    Port_RA_RenderToastOverlay();
 }

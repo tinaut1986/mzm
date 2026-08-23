@@ -30,18 +30,6 @@ void Port_GpuRenderer_GetLastFrameStats(int* outItems, int* outObjItems, int* ou
  * gpuDraw/gpuProc counters (GPU-side only) cover this. */
 void Port_GpuRenderer_GetLastFrameTimingMs(float* outCollectMs, float* outDrawMs);
 
-#ifdef PORT_GPU_RENDERER_DIAG_LOG
-/* TEMP (issue #4 investigation): dumps the raw tile atlas texture -- the
- * actual GPU-sampled CPU-writable texture memory, post-flush -- to a PPM
- * file, unswizzled. Lets us tell "the atlas never received Samus's decoded
- * pixels" (a cache-flush/coherency bug) apart from "the atlas is correct
- * but never reaches the screen" (a draw/UV/blend-state bug), since
- * GPUDIAG's item counts alone can't distinguish those. Remove once
- * root-caused. */
-void Port_GpuRenderer_DumpAtlasPPM(const char* path);
-void Port_GpuRenderer_DumpCacheKeys(const char* path);
-#endif
-
 #ifdef __cplusplus
 }
 #endif

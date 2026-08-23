@@ -79,8 +79,9 @@ SRCS_3DS := \
 	$(CURDIR)/source/port_bottom_ui_3ds.c \
 	$(CURDIR)/source/port_ppu_mzm.c \
 	$(CURDIR)/source/port_gpu_renderer.c \
-	$(CURDIR)/source/depth_tier.c \
-	$(CURDIR)/source/port_mzm_audio_3ds.c
+	$(CURDIR)/source/port_mzm_audio_3ds.c \
+	$(CURDIR)/source/port_retroachievements_3ds.c \
+	$(CURDIR)/source/port_ra_badges_data.c
 
 # Generar objetos
 OBJS_ROOT := $(patsubst $(ROOT)/%.c, $(BUILD)/root/%.o, $(SRCS_ROOT))
@@ -105,9 +106,15 @@ else
   REL_NAME    := $(GIT_BRANCH)
 endif
 ifneq ($(filter release/%,$(REL_NAME)),)
-  REL_CNT     := $(shell git rev-list --count $(REL_BASE)..HEAD 2>/dev/null || echo 1)
+  REL_TARGET  := $(shell git rev-parse --verify -q refs/heads/$(REL_NAME) >/dev/null && echo refs/heads/$(REL_NAME) || echo refs/remotes/origin/$(REL_NAME))
+  REL_CNT     := $(shell git rev-list --count $(REL_BASE)..$(REL_TARGET) 2>/dev/null || echo 1)
+  DEV_CNT     := $(shell git rev-list --count $(REL_TARGET)..HEAD 2>/dev/null || echo 0)
   REL_HASH    := $(shell git rev-parse --short HEAD 2>/dev/null || echo dev)
-  GIT_VERSION := $(patsubst release/%,%,$(REL_NAME))-dev.$(REL_CNT)+$(REL_HASH)
+  ifeq ($(DEV_CNT),0)
+    GIT_VERSION := $(patsubst release/%,%,$(REL_NAME))-dev.$(REL_CNT)+$(REL_HASH)
+  else
+    GIT_VERSION := $(patsubst release/%,%,$(REL_NAME))-dev.$(REL_CNT).$(DEV_CNT)+$(REL_HASH)
+  endif
 else
   GIT_VERSION := $(shell git describe --tags --always 2>/dev/null || echo "0.0-dev")
 endif
