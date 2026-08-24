@@ -24,7 +24,10 @@ BUILD     := $(CURDIR)/build
 TARGET    := $(CURDIR)/mzm-3ds
 
 APP_TITLE       := Metroid Zero Mission 3DS
-APP_DESCRIPTION := Native 3DS port of Metroid Zero Mission
+# Recursively expanded (=) so it's resolved at recipe time, once VERSION is known.
+# SMDH text fields have a hard 64-character limit, so the version is truncated
+# if "Native 3DS port of Metroid Zero Mission <VERSION>" would overflow it.
+APP_DESCRIPTION  = $(shell printf '%s %s' "Native 3DS port of Metroid Zero Mission" "$(VERSION)" | cut -c1-64)
 APP_AUTHOR      := metroidret + community
 APP_ICON        := $(CURDIR)/assets/icon-48.png
 ifeq ($(wildcard $(APP_ICON)),)
