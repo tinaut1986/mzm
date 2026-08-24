@@ -54,6 +54,96 @@ static void UrlEncode(const char* src, char* dst, size_t dstSize) {
     dst[d] = '\0';
 }
 
+/* Minimal MD5 implementation (RFC 1321), used to sign awardachievement requests */
+static void Md5Hex(const char* input, char outHex[33]) {
+    static const uint32_t K[64] = {
+        0xd76aa478,0xe8c7b756,0x242070db,0xc1bdceee,0xf57c0faf,0x4787c62a,0xa8304613,0xfd469501,
+        0x698098d8,0x8b44f7af,0xffff5bb1,0x895cd7be,0x6b901122,0xfd987193,0xa679438e,0x49b40821,
+        0xf61e2562,0xc040b340,0x265e5a51,0xe9b6c7aa,0xd62f105d,0x02441453,0xd8a1e681,0xe7d3fbc8,
+        0x21e1cde6,0xc33707d6,0xf4d50d87,0x455a14ed,0xa9e3e905,0xfcefa3f8,0x676f02d9,0x8d2a4c8a,
+        0xfffa3942,0x8771f681,0x6d9d6122,0xfde5380c,0xa4beea44,0x4bdecfa9,0xf6bb4b60,0xbebfbc70,
+        0x289b7ec6,0xeaa127fa,0xd4ef3085,0x04881d05,0xd9d4d039,0xe6db99e5,0x1fa27cf8,0xc4ac5665,
+        0xf4292244,0x432aff97,0xab9423a7,0xfc93a039,0x655b59c3,0x8f0ccc92,0xffeff47d,0x85845dd1,
+        0x6fa87e4f,0xfe2ce6e0,0xa3014314,0x4e0811a1,0xf7537e82,0xbd3af235,0x2ad7d2bb,0xeb86d391
+    };
+    static const int S[64] = {
+        7,12,17,22, 7,12,17,22, 7,12,17,22, 7,12,17,22,
+        5, 9,14,20, 5, 9,14,20, 5, 9,14,20, 5, 9,14,20,
+        4,11,16,23, 4,11,16,23, 4,11,16,23, 4,11,16,23,
+        6,10,15,21, 6,10,15,21, 6,10,15,21, 6,10,15,21
+    };
+
+    uint32_t a0 = 0x67452301, b0 = 0xefcdab89, c0 = 0x98badcfe, d0 = 0x10325476;
+
+    size_t msgLen = strlen(input);
+    uint64_t bitLen = (uint64_t)msgLen * 8;
+    size_t paddedLen = ((msgLen + 8) / 64 + 1) * 64;
+    if (paddedLen > 512) paddedLen = 512; /* guard: inputs used here are short */
+    uint8_t buf[512] = { 0 };
+    memcpy(buf, input, msgLen);
+    buf[msgLen] = 0x80;
+    memcpy(buf + paddedLen - 8, &bitLen, 8);
+
+    for (size_t chunk = 0; chunk < paddedLen; chunk += 64) {
+        uint32_t M[16];
+        for (int i = 0; i < 16; ++i) {
+            M[i] = (uint32_t)buf[chunk + i * 4] | ((uint32_t)buf[chunk + i * 4 + 1] << 8) |
+                   ((uint32_t)buf[chunk + i * 4 + 2] << 16) | ((uint32_t)buf[chunk + i * 4 + 3] << 24);
+        }
+
+        uint32_t A = a0, B = b0, C = c0, D = d0;
+        for (int i = 0; i < 64; ++i) {
+            uint32_t F;
+            int g;
+            if (i < 16) { F = (B & C) | (~B & D); g = i; }
+            else if (i < 32) { F = (D & B) | (~D & C); g = (5 * i + 1) % 16; }
+            else if (i < 48) { F = B ^ C ^ D; g = (3 * i + 5) % 16; }
+            else { F = C ^ (B | ~D); g = (7 * i) % 16; }
+
+            F = F + A + K[i] + M[g];
+            A = D; D = C; C = B;
+            B = B + ((F << S[i]) | (F >> (32 - S[i])));
+        }
+
+        a0 += A; b0 += B; c0 += C; d0 += D;
+    }
+
+    uint8_t digest[16];
+    uint32_t vals[4] = { a0, b0, c0, d0 };
+    for (int i = 0; i < 4; ++i) {
+        digest[i * 4 + 0] = (uint8_t)(vals[i] & 0xFF);
+        digest[i * 4 + 1] = (uint8_t)((vals[i] >> 8) & 0xFF);
+        digest[i * 4 + 2] = (uint8_t)((vals[i] >> 16) & 0xFF);
+        digest[i * 4 + 3] = (uint8_t)((vals[i] >> 24) & 0xFF);
+    }
+
+    static const char hexDigits[] = "0123456789abcdef";
+    for (int i = 0; i < 16; ++i) {
+        outHex[i * 2] = hexDigits[(digest[i] >> 4) & 0xF];
+        outHex[i * 2 + 1] = hexDigits[digest[i] & 0xF];
+    }
+    outHex[32] = '\0';
+}
+
+/* Extracts just the numeric X.X.X portion from MZM_PORT_VERSION (e.g. "v0.2.2-dev.5+abc123" -> "0.2.2"),
+ * since RA's hardcore validation requires the User-Agent version to be purely numeric. */
+static void GetNumericVersion(char* out, size_t outSize) {
+    const char* src = MZM_PORT_VERSION;
+    while (*src && !(*src >= '0' && *src <= '9')) src++;
+
+    size_t d = 0;
+    while (*src && d + 1 < outSize && ((*src >= '0' && *src <= '9') || *src == '.')) {
+        out[d++] = *src++;
+    }
+    while (d > 0 && out[d - 1] == '.') d--; /* trim trailing dot */
+    out[d] = '\0';
+
+    if (out[0] == '\0') {
+        strncpy(out, "0.0", outSize - 1);
+        out[outSize - 1] = '\0';
+    }
+}
+
 /* HTTP GET Request Helper */
 static int HttpPerformGet(const char* url, char* outBuf, size_t outSize) {
     EnsureHttpInit();
@@ -72,7 +162,11 @@ static int HttpPerformGet(const char* url, char* outBuf, size_t outSize) {
     /* Disable SSL certificate verification */
     httpcSetSSLOpt(&context, SSLCOPT_DisableVerify);
     httpcSetKeepAlive(&context, HTTPC_KEEPALIVE_DISABLED);
-    httpcAddRequestHeaderField(&context, "User-Agent", "RetroAchievements/1.0 (Nintendo 3DS; MZM-Port)");
+    char versionBuf[16];
+    GetNumericVersion(versionBuf, sizeof(versionBuf));
+    char userAgent[48];
+    snprintf(userAgent, sizeof(userAgent), "MZM3DS/%s (Nintendo 3DS)", versionBuf);
+    httpcAddRequestHeaderField(&context, "User-Agent", userAgent);
     httpcAddRequestHeaderField(&context, "Accept", "*/*");
     httpcAddRequestHeaderField(&context, "Connection", "close");
 
@@ -386,12 +480,16 @@ static void FetchUserUnlocks(void) {
 
 /* Background unlock queue */
 #define MAX_UNLOCK_QUEUE 16
-static uint32_t sUnlockQueue[MAX_UNLOCK_QUEUE];
+typedef struct {
+    uint32_t achId;
+    bool hardcore;
+} PendingUnlock;
+static PendingUnlock sUnlockQueue[MAX_UNLOCK_QUEUE];
 static int sUnlockQueueCount = 0;
 static LightLock sUnlockQueueLock;
 static bool sLockInitialized = false;
 
-static void QueueUnlockId(uint32_t achId) {
+static void QueueUnlockId(uint32_t achId, bool hardcore) {
     if (!sLockInitialized) {
         LightLock_Init(&sUnlockQueueLock);
         sLockInitialized = true;
@@ -400,12 +498,14 @@ static void QueueUnlockId(uint32_t achId) {
     if (sUnlockQueueCount < MAX_UNLOCK_QUEUE) {
         /* Avoid duplicate entries */
         for (int i = 0; i < sUnlockQueueCount; ++i) {
-            if (sUnlockQueue[i] == achId) {
+            if (sUnlockQueue[i].achId == achId) {
                 LightLock_Unlock(&sUnlockQueueLock);
                 return;
             }
         }
-        sUnlockQueue[sUnlockQueueCount++] = achId;
+        sUnlockQueue[sUnlockQueueCount].achId = achId;
+        sUnlockQueue[sUnlockQueueCount].hardcore = hardcore;
+        sUnlockQueueCount++;
     }
     LightLock_Unlock(&sUnlockQueueLock);
 }
@@ -415,13 +515,17 @@ static void RA_AwardThread(void* arg) {
     (void)arg;
     for (;;) {
         uint32_t toAward = 0;
+        bool toAwardHardcore = false;
+        bool haveItem = false;
         if (!sLockInitialized) {
             LightLock_Init(&sUnlockQueueLock);
             sLockInitialized = true;
         }
         LightLock_Lock(&sUnlockQueueLock);
         if (sUnlockQueueCount > 0) {
-            toAward = sUnlockQueue[0];
+            toAward = sUnlockQueue[0].achId;
+            toAwardHardcore = sUnlockQueue[0].hardcore;
+            haveItem = true;
             for (int i = 1; i < sUnlockQueueCount; ++i) {
                 sUnlockQueue[i - 1] = sUnlockQueue[i];
             }
@@ -429,7 +533,7 @@ static void RA_AwardThread(void* arg) {
         }
         LightLock_Unlock(&sUnlockQueueLock);
 
-        if (toAward == 0) {
+        if (!haveItem) {
             svcSleepThread(50000000ULL); /* Sleep 50ms */
             continue;
         }
@@ -440,24 +544,32 @@ static void RA_AwardThread(void* arg) {
             UrlEncode(sRAUsername, encUser, sizeof(encUser));
             UrlEncode(sRAToken, encTok, sizeof(encTok));
 
+            /* Signature required by the server to trust the hardcore flag:
+             * v = md5(achievementId + username + hardcore + achievementId) */
+            char signInput[256];
+            snprintf(signInput, sizeof(signInput), "%lu%s%d%lu",
+                     (unsigned long)toAward, sRAUsername, toAwardHardcore ? 1 : 0, (unsigned long)toAward);
+            char signHex[33];
+            Md5Hex(signInput, signHex);
+
             char url[768];
             char respBuf[1024] = { 0 };
             snprintf(url, sizeof(url),
-                     "https://retroachievements.org/dorequest.php?r=awardachievement&u=%s&t=%s&a=%lu&h=%d",
-                     encUser, encTok, (unsigned long)toAward, sRAHardcore ? 1 : 0);
+                     "https://retroachievements.org/dorequest.php?r=awardachievement&u=%s&t=%s&a=%lu&h=%d&v=%s",
+                     encUser, encTok, (unsigned long)toAward, toAwardHardcore ? 1 : 0, signHex);
 
             int res = HttpPerformGet(url, respBuf, sizeof(respBuf));
             if (res <= 0) {
                 snprintf(url, sizeof(url),
-                         "http://retroachievements.org/dorequest.php?r=awardachievement&u=%s&t=%s&a=%lu&h=%d",
-                         encUser, encTok, (unsigned long)toAward, sRAHardcore ? 1 : 0);
+                         "http://retroachievements.org/dorequest.php?r=awardachievement&u=%s&t=%s&a=%lu&h=%d&v=%s",
+                         encUser, encTok, (unsigned long)toAward, toAwardHardcore ? 1 : 0, signHex);
                 res = HttpPerformGet(url, respBuf, sizeof(respBuf));
             }
 
             FILE* logFile = fopen("sdmc:/3ds/Metroid Zero Mission 3DS/retroachievements.log", "a");
             if (logFile) {
                 fprintf(logFile, "AWARD ATTEMPT: AchID=%lu, Hardcore=%d, Res=%d, Resp='%s'\n\n",
-                        (unsigned long)toAward, sRAHardcore ? 1 : 0, res, respBuf);
+                        (unsigned long)toAward, toAwardHardcore ? 1 : 0, res, respBuf);
                 fclose(logFile);
             }
         }
@@ -922,7 +1034,8 @@ void Port_RA_TriggerUnlock(uint32_t achIndex) {
     }
 
     item->unlocked = true;
-    if (sRAHardcore) {
+    bool hardcoreNow = sRAHardcore;
+    if (hardcoreNow) {
         item->hardcoreUnlocked = true;
     }
 
@@ -940,7 +1053,7 @@ void Port_RA_TriggerUnlock(uint32_t achIndex) {
     sToast.points = item->points;
 
     /* Queue network award request */
-    QueueUnlockId(item->id);
+    QueueUnlockId(item->id, hardcoreNow);
 }
 
 void Port_RA_EvaluateTriggers(void) {
