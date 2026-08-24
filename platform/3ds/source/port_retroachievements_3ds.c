@@ -958,24 +958,6 @@ void Port_RA_EvaluateTriggers(void) {
         return;
     }
 
-    /* Debug log when suitMisc or equipment changes */
-    if (sPrevEquipment.suitMisc != gEquipment.suitMisc) {
-        FILE* logFile = fopen("sdmc:/3ds/Metroid Zero Mission 3DS/retroachievements.log", "a");
-        if (logFile) {
-            fprintf(logFile, "ITEM CHANGE: prevSuitMisc=0x%02X, nowSuitMisc=0x%02X, Area=%d, Room=%d, GM=%d\n",
-                    sPrevEquipment.suitMisc, gEquipment.suitMisc, gCurrentArea, gCurrentRoom, gMainGameMode);
-            for (uint32_t j = 0; j < sAchievementCount; ++j) {
-                if (sAchievements[j].id == 5760) {
-                    fprintf(logFile, "  5760 (MorphBall): unlocked=%d, hardUnlocked=%d, memAddr='%s'\n",
-                            sAchievements[j].unlocked, sAchievements[j].hardcoreUnlocked, sAchievements[j].memAddr);
-                    bool evalRes = EvaluateTriggerExpression(sAchievements[j].memAddr);
-                    fprintf(logFile, "  5760 EvalResult = %d\n", evalRes ? 1 : 0);
-                }
-            }
-            fclose(logFile);
-        }
-    }
-
     for (uint32_t i = 0; i < sAchievementCount; ++i) {
         RetroAchievementItem* item = &sAchievements[i];
         if (item->unlocked && (!sRAHardcore || item->hardcoreUnlocked)) {

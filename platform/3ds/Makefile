@@ -238,7 +238,8 @@ $(TARGET).smdh: $(APP_ICON)
 
 $(TARGET).elf: $(C_OBJS)
 	@echo "Linking ELF: $(notdir $@)"
-	@$(LD) $(LDFLAGS) $(C_OBJS) $(LIBS) -o $@
+	@for f in $(C_OBJS); do cygpath -m "$$f" 2>/dev/null || echo "$$f"; done > $(BUILD)/objects.rsp
+	@$(LD) $(LDFLAGS) @$(BUILD)/objects.rsp $(LIBS) -o $@
 	@$(NM) -CSn $@ > $(BUILD)/mzm-3ds.lst
 	@echo "Build successful: $(TARGET).elf"
 

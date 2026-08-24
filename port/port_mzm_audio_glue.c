@@ -178,7 +178,7 @@ static u8* Port_MzmAudio_SoundCodeC(u32* dest, u32* src, u8 count) {
          * to 1-in-64 it is real SD I/O inside the audio production path. */
 #ifdef PORT_AUDIO_DIAG_LOG
         static unsigned int sDiagCount;
-        if ((++sDiagCount & 0x3F) == 0) {
+        if ((++sDiagCount & 0x7) == 0) {
             /* Scan the WHOLE soundRawData buffer to see if the engine wrote
              * audio anywhere, not just at the wrapper's dest window. */
             unsigned int wholePeak = 0, wholeNonz = 0;
@@ -197,10 +197,10 @@ static u8* Port_MzmAudio_SoundCodeC(u32* dest, u32* src, u8 count) {
             const unsigned int curRead = __atomic_load_n(&sRingReadIndex, __ATOMIC_ACQUIRE);
             char msg[200];
             __builtin_snprintf(msg, sizeof(msg),
-                "mzmAudio: rate=%u n=%u fill=%u wholePeak=%u wholeNonz=%u maxCh=%u off=%u l0=%u l1=%u l2=%u dest=%p",
+                "mzmAudio: rate=%u n=%u fill=%u wholePeak=%u wholeNonz=%u maxCh=%u off=%u l0=%u l1=%u l2=%u psg=%u dest=%p",
                 engineRate, n, sRingWriteIndex - curRead, wholePeak, wholeNonz,
                 gMusicInfo.maxSoundChannels, (unsigned int)((const unsigned char*)dest - wb),
-                left[0], left[1], left[2], (void*)dest);
+                left[0], left[1], left[2], (unsigned int)PortPsg_IsAnyVoiceActive(), (void*)dest);
             Port_DebugLog(msg);
         }
 #endif /* PORT_AUDIO_DIAG_LOG */
