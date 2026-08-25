@@ -6,6 +6,11 @@
 #include <stdio.h>
 #include <string.h>
 
+/* Implemented in port_ppu_mzm.c, which can safely include structs/samus.h
+ * (this file can't: it also pulls in <3ds.h>/<citro3d.h>, whose u32 typedef
+ * conflicts with the GBA-port one dragged in by structs/samus.h). */
+void PortPpuMzm_DumpSamusState(void);
+
 static C3D_RenderTarget* sTopTarget;
 static C3D_RenderTarget* sTopRightTarget;
 static C3D_RenderTarget* sBottomTarget;
@@ -691,6 +696,8 @@ void PlatformGpu3DS_DumpScreens(void) {
     WriteBlob("sdmc:/3ds/mzm-dump-bgpltt.bin", gBgPltt, sizeof(gBgPltt));
     WriteBlob("sdmc:/3ds/mzm-dump-objpltt.bin", gObjPltt, sizeof(gObjPltt));
     WriteBlob("sdmc:/3ds/mzm-dump-oam.bin", gOamMem, sizeof(gOamMem));
+
+    PortPpuMzm_DumpSamusState();
 
     uint16_t dispcnt = (uint16_t)(gIoMem[0x00] | (gIoMem[0x01] << 8));
     uint16_t bg0cnt  = (uint16_t)(gIoMem[0x08] | (gIoMem[0x09] << 8));

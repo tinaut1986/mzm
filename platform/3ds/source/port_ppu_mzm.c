@@ -662,3 +662,42 @@ bool Port_PPU_GpuPresentPump(void) {
     PlatformGpu3DS_SubmitLock_Release();
     return true;
 }
+
+/**
+ * Debug dump of Samus's animation/graphics state, for tracking down bugs
+ * like #17 (wrong sprite/palette during the death animation) where the
+ * VRAM/OAM/palette dump alone doesn't say which pose/frame/suit produced it.
+ * Triggered together with the VRAM/OAM/palette dump from the L+R+X combo.
+ */
+void PortPpuMzm_DumpSamusState(void) {
+    FILE* f = fopen("sdmc:/3ds/mzm-dump-samus.txt", "w");
+    if (!f)
+        return;
+
+    fprintf(f, "pose=%u\n", (unsigned)gSamusData.pose);
+    fprintf(f, "currentAnimationFrame=%u\n", (unsigned)gSamusData.currentAnimationFrame);
+    fprintf(f, "walljumpTimer=%u\n", (unsigned)gSamusData.walljumpTimer);
+    fprintf(f, "suitType=%u\n", (unsigned)gEquipment.suitType);
+    fprintf(f, "suitMiscActivation=%u\n", (unsigned)gEquipment.suitMiscActivation);
+    fprintf(f, "shoulderGfxSize=%u\n", (unsigned)gSamusPhysics.shoulderGfxSize);
+    fprintf(f, "torsoGfxSize=%u\n", (unsigned)gSamusPhysics.torsoGfxSize);
+    fprintf(f, "legsGfxSize=%u\n", (unsigned)gSamusPhysics.legsGfxSize);
+    fprintf(f, "bodyLowerHalfGfxSize=%u\n", (unsigned)gSamusPhysics.bodyLowerHalfGfxSize);
+    fprintf(f, "armCannonGfxUpperSize=%u\n", (unsigned)gSamusPhysics.armCannonGfxUpperSize);
+    fprintf(f, "armCannonGfxLowerSize=%u\n", (unsigned)gSamusPhysics.armCannonGfxLowerSize);
+    fprintf(f, "unk_22=%u\n", (unsigned)gSamusPhysics.unk_22);
+
+    fclose(f);
+
+    FILE* fb = fopen("sdmc:/3ds/mzm-dump-samusdata.bin", "wb");
+    if (fb) {
+        fwrite(&gSamusData, 1, sizeof(gSamusData), fb);
+        fclose(fb);
+    }
+
+    fb = fopen("sdmc:/3ds/mzm-dump-samusphysics.bin", "wb");
+    if (fb) {
+        fwrite(&gSamusPhysics, 1, sizeof(gSamusPhysics), fb);
+        fclose(fb);
+    }
+}
