@@ -227,6 +227,8 @@ static const uint8_t* GetGlyph(char c) {
 }
 
 static void DrawTextClipped(float x, float y, float scale, const char* text, uint32_t color, float clipY0, float clipY1) {
+    x = (float)(int)(x + (x >= 0.0f ? 0.5f : -0.5f));
+    y = (float)(int)(y + (y >= 0.0f ? 0.5f : -0.5f));
     if (y + 7.0f * scale <= clipY0 || y >= clipY1) return;
     float charW = 6.0f * scale;
     for (; *text; ++text, x += charW) {
@@ -252,6 +254,8 @@ static void DrawTextClipped(float x, float y, float scale, const char* text, uin
 }
 
 static void DrawTextMaxWClipped(float x, float y, float scale, const char* text, uint32_t color, float clipY0, float clipY1, float maxW) {
+    x = (float)(int)(x + (x >= 0.0f ? 0.5f : -0.5f));
+    y = (float)(int)(y + (y >= 0.0f ? 0.5f : -0.5f));
     if (y + 7.0f * scale <= clipY0 || y >= clipY1) return;
     float charW = 6.0f * scale;
     float startX = x;
@@ -1506,59 +1510,135 @@ static void RenderStatusView(void) {
         DrawText(254.0f, 56.0f, 1.0f, "--/--", C2D_Color32(100, 110, 130, 255));
     }
 
-    /* 2. Beams & Weapons Column (X: 8, W: 148, Y: 78 to 162) */
-    C2D_DrawRectSolid(8.0f, 78.0f, 0.45f, 148.0f, 84.0f, C2D_Color32(18, 22, 34, 255));
+    /* 2. Beams & Weapons Column (X: 8, W: 148, Y: 76 to 164) */
+    C2D_DrawRectSolid(8.0f, 76.0f, 0.45f, 148.0f, 88.0f, C2D_Color32(18, 22, 34, 255));
     const char* beamColTitles[7] = {
         "BEAMS & BOMBS", "BEAMS & BOMBS", "BEAMS & BOMBS",
         "BEAMS & BOMBEN", "RAYONS & BOMBES", "RAGGI E BOMBE", "RAYOS Y BOMBAS"
     };
-    DrawText(14.0f, 83.0f, 1.0f, beamColTitles[lang], C2D_Color32(255, 215, 0, 255));
+    DrawText(14.0f, 80.0f, 1.0f, beamColTitles[lang], C2D_Color32(255, 215, 0, 255));
+
+    const char* unknownNames[7] = {
+        "????", "????", "UNKNOWN ITEM", "UNBEKANNT", "OBJET INCONNU", "OGGETTO SCONOSCIUTO", "OBJETO DESCONOCIDO"
+    };
+    const char* pistolNames[7] = {
+        "PARALYZER", "PARALYZER", "PARALYZER", "NOTFALLPISTOLE", "PISTOLET URGENCE", "PISTOLA EMERGENZA", "PISTOLA EMERGENCIA"
+    };
+
+    bool isSuitless = (gEquipment.suitType == 2 /* SUIT_SUITLESS */);
+    bool isFullyPowered = (gEquipment.suitType == 1 /* SUIT_FULLY_POWERED */);
 
     struct {
         const char* name[7];
         uint8_t flag;
+        bool isUnknownItem;
     } beams[] = {
-        { { "LONG BEAM", "LONG BEAM", "LONG BEAM", "LONG BEAM", "RAYON LONG", "RAGGIO LUNGO", "RAYO LARGO" }, 1 << 0 },
-        { { "ICE BEAM", "ICE BEAM", "ICE BEAM", "EIS BEAM", "RAYON GLACE", "RAGGIO GELO", "RAYO HIELO" }, 1 << 1 },
-        { { "WAVE BEAM", "WAVE BEAM", "WAVE BEAM", "WAVE BEAM", "RAYON ONDES", "RAGGIO ONDA", "RAYO ONDAS" }, 1 << 2 },
-        { { "PLASMA BEAM", "PLASMA BEAM", "PLASMA BEAM", "PLASMA BEAM", "RAYON PLASMA", "RAGGIO PLASMA", "RAYO PLASMA" }, 1 << 3 },
-        { { "CHARGE BEAM", "CHARGE BEAM", "CHARGE BEAM", "CHARGE BEAM", "RAYON CHARGE", "RAGGIO CARICA", "RAYO CARGA" }, 1 << 4 },
-        { { "BOMBS", "BOMBS", "NORMAL BOMBS", "NORMAL BOMBEN", "BOMBES", "BOMBE NORMALI", "BOMBAS" }, 1 << 7 }
+        { { "LONG BEAM", "LONG BEAM", "LONG BEAM", "LONG BEAM", "RAYON LONG", "RAGGIO LUNGO", "RAYO LARGO" }, 1 << 0, false },
+        { { "ICE BEAM", "ICE BEAM", "ICE BEAM", "EIS BEAM", "RAYON GLACE", "RAGGIO GELO", "RAYO HIELO" }, 1 << 1, false },
+        { { "WAVE BEAM", "WAVE BEAM", "WAVE BEAM", "WAVE BEAM", "RAYON ONDES", "RAGGIO ONDA", "RAYO ONDAS" }, 1 << 2, false },
+        { { "PLASMA BEAM", "PLASMA BEAM", "PLASMA BEAM", "PLASMA BEAM", "RAYON PLASMA", "RAGGIO PLASMA", "RAYO PLASMA" }, 1 << 3, true },
+        { { "CHARGE BEAM", "CHARGE BEAM", "CHARGE BEAM", "CHARGE BEAM", "RAYON CHARGE", "RAGGIO CARICA", "RAYO CARGA" }, 1 << 4, false },
+        { { "BOMBS", "BOMBS", "NORMAL BOMBS", "NORMAL BOMBEN", "BOMBES", "BOMBE NORMALI", "BOMBAS" }, 1 << 7, false }
     };
     for (int i = 0; i < 6; ++i) {
+        float py = 92.0f + (float)i * 11.0f;
+        if (isSuitless) {
+            if (i == 0) {
+                DrawText(14.0f, py, 1.0f, pistolNames[lang], C2D_Color32(80, 255, 120, 255));
+                DrawText(130.0f, py, 1.0f, "OK", C2D_Color32(80, 255, 120, 255));
+            } else {
+                DrawText(14.0f, py, 1.0f, beams[i].name[lang], C2D_Color32(75, 85, 105, 255));
+                DrawText(130.0f, py, 1.0f, "--", C2D_Color32(75, 85, 105, 255));
+            }
+            continue;
+        }
+
         bool has = (gEquipment.beamBombs & beams[i].flag) != 0;
-        uint32_t col = has ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(75, 85, 105, 255);
-        float py = 95.0f + (float)i * 10.0f;
-        DrawText(14.0f, py, 1.0f, beams[i].name[lang], col);
-        DrawText(130.0f, py, 1.0f, has ? "OK" : "--", col);
+        bool active = (gEquipment.beamBombsActivation & beams[i].flag) != 0;
+        bool unknown = beams[i].isUnknownItem && !isFullyPowered && has;
+
+        const char* label = unknown ? unknownNames[lang] : beams[i].name[lang];
+        const char* statusStr = "--";
+        uint32_t col = C2D_Color32(75, 85, 105, 255);
+
+        if (has) {
+            if (unknown) {
+                statusStr = "??";
+                col = C2D_Color32(255, 180, 50, 255);
+            } else if (active) {
+                statusStr = "OK";
+                col = C2D_Color32(80, 255, 120, 255);
+            } else {
+                statusStr = "OFF";
+                col = C2D_Color32(220, 160, 60, 255);
+            }
+        }
+
+        DrawText(14.0f, py, 1.0f, label, col);
+        DrawText(130.0f, py, 1.0f, statusStr, col);
     }
 
-    /* 3. Suits & Movement Column (X: 164, W: 148, Y: 78 to 162) */
-    C2D_DrawRectSolid(164.0f, 78.0f, 0.45f, 148.0f, 84.0f, C2D_Color32(18, 22, 34, 255));
+    /* 3. Suits & Movement Column (X: 164, W: 148, Y: 76 to 164) */
+    C2D_DrawRectSolid(164.0f, 76.0f, 0.45f, 148.0f, 88.0f, C2D_Color32(18, 22, 34, 255));
     const char* suitColTitles[7] = {
         "SUITS & MISC", "SUITS & MISC", "SUITS & MISC",
         "ANZUEGE & ITEMS", "COMBINAISONS", "TUTE E OGGETTI", "TRAJES Y EQUIPO"
     };
-    DrawText(170.0f, 83.0f, 1.0f, suitColTitles[lang], C2D_Color32(255, 215, 0, 255));
+    DrawText(170.0f, 80.0f, 1.0f, suitColTitles[lang], C2D_Color32(255, 215, 0, 255));
 
     struct {
         const char* name[7];
         uint8_t flag;
+        bool isUnknownItem;
     } suits[] = {
-        { { "HI-JUMP", "HI-JUMP", "HIGH JUMP", "HOCHSPRUNG", "SUPER SAUT", "SALTO IN ALTO", "SALTO ALTO" }, 1 << 0 },
-        { { "SPEEDBOOSTER", "SPEEDBOOSTER", "SPEED BOOSTER", "SPEED BOOSTER", "ACCELERATION", "SUPERVELOCITA", "ACELERADOR" }, 1 << 1 },
-        { { "SPACE JUMP", "SPACE JUMP", "SPACE JUMP", "SPACE JUMP", "SAUT SPATIAL", "SALTO SPAZIALE", "SALTO ESPACIO" }, 1 << 2 },
-        { { "SCREW ATTACK", "SCREW ATTACK", "SCREW ATTACK", "SCREW ATTACK", "ATTAQUE VRILLE", "ATTACCO A VITE", "ATAQUE ESPIRAL" }, 1 << 3 },
-        { { "VARIA SUIT", "VARIA SUIT", "VARIA SUIT", "VARIA SUIT", "COSTUME VARIA", "TUTA VARIA", "TRAJE VARIA" }, 1 << 4 },
-        { { "GRAVITY SUIT", "GRAVITY SUIT", "GRAVITY SUIT", "GRAVITY SUIT", "COSTUME GRAVITE", "TUTA GRAVITA", "TRAJE GRAVEDAD" }, 1 << 5 },
-        { { "MORPH BALL", "MORPH BALL", "MORPH BALL", "MORPH BALL", "MORPHING", "MORFOSFERA", "MORFOSFERA" }, 1 << 6 }
+        { { "HI-JUMP", "HI-JUMP", "HIGH JUMP", "HOCHSPRUNG", "SUPER SAUT", "SALTO IN ALTO", "SALTO ALTO" }, 1 << 0, false },
+        { { "SPEEDBOOSTER", "SPEEDBOOSTER", "SPEED BOOSTER", "SPEED BOOSTER", "ACCELERATION", "SUPERVELOCITA", "ACELERADOR" }, 1 << 1, false },
+        { { "SPACE JUMP", "SPACE JUMP", "SPACE JUMP", "SPACE JUMP", "SAUT SPATIAL", "SALTO SPAZIALE", "SALTO ESPACIO" }, 1 << 2, true },
+        { { "SCREW ATTACK", "SCREW ATTACK", "SCREW ATTACK", "SCREW ATTACK", "ATTAQUE VRILLE", "ATTACCO A VITE", "ATAQUE ESPIRAL" }, 1 << 3, false },
+        { { "VARIA SUIT", "VARIA SUIT", "VARIA SUIT", "VARIA SUIT", "COSTUME VARIA", "TUTA VARIA", "TRAJE VARIA" }, 1 << 4, false },
+        { { "GRAVITY SUIT", "GRAVITY SUIT", "GRAVITY SUIT", "GRAVITY SUIT", "COSTUME GRAVITE", "TUTA GRAVITA", "TRAJE GRAVEDAD" }, 1 << 5, true },
+        { { "MORPH BALL", "MORPH BALL", "MORPH BALL", "MORPH BALL", "MORPHING", "MORFOSFERA", "MORFOSFERA" }, 1 << 6, false },
+        { { "POWER GRIP", "POWER GRIP", "POWER GRIP", "POWER GRIP", "SUPER AGRIFFE", "PRESA FORZA", "SUPERAGARRE" }, 1 << 7, false }
     };
-    for (int i = 0; i < 7; ++i) {
-        bool has = (gEquipment.suitMisc & suits[i].flag) != 0;
-        uint32_t col = has ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(75, 85, 105, 255);
-        float py = 95.0f + (float)i * 10.0f;
-        DrawText(170.0f, py, 1.0f, suits[i].name[lang], col);
-        DrawText(286.0f, py, 1.0f, has ? "OK" : "--", col);
+    for (int i = 0; i < 8; ++i) {
+        float py = 91.0f + (float)i * 9.0f;
+        uint8_t flag = suits[i].flag;
+
+        if (isSuitless) {
+            bool hasSuitlessItem = (flag == (1 << 6) || flag == (1 << 7)) && ((gEquipment.suitMisc & flag) != 0);
+            if (hasSuitlessItem) {
+                DrawText(170.0f, py, 1.0f, suits[i].name[lang], C2D_Color32(80, 255, 120, 255));
+                DrawText(286.0f, py, 1.0f, "OK", C2D_Color32(80, 255, 120, 255));
+            } else {
+                DrawText(170.0f, py, 1.0f, suits[i].name[lang], C2D_Color32(75, 85, 105, 255));
+                DrawText(286.0f, py, 1.0f, "--", C2D_Color32(75, 85, 105, 255));
+            }
+            continue;
+        }
+
+        bool has = (gEquipment.suitMisc & flag) != 0;
+        bool active = (gEquipment.suitMiscActivation & flag) != 0;
+        bool unknown = suits[i].isUnknownItem && !isFullyPowered && has;
+
+        const char* label = unknown ? unknownNames[lang] : suits[i].name[lang];
+        const char* statusStr = "--";
+        uint32_t col = C2D_Color32(75, 85, 105, 255);
+
+        if (has) {
+            if (unknown) {
+                statusStr = "??";
+                col = C2D_Color32(255, 180, 50, 255);
+            } else if (active) {
+                statusStr = "OK";
+                col = C2D_Color32(80, 255, 120, 255);
+            } else {
+                statusStr = "OFF";
+                col = C2D_Color32(220, 160, 60, 255);
+            }
+        }
+
+        DrawText(170.0f, py, 1.0f, label, col);
+        DrawText(286.0f, py, 1.0f, statusStr, col);
     }
 
     /* 4. Area Map Downloads Card & Collectibles Button (Y: 168 to 234) */
