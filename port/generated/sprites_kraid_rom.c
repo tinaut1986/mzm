@@ -88,10 +88,10 @@ __attribute__((weak)) const struct FrameData(*p_sKraidPartOam_RightFeetMovedLeft
 __attribute__((weak)) const struct FrameData(*p_sKraidPartOam_RightFeetMovingLeft)[8];
 __attribute__((weak)) const struct FrameData(*p_sKraidPartOam_TopHoleLeft)[5];
 __attribute__((weak)) const struct FrameData(*p_sKraidPartOam_TopHoleRight)[5];
-__attribute__((weak)) const struct FrameData(*p_sKraidPartOam_MiddleHoleRight)[5];
 __attribute__((weak)) const struct FrameData(*p_sKraidPartOam_MiddleHoleLeft)[5];
-__attribute__((weak)) const struct FrameData(*p_sKraidPartOam_BottomHoleRight)[5];
+__attribute__((weak)) const struct FrameData(*p_sKraidPartOam_MiddleHoleRight)[5];
 __attribute__((weak)) const struct FrameData(*p_sKraidPartOam_BottomHoleLeft)[5];
+__attribute__((weak)) const struct FrameData(*p_sKraidPartOam_BottomHoleRight)[5];
 __attribute__((weak)) const struct FrameData(*p_sKraidNailOam)[2];
 __attribute__((weak)) const struct FrameData(*p_sKraidOam_2cb29c)[2];
 __attribute__((weak)) const struct FrameData(*p_sKraidOam_2cb2ac)[2];
@@ -141,10 +141,10 @@ void PortGen_kraid_Init(void) {
             p_sKraidPartOam_RightFeetMovingLeft = (const struct FrameData(*)[8])Port_ResolveRomData(0x082cbde8u);
             p_sKraidPartOam_TopHoleLeft = (const struct FrameData(*)[5])Port_ResolveRomData(0x082cbe28u);
             p_sKraidPartOam_TopHoleRight = (const struct FrameData(*)[5])Port_ResolveRomData(0x082cbe50u);
-            p_sKraidPartOam_MiddleHoleRight = (const struct FrameData(*)[5])Port_ResolveRomData(0x082cbea0u);
             p_sKraidPartOam_MiddleHoleLeft = (const struct FrameData(*)[5])Port_ResolveRomData(0x082cbe78u);
-            p_sKraidPartOam_BottomHoleRight = (const struct FrameData(*)[5])Port_ResolveRomData(0x082cbef0u);
+            p_sKraidPartOam_MiddleHoleRight = (const struct FrameData(*)[5])Port_ResolveRomData(0x082cbea0u);
             p_sKraidPartOam_BottomHoleLeft = (const struct FrameData(*)[5])Port_ResolveRomData(0x082cbec8u);
+            p_sKraidPartOam_BottomHoleRight = (const struct FrameData(*)[5])Port_ResolveRomData(0x082cbef0u);
             p_sKraidNailOam = (const struct FrameData(*)[2])Port_ResolveRomData(0x082cbf18u);
             p_sKraidOam_2cb29c = (const struct FrameData(*)[2])Port_ResolveRomData(0x082cbf28u);
             p_sKraidOam_2cb2ac = (const struct FrameData(*)[2])Port_ResolveRomData(0x082cbf38u);
