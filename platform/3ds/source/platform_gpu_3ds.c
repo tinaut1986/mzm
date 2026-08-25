@@ -6,6 +6,11 @@
 #include <stdio.h>
 #include <string.h>
 
+/* Implemented in port_ppu_mzm.c, which can safely include structs/samus.h
+ * (this file can't: it also pulls in <3ds.h>/<citro3d.h>, whose u32 typedef
+ * conflicts with the GBA-port one dragged in by structs/samus.h). */
+void PortPpuMzm_DumpSamusState(void);
+
 static C3D_RenderTarget* sTopTarget;
 static C3D_RenderTarget* sTopRightTarget;
 static C3D_RenderTarget* sBottomTarget;
@@ -675,6 +680,75 @@ static void WriteBlob(const char* path, const void* data, size_t size) {
     fclose(f);
 }
 
+/* Scene recorder: L+R+START (see Platform3DS_PollKeysIntoGba) toggles this
+ * on/off. Unlike PlatformGpu3DS_DumpScreens' one-shot dump, this samples the
+ * emulated GBA state (VRAM/OAM/palettes/IO + a bit of Samus state) every
+ * kRecordEveryNFrames frames and appends each sample to one growing file on
+ * the SD card -- built for tracking down issue #17, where a single L+R+X
+ * press couldn't catch the exact moment the death animation actually breaks
+ * (as opposed to the correct green-flash frames right after it starts).
+ * Deliberately skips the RGB screenshots DumpScreens takes (each is ~800KB
+ * and requires a GPU display-transfer sync): at 15 samples/sec those would
+ * either stall the frame pump or need buffering far bigger than this format,
+ * and the VRAM/OAM/palette state alone is enough to reconstruct the visual
+ * frame-by-frame offline (already proven doing that for the L+R+X dumps).
+ * One sample is ~101KB, so a multi-second recording (say 5s at 15Hz = 75
+ * samples, ~7.5MB) is trivial for the SD card; kRecordMaxSamples caps it so
+ * forgetting to press the combo again doesn't fill the card. */
+static bool sRecording;
+static FILE* sRecFile;
+static unsigned sRecFrameCounter;
+static unsigned sRecSampleCount;
+static const unsigned kRecordEveryNFrames = 4; /* ~15Hz at 60fps */
+static const unsigned kRecordMaxSamples = 450; /* ~30s at 15Hz */
+
+bool PlatformGpu3DS_IsRecording(void) { return sRecording; }
+
+void PlatformGpu3DS_ToggleRecording(void) {
+    if (sRecording) {
+        if (sRecFile) { fclose(sRecFile); sRecFile = NULL; }
+        sRecording = false;
+        return;
+    }
+
+    sRecFile = fopen("sdmc:/3ds/mzm-rec.bin", "wb");
+    if (!sRecFile) return;
+    sRecording = true;
+    sRecFrameCounter = 0;
+    sRecSampleCount = 0;
+}
+
+void PlatformGpu3DS_RecordTick(void) {
+    if (!sRecording) return;
+
+    if (sRecFrameCounter++ % kRecordEveryNFrames != 0) return;
+
+    if (sRecSampleCount >= kRecordMaxSamples) {
+        PlatformGpu3DS_ToggleRecording();
+        return;
+    }
+    sRecSampleCount++;
+
+    extern u8 gIoMem[0x400];
+    extern u16 gBgPltt[256];
+    extern u16 gObjPltt[256];
+    extern u16 gOamMem[0x400 / 2];
+    extern u8 gVram[0x18000];
+    extern void PortPpuMzm_GetSamusRecordState(uint32_t* out);
+
+    uint32_t header[2 + 6]; /* magic, frame counter, then the 6 Samus state words */
+    header[0] = 0x524D5A4Du; /* 'MZMR' */
+    header[1] = sRecFrameCounter;
+    PortPpuMzm_GetSamusRecordState(&header[2]);
+
+    fwrite(header, sizeof(header), 1, sRecFile);
+    fwrite(gIoMem, 1, sizeof(gIoMem), sRecFile);
+    fwrite(gBgPltt, 1, sizeof(gBgPltt), sRecFile);
+    fwrite(gObjPltt, 1, sizeof(gObjPltt), sRecFile);
+    fwrite(gOamMem, 1, sizeof(gOamMem), sRecFile);
+    fwrite(gVram, 1, sizeof(gVram), sRecFile);
+}
+
 void PlatformGpu3DS_DumpScreens(void) {
     if (!sReady) return;
     DumpOneTarget(sTopTarget, "sdmc:/3ds/mzm-dump-left.rgb");
@@ -691,6 +765,8 @@ void PlatformGpu3DS_DumpScreens(void) {
     WriteBlob("sdmc:/3ds/mzm-dump-bgpltt.bin", gBgPltt, sizeof(gBgPltt));
     WriteBlob("sdmc:/3ds/mzm-dump-objpltt.bin", gObjPltt, sizeof(gObjPltt));
     WriteBlob("sdmc:/3ds/mzm-dump-oam.bin", gOamMem, sizeof(gOamMem));
+
+    PortPpuMzm_DumpSamusState();
 
     uint16_t dispcnt = (uint16_t)(gIoMem[0x00] | (gIoMem[0x01] << 8));
     uint16_t bg0cnt  = (uint16_t)(gIoMem[0x08] | (gIoMem[0x09] << 8));
