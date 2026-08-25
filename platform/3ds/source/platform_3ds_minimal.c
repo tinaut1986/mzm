@@ -199,6 +199,14 @@ extern void gba_write16(uint32_t addr, uint16_t v);
  * forward declarations. */
 extern void PlatformGpu3DS_DumpScreens(void);
 
+/* L+R+START toggles the scene recorder (PlatformGpu3DS_ToggleRecording, in
+ * platform_gpu_3ds.c): first press starts sampling emulated GBA state to
+ * sdmc:/3ds/mzm-rec.bin every few frames, second press stops and closes the
+ * file. See that function's doc comment for why it exists -- a single L+R+X
+ * dump couldn't reliably catch the exact moment a fast-changing scene (e.g.
+ * issue #17's death animation) actually breaks. */
+extern void PlatformGpu3DS_ToggleRecording(void);
+
 /* L+R+Y drops a timestamped "USER MARK" line into mzm-debug.log so a play
  * session can flag "something happened right here" (e.g. a visible CPU/GPU
  * renderer fallback) without having to describe timing after the fact --
@@ -275,6 +283,13 @@ void Platform3DS_PollKeysIntoGba(void) {
     if (lrHeld) {
         if (down3ds & KEY_X) PlatformGpu3DS_DumpScreens();
         if (down3ds & KEY_Y) Port_DebugLog("USER MARK: L+R+Y pressed");
+        if (down3ds & KEY_START) {
+            PlatformGpu3DS_ToggleRecording();
+            /* START is a real GBA button (bit 3, pause menu) unlike X/Y, so
+             * unlike those this combo would otherwise also pause the game
+             * the instant it's pressed -- mask it out of gbaKeys below. */
+            gbaKeys &= (uint16_t)~(1u << 3);
+        }
     }
 
     /* 3. Configurable Extra Buttons: X, Y, ZL, ZR (suppressed while L+R is

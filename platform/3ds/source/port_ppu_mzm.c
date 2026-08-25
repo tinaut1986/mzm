@@ -701,3 +701,20 @@ void PortPpuMzm_DumpSamusState(void) {
         fclose(fb);
     }
 }
+
+/**
+ * Compact Samus state for the L+R+START scene recorder (platform_gpu_3ds.c):
+ * that file can't include structs/samus.h directly (its u32 typedef conflicts
+ * with <3ds.h>'s, see PortPpuMzm_DumpSamusState's comment above), so it gets
+ * the handful of fields worth recording per sample through here instead.
+ * `out` must have space for PORT_PPU_MZM_RECORD_STATE_WORDS u32s.
+ */
+#define PORT_PPU_MZM_RECORD_STATE_WORDS 6
+void PortPpuMzm_GetSamusRecordState(uint32_t* out) {
+    out[0] = (uint32_t)gSamusData.pose;
+    out[1] = (uint32_t)gSamusData.currentAnimationFrame;
+    out[2] = (uint32_t)gSamusData.walljumpTimer;
+    out[3] = (uint32_t)gEquipment.suitType;
+    out[4] = (uint32_t)gEquipment.suitMiscActivation;
+    out[5] = (uint32_t)gSamusPhysics.unk_22;
+}

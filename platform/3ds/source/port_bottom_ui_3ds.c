@@ -1898,4 +1898,13 @@ void Port_BottomUI_Render(void) {
     /* Update and render RetroAchievements toast if active */
     Port_RA_Update();
     Port_RA_RenderToastOverlay();
+
+    /* L+R+START scene recorder indicator (platform_gpu_3ds.c) -- drawn last,
+     * on top of whichever tab is active, so it's never hidden by one. Blinks
+     * so it's noticeable even glanced at briefly mid-gameplay. */
+    extern bool PlatformGpu3DS_IsRecording(void);
+    if (PlatformGpu3DS_IsRecording() && (sFrameCounter & 0x20) != 0) {
+        C2D_DrawRectSolid(8.0f, 8.0f, 0.05f, 10.0f, 10.0f, C2D_Color32(230, 30, 30, 255));
+        DrawText(24.0f, 6.0f, 1.0f, "REC", C2D_Color32(230, 30, 30, 255));
+    }
 }
