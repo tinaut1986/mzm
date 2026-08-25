@@ -307,31 +307,22 @@ void Platform3DS_PollKeysIntoGba(void) {
             extern void PortPpuMzm_DebugKillSamus(void);
             PortPpuMzm_DebugKillSamus();
         }
-        /* L+R+A: issue #17 repro harness -- loads sdmc:/3ds/mzm-fixture-issue17.bin
-         * (one captured emulated-GBA-state sample, see
-         * PlatformGpu3DS_ReplayFixture's doc comment in platform_gpu_3ds.c)
-         * straight into the live global state and renders+dumps that one
-         * frame, so a session can test a renderer change against the exact
-         * frame already confirmed to reproduce the bug without playing the
-         * game. KEY_A is a real GBA button (bit 0, shoot) like START, so
-         * mask it the same way below. */
-        if (down3ds & KEY_A) {
-            extern void PlatformGpu3DS_ReplayFixture(void);
-            PlatformGpu3DS_ReplayFixture();
-        }
-        /* L+R+B: issue #17 -- live atlas dump, any time during gameplay (no
-         * fixture needed). Doesn't need to catch an exact frame: once the
-         * death-sequence corruption starts it stays fragmented for the rest
-         * of the flash-hold phase (confirmed via the 2026-08-25 recorder
-         * session, screenshots 0020 through 0044 all showed the same
-         * fragmented look), so pressing this any time after the screen
-         * visibly looks wrong is enough. Reuses the same
-         * Port_GpuRenderer_DumpAtlas the L+R+A harness already calls, just
-         * against whatever's actually resident in the atlas right now
-         * instead of a freshly-loaded fixture -- this is what tells apart
-         * "DecodeTileIntoSlot writes wrong pixels on an in-place STALE
-         * redecode" (never actually verified -- the earlier atlas dump only
-         * ever captured a fresh NEW decode via L+R+A) from a bug elsewhere. */
+        /* L+R+B: issue #17 -- live atlas dump, any time during gameplay.
+         * Doesn't need to catch an exact frame: once the death-sequence
+         * corruption starts it stays fragmented for the rest of the
+         * flash-hold phase (confirmed via the 2026-08-25 recorder session,
+         * screenshots 0020 through 0044 all showed the same fragmented
+         * look), so pressing this any time after the screen visibly looks
+         * wrong is enough. Reuses Port_GpuRenderer_DumpAtlas against
+         * whatever's actually resident in the atlas right now -- this is
+         * what confirmed "DecodeTileIntoSlot writes wrong pixels on an
+         * in-place STALE redecode" is NOT the cause (see
+         * docs/3ds-issue17-session-2026-08-25.md). The one-shot fixture-
+         * replay harness this superseded (L+R+A, loading a captured sample
+         * into live state and rendering a single isolated frame) was
+         * removed -- its result turned out misleading (looked correct in a
+         * way that didn't generalize to live play, see that doc's Update 1)
+         * and this live version answers the same question better. */
         if (down3ds & KEY_B) {
             extern void Port_GpuRenderer_DumpAtlas(const char* ppmPath, const char* csvPath);
             Port_GpuRenderer_DumpAtlas("sdmc:/3ds/mzm-live-atlas.ppm", "sdmc:/3ds/mzm-live-atlas-keys.csv");
@@ -346,7 +337,6 @@ void Platform3DS_PollKeysIntoGba(void) {
          * back in gbaKeys on every frame after that one, opening the pause
          * menu anyway. Same reasoning applies to B (bit 1, shoot). */
         if (held3ds & KEY_START) gbaKeys &= (uint16_t)~(1u << 3);
-        if (held3ds & KEY_A) gbaKeys &= (uint16_t)~(1u << 0);
         if (held3ds & KEY_B) gbaKeys &= (uint16_t)~(1u << 1);
     }
 #endif /* PORT_DEBUG_TOOLS_ACTIVE */
