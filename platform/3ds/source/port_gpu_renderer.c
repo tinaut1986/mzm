@@ -264,6 +264,14 @@ static uint64_t sDirtyRowMask;
 static uint32_t sBgPalBankHash[16], sObjPalBankHash[16];
 static uint32_t sBgPalFullHash, sObjPalFullHash;
 
+#ifdef PORT_GPU_RENDERER_DIAG_LOG
+/* Set once per frame in Port_GpuRenderer_RenderFrame -- see its comment.
+ * Gates the per-tile diagnostic logging in GetOrDecodeTileSlot/CollectSprite
+ * added for issue #17, so it only fires during the one rare scene shape
+ * being investigated (no BG layers, OBJ+non-clipping-WIN1 only). */
+static bool sDiagObjSceneLog;
+#endif
+
 static inline uint32_t HashBytes(const uint8_t* data, size_t len) {
     uint32_t h = 2166136261u;
     for (size_t i = 0; i < len; ++i) h = (h ^ data[i]) * 16777619u;
@@ -777,8 +785,26 @@ static int GetOrDecodeTileSlot(uint32_t byteOffset, bool bpp8, const uint16_t* p
          * one -- see TileCacheKey's comment for why the latter must never
          * allocate a fresh slot. */
         if (memcmp(sCacheSourceBytes[i], src, tileBytes) == 0 && sCachePalHash[i] == palHash && sCacheEvy[i] == curEvy) {
+#ifdef PORT_GPU_RENDERER_DIAG_LOG
+            if (isObj && sDiagObjSceneLog) {
+                char buf[128];
+                snprintf(buf, sizeof(buf), "OBJTILE HIT off=%05lX pb=%u hf=%u vf=%u ba=%u slot=%d palHash=%08lX evy=%u",
+                         (unsigned long)byteOffset, palBank, hflip, vflip, brightAdjust, (int)i, (unsigned long)palHash, curEvy);
+                Port_DebugLog(buf);
+            }
+#endif
             return i;
         }
+#ifdef PORT_GPU_RENDERER_DIAG_LOG
+        if (isObj && sDiagObjSceneLog) {
+            char buf[160];
+            snprintf(buf, sizeof(buf),
+                     "OBJTILE STALE off=%05lX pb=%u hf=%u vf=%u ba=%u slot=%d oldPalHash=%08lX newPalHash=%08lX oldEvy=%u newEvy=%u srcMatch=%d",
+                     (unsigned long)byteOffset, palBank, hflip, vflip, brightAdjust, (int)i, (unsigned long)sCachePalHash[i],
+                     (unsigned long)palHash, sCacheEvy[i], curEvy, memcmp(sCacheSourceBytes[i], src, tileBytes) == 0);
+            Port_DebugLog(buf);
+        }
+#endif
         DecodeTileIntoSlot(i, src, bpp8, pal, palBank, hflip, vflip, brightAdjust, palHash);
         return i;
     }
@@ -790,12 +816,23 @@ static int GetOrDecodeTileSlot(uint32_t byteOffset, bool bpp8, const uint16_t* p
          * hundred unique tiles, and the near-full proactive reset at the
          * top of Port_GpuRenderer_RenderFrame keeps this from being reached
          * by slow accumulation over a long play session. */
+#ifdef PORT_GPU_RENDERER_DIAG_LOG
+        if (isObj && sDiagObjSceneLog) Port_DebugLog("OBJTILE OVERFLOW -- reusing slot 0");
+#endif
         return 0;
     }
     int slot = sCacheCount++;
     sCacheKeys[slot] = key;
     sHashChainNext[slot] = sHashBucketHead[h];
     sHashBucketHead[h] = slot;
+#ifdef PORT_GPU_RENDERER_DIAG_LOG
+    if (isObj && sDiagObjSceneLog) {
+        char buf[128];
+        snprintf(buf, sizeof(buf), "OBJTILE NEW off=%05lX pb=%u hf=%u vf=%u ba=%u slot=%d palHash=%08lX cacheCount=%d",
+                 (unsigned long)byteOffset, palBank, hflip, vflip, brightAdjust, slot, (unsigned long)palHash, sCacheCount);
+        Port_DebugLog(buf);
+    }
+#endif
     DecodeTileIntoSlot(slot, src, bpp8, pal, palBank, hflip, vflip, brightAdjust, palHash);
     return slot;
 }
@@ -1420,6 +1457,13 @@ void Port_GpuRenderer_RenderFrame(void) {
      * on hardware. Half the atlas (2048) as headroom comfortably absorbs
      * any single frame's worst case in practice. */
     if (sCacheCount >= ATLAS_MAX_SLOTS / 2) {
+#ifdef PORT_GPU_RENDERER_DIAG_LOG
+        {
+            char buf[64];
+            snprintf(buf, sizeof(buf), "OBJTILE CACHE RESET at count=%d", sCacheCount);
+            Port_DebugLog(buf);
+        }
+#endif
         for (int i = 0; i < HASH_BUCKETS; ++i) sHashBucketHead[i] = -1;
         sCacheCount = 0;
     }
@@ -1442,6 +1486,18 @@ void Port_GpuRenderer_RenderFrame(void) {
 
     uint16_t dispcnt = (uint16_t)(gIoMem[0] | (gIoMem[1] << 8));
     bool obj1D = (dispcnt & (1u << 6)) != 0;
+
+#ifdef PORT_GPU_RENDERER_DIAG_LOG
+    /* Issue #17 (Samus's death animation showing garbled sprites, GPU
+     * renderer only -- confirmed by RENDERER=cpu build/hardware test): the
+     * scene is DISPCNT=OBJ+WIN1 with WIN1 covering the whole screen (a
+     * no-op, gating BLDCNT only) and NO BG layers at all -- rare enough
+     * outside this one sequence that logging every OBJ tile slot lookup
+     * only while this exact shape is on screen won't flood mzm-debug.log
+     * during normal play. See GetOrDecodeTileSlot's use of sDiagObjSceneLog
+     * below. */
+    sDiagObjSceneLog = (dispcnt & 0xF00u) == 0u && (dispcnt & (1u << 12)) != 0u;
+#endif
 
     /* BLDCNT/BLDALPHA/BLDY: computed once per frame, consumed by
      * CollectBgLayer/CollectSprite below (decide brighten/darken at decode
