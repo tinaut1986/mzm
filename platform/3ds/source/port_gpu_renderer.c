@@ -1360,6 +1360,32 @@ bool Port_GpuRenderer_CanRenderFrame(void) {
             if (((attr0 >> 12) & 1u) != 0u) REJECT("OBJ mosaic");
         }
     }
+
+    /* Issue #17 workaround: Samus's death animation (SPOSE_DYING's
+     * walljumpTimer flash phase, src/samus.c) renders as fragmented,
+     * disconnected color blocks through this renderer on real hardware --
+     * confirmed root cause NOT found after two full investigation sessions
+     * (see docs/3ds-issue17-session-2026-08-25.md): tile decode content,
+     * cache-slot bookkeeping, UV/draw placement, and CPU/GPU frame-overlap
+     * synchronization were all individually verified correct on real
+     * hardware and the bug persists regardless. The CPU scanline renderer
+     * (port/ppu/src/mode1.c) has been confirmed correct for this exact
+     * scene throughout -- that's how the bug was first isolated as
+     * GPU-renderer-specific to begin with. Falling back for just this
+     * scene's distinctive DISPCNT signature (only OBJ+WIN1 active, WIN1
+     * used purely as a BLDCNT-effect gate per the comment above, no BG
+     * layer at all -- confirmed via the same L+R+X/scene-recorder sessions
+     * that diagnosed this bug) is a narrow, low-risk fix for the visible
+     * symptom while the real GPU-side cause remains open. This DISPCNT
+     * pattern is rare enough outside this scene (only other confirmed match
+     * across two sessions of play was a static file-select Samus portrait,
+     * itself cheap to render on CPU) that the perf cost of the fallback is
+     * negligible. If a real fix for the GPU renderer itself is found later,
+     * remove this check rather than leaving it as dead-but-harmless code --
+     * it exists only to route around an unresolved bug, not because this
+     * DISPCNT shape is inherently unsupported. */
+    if ((dispcnt & 0xF00u) == 0u && (dispcnt & (1u << 12)) != 0u) REJECT("issue #17 death-scene workaround");
+
     return true;
 }
 #undef REJECT
