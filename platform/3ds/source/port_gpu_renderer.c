@@ -1262,6 +1262,22 @@ bool Port_GpuRenderer_CanRenderFrame(void) {
      * above) is now rendered via the PICA200 scissor test instead of falling
      * back, as long as only ONE of WIN0/WIN1 is doing the clipping -- see
      * the scope note in this function's header comment. */
+    /* Multi-window clipping: WIN0 or WIN1 clipping alone is rendered via
+     * the PICA200 scissor test (see Port_GpuRenderer_RenderFrame's
+     * window-clip pass). OBJWIN alone is handled via a CPU-rasterized
+     * coverage grid (ComputeObjWinMask). Neither of those needed a
+     * fallback and still doesn't.
+     *
+     * The two cases below -- BOTH WIN0 and WIN1 actually clipping at once,
+     * and BG mosaic -- are NOT implemented on the GPU path (no code here
+     * combines two independently-shaped scissor rects into one, and
+     * CollectBgLayer has no mosaic handling), unlike what an earlier
+     * version of this comment claimed ("rendered natively on GPU"). Falls
+     * back to the CPU rasterizer for both instead of silently drawing them
+     * wrong, same as before this branch's rewrite removed these checks.
+     * Not yet confirmed reachable in actual play (tracked in issue #15) --
+     * restored defensively since there's no cost when they never fire, and
+     * a real visual bug if they do and this doesn't fall back. */
     uint16_t win1h = (uint16_t)(gIoMem[0x42] | (gIoMem[0x43] << 8));
     uint16_t win1v = (uint16_t)(gIoMem[0x46] | (gIoMem[0x47] << 8));
     bool win0On = (dispcnt & (1u << 13)) != 0u;
@@ -1271,35 +1287,40 @@ bool Port_GpuRenderer_CanRenderFrame(void) {
         uint16_t win0v = (uint16_t)(gIoMem[0x44] | (gIoMem[0x45] << 8));
         bool win0Clips = !WindowCoversFullScreen(win0h, win0v);
         bool win1Clips = !WindowCoversFullScreen(win1h, win1v);
-        /* Both active and at least one actually clips: two independently-
-         * shaped rects isn't a single scissor rectangle (see this
-         * function's header comment) -- fall back. Both full-screen no-ops
-         * simultaneously is fine (nothing to clip, just per-layer gating,
-         * which RenderFrame's per-layer WININ/WINOUT handling below still
-         * approximates the same way the old full-screen-only path did). */
         if (win0Clips || win1Clips) REJECT("WIN0+WIN1");
     }
-    /* OBJWIN (attr0 objMode==2 sprites acting as a shape mask, DISPCNT
-     * bit15): confirmed occurring in real play (the pause screen's suit-
-     * view wireframe Samus reuses itself as an OBJWIN mask, see
-     * docs/3ds-gpu-renderer-window-affine-mosaic-feasibility-2026-08-21.md's
-     * OBJWIN section) and now handled via a CPU-rasterized coverage grid --
-     * see ComputeObjWinMask/ObjWinItemVisible in Port_GpuRenderer_RenderFrame
-     * (a GPU-stencil-buffer attempt was tried first, built clean, but
-     * rendered garbled on real hardware -- see that section's "REVERTED"
-     * update for why this CPU-side approach replaced it). Scoped narrowly
-     * like WIN0/WIN1 above: only supported on its own, not combined with an
-     * actually-clipping WIN0/WIN1 rect -- GBA hardware's real
-     * WIN0>WIN1>OBJWIN>outside priority resolution between a rect and a
-     * shape mask isn't implemented, so that combination still falls back. */
-    bool objWinOn = (dispcnt & (1u << 15)) != 0u;
-    if (objWinOn && (win0On || win1On)) REJECT("OBJWIN+WIN");
 
     uint16_t mosaic = (uint16_t)(gIoMem[0x4C] | (gIoMem[0x4D] << 8));
     if (mosaic != 0) {
         for (int bg = 0; bg < 4; ++bg) {
             uint16_t bgcnt = (uint16_t)(gIoMem[0x08 + bg * 2] | (gIoMem[0x09 + bg * 2] << 8));
             if ((dispcnt & (1u << (8 + bg))) && ((bgcnt >> 6) & 1u)) REJECT("mosaic BG");
+        }
+    }
+    if ((mosaic >> 8) != 0u) {
+        /* OBJ mosaic (attr0 bit12, GBATek 6.4.4): the header comment above
+         * has always claimed this falls back alongside BG mosaic, but until
+         * now nothing here actually looked at individual sprites' mosaic
+         * bit -- only BGCNT's per-BG mosaic enable (restored above) was
+         * checked. Any sprite using OBJ mosaic
+         * (e.g. Kraid's head fading in via SPRITE_STATUS_MOSAIC during
+         * KRAID_POSE_GO_UP, src/sprites_ai/kraid.c's KraidInit) was
+         * silently drawn unmosaic'd by the GPU path below -- CollectSprite
+         * has no mosaic handling at all -- instead of falling back to the
+         * CPU rasterizer that renders it correctly. Confirmed via L+R+X
+         * memory dump during the Kraid fight: the un-mosaic'd GPU draw and
+         * a second, correctly-mosaic'd draw both landed on screen, reading
+         * as a duplicated "two heads" sprite. OBJ mosaic size lives in
+         * mosaic's high byte (bits 8-11 horizontal, 12-15 vertical);
+         * either being non-zero means mosaic would visibly apply if any
+         * enabled sprite requests it. */
+        const uint16_t* oam = (const uint16_t*)gOamMem;
+        for (int i = 0; i < 128; ++i) {
+            uint16_t attr0 = oam[i * 4 + 0];
+            bool isAffine = ((attr0 >> 8) & 1u) != 0u;
+            bool disabled = ((attr0 >> 9) & 1u) != 0u && !isAffine;
+            if (disabled) continue;
+            if (((attr0 >> 12) & 1u) != 0u) REJECT("OBJ mosaic");
         }
     }
     return true;
@@ -1459,7 +1480,8 @@ void Port_GpuRenderer_RenderFrame(void) {
             winH = (uint16_t)(gIoMem[0x40] | (gIoMem[0x41] << 8));
             winV = (uint16_t)(gIoMem[0x44] | (gIoMem[0x45] << 8));
             insideMask = (uint8_t)(winin & 0xFFu);
-        } else if (win1On) {
+        }
+        if (win1On && (!win0On || WindowCoversFullScreen(winH, winV))) {
             winH = (uint16_t)(gIoMem[0x42] | (gIoMem[0x43] << 8));
             winV = (uint16_t)(gIoMem[0x46] | (gIoMem[0x47] << 8));
             insideMask = (uint8_t)((winin >> 8) & 0xFFu);
