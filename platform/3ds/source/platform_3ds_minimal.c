@@ -283,13 +283,17 @@ void Platform3DS_PollKeysIntoGba(void) {
     if (lrHeld) {
         if (down3ds & KEY_X) PlatformGpu3DS_DumpScreens();
         if (down3ds & KEY_Y) Port_DebugLog("USER MARK: L+R+Y pressed");
-        if (down3ds & KEY_START) {
-            PlatformGpu3DS_ToggleRecording();
-            /* START is a real GBA button (bit 3, pause menu) unlike X/Y, so
-             * unlike those this combo would otherwise also pause the game
-             * the instant it's pressed -- mask it out of gbaKeys below. */
-            gbaKeys &= (uint16_t)~(1u << 3);
-        }
+        if (down3ds & KEY_START) PlatformGpu3DS_ToggleRecording();
+        /* START is a real GBA button (bit 3, pause menu) unlike X/Y, so
+         * unlike those this combo would otherwise also pause the game --
+         * mask it out of gbaKeys for as long as it's held with L+R, not just
+         * on the down-edge frame. A first version only cleared it inside the
+         * `down3ds & KEY_START` branch above, so it only worked for exactly
+         * one frame: holding START a little longer (which is normal -- a
+         * "press" easily spans 2+ frames at 60fps) left `held3ds & KEY_START`
+         * back in gbaKeys on every frame after that one, opening the pause
+         * menu anyway. */
+        if (held3ds & KEY_START) gbaKeys &= (uint16_t)~(1u << 3);
     }
 
     /* 3. Configurable Extra Buttons: X, Y, ZL, ZR (suppressed while L+R is
