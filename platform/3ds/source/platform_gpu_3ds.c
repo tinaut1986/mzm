@@ -705,5 +705,11 @@ void PlatformGpu3DS_DumpScreens(void) {
         dispcnt, bg0cnt, bg0cnt & 3, bg1cnt, bg1cnt & 3, bg2cnt, bg2cnt & 3, bg3cnt, bg3cnt & 3, bldcnt);
     extern void Port_DebugLog(const char* msg);
     Port_DebugLog(msg);
+
+    /* Flush any buffered Port_DebugLogBuffered() lines (e.g. kraid.c's
+     * KraidSync/KraidPrimary diagnostics) now, so whatever led up to this
+     * L+R+X capture is on disk instead of sitting in RAM. */
+    extern void Port_DebugLogFlush(void);
+    Port_DebugLogFlush();
 }
 

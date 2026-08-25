@@ -137,14 +137,14 @@ extern const struct FrameData(*p_sKraidPartOam_TopHoleLeft)[5];
 #define sKraidPartOam_TopHoleLeft (*p_sKraidPartOam_TopHoleLeft)
 extern const struct FrameData(*p_sKraidPartOam_TopHoleRight)[5];
 #define sKraidPartOam_TopHoleRight (*p_sKraidPartOam_TopHoleRight)
-extern const struct FrameData(*p_sKraidPartOam_MiddleHoleRight)[5];
-#define sKraidPartOam_MiddleHoleRight (*p_sKraidPartOam_MiddleHoleRight)
 extern const struct FrameData(*p_sKraidPartOam_MiddleHoleLeft)[5];
 #define sKraidPartOam_MiddleHoleLeft (*p_sKraidPartOam_MiddleHoleLeft)
-extern const struct FrameData(*p_sKraidPartOam_BottomHoleRight)[5];
-#define sKraidPartOam_BottomHoleRight (*p_sKraidPartOam_BottomHoleRight)
+extern const struct FrameData(*p_sKraidPartOam_MiddleHoleRight)[5];
+#define sKraidPartOam_MiddleHoleRight (*p_sKraidPartOam_MiddleHoleRight)
 extern const struct FrameData(*p_sKraidPartOam_BottomHoleLeft)[5];
 #define sKraidPartOam_BottomHoleLeft (*p_sKraidPartOam_BottomHoleLeft)
+extern const struct FrameData(*p_sKraidPartOam_BottomHoleRight)[5];
+#define sKraidPartOam_BottomHoleRight (*p_sKraidPartOam_BottomHoleRight)
 extern const struct FrameData(*p_sKraidNailOam)[2];
 #define sKraidNailOam (*p_sKraidNailOam)
 extern const struct FrameData(*p_sKraidOam_2cb29c)[2];
