@@ -491,6 +491,14 @@ void PlatformGpu3DS_BeginTopStereo(const uint32_t* leftPixels, const uint32_t* r
 
 bool PlatformGpu3DS_BeginTopSceneGpu(void) {
     if (!sReady) return false;
+    /* Issue #17: tested C3D_FRAME_SYNCDRAW here (forces the CPU to wait for
+     * the GPU to finish the previous frame before this frame's CPU-side
+     * atlas decode writes start) as a test for a CPU/GPU frame-overlap race
+     * on the shared, non-double-buffered atlas texture. Confirmed on real
+     * hardware (2026-08-26) NOT to fix the death-scene corruption -- still
+     * broken, just slower (dropped FPS game-wide). Reverted to plain
+     * C3D_FrameBegin(0). See docs/3ds-issue17-session-2026-08-25.md's final
+     * update -- this rules out frame-overlap as the cause. */
     if (!C3D_FrameBegin(0)) {
         ++sStats.frameBeginFailures;
         return false;
@@ -694,13 +702,26 @@ static void WriteBlob(const char* path, const void* data, size_t size) {
  * frame-by-frame offline (already proven doing that for the L+R+X dumps).
  * One sample is ~101KB, so a multi-second recording (say 5s at 15Hz = 75
  * samples, ~7.5MB) is trivial for the SD card; kRecordMaxSamples caps it so
- * forgetting to press the combo again doesn't fill the card. */
+ * forgetting to press the combo again doesn't fill the card.
+ *
+ * Companion screenshots (issue #17 follow-up): every
+ * kRecordScreenshotEverySamples-th sample ALSO gets a real left-eye
+ * DumpOneTarget() screenshot (same ~800KB/GPU-sync cost DumpScreens' single
+ * shot has), written to its own indexed file rather than folded into
+ * mzm-rec.bin's fixed-size records. At 1-in-4 (~4/sec) this is affordable
+ * for the few seconds #17's death sequence lasts, unlike doing it every
+ * sample (see the no-screenshots reasoning above). This is the only way to
+ * tell apart "the emulated state was already wrong" (visible in every
+ * sample via the existing VRAM/OAM/palette reconstruction) from "the state
+ * was fine but the GPU renderer drew it wrong" (only provable by comparing
+ * against what was ACTUALLY on screen at that exact sample). */
 static bool sRecording;
 static FILE* sRecFile;
 static unsigned sRecFrameCounter;
 static unsigned sRecSampleCount;
 static const unsigned kRecordEveryNFrames = 4; /* ~15Hz at 60fps */
 static const unsigned kRecordMaxSamples = 450; /* ~30s at 15Hz */
+static const unsigned kRecordScreenshotEverySamples = 4; /* ~1 screenshot/sec */
 
 bool PlatformGpu3DS_IsRecording(void) { return sRecording; }
 
@@ -747,6 +768,17 @@ void PlatformGpu3DS_RecordTick(void) {
     fwrite(gObjPltt, 1, sizeof(gObjPltt), sRecFile);
     fwrite(gOamMem, 1, sizeof(gOamMem), sRecFile);
     fwrite(gVram, 1, sizeof(gVram), sRecFile);
+
+    /* sRecSampleCount was already incremented above, so sample #1 (the
+     * first one written this recording) always gets a screenshot too. File
+     * name embeds the sample index so it lines up with mzm-rec.bin's Nth
+     * record (0-indexed, matching the Python splitting snippet in
+     * docs/3ds-debug-tools.md) without needing to also parse frameCounter. */
+    if ((sRecSampleCount - 1) % kRecordScreenshotEverySamples == 0) {
+        char path[64];
+        snprintf(path, sizeof(path), "sdmc:/3ds/mzm-rec-shot-%04u.rgb", sRecSampleCount - 1);
+        DumpOneTarget(sTopTarget, path);
+    }
 }
 
 void PlatformGpu3DS_DumpScreens(void) {

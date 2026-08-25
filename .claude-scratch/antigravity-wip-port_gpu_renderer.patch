@@ -1,0 +1,185 @@
+diff --git a/platform/3ds/source/port_gpu_renderer.c b/platform/3ds/source/port_gpu_renderer.c
+index c731cdce..94c712ca 100644
+--- a/platform/3ds/source/port_gpu_renderer.c
++++ b/platform/3ds/source/port_gpu_renderer.c
+@@ -60,27 +60,14 @@ static bool sInitialized = false;
+ static void ConfigureAtlasTextureEnv(void) {
+     C3D_TexEnv* env = C3D_GetTexEnv(0);
+     C3D_TexEnvInit(env);
+-    C3D_TexEnvSrc(env, C3D_RGB, GPU_TEXTURE0, GPU_CONSTANT, GPU_PREVIOUS);
+-    C3D_TexEnvOpRgb(env, GPU_TEVOP_RGB_SRC_ALPHA, GPU_TEVOP_RGB_SRC_COLOR, GPU_TEVOP_RGB_SRC_COLOR);
+-    C3D_TexEnvFunc(env, C3D_RGB, GPU_MODULATE);
+-    C3D_TexEnvSrc(env, C3D_Alpha, GPU_TEXTURE0, GPU_TEXTURE0, GPU_TEXTURE0);
+-    C3D_TexEnvOpAlpha(env, GPU_TEVOP_A_SRC_R, GPU_TEVOP_A_SRC_R, GPU_TEVOP_A_SRC_R);
+-    C3D_TexEnvFunc(env, C3D_Alpha, GPU_REPLACE);
+-    C3D_TexEnvColor(env, C2D_Color32(255, 0, 0, 255));
++    C3D_TexEnvSrc(env, C3D_Both, GPU_TEXTURE0, 0, 0);
++    C3D_TexEnvFunc(env, C3D_Both, GPU_REPLACE);
+ 
+     env = C3D_GetTexEnv(1);
+     C3D_TexEnvInit(env);
+-    C3D_TexEnvSrc(env, C3D_RGB, GPU_TEXTURE0, GPU_CONSTANT, GPU_PREVIOUS);
+-    C3D_TexEnvOpRgb(env, GPU_TEVOP_RGB_SRC_B, GPU_TEVOP_RGB_SRC_COLOR, GPU_TEVOP_RGB_SRC_COLOR);
+-    C3D_TexEnvFunc(env, C3D_RGB, GPU_MULTIPLY_ADD);
+-    C3D_TexEnvColor(env, C2D_Color32(0, 255, 0, 255));
+ 
+     env = C3D_GetTexEnv(2);
+     C3D_TexEnvInit(env);
+-    C3D_TexEnvSrc(env, C3D_RGB, GPU_TEXTURE0, GPU_CONSTANT, GPU_PREVIOUS);
+-    C3D_TexEnvOpRgb(env, GPU_TEVOP_RGB_SRC_G, GPU_TEVOP_RGB_SRC_COLOR, GPU_TEVOP_RGB_SRC_COLOR);
+-    C3D_TexEnvFunc(env, C3D_RGB, GPU_MULTIPLY_ADD);
+-    C3D_TexEnvColor(env, C2D_Color32(0, 0, 255, 255));
+ }
+ 
+ /* Tile atlas: every unique (source tile bytes + palette bank + hflip/vflip)
+@@ -378,10 +365,10 @@ static void InitSlotSubtexTable(void) {
+         sSlotSubtexTable[slot] = (Tex3DS_SubTexture){
+             .width = 8,
+             .height = 8,
+-            .left = ((float)sx + 0.5f) * invAtlas,
+-            .top = 1.0f - ((float)sy + 0.5f) * invAtlas,
+-            .right = ((float)sx + 7.5f) * invAtlas,
+-            .bottom = 1.0f - ((float)sy + 7.5f) * invAtlas,
++            .left = ((float)sx + 0.05f) * invAtlas,
++            .top = 1.0f - ((float)sy + 0.05f) * invAtlas,
++            .right = ((float)sx + 7.95f) * invAtlas,
++            .bottom = 1.0f - ((float)sy + 7.95f) * invAtlas,
+         };
+     }
+ }
+@@ -434,45 +421,43 @@ static inline u32 Bgr555ToRgba8(uint16_t color, bool transparent) {
+     r = (r << 3) | (r >> 2);
+     g = (g << 3) | (g >> 2);
+     b = (b << 3) | (b >> 2);
+-    /* Byte order r,g,b,a in memory -- matches GPU_RGBA8's expected layout
+-     * directly, no texenv swizzle hack needed at draw time (unlike the
+-     * CPU-composited buffer's ABGR quirk in platform_gpu_3ds.c). */
+-    return (255u << 24) | (b << 16) | (g << 8) | r;
++    /* Native PICA200 GPU_RGBA8 texel format:
++     * When PICA200 samples a 32-bit word, Byte 3 is Red, Byte 2 is Green,
++     * Byte 1 is Blue, Byte 0 is Alpha. Storing (r<<24)|(g<<16)|(b<<8)|255
++     * matches PICA200/citro2d natively without any TEV channel-swizzling tricks. */
++    return (r << 24) | (g << 16) | (b << 8) | 255u;
+ }
+ 
+ /* GBA brightness increase/decrease on 5-bit channels, byte-for-byte the same
+  * formula as port/ppu/src/mode1.c's mode1_brighten/mode1_darken (GBATEK:
+  * I = I +- I(or 31-I)*evy/16, truncating; evy pre-clamped 0..16). Operates
+- * directly on our packed R,G,B,A-in-memory u32 (same convention mode1.c
+- * calls "ABGR8888" -- see Bgr555ToRgba8's comment), so the bit shifts match
+- * theirs exactly (byte0=R at shift 0, byte1=G at shift 8, byte2=B at shift
+- * 16). */
++ * directly on our packed (r<<24)|(g<<16)|(b<<8)|a u32. */
+ static inline u32 ApplyBrighten(u32 color, int evy) {
+-    if ((color >> 24) == 0u) return color; /* transparent stays transparent */
+-    int r = (int)(color & 0xFFu) >> 3;
+-    int g = (int)((color >> 8) & 0xFFu) >> 3;
+-    int b = (int)((color >> 16) & 0xFFu) >> 3;
++    if ((color & 0xFFu) == 0u) return color; /* transparent stays transparent */
++    int r = (int)((color >> 24) & 0xFFu) >> 3;
++    int g = (int)((color >> 16) & 0xFFu) >> 3;
++    int b = (int)((color >> 8) & 0xFFu) >> 3;
+     r += ((31 - r) * evy) >> 4;
+     g += ((31 - g) * evy) >> 4;
+     b += ((31 - b) * evy) >> 4;
+     if (r > 31) r = 31;
+     if (g > 31) g = 31;
+     if (b > 31) b = 31;
+-    return (255u << 24) | ((u32)(b << 3) << 16) | ((u32)(g << 3) << 8) | (u32)(r << 3);
++    return ((u32)(r << 3) << 24) | ((u32)(g << 3) << 16) | ((u32)(b << 3) << 8) | 255u;
+ }
+ 
+ static inline u32 ApplyDarken(u32 color, int evy) {
+-    if ((color >> 24) == 0u) return color;
+-    int r = (int)(color & 0xFFu) >> 3;
+-    int g = (int)((color >> 8) & 0xFFu) >> 3;
+-    int b = (int)((color >> 16) & 0xFFu) >> 3;
++    if ((color & 0xFFu) == 0u) return color;
++    int r = (int)((color >> 24) & 0xFFu) >> 3;
++    int g = (int)((color >> 16) & 0xFFu) >> 3;
++    int b = (int)((color >> 8) & 0xFFu) >> 3;
+     r -= (r * evy) >> 4;
+     g -= (g * evy) >> 4;
+     b -= (b * evy) >> 4;
+     if (r < 0) r = 0;
+     if (g < 0) g = 0;
+     if (b < 0) b = 0;
+-    return (255u << 24) | ((u32)(b << 3) << 16) | ((u32)(g << 3) << 8) | (u32)(r << 3);
++    return ((u32)(r << 3) << 24) | ((u32)(g << 3) << 16) | ((u32)(b << 3) << 8) | 255u;
+ }
+ 
+ /* Frame-global BLDCNT/BLDALPHA/BLDY state, computed once per frame in
+@@ -787,9 +772,10 @@ static int GetOrDecodeTileSlot(uint32_t byteOffset, bool bpp8, const uint16_t* p
+         if (memcmp(sCacheSourceBytes[i], src, tileBytes) == 0 && sCachePalHash[i] == palHash && sCacheEvy[i] == curEvy) {
+ #ifdef PORT_GPU_RENDERER_DIAG_LOG
+             if (isObj && sDiagObjSceneLog) {
++                extern u16 gFrameCounter16Bit;
+                 char buf[128];
+-                snprintf(buf, sizeof(buf), "OBJTILE HIT off=%05lX pb=%u hf=%u vf=%u ba=%u slot=%d palHash=%08lX evy=%u",
+-                         (unsigned long)byteOffset, palBank, hflip, vflip, brightAdjust, (int)i, (unsigned long)palHash, curEvy);
++                snprintf(buf, sizeof(buf), "[F%u] OBJTILE HIT off=%05lX pb=%u hf=%u vf=%u ba=%u slot=%d palHash=%08lX evy=%u",
++                         (unsigned)gFrameCounter16Bit, (unsigned long)byteOffset, palBank, hflip, vflip, brightAdjust, (int)i, (unsigned long)palHash, curEvy);
+                 Port_DebugLog(buf);
+             }
+ #endif
+@@ -797,10 +783,11 @@ static int GetOrDecodeTileSlot(uint32_t byteOffset, bool bpp8, const uint16_t* p
+         }
+ #ifdef PORT_GPU_RENDERER_DIAG_LOG
+         if (isObj && sDiagObjSceneLog) {
++            extern u16 gFrameCounter16Bit;
+             char buf[160];
+             snprintf(buf, sizeof(buf),
+-                     "OBJTILE STALE off=%05lX pb=%u hf=%u vf=%u ba=%u slot=%d oldPalHash=%08lX newPalHash=%08lX oldEvy=%u newEvy=%u srcMatch=%d",
+-                     (unsigned long)byteOffset, palBank, hflip, vflip, brightAdjust, (int)i, (unsigned long)sCachePalHash[i],
++                     "[F%u] OBJTILE STALE off=%05lX pb=%u hf=%u vf=%u ba=%u slot=%d oldPalHash=%08lX newPalHash=%08lX oldEvy=%u newEvy=%u srcMatch=%d",
++                     (unsigned)gFrameCounter16Bit, (unsigned long)byteOffset, palBank, hflip, vflip, brightAdjust, (int)i, (unsigned long)sCachePalHash[i],
+                      (unsigned long)palHash, sCacheEvy[i], curEvy, memcmp(sCacheSourceBytes[i], src, tileBytes) == 0);
+             Port_DebugLog(buf);
+         }
+@@ -827,9 +814,10 @@ static int GetOrDecodeTileSlot(uint32_t byteOffset, bool bpp8, const uint16_t* p
+     sHashBucketHead[h] = slot;
+ #ifdef PORT_GPU_RENDERER_DIAG_LOG
+     if (isObj && sDiagObjSceneLog) {
++        extern u16 gFrameCounter16Bit;
+         char buf[128];
+-        snprintf(buf, sizeof(buf), "OBJTILE NEW off=%05lX pb=%u hf=%u vf=%u ba=%u slot=%d palHash=%08lX cacheCount=%d",
+-                 (unsigned long)byteOffset, palBank, hflip, vflip, brightAdjust, slot, (unsigned long)palHash, sCacheCount);
++        snprintf(buf, sizeof(buf), "[F%u] OBJTILE NEW off=%05lX pb=%u hf=%u vf=%u ba=%u slot=%d palHash=%08lX cacheCount=%d",
++                 (unsigned)gFrameCounter16Bit, (unsigned long)byteOffset, palBank, hflip, vflip, brightAdjust, slot, (unsigned long)palHash, sCacheCount);
+         Port_DebugLog(buf);
+     }
+ #endif
+@@ -1694,7 +1682,7 @@ void Port_GpuRenderer_RenderFrame(void) {
+             u32* flushStart = (u32*)sAtlasTexture.data + (size_t)startRow * 8 * ATLAS_DIM;
+             size_t flushBytes = (size_t)runLength * 8 * rowBytes;
+             FlushAtlasRange(flushStart, flushBytes);
+-            mask &= ~(((1ull << runLength) - 1ull) << startRow);
++            mask &= (runLength == 64) ? 0ull : ~(((1ull << runLength) - 1ull) << startRow);
+         }
+         sDirtyRowMask = 0;
+     }
+@@ -1757,12 +1745,23 @@ void Port_GpuRenderer_RenderFrame(void) {
+     }
+ #endif
+ 
++    /* GBA backdrop color (gBgPltt[0]), with BLDCNT brighten/darken applied if
++     * backdrop (layer 5) is marked as a 1st target. */
++    uint16_t bdColor = (uint16_t)(gBgPltt[0] | (gBgPltt[1] << 8));
++    u32 bdRgba = Bgr555ToRgba8(bdColor, false);
++    if (sBldEffect == 2 && BldIsFirstTarget(sIoBldcnt, 5)) {
++        bdRgba = ApplyBrighten(bdRgba, sBldEvy);
++    } else if (sBldEffect == 3 && BldIsFirstTarget(sIoBldcnt, 5)) {
++        bdRgba = ApplyDarken(bdRgba, sBldEvy);
++    }
++    u32 clearColor = C2D_Color32((u8)((bdRgba >> 24) & 0xFFu), (u8)((bdRgba >> 16) & 0xFFu), (u8)((bdRgba >> 8) & 0xFFu), 255);
++
+     for (int eye = 0; eye < 2; ++eye) {
+         C3D_RenderTarget* target = (eye == 0) ? leftTarget : rightTarget;
+         if (!target) continue;
+         float eyeSign = (eye == 0) ? 1.0f : -1.0f;
+ 
+-        C2D_TargetClear(target, C2D_Color32(0, 0, 0, 255));
++        C2D_TargetClear(target, clearColor);
+         C2D_SceneBegin(target);
+         ConfigureAtlasTextureEnv();
+         C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_ALL);

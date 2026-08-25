@@ -5,6 +5,7 @@
  * input handling, timing, and lifecycle management.
  */
 #include "platform_3ds.h"
+#include "port_debug_tools.h"
 
 #include <3ds.h>
 #include <stdio.h>
@@ -270,6 +271,13 @@ void Platform3DS_PollKeysIntoGba(void) {
     if (cstick.dy > deadzone) gbaKeys |= (1 << 8);  /* C-Stick Up -> Aim Up (R) */
     if (cstick.dy < -deadzone) gbaKeys |= (1 << 9); /* C-Stick Down -> Aim Down (L) */
 
+    /* Only actually reserved as a diagnostics modifier in a debug build
+     * (see PORT_DEBUG_TOOLS_ACTIVE below) -- stays false in a production
+     * build, so section 3 below never suppresses X/Y's normal configurable
+     * action and L+R+<button> carries no special meaning at all, just
+     * whatever plain input that combination naturally produces. */
+    bool lrHeld = false;
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
     /* L+R held together is reserved as a diagnostics modifier, freeing X/Y
      * up from their normal configurable gameplay actions for that instant:
      * L+R+X dumps the real GPU-rendered screen content to the SD card
@@ -279,11 +287,46 @@ void Platform3DS_PollKeysIntoGba(void) {
      * play session can flag a moment for later grep'ing without describing
      * timing after the fact. Edge-triggered on down3ds so each physical
      * press dumps/logs exactly once. */
-    const bool lrHeld = (held3ds & KEY_L) && (held3ds & KEY_R);
+    lrHeld = (held3ds & KEY_L) && (held3ds & KEY_R);
     if (lrHeld) {
         if (down3ds & KEY_X) PlatformGpu3DS_DumpScreens();
         if (down3ds & KEY_Y) Port_DebugLog("USER MARK: L+R+Y pressed");
         if (down3ds & KEY_START) PlatformGpu3DS_ToggleRecording();
+        /* L+R+SELECT: debug instant-kill (issue #17 -- lets a session iterate
+         * on the death animation without having to actually get hit down to
+         * 0 energy in real gameplay every time). Physical SELECT isn't wired
+         * to anything else in this file (unlike X/Y/START it's not one of
+         * the fixed diagnostics buttons nor a 1:1 GBA passthrough -- only
+         * ever appears as a value ProcessButtonAction can return for a
+         * *configurable* X/Y/ZL/ZR mapping below, gated by `!lrHeld`), so no
+         * masking is needed the way KEY_START needs. Lives in
+         * port_ppu_mzm.c (see PortPpuMzm_DebugKillSamus's comment) for the
+         * same <3ds.h>/structs-samus.h conflict reason
+         * PortPpuMzm_GetSamusRecordState does. */
+        if (down3ds & KEY_SELECT) {
+            extern void PortPpuMzm_DebugKillSamus(void);
+            PortPpuMzm_DebugKillSamus();
+        }
+        /* L+R+B: issue #17 -- live atlas dump, any time during gameplay.
+         * Doesn't need to catch an exact frame: once the death-sequence
+         * corruption starts it stays fragmented for the rest of the
+         * flash-hold phase (confirmed via the 2026-08-25 recorder session,
+         * screenshots 0020 through 0044 all showed the same fragmented
+         * look), so pressing this any time after the screen visibly looks
+         * wrong is enough. Reuses Port_GpuRenderer_DumpAtlas against
+         * whatever's actually resident in the atlas right now -- this is
+         * what confirmed "DecodeTileIntoSlot writes wrong pixels on an
+         * in-place STALE redecode" is NOT the cause (see
+         * docs/3ds-issue17-session-2026-08-25.md). The one-shot fixture-
+         * replay harness this superseded (L+R+A, loading a captured sample
+         * into live state and rendering a single isolated frame) was
+         * removed -- its result turned out misleading (looked correct in a
+         * way that didn't generalize to live play, see that doc's Update 1)
+         * and this live version answers the same question better. */
+        if (down3ds & KEY_B) {
+            extern void Port_GpuRenderer_DumpAtlas(const char* ppmPath, const char* csvPath);
+            Port_GpuRenderer_DumpAtlas("sdmc:/3ds/mzm-live-atlas.ppm", "sdmc:/3ds/mzm-live-atlas-keys.csv");
+        }
         /* START is a real GBA button (bit 3, pause menu) unlike X/Y, so
          * unlike those this combo would otherwise also pause the game --
          * mask it out of gbaKeys for as long as it's held with L+R, not just
@@ -292,13 +335,16 @@ void Platform3DS_PollKeysIntoGba(void) {
          * one frame: holding START a little longer (which is normal -- a
          * "press" easily spans 2+ frames at 60fps) left `held3ds & KEY_START`
          * back in gbaKeys on every frame after that one, opening the pause
-         * menu anyway. */
+         * menu anyway. Same reasoning applies to B (bit 1, shoot). */
         if (held3ds & KEY_START) gbaKeys &= (uint16_t)~(1u << 3);
+        if (held3ds & KEY_B) gbaKeys &= (uint16_t)~(1u << 1);
     }
+#endif /* PORT_DEBUG_TOOLS_ACTIVE */
 
     /* 3. Configurable Extra Buttons: X, Y, ZL, ZR (suppressed while L+R is
-     * held, so the diagnostics combo above doesn't also fire whatever
-     * gameplay action the player has assigned to X/Y). */
+     * held AND a debug build actually reserves that combo -- see lrHeld
+     * above -- so the diagnostics combo doesn't also fire whatever gameplay
+     * action the player has assigned to X/Y). */
     bool quickMorphPulse = false;
     if (!lrHeld) {
         gbaKeys |= ProcessButtonAction(Port_Config_GetButtonMapping(0), held3ds, down3ds, KEY_X, &quickMorphPulse);

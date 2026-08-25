@@ -29,6 +29,10 @@ void Port_GpuRenderer_GetLastFrameStats(int* outItems, int* outObjItems, int* ou
  * mode1 stats (stale when the GPU renderer is active) nor citro3d's own
  * gpuDraw/gpuProc counters (GPU-side only) cover this. */
 void Port_GpuRenderer_GetLastFrameTimingMs(float* outCollectMs, float* outDrawMs);
+/* Issue #17 diagnosis: dumps the atlas texture (PPM) and populated-slot
+ * cache keys (CSV) exactly as they are right now -- see the definition in
+ * port_gpu_renderer.c. */
+void Port_GpuRenderer_DumpAtlas(const char* ppmPath, const char* csvPath);
 
 #ifdef __cplusplus
 }

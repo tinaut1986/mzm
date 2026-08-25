@@ -10,6 +10,7 @@
 #include "platform_gpu_3ds.h"
 #include "structs/samus.h"
 #include "constants/samus.h"
+#include "samus.h"
 #include "gba/memory.h"
 #include "structs/bg_clip.h"
 #include "constants/block.h"
@@ -700,6 +701,38 @@ void PortPpuMzm_DumpSamusState(void) {
         fwrite(&gSamusPhysics, 1, sizeof(gSamusPhysics), fb);
         fclose(fb);
     }
+}
+
+/**
+ * Debug instant-kill, for iterating on issue #17 (death animation) without
+ * having to actually get hit down to 0 energy in real gameplay every time.
+ * Mirrors exactly what lethal damage does in src/sprite_util.c's
+ * SpriteUtilTakeDamageFromSprite (the `else` branch: zero energy, then
+ * request the hurt pose) rather than poking gSamusData.pose directly --
+ * SamusSetPose(SPOSE_HURT_REQUEST) is the real entry point that backs up
+ * Samus's data into gSamusDataCopy and calls SamusChangeToHurtPose, which
+ * itself checks gEquipment.currentEnergy and only then transitions to
+ * SPOSE_DYING (src/samus.c). Zeroing energy first reproduces that exact
+ * path instead of a synthetic one. Triggered by L+R+SELECT (see
+ * Platform3DS_PollKeysIntoGba in platform_3ds_minimal.c, which can't call
+ * SamusSetPose directly for the same <3ds.h>/structs-samus.h conflict
+ * reason PortPpuMzm_GetSamusRecordState exists). No-op if Samus is already
+ * in a hurt/dying/getting-knocked-back pose so mashing the combo doesn't
+ * re-trigger mid-animation.
+ */
+void PortPpuMzm_DebugKillSamus(void) {
+    switch (gSamusData.pose) {
+        case SPOSE_GETTING_HURT:
+        case SPOSE_GETTING_HURT_IN_MORPH_BALL:
+        case SPOSE_GETTING_KNOCKED_BACK:
+        case SPOSE_GETTING_KNOCKED_BACK_IN_MORPH_BALL:
+        case SPOSE_DYING:
+            return;
+        default:
+            break;
+    }
+    gEquipment.currentEnergy = 0;
+    SamusSetPose(SPOSE_HURT_REQUEST);
 }
 
 /**
