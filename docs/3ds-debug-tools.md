@@ -6,7 +6,23 @@ while investigating [#17](https://github.com/tinaut1986/mzm/issues/17)
 future session (or a future bug) doesn't have to rediscover how these work
 or how to parse their output from scratch.
 
-All three combos require holding **L+R** together first -- see the comment
+**None of this exists in a plain build.** Every combo below is compiled out
+entirely -- not just runtime-disabled -- unless the build defines
+`PORT_DEBUG_TOOLS_ACTIVE` (`source/port_debug_tools.h`), which happens when
+either:
+- `make DEBUG_TOOLS=1` (the "simple debug" build -- just the combos, no
+  verbose per-frame tracing), or
+- any existing `*_DIAG_LOG` flag is set (`PORT_GPU_RENDERER_DIAG_LOG`,
+  `PORT_AUDIO_DIAG_LOG`) -- those turn the combos on automatically too, so a
+  session tracing GPU or audio behavior doesn't also have to remember this
+  flag separately.
+
+A plain production build (no flags) has no source-level path to trigger any
+of these from a controller, not even by accident -- L+R+`<button>` behaves
+as whatever plain input that combination naturally produces (e.g. L+R+START
+just opens the pause menu, same as START alone).
+
+All these combos require holding **L+R** together first -- see the comment
 on `lrHeld` in `platform/3ds/source/platform_3ds_minimal.c`
 (`Platform3DS_PollKeysIntoGba`). That frees X/Y/START from whatever gameplay
 action the player has mapped to them for the instant they're used this way.
@@ -61,6 +77,20 @@ img.save('left.png')
 # bottom target is 240x320 instead of 240x400
 ```
 
+## L+R+SELECT -- debug instant-kill
+
+Implemented in `PortPpuMzm_DebugKillSamus` (`port_ppu_mzm.c`), triggered from
+`Platform3DS_PollKeysIntoGba` (`platform_3ds_minimal.c`). Zeroes
+`gEquipment.currentEnergy` and calls `SamusSetPose(SPOSE_HURT_REQUEST)` --
+the same real entry point lethal damage uses in
+`SpriteUtilTakeDamageFromSprite` (`src/sprite_util.c`) -- so Samus starts the
+real death sequence (`SPOSE_DYING`) on the next update, exactly as if she'd
+been killed by an enemy, without needing to actually get hit down to 0
+energy in gameplay first. No-op while already in a hurt/knockback/dying pose
+so mashing the combo mid-animation doesn't re-trigger it. Added while
+iterating on issue #17 to make repeated death-sequence captures (L+R+X,
+L+R+START) fast to set up.
+
 ## L+R+Y -- log marker
 
 Drops `"USER MARK: L+R+Y pressed"` with a timestamp into
@@ -94,7 +124,7 @@ and the actual corruption happens some number of frames later).
   (`Port_BottomUI_Render` in `port_bottom_ui_3ds.c`), independent of which
   tab (map/status/debug/options) is currently open.
 
-**Why no screenshots in the recording:** each RGB screenshot is ~800KB
+**Why no screenshots in every sample:** each RGB screenshot is ~800KB
 combined (left+right+bottom) and needs a GPU display-transfer sync
 (`C3D_SyncDisplayTransfer`). At 15 samples/sec that's either a frame-pump
 stall or an unreasonable amount of buffering. The VRAM/OAM/palette state
@@ -102,6 +132,28 @@ alone is enough to reconstruct the visual frame-by-frame offline -- already
 proven doing exactly that by hand for the L+R+X dumps during the #17
 investigation (see the Python snippet above, extended to decode OAM entries
 and tiles; ask for the exact script if starting a fresh session on this).
+
+**Companion screenshots, every `kRecordScreenshotEverySamples`-th sample
+(default 4, i.e. ~4/sec):** a real left-eye screenshot (same mechanism as
+`PlatformGpu3DS_DumpScreens`' single shot) is written to its own file,
+`sdmc:/3ds/mzm-rec-shot-NNNN.rgb` (headerless raw RGB8, 240x400 portrait,
+same rotate-90 handling as the L+R+X `.rgb` dumps), where `NNNN` is the
+0-indexed sample number -- i.e. it lines up with the Nth record when
+splitting `mzm-rec.bin` per the snippet below. This is the only way to tell
+apart "the emulated state was already wrong at this sample" (visible in the
+VRAM/OAM/palette reconstruction alone) from "the state was correct but the
+GPU renderer drew it wrong" (only provable by diffing the reconstruction
+against what was actually on screen at that same sample) -- needed after a
+2026-08-25 #17 session where a *different*, unsynced capture (an L+R+X dump
+whose files turned out to be a truncated/mismatched mix from separate
+button presses) briefly looked like it showed corrupted source data, when
+the actual recorder-based reconstruction across the whole death sequence
+(done earlier in the investigation) showed every sample's VRAM/OAM/palette
+reconstructing to a correct Samus silhouette while the screen itself showed
+the scrambled sprite -- i.e. the bug is in the GPU renderer, not the game's
+graphics loading. The per-sample screenshots exist to keep confirming that
+without relying on eyeballing real hardware during a 3-4 second death
+animation.
 
 ### `mzm-rec.bin` format
 

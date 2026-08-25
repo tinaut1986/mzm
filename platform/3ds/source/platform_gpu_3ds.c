@@ -491,6 +491,14 @@ void PlatformGpu3DS_BeginTopStereo(const uint32_t* leftPixels, const uint32_t* r
 
 bool PlatformGpu3DS_BeginTopSceneGpu(void) {
     if (!sReady) return false;
+    /* Issue #17: tested C3D_FRAME_SYNCDRAW here (forces the CPU to wait for
+     * the GPU to finish the previous frame before this frame's CPU-side
+     * atlas decode writes start) as a test for a CPU/GPU frame-overlap race
+     * on the shared, non-double-buffered atlas texture. Confirmed on real
+     * hardware (2026-08-26) NOT to fix the death-scene corruption -- still
+     * broken, just slower (dropped FPS game-wide). Reverted to plain
+     * C3D_FrameBegin(0). See docs/3ds-issue17-session-2026-08-25.md's final
+     * update -- this rules out frame-overlap as the cause. */
     if (!C3D_FrameBegin(0)) {
         ++sStats.frameBeginFailures;
         return false;
@@ -694,13 +702,26 @@ static void WriteBlob(const char* path, const void* data, size_t size) {
  * frame-by-frame offline (already proven doing that for the L+R+X dumps).
  * One sample is ~101KB, so a multi-second recording (say 5s at 15Hz = 75
  * samples, ~7.5MB) is trivial for the SD card; kRecordMaxSamples caps it so
- * forgetting to press the combo again doesn't fill the card. */
+ * forgetting to press the combo again doesn't fill the card.
+ *
+ * Companion screenshots (issue #17 follow-up): every
+ * kRecordScreenshotEverySamples-th sample ALSO gets a real left-eye
+ * DumpOneTarget() screenshot (same ~800KB/GPU-sync cost DumpScreens' single
+ * shot has), written to its own indexed file rather than folded into
+ * mzm-rec.bin's fixed-size records. At 1-in-4 (~4/sec) this is affordable
+ * for the few seconds #17's death sequence lasts, unlike doing it every
+ * sample (see the no-screenshots reasoning above). This is the only way to
+ * tell apart "the emulated state was already wrong" (visible in every
+ * sample via the existing VRAM/OAM/palette reconstruction) from "the state
+ * was fine but the GPU renderer drew it wrong" (only provable by comparing
+ * against what was ACTUALLY on screen at that exact sample). */
 static bool sRecording;
 static FILE* sRecFile;
 static unsigned sRecFrameCounter;
 static unsigned sRecSampleCount;
 static const unsigned kRecordEveryNFrames = 4; /* ~15Hz at 60fps */
 static const unsigned kRecordMaxSamples = 450; /* ~30s at 15Hz */
+static const unsigned kRecordScreenshotEverySamples = 4; /* ~1 screenshot/sec */
 
 bool PlatformGpu3DS_IsRecording(void) { return sRecording; }
 
@@ -747,6 +768,17 @@ void PlatformGpu3DS_RecordTick(void) {
     fwrite(gObjPltt, 1, sizeof(gObjPltt), sRecFile);
     fwrite(gOamMem, 1, sizeof(gOamMem), sRecFile);
     fwrite(gVram, 1, sizeof(gVram), sRecFile);
+
+    /* sRecSampleCount was already incremented above, so sample #1 (the
+     * first one written this recording) always gets a screenshot too. File
+     * name embeds the sample index so it lines up with mzm-rec.bin's Nth
+     * record (0-indexed, matching the Python splitting snippet in
+     * docs/3ds-debug-tools.md) without needing to also parse frameCounter. */
+    if ((sRecSampleCount - 1) % kRecordScreenshotEverySamples == 0) {
+        char path[64];
+        snprintf(path, sizeof(path), "sdmc:/3ds/mzm-rec-shot-%04u.rgb", sRecSampleCount - 1);
+        DumpOneTarget(sTopTarget, path);
+    }
 }
 
 void PlatformGpu3DS_DumpScreens(void) {
@@ -787,5 +819,89 @@ void PlatformGpu3DS_DumpScreens(void) {
      * L+R+X capture is on disk instead of sitting in RAM. */
     extern void Port_DebugLogFlush(void);
     Port_DebugLogFlush();
+}
+
+/* Issue #17 repro harness: replays one exact captured emulated-GBA-state
+ * sample (IO + BG palette + OBJ palette + OAM + VRAM, same layout/order as
+ * one mzm-rec.bin record minus its 32-byte header -- see
+ * docs/3ds-debug-tools.md) straight into the live global state and renders
+ * ONE frame with the GPU path, dumping the result. Lets a session repeatedly
+ * test a renderer change against the exact frame already confirmed to
+ * reproduce the bug (a captured DYING-pose sample whose GPU-rendered output
+ * doesn't match its own VRAM/OAM/palette content) without having to
+ * actually play the game, get killed, and re-capture every time.
+ *
+ * Overwrites gIoMem/gBgPltt/gObjPltt/gOamMem/gVram directly -- these are
+ * also live-written by the game logic thread (agbmain, running on Core 1)
+ * every emulated frame, so calling this while that thread is actively
+ * mid-update is a genuine (if brief and diagnostic-only) data race. Trigger
+ * it from a quiescent moment (paused at a menu, or right after booting
+ * before a save is loaded) rather than mid-gameplay. Fixture path is fixed
+ * rather than configurable since this is a single-purpose debug tool, not a
+ * general asset loader. */
+void PlatformGpu3DS_ReplayFixture(void) {
+    extern u8 gIoMem[0x400];
+    extern u16 gBgPltt[256];
+    extern u16 gObjPltt[256];
+    extern u16 gOamMem[0x400 / 2];
+    extern u8 gVram[0x18000];
+
+    FILE* f = fopen("sdmc:/3ds/mzm-fixture-issue17.bin", "rb");
+    if (!f) {
+        extern void Port_DebugLog(const char* msg);
+        Port_DebugLog("FIXTURE: mzm-fixture-issue17.bin not found on SD card");
+        return;
+    }
+    size_t got = 0;
+    got += fread(gIoMem, 1, sizeof(gIoMem), f);
+    got += fread(gBgPltt, 1, sizeof(gBgPltt), f);
+    got += fread(gObjPltt, 1, sizeof(gObjPltt), f);
+    got += fread(gOamMem, 1, sizeof(gOamMem), f);
+    got += fread(gVram, 1, sizeof(gVram), f);
+    fclose(f);
+
+    const size_t expected = sizeof(gIoMem) + sizeof(gBgPltt) + sizeof(gObjPltt) + sizeof(gOamMem) + sizeof(gVram);
+    char msg[96];
+    snprintf(msg, sizeof(msg), "FIXTURE: loaded %u/%u bytes, rendering + dumping", (unsigned)got, (unsigned)expected);
+    extern void Port_DebugLog(const char* msg2);
+    Port_DebugLog(msg);
+    if (got != expected) return;
+
+    extern bool Port_GpuRenderer_CanRenderFrame(void);
+    extern void Port_GpuRenderer_RenderFrame(void);
+    if (!Port_GpuRenderer_CanRenderFrame()) {
+        Port_DebugLog("FIXTURE: Port_GpuRenderer_CanRenderFrame() rejected this fixture");
+        return;
+    }
+
+    /* Port_GpuRenderer_RenderFrame() must run inside a frame already opened
+     * with PlatformGpu3DS_BeginTopSceneGpu (its own doc comment says so) --
+     * it issues C2D_SceneBegin/C2D_DrawImage calls that assume an active
+     * C3D_FrameBegin, and calling it bare hung the whole emulated-frame
+     * pump the first time this was tried (no crash, no further log lines --
+     * citro2d/citro3d silently blocking on GPU command submission with no
+     * frame open to submit into). Mirrors the exact BeginTopSceneGpu /
+     * RenderFrame / EndBottom sequence Port_PPU_PresentFrame uses in
+     * port_ppu_mzm.c, including the submit lock (this can run from the
+     * input-poll call site, which is a different thread than the present
+     * pump -- see PlatformGpu3DS_SubmitLock_Acquire's doc comment) and a
+     * real bottom-screen buffer (PlatformGpu3DS_BottomBuffer(0), whatever
+     * the game already has resident there -- fine, the bottom screen isn't
+     * what this harness is testing). */
+    PlatformGpu3DS_SubmitLock_Acquire();
+    if (PlatformGpu3DS_BeginTopSceneGpu()) {
+        Port_GpuRenderer_RenderFrame();
+        extern void Port_GpuRenderer_DumpAtlas(const char* ppmPath, const char* csvPath);
+        Port_GpuRenderer_DumpAtlas("sdmc:/3ds/mzm-fixture-atlas.ppm", "sdmc:/3ds/mzm-fixture-atlas-keys.csv");
+        uint32_t* bottom = PlatformGpu3DS_BottomBuffer(0);
+        PlatformGpu3DS_EndBottom(bottom, true);
+        PlatformGpu3DS_SubmitLock_Release();
+        gspWaitForEvent(GSPGPU_EVENT_VBlank0, false);
+        DumpOneTarget(sTopTarget, "sdmc:/3ds/mzm-fixture-render.rgb");
+        Port_DebugLog("FIXTURE: mzm-fixture-render.rgb written");
+    } else {
+        PlatformGpu3DS_SubmitLock_Release();
+        Port_DebugLog("FIXTURE: PlatformGpu3DS_BeginTopSceneGpu() failed (GPU busy?)");
+    }
 }
 

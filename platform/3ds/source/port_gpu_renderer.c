@@ -787,9 +787,10 @@ static int GetOrDecodeTileSlot(uint32_t byteOffset, bool bpp8, const uint16_t* p
         if (memcmp(sCacheSourceBytes[i], src, tileBytes) == 0 && sCachePalHash[i] == palHash && sCacheEvy[i] == curEvy) {
 #ifdef PORT_GPU_RENDERER_DIAG_LOG
             if (isObj && sDiagObjSceneLog) {
+                extern u16 gFrameCounter16Bit;
                 char buf[128];
-                snprintf(buf, sizeof(buf), "OBJTILE HIT off=%05lX pb=%u hf=%u vf=%u ba=%u slot=%d palHash=%08lX evy=%u",
-                         (unsigned long)byteOffset, palBank, hflip, vflip, brightAdjust, (int)i, (unsigned long)palHash, curEvy);
+                snprintf(buf, sizeof(buf), "[F%u] OBJTILE HIT off=%05lX pb=%u hf=%u vf=%u ba=%u slot=%d palHash=%08lX evy=%u",
+                         (unsigned)gFrameCounter16Bit, (unsigned long)byteOffset, palBank, hflip, vflip, brightAdjust, (int)i, (unsigned long)palHash, curEvy);
                 Port_DebugLog(buf);
             }
 #endif
@@ -797,10 +798,11 @@ static int GetOrDecodeTileSlot(uint32_t byteOffset, bool bpp8, const uint16_t* p
         }
 #ifdef PORT_GPU_RENDERER_DIAG_LOG
         if (isObj && sDiagObjSceneLog) {
+            extern u16 gFrameCounter16Bit;
             char buf[160];
             snprintf(buf, sizeof(buf),
-                     "OBJTILE STALE off=%05lX pb=%u hf=%u vf=%u ba=%u slot=%d oldPalHash=%08lX newPalHash=%08lX oldEvy=%u newEvy=%u srcMatch=%d",
-                     (unsigned long)byteOffset, palBank, hflip, vflip, brightAdjust, (int)i, (unsigned long)sCachePalHash[i],
+                     "[F%u] OBJTILE STALE off=%05lX pb=%u hf=%u vf=%u ba=%u slot=%d oldPalHash=%08lX newPalHash=%08lX oldEvy=%u newEvy=%u srcMatch=%d",
+                     (unsigned)gFrameCounter16Bit, (unsigned long)byteOffset, palBank, hflip, vflip, brightAdjust, (int)i, (unsigned long)sCachePalHash[i],
                      (unsigned long)palHash, sCacheEvy[i], curEvy, memcmp(sCacheSourceBytes[i], src, tileBytes) == 0);
             Port_DebugLog(buf);
         }
@@ -827,9 +829,10 @@ static int GetOrDecodeTileSlot(uint32_t byteOffset, bool bpp8, const uint16_t* p
     sHashBucketHead[h] = slot;
 #ifdef PORT_GPU_RENDERER_DIAG_LOG
     if (isObj && sDiagObjSceneLog) {
+        extern u16 gFrameCounter16Bit;
         char buf[128];
-        snprintf(buf, sizeof(buf), "OBJTILE NEW off=%05lX pb=%u hf=%u vf=%u ba=%u slot=%d palHash=%08lX cacheCount=%d",
-                 (unsigned long)byteOffset, palBank, hflip, vflip, brightAdjust, slot, (unsigned long)palHash, sCacheCount);
+        snprintf(buf, sizeof(buf), "[F%u] OBJTILE NEW off=%05lX pb=%u hf=%u vf=%u ba=%u slot=%d palHash=%08lX cacheCount=%d",
+                 (unsigned)gFrameCounter16Bit, (unsigned long)byteOffset, palBank, hflip, vflip, brightAdjust, slot, (unsigned long)palHash, sCacheCount);
         Port_DebugLog(buf);
     }
 #endif
@@ -1201,6 +1204,15 @@ static void CollectSprite(int oamIndex, bool obj1D) {
                 if (drawY <= -8.0f || drawY >= 160.0f || drawX <= -8.0f || drawX >= 240.0f) continue;
                 if (sObjWindowActive && !ObjWinItemVisible(objWinVis, drawX, drawY)) continue;
                 int slot = GetOrDecodeTileSlot(byteOffset, bpp8, pal, palBank, hflip, vflip, true, brightAdjust);
+#ifdef PORT_GPU_RENDERER_DIAG_LOG
+                if (sDiagObjSceneLog) {
+                    extern u16 gFrameCounter16Bit;
+                    char buf[128];
+                    snprintf(buf, sizeof(buf), "[F%u] COLLECT off=%05lX slot=%d drawX=%.0f drawY=%.0f hf=%u vf=%u pb=%u",
+                             (unsigned)gFrameCounter16Bit, (unsigned long)byteOffset, slot, drawX, drawY, hflip, vflip, palBank);
+                    Port_DebugLog(buf);
+                }
+#endif
                 PushItem(slot, drawX, drawY, sortKey, depthTier, blendAlpha, rectWinVis);
                 continue;
             }
@@ -1835,6 +1847,21 @@ void Port_GpuRenderer_RenderFrame(void) {
                 }
                 float eyeOffset = eyeSign * slider3d * kTierEyeOffsetPx[item->depthTier];
                 C2D_DrawParams params = BuildDrawParams(item, screenBaseX, screenBaseY, eyeOffset, scaleX, scaleY);
+#ifdef PORT_GPU_RENDERER_DIAG_LOG
+                if (sDiagObjSceneLog && eye == 0) {
+                    extern u16 gFrameCounter16Bit;
+                    int slot = (int)(item->img.subtex - sSlotSubtexTable);
+                    char buf[192];
+                    snprintf(buf, sizeof(buf),
+                             "[F%u] DRAW slot=%d x=%.1f y=%.1f w=%.1f h=%.1f uv=(%.4f,%.4f,%.4f,%.4f) angle=%.3f params.pos=(%.1f,%.1f,%.1f,%.1f)",
+                             (unsigned)gFrameCounter16Bit, slot, item->x, item->y, item->w, item->h,
+                             (double)item->img.subtex->left, (double)item->img.subtex->top,
+                             (double)item->img.subtex->right, (double)item->img.subtex->bottom,
+                             (double)item->angle, (double)params.pos.x, (double)params.pos.y,
+                             (double)params.pos.w, (double)params.pos.h);
+                    Port_DebugLog(buf);
+                }
+#endif
                 C2D_DrawImage(item->img, &params, NULL);
                 ++drawCount;
                 if (!reassertedTexEnv) {
@@ -1941,4 +1968,48 @@ void Port_GpuRenderer_GetLastFrameStats(int* outItems, int* outObjItems, int* ou
     if (outItems) *outItems = sDrawItemCount;
     if (outObjItems) *outObjItems = sLastObjItemCount;
     if (outCacheSlots) *outCacheSlots = sCacheCount;
+}
+
+/* Issue #17 diagnosis: dumps the atlas texture verbatim (PPM, RGB8, no
+ * alpha) plus a CSV of every populated slot's cache key, so a session can
+ * SEE whether the corruption already exists inside the atlas (a decode/
+ * swizzle bug -- DecodeTileIntoSlot wrote the wrong pixels) or only shows up
+ * at draw time (atlas is clean, but UV/slot addressing or draw-call state
+ * picks the wrong region of it). Reads sAtlasTexture.data directly (already
+ * CPU-visible, same memory DecodeTileIntoSlot writes into -- see
+ * Port_GpuRenderer_Init's comment) rather than reading back through the GPU,
+ * so this reflects exactly what's resident right now, independent of
+ * whether a draw call has run yet. */
+void Port_GpuRenderer_DumpAtlas(const char* ppmPath, const char* csvPath) {
+    FILE* f = fopen(ppmPath, "wb");
+    if (f) {
+        fprintf(f, "P6\n%d %d\n255\n", ATLAS_DIM, ATLAS_DIM);
+        const u32* px = (const u32*)sAtlasTexture.data;
+        for (int y = 0; y < ATLAS_DIM; ++y) {
+            for (int x = 0; x < ATLAS_DIM; ++x) {
+                int tileCol = x / 8, tileRow = y / 8;
+                int slot = tileRow * ATLAS_TILES_PER_ROW + tileCol;
+                int localX = x % 8, localY = y % 8;
+                u32 texel = px[(size_t)slot * 64 + kSwizzleLUT[localY * 8 + localX]];
+                uint8_t r = (uint8_t)(texel & 0xFFu);
+                uint8_t g = (uint8_t)((texel >> 8) & 0xFFu);
+                uint8_t b = (uint8_t)((texel >> 16) & 0xFFu);
+                uint8_t rgb[3] = { r, g, b };
+                fwrite(rgb, 1, 3, f);
+            }
+        }
+        fclose(f);
+    }
+
+    FILE* c = fopen(csvPath, "w");
+    if (c) {
+        fprintf(c, "slot,byteOffset,bpp8,palBank,hflip,vflip,isObj,brightAdjust,palHash,evy\n");
+        for (int slot = 0; slot < sCacheCount; ++slot) {
+            const TileCacheKey* k = &sCacheKeys[slot];
+            fprintf(c, "%d,0x%05lX,%u,%u,%u,%u,%u,%u,0x%08lX,%u\n", slot, (unsigned long)k->byteOffset,
+                    k->bpp8, k->palBank, k->hflip, k->vflip, k->isObj, k->brightAdjust,
+                    (unsigned long)sCachePalHash[slot], sCacheEvy[slot]);
+        }
+        fclose(c);
+    }
 }

@@ -172,6 +172,29 @@ else ifneq ($(FORCE_OLD3DS),0)
   $(error Unknown FORCE_OLD3DS '$(FORCE_OLD3DS)' -- expected '0' or '1')
 endif
 
+# Compiles in the L+R+<button> debug combos (issue #17's investigation
+# tools: instant-kill, scene recorder, one-shot fixture replay, live atlas
+# dump, one-shot screen/state dump, USER MARK log line -- see
+# docs/3ds-debug-tools.md) -- source-level, not just runtime-gated, so a
+# production build has NO WAY to trigger any of them from a controller, not
+# even by accident. This is the "simple debug" build: on its own it does NOT
+# turn on any of the verbose per-frame *_DIAG_LOG tracing below (those cost
+# real frame rate / SD I/O and are opt-in separately), just the on-demand
+# combos:
+#   make clean && make DEBUG_TOOLS=1
+# Any of the *_DIAG_LOG flags below also turn this on automatically (see
+# PORT_DEBUG_TOOLS_ACTIVE in source/port_debug_tools.h) -- a session that
+# only asked for GPU or audio tracing still gets the combos for free, no
+# need to also remember this flag.
+# The clean matters: changing flags alone does not invalidate existing
+# objects, which is exactly the stale-.o trap documented in section 6l.
+DEBUG_TOOLS ?= 0
+ifeq ($(DEBUG_TOOLS),1)
+  CFLAGS += -DPORT_DEBUG_TOOLS
+else ifneq ($(DEBUG_TOOLS),0)
+  $(error Unknown DEBUG_TOOLS '$(DEBUG_TOOLS)' -- expected '0' or '1')
+endif
+
 # Extra flags from the command line, e.g. to turn on the audio diagnostics that
 # are off by default (they do SD I/O on the audio path and cost real frame rate,
 # see docs/3ds-port-status-2026-08-17.md section 6s):
