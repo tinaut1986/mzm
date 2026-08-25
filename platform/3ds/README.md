@@ -85,6 +85,7 @@ You can customize the build using Makefile variables and `EXTRA_CFLAGS`:
   ```sh
   tools/run_azahar_test.sh 15
   ```
-- **Real Hardware Diagnostics**:
-  - `L + R + X`: Dumps framebuffers and GBA VRAM/IO registers to `sdmc:/3ds/`.
-  - `L + R + Y`: Writes a timestamped marker in `sdmc:/mzm-debug.log`.
+- **Real Hardware Diagnostics** (full details, file formats, and known findings in [`docs/3ds-debug-tools.md`](../../docs/3ds-debug-tools.md)):
+  - `L + R + X`: One-shot dump of framebuffers, GBA VRAM/OAM/palettes/IO registers, and Samus's pose/animation state to `sdmc:/3ds/`.
+  - `L + R + Y`: Writes a timestamped marker in `sdmc:/3ds/mzm-debug.log`.
+  - `L + R + START`: Toggles a scene recorder (a blinking "REC" indicator shows on the bottom screen) -- samples emulated GBA state (no screenshots) every few frames to `sdmc:/3ds/mzm-rec.bin` until pressed again, for catching a bug across a whole sequence instead of a single frame.
