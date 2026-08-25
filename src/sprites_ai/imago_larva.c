@@ -113,6 +113,9 @@ static void ImagoLarvaSyncSubSprites(struct SubSpriteData* pSub)
     u16 oamIdx;
 
     pData = pSub->pMultiOam[pSub->currentAnimationFrame].pData;
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+    pData = GBA_RESOLVE(pData);
+#endif
     oamIdx = pData[gCurrentSprite.roomSlot][MULTI_SPRITE_DATA_ELEMENT_OAM_INDEX];
     
     if (gCurrentSprite.pOam != sImagoLarvaFrameDataPointers[oamIdx])
