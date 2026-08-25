@@ -24,7 +24,10 @@ BUILD     := $(CURDIR)/build
 TARGET    := $(CURDIR)/mzm-3ds
 
 APP_TITLE       := Metroid Zero Mission 3DS
-APP_DESCRIPTION := Native 3DS port of Metroid Zero Mission
+# Recursively expanded (=) so it's resolved at recipe time, once VERSION is known.
+# SMDH text fields have a hard 64-character limit, so the version is truncated
+# if "Native 3DS port of Metroid Zero Mission <VERSION>" would overflow it.
+APP_DESCRIPTION  = $(shell printf '%s %s' "Native 3DS port of Metroid Zero Mission" "$(VERSION)" | cut -c1-64)
 APP_AUTHOR      := metroidret + community
 APP_ICON        := $(CURDIR)/assets/icon-48.png
 ifeq ($(wildcard $(APP_ICON)),)
@@ -79,7 +82,9 @@ SRCS_3DS := \
 	$(CURDIR)/source/port_bottom_ui_3ds.c \
 	$(CURDIR)/source/port_ppu_mzm.c \
 	$(CURDIR)/source/port_gpu_renderer.c \
-	$(CURDIR)/source/port_mzm_audio_3ds.c
+	$(CURDIR)/source/port_mzm_audio_3ds.c \
+	$(CURDIR)/source/port_retroachievements_3ds.c \
+	$(CURDIR)/source/port_ra_badges_data.c
 
 # Generar objetos
 OBJS_ROOT := $(patsubst $(ROOT)/%.c, $(BUILD)/root/%.o, $(SRCS_ROOT))
@@ -88,7 +93,35 @@ OBJS_3DS  := $(patsubst $(CURDIR)/%.c, $(BUILD)/3ds/%.o, $(SRCS_3DS))
 C_OBJS    := $(OBJS_ROOT) $(OBJS_ASM) $(OBJS_3DS)
 DEPS      := $(C_OBJS:.o=.d)
 
-GIT_VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "0.0-dev")
+GIT_BRANCH  := $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null)
+EXACT_TAG   := $(shell git describe --tags --exact-match 2>/dev/null)
+# Rama release/* más reciente que contiene HEAD (local u origin): permite
+# que ramas laterales (p.ej. PRs basados en release) hereden su versión
+REL_MERGED := $(shell git for-each-ref --format='%(refname:short)' --merged HEAD refs/heads/'release/*' refs/remotes/'origin/release/*' 2>/dev/null | sort -V | tail -1)
+REL_BASE    := $(shell git rev-parse --verify -q refs/remotes/origin/main >/dev/null && echo refs/remotes/origin/main || echo main)
+
+ifneq ($(strip $(EXACT_TAG)),)
+  GIT_VERSION := $(EXACT_TAG)
+else
+ifeq ($(filter release/%,$(GIT_BRANCH)),)
+  REL_NAME    := $(subst origin/,,$(REL_MERGED))
+else
+  REL_NAME    := $(GIT_BRANCH)
+endif
+ifneq ($(filter release/%,$(REL_NAME)),)
+  REL_TARGET  := $(shell git rev-parse --verify -q refs/heads/$(REL_NAME) >/dev/null && echo refs/heads/$(REL_NAME) || echo refs/remotes/origin/$(REL_NAME))
+  REL_CNT     := $(shell git rev-list --count $(REL_BASE)..$(REL_TARGET) 2>/dev/null || echo 1)
+  DEV_CNT     := $(shell git rev-list --count $(REL_TARGET)..HEAD 2>/dev/null || echo 0)
+  REL_HASH    := $(shell git rev-parse --short HEAD 2>/dev/null || echo dev)
+  ifeq ($(DEV_CNT),0)
+    GIT_VERSION := $(patsubst release/%,%,$(REL_NAME))-dev.$(REL_CNT)+$(REL_HASH)
+  else
+    GIT_VERSION := $(patsubst release/%,%,$(REL_NAME))-dev.$(REL_CNT).$(DEV_CNT)+$(REL_HASH)
+  endif
+else
+  GIT_VERSION := $(shell git describe --tags --always 2>/dev/null || echo "0.0-dev")
+endif
+endif
 VERSION ?= $(GIT_VERSION)
 
 ARCH    := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
@@ -162,10 +195,10 @@ LDFLAGS  := -specs=3dsx.specs -g $(ARCH) -Wl,-Map,$(BUILD)/mzm-3ds.map -Wl,--gc-
 LIBS     := -L$(CTRULIB)/lib -L$(PORTLIBS)/lib -lcitro2d -lcitro3d -lctru -lm
 
 
-MAKEROM    ?= $(shell which makerom 2>/dev/null || echo /home/tinaut1986/tools/bin/makerom)
-BANNERTOOL ?= $(shell which bannertool 2>/dev/null || echo /home/tinaut1986/tools/bin/bannertool)
+MAKEROM    ?= $(shell which makerom 2>/dev/null || echo $(DEVKITPRO)/tools/bin/makerom)
+BANNERTOOL ?= $(shell which bannertool 2>/dev/null || echo $(DEVKITPRO)/tools/bin/bannertool)
 
-.PHONY: all clean cia elf 3dsx
+.PHONY: all clean cia elf 3dsx print-version ftp
 
 all: $(TARGET).cia
 
@@ -174,6 +207,13 @@ cia: $(TARGET).cia
 3dsx: $(TARGET).3dsx
 
 elf: $(TARGET).elf
+
+print-version:
+	@echo $(VERSION)
+
+ftp: $(TARGET).cia
+	@echo "Uploading $(TARGET).cia as mzm-3ds-$(VERSION).cia to FTP..."
+	curl -T $(TARGET).cia "ftp://$(FTP_HOST):$(FTP_PORT)/cias/mzm-3ds-$(VERSION).cia"
 
 $(TARGET).cia: $(TARGET).elf $(BUILD)/mzm-3ds.smdh $(BUILD)/banner.bnr
 	@echo "Creating CIA: $(notdir $@)"
@@ -201,7 +241,8 @@ $(TARGET).smdh: $(APP_ICON)
 
 $(TARGET).elf: $(C_OBJS)
 	@echo "Linking ELF: $(notdir $@)"
-	@$(LD) $(LDFLAGS) $(C_OBJS) $(LIBS) -o $@
+	@for f in $(C_OBJS); do cygpath -m "$$f" 2>/dev/null || echo "$$f"; done > $(BUILD)/objects.rsp
+	@$(LD) $(LDFLAGS) @$(BUILD)/objects.rsp $(LIBS) -o $@
 	@$(NM) -CSn $@ > $(BUILD)/mzm-3ds.lst
 	@echo "Build successful: $(TARGET).elf"
 

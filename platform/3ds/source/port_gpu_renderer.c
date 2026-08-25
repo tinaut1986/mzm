@@ -301,6 +301,12 @@ static int32_t sOpaqueOrder[MAX_DRAW_ITEMS];
 static int sOpaqueCount;
 static int32_t sBlendOrder[MAX_DRAW_ITEMS];
 static int sBlendCount;
+/* True back-to-front draw sequence across BOTH opaque and blend items
+ * together, in real GBA sortKey order -- see the single merged draw loop in
+ * Port_GpuRenderer_RenderFrame for why this exists instead of the old
+ * opaque-pass-then-blend-pass split. */
+static int32_t sDrawOrder[MAX_DRAW_ITEMS];
+static int sDrawOrderCount;
 
 /* GBA sprite shape/size -> pixel dimensions (attr0 bits14-15 = shape,
  * attr1 bits14-15 = size). Same table as port/ppu/src/mode1.c's
@@ -316,12 +322,21 @@ static const uint8_t kObjHeights[3][4] = { { 8, 16, 32, 64 }, { 8, 8, 16, 32 }, 
  * parallax shift at full slider; sign flips between eyes in the caller.
  * Samus (OBJ) is placed slightly behind BG1 platforms so platforms appear
  * with depth/thickness in front of Samus. */
-static const float kTierEyeOffsetPx[5] = {
-    -4.0f, /* BG3: far background / sky */
-    -2.0f, /* BG2: mid background / caves */
-    -0.3f, /* BG1: platforms / interactive ground (closer to viewer) */
-    0.0f,  /* BG0: HUD / UI / screen plane */
-    -0.8f, /* OBJ: Samus / enemies (slightly behind BG1 platforms) */
+static const float kTierEyeOffsetPx[7] = {
+    -4.0f, /* 0: BG3: far background / sky */
+    -2.0f, /* 1: BG2: mid background / caves */
+    -0.3f, /* 2: BG1: platforms / interactive ground / scenery */
+    +1.8f, /* 3: BG0: text overlay / dialogs */
+    -0.8f, /* 4: World OBJ: Samus / enemies / particles (priority 1..3), gameplay only */
+    +2.0f, /* 5: HUD OBJ: Health bar, missiles, tanks, minimap sprites (priority 0) */
+    +1.2f, /* 6: Map/pause-screen OBJ (priority 1..3): the pause map's Samus
+            * position marker and similar icons. Tier 4's -0.8f barely read
+            * as separated from the map BG's own -0.3f (tier 2) once the
+            * map/grid occlusion bug was fixed and the marker was actually
+            * visible against it -- confirmed on hardware. Kept as its own
+            * tier instead of just raising tier 4's magnitude so real
+            * gameplay Samus/enemy depth (tier 4, used every frame during
+            * play) stays untouched by a change aimed only at map screens. */
 };
 
 bool Port_GpuRenderer_IsActive(void) { return sGpuRendererActive; }
@@ -919,24 +934,24 @@ static void CollectBgLayer(int bgIndex) {
              * tiebreak: lower BG index draws later (on top), matching GBA
              * hardware (BG0 > BG1 > BG2 > BG3 at equal priority). */
             int sortKey = (3 - priority) * 10 + (3 - bgIndex);
-            /* depthTier indexes kTierEyeOffsetPx (far to near). It must track
-             * the same `priority` that sortKey uses, not the fixed bgIndex:
-             * in ordinary gameplay BG3/BG2/BG1/BG0 happen to be drawn at
-             * priority 3/2/1/0 respectively, so a bgIndex-based tier looked
-             * right there -- but non-gameplay screens can and do reorder
-             * priority independently of bgIndex. Confirmed against real
-             * hardware (GBA side-by-side) that stereo depth must follow
-             * actual on-screen occlusion, not a fixed per-BG-index role:
-             * with a bgIndex-fixed tier the chozo-hint screen's swirl (BG3,
-             * occluding the map correctly in 2D) got the *farthest* stereo
-             * depth while the occluded BG1 map got a *nearer* depth --
-             * occlusion and stereo depth disagreeing. See pause_screen.c's
-             * CHOZO_STATUE_HINT branch for the matching 2D-occlusion fix
-             * (BG3's priority moved behind BG1's there) -- that fix and
-             * this one both had to land together: this alone (tried first)
-             * fixed depth but left 2D occlusion wrong, since depthTier
-             * never touches sortKey/draw order at all. */
-            PushItem(slot, drawX, drawY, sortKey, 3 - priority, blendAlpha, rectWinVis);
+            /* Determine depthTier:
+             * BG0 is the game HUD/UI layer (or dialog/text). It MUST ALWAYS be
+             * the topmost foreground layer (tier 3, +1.8f offset) regardless of
+             * transparency priority tweaks.
+             * For world BG layers (BG1..BG3), map priority to background tiers (0..2). */
+            int depthTier;
+            if (bgIndex == 0) {
+                depthTier = 3; /* Topmost foreground (HUD) */
+            } else {
+                /* Map remaining world BGs into far/mid/near tiers:
+                 * priority 0/1 -> tier 2 (platforms / foreground world, -0.3f)
+                 * priority 2   -> tier 1 (mid background, -2.0f)
+                 * priority 3   -> tier 0 (far background / sky, -4.0f) */
+                if (priority <= 1) depthTier = 2;
+                else if (priority == 2) depthTier = 1;
+                else depthTier = 0;
+            }
+            PushItem(slot, drawX, drawY, sortKey, depthTier, blendAlpha, rectWinVis);
         }
     }
 }
@@ -1107,13 +1122,49 @@ static void CollectSprite(int oamIndex, bool obj1D) {
             uint32_t byteOffset = (uint32_t)(objBase - gVram) + (uint32_t)tileIndex * bytesPerTile;
             if (!TileHasOpaquePixel(byteOffset, bpp8)) continue;
 
+            /* GM_MAP_SCREEN == 5 (include/constants/game_state.h's GameMode
+             * enum) covers every PauseScreenXxx variant -- plain map, chozo
+             * hint, map download, item pickup -- not just gameplay. Tier 6
+             * only applies there so real in-game Samus/enemy depth is
+             * untouched. */
+            extern s16 gMainGameMode;
+            bool inMapOrPauseScreen = gMainGameMode == 5;
+            /* Two earlier signals for "this is real HUD, elevate it" both
+             * failed on hardware: OAM priority 0 also catches explosions/
+             * shot-impacts/reload-flashes/bombs (they use priority 0 too,
+             * just as a "draw above everything" compositing tool, not
+             * because they're HUD); gNextOamSlot turned out to be a running
+             * cursor every sprite system keeps advancing all frame, not a
+             * fixed post-HUD boundary, so it ended up covering Samus,
+             * enemies, and even save/map stations.
+             * src/hud.c hardcodes OBJ palette bank 4 or 5 (paletteNum = 4/5)
+             * for every HUD element it draws -- health/charge bars, missile/
+             * super-missile/power-bomb counts, the minimap icon -- and nothing
+             * else in the codebase assigns those banks literally (dynamic
+             * gameplay sprites go through a separate palette-slot allocator).
+             * Confirmed on hardware this alone still isn't enough: the Morph
+             * Ball bomb sprite (tile 335) genuinely also sits on palette
+             * bank 4 -- not a random allocator collision, that's just the
+             * real ROM data. What does differ: every bank-4 HUD element in
+             * hud.c is drawn OAM_SHAPE_WIDE (health/charge/missile/super-
+             * missile/power-bomb count bars, shape == 1); the bomb sprite is
+             * OAM_SHAPE_SQUARE (shape == 0). Bank 5 (minimap icons) is
+             * always OAM_SHAPE_SQUARE in hud.c, so it doesn't need the
+             * shape check. */
+            bool isRealHud = (palBank == 4 && shape == 1) || palBank == 5;
+            int depthTier;
+            if (inMapOrPauseScreen) {
+                depthTier = (priority == 0) ? 5 : 6;
+            } else {
+                depthTier = isRealHud ? 5 : 4;
+            }
             if (!isAffine) {
                 float drawX = (float)(x + tx * 8);
                 float drawY = (float)(y + ty * 8);
                 if (drawY <= -8.0f || drawY >= 160.0f || drawX <= -8.0f || drawX >= 240.0f) continue;
                 if (sObjWindowActive && !ObjWinItemVisible(objWinVis, drawX, drawY)) continue;
                 int slot = GetOrDecodeTileSlot(byteOffset, bpp8, pal, palBank, hflip, vflip, true, brightAdjust);
-                PushItem(slot, drawX, drawY, sortKey, 4, blendAlpha, rectWinVis);
+                PushItem(slot, drawX, drawY, sortKey, depthTier, blendAlpha, rectWinVis);
                 continue;
             }
 
@@ -1132,7 +1183,7 @@ static void CollectSprite(int oamIndex, bool obj1D) {
             float screenCenterX = pivotX + dx;
             float screenCenterY = pivotY + dy;
             if (sObjWindowActive && !ObjWinItemVisible(objWinVis, screenCenterX, screenCenterY)) continue;
-            PushAffineItem(slot, screenCenterX, screenCenterY, affAngle, affScaleX, affScaleY, sortKey, 4, blendAlpha,
+            PushAffineItem(slot, screenCenterX, screenCenterY, affAngle, affScaleX, affScaleY, sortKey, depthTier, blendAlpha,
                            rectWinVis);
         }
     }
@@ -1211,6 +1262,22 @@ bool Port_GpuRenderer_CanRenderFrame(void) {
      * above) is now rendered via the PICA200 scissor test instead of falling
      * back, as long as only ONE of WIN0/WIN1 is doing the clipping -- see
      * the scope note in this function's header comment. */
+    /* Multi-window clipping: WIN0 or WIN1 clipping alone is rendered via
+     * the PICA200 scissor test (see Port_GpuRenderer_RenderFrame's
+     * window-clip pass). OBJWIN alone is handled via a CPU-rasterized
+     * coverage grid (ComputeObjWinMask). Neither of those needed a
+     * fallback and still doesn't.
+     *
+     * The two cases below -- BOTH WIN0 and WIN1 actually clipping at once,
+     * and BG mosaic -- are NOT implemented on the GPU path (no code here
+     * combines two independently-shaped scissor rects into one, and
+     * CollectBgLayer has no mosaic handling), unlike what an earlier
+     * version of this comment claimed ("rendered natively on GPU"). Falls
+     * back to the CPU rasterizer for both instead of silently drawing them
+     * wrong, same as before this branch's rewrite removed these checks.
+     * Not yet confirmed reachable in actual play (tracked in issue #15) --
+     * restored defensively since there's no cost when they never fire, and
+     * a real visual bug if they do and this doesn't fall back. */
     uint16_t win1h = (uint16_t)(gIoMem[0x42] | (gIoMem[0x43] << 8));
     uint16_t win1v = (uint16_t)(gIoMem[0x46] | (gIoMem[0x47] << 8));
     bool win0On = (dispcnt & (1u << 13)) != 0u;
@@ -1220,35 +1287,40 @@ bool Port_GpuRenderer_CanRenderFrame(void) {
         uint16_t win0v = (uint16_t)(gIoMem[0x44] | (gIoMem[0x45] << 8));
         bool win0Clips = !WindowCoversFullScreen(win0h, win0v);
         bool win1Clips = !WindowCoversFullScreen(win1h, win1v);
-        /* Both active and at least one actually clips: two independently-
-         * shaped rects isn't a single scissor rectangle (see this
-         * function's header comment) -- fall back. Both full-screen no-ops
-         * simultaneously is fine (nothing to clip, just per-layer gating,
-         * which RenderFrame's per-layer WININ/WINOUT handling below still
-         * approximates the same way the old full-screen-only path did). */
         if (win0Clips || win1Clips) REJECT("WIN0+WIN1");
     }
-    /* OBJWIN (attr0 objMode==2 sprites acting as a shape mask, DISPCNT
-     * bit15): confirmed occurring in real play (the pause screen's suit-
-     * view wireframe Samus reuses itself as an OBJWIN mask, see
-     * docs/3ds-gpu-renderer-window-affine-mosaic-feasibility-2026-08-21.md's
-     * OBJWIN section) and now handled via a CPU-rasterized coverage grid --
-     * see ComputeObjWinMask/ObjWinItemVisible in Port_GpuRenderer_RenderFrame
-     * (a GPU-stencil-buffer attempt was tried first, built clean, but
-     * rendered garbled on real hardware -- see that section's "REVERTED"
-     * update for why this CPU-side approach replaced it). Scoped narrowly
-     * like WIN0/WIN1 above: only supported on its own, not combined with an
-     * actually-clipping WIN0/WIN1 rect -- GBA hardware's real
-     * WIN0>WIN1>OBJWIN>outside priority resolution between a rect and a
-     * shape mask isn't implemented, so that combination still falls back. */
-    bool objWinOn = (dispcnt & (1u << 15)) != 0u;
-    if (objWinOn && (win0On || win1On)) REJECT("OBJWIN+WIN");
 
     uint16_t mosaic = (uint16_t)(gIoMem[0x4C] | (gIoMem[0x4D] << 8));
     if (mosaic != 0) {
         for (int bg = 0; bg < 4; ++bg) {
             uint16_t bgcnt = (uint16_t)(gIoMem[0x08 + bg * 2] | (gIoMem[0x09 + bg * 2] << 8));
             if ((dispcnt & (1u << (8 + bg))) && ((bgcnt >> 6) & 1u)) REJECT("mosaic BG");
+        }
+    }
+    if ((mosaic >> 8) != 0u) {
+        /* OBJ mosaic (attr0 bit12, GBATek 6.4.4): the header comment above
+         * has always claimed this falls back alongside BG mosaic, but until
+         * now nothing here actually looked at individual sprites' mosaic
+         * bit -- only BGCNT's per-BG mosaic enable (restored above) was
+         * checked. Any sprite using OBJ mosaic
+         * (e.g. Kraid's head fading in via SPRITE_STATUS_MOSAIC during
+         * KRAID_POSE_GO_UP, src/sprites_ai/kraid.c's KraidInit) was
+         * silently drawn unmosaic'd by the GPU path below -- CollectSprite
+         * has no mosaic handling at all -- instead of falling back to the
+         * CPU rasterizer that renders it correctly. Confirmed via L+R+X
+         * memory dump during the Kraid fight: the un-mosaic'd GPU draw and
+         * a second, correctly-mosaic'd draw both landed on screen, reading
+         * as a duplicated "two heads" sprite. OBJ mosaic size lives in
+         * mosaic's high byte (bits 8-11 horizontal, 12-15 vertical);
+         * either being non-zero means mosaic would visibly apply if any
+         * enabled sprite requests it. */
+        const uint16_t* oam = (const uint16_t*)gOamMem;
+        for (int i = 0; i < 128; ++i) {
+            uint16_t attr0 = oam[i * 4 + 0];
+            bool isAffine = ((attr0 >> 8) & 1u) != 0u;
+            bool disabled = ((attr0 >> 9) & 1u) != 0u && !isAffine;
+            if (disabled) continue;
+            if (((attr0 >> 12) & 1u) != 0u) REJECT("OBJ mosaic");
         }
     }
     return true;
@@ -1408,7 +1480,8 @@ void Port_GpuRenderer_RenderFrame(void) {
             winH = (uint16_t)(gIoMem[0x40] | (gIoMem[0x41] << 8));
             winV = (uint16_t)(gIoMem[0x44] | (gIoMem[0x45] << 8));
             insideMask = (uint8_t)(winin & 0xFFu);
-        } else if (win1On) {
+        }
+        if (win1On && (!win0On || WindowCoversFullScreen(winH, winV))) {
             winH = (uint16_t)(gIoMem[0x42] | (gIoMem[0x43] << 8));
             winV = (uint16_t)(gIoMem[0x46] | (gIoMem[0x47] << 8));
             insideMask = (uint8_t)((winin >> 8) & 0xFFu);
@@ -1468,8 +1541,15 @@ void Port_GpuRenderer_RenderFrame(void) {
     }
     sOpaqueCount = 0;
     sBlendCount = 0;
+    sDrawOrderCount = 0;
     for (int b = 0; b < SORT_KEY_BUCKETS; ++b) {
         for (int32_t i = sBucketHead[b]; i >= 0; i = sBucketNext[i]) {
+            /* sDrawOrder keeps every item (opaque and blend) in one true
+             * back-to-front sortKey sequence -- see its declaration and the
+             * draw loop for why this replaced two fully separate passes.
+             * sOpaqueOrder/sBlendOrder are still built for the stats/diag
+             * log below (sBlendCount) and are otherwise unused now. */
+            sDrawOrder[sDrawOrderCount++] = i;
             if (sDrawItems[i].blendAlpha) {
                 sBlendOrder[sBlendCount++] = i;
             } else {
@@ -1636,14 +1716,41 @@ void Port_GpuRenderer_RenderFrame(void) {
          * massive memory bandwidth during scaled / full-screen rendering. */
         C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
 
+        /* Single pass over sDrawOrder (true back-to-front GBA priority
+         * order, opaque and blend items interleaved), toggling the GPU
+         * blend equation per item instead of running two fully separate
+         * passes (all opaque, then unconditionally all blend on top).
+         * The old two-pass split always painted every blend (first-target)
+         * item on top of the ENTIRE opaque scene, regardless of its real
+         * priority -- so a blend layer behind a higher-priority opaque
+         * layer (e.g. pause_screen.c's chozo-hint screen, where the grid
+         * is BG1 at priority 2 behind the map's BG3 at priority 1) painted
+         * over that opaque layer instead of being occluded by it. Confirmed
+         * against a real-hardware VRAM dump: the grid must respect BG3's
+         * priority, not always win. */
         int drawCount = 0;
         bool reassertedTexEnv = false;
         int scissorPasses = sWindowActive ? 2 : 1;
+        bool blendModeActive = false;
         for (int sp = 0; sp < scissorPasses; ++sp) {
             bool insidePass = (sp == 0);
-            for (int oi = 0; oi < sOpaqueCount; ++oi) {
-                const DrawItem* item = &sDrawItems[sOpaqueOrder[oi]];
+            for (int oi = 0; oi < sDrawOrderCount; ++oi) {
+                const DrawItem* item = &sDrawItems[sDrawOrder[oi]];
                 if (!ItemPassesWindow(sWindowActive, item->winVis, insidePass)) continue;
+                bool wantBlend = item->blendAlpha && sBldEffect == 1;
+                if (wantBlend != blendModeActive) {
+                    C2D_Flush();
+                    if (wantBlend) {
+                        C3D_BlendingColor(C2D_Color32(0, 0, 0, (u32)((sBldEva * 255) / 16)));
+                        C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_CONSTANT_ALPHA, GPU_ONE_MINUS_CONSTANT_ALPHA,
+                                       GPU_CONSTANT_ALPHA, GPU_ONE_MINUS_CONSTANT_ALPHA);
+                    } else {
+                        /* Opaque mode: ONE/ZERO, see the comment above the
+                         * initial C3D_AlphaBlend call before this loop. */
+                        C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
+                    }
+                    blendModeActive = wantBlend;
+                }
                 float eyeOffset = eyeSign * slider3d * kTierEyeOffsetPx[item->depthTier];
                 C2D_DrawParams params = BuildDrawParams(item, screenBaseX, screenBaseY, eyeOffset, scaleX, scaleY);
                 C2D_DrawImage(item->img, &params, NULL);
@@ -1654,28 +1761,7 @@ void Port_GpuRenderer_RenderFrame(void) {
                 }
             }
         }
-
-        if (sBldEffect == 1 && sBlendCount > 0) {
-            C2D_Flush();
-            C3D_BlendingColor(C2D_Color32(0, 0, 0, (u32)((sBldEva * 255) / 16)));
-            C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_CONSTANT_ALPHA, GPU_ONE_MINUS_CONSTANT_ALPHA,
-                           GPU_CONSTANT_ALPHA, GPU_ONE_MINUS_CONSTANT_ALPHA);
-
-            for (int sp = 0; sp < scissorPasses; ++sp) {
-                bool insidePass = (sp == 0);
-                for (int oi = 0; oi < sBlendCount; ++oi) {
-                    const DrawItem* item = &sDrawItems[sBlendOrder[oi]];
-                    if (!ItemPassesWindow(sWindowActive, item->winVis, insidePass)) continue;
-                    float eyeOffset = eyeSign * slider3d * kTierEyeOffsetPx[item->depthTier];
-                    C2D_DrawParams params = BuildDrawParams(item, screenBaseX, screenBaseY, eyeOffset, scaleX, scaleY);
-                    C2D_DrawImage(item->img, &params, NULL);
-                    ++drawCount;
-                    if (!reassertedTexEnv) {
-                        ConfigureAtlasTextureEnv();
-                        reassertedTexEnv = true;
-                    }
-                }
-            }
+        if (blendModeActive) {
             C2D_Flush();
             C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
         }
@@ -1710,8 +1796,9 @@ void Port_GpuRenderer_RenderFrame(void) {
             unsigned rounded = fps > 0.0 ? (unsigned)(fps + 0.5) : 0u;
             if (rounded > 999u) rounded = 999u;
             snprintf(label, sizeof(label), "FPS %u", rounded);
-            C2D_DrawRectSolid(5.0f, 216.0f, 0.7f, 65.0f, 18.0f, C2D_Color32(0, 0, 0, 200));
-            PlatformGpu3DS_DrawStatusText(8.0f, 220.0f, 1.5f, label);
+            float fpsEyeOffset = eyeSign * slider3d * (+1.0f);
+            C2D_DrawRectSolid(5.0f + fpsEyeOffset, 216.0f, 0.7f, 65.0f, 18.0f, C2D_Color32(0, 0, 0, 200));
+            PlatformGpu3DS_DrawStatusText(8.0f + fpsEyeOffset, 220.0f, 1.5f, label);
         }
 #ifdef PORT_GPU_RENDERER_DIAG_LOG
         {

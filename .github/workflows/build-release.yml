@@ -2,8 +2,6 @@ name: Build 3DS Release
 
 on:
   push:
-    branches:
-      - main
     tags:
       - 'v*'
   workflow_dispatch:
@@ -33,6 +31,61 @@ jobs:
           make -C platform/3ds clean
           make -C platform/3ds -j$(nproc) RENDERER=gpu BANNERTOOL=$GITHUB_WORKSPACE/tools/bin/bannertool MAKEROM=$GITHUB_WORKSPACE/tools/bin/makerom
 
+      # NOTE: container default shell is dash/sh -- no [[ ]], use POSIX case
+      - name: Determine release tag
+        id: vars
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          case "$GITHUB_REF" in
+            refs/tags/*)
+              TAG="${GITHUB_REF#refs/tags/}"
+              IS_TAG=true
+              ;;
+            *)
+              TAG=$(git describe --tags --always)
+              IS_TAG=false
+              ;;
+          esac
+          {
+            echo "tag=$TAG"
+            echo "is_tag=$IS_TAG"
+          } >> "$GITHUB_OUTPUT"
+
+      # Release notes: QR code (scannable with Universal-Updater / phone to get
+      # the CIA download URL) plus an auto-generated changelog covering every
+      # commit since the previous tag. Manual (workflow_dispatch) runs on a
+      # non-tagged commit produce a prerelease page instead.
+      - name: Generate changelog and QR code
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          TAG="${{ steps.vars.outputs.tag }}"
+          REPO="${{ github.repository }}"
+          BASE="https://github.com/${REPO}/releases/download/${TAG}"
+
+          PREV=$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)
+          RANGE="${PREV:+${PREV}..}HEAD"
+
+          {
+            echo "![QR code for the ${TAG} CIA](${BASE}/QR-${TAG}.png)"
+            echo
+            echo "## Downloads"
+            echo
+            echo "- [mzm-3ds-${TAG}.cia](${BASE}/mzm-3ds-${TAG}.cia)"
+            echo "- [mzm-3ds-${TAG}.3dsx](${BASE}/mzm-3ds-${TAG}.3dsx)"
+            echo
+            echo "## Changelog"
+            echo
+            git log ${RANGE} --no-merges --pretty='- %s (%h)'
+          } > release_notes.md
+
+          apt-get update -qq && apt-get install -y -qq qrencode > /dev/null
+          qrencode -s 10 -o "QR-${TAG}.png" "${BASE}/mzm-3ds-${TAG}.cia"
+
+          # Versioned filenames for distribution assets (canonical build
+          # names stay fixed inside the tree)
+          cp platform/3ds/mzm-3ds.cia "mzm-3ds-${TAG}.cia"
+          [ -f platform/3ds/mzm-3ds.3dsx ] && cp platform/3ds/mzm-3ds.3dsx "mzm-3ds-${TAG}.3dsx" || true
+
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -41,28 +94,18 @@ jobs:
             platform/3ds/mzm-3ds.cia
             platform/3ds/mzm-3ds.3dsx
 
-      - name: Generate Release Tag Name
-        id: vars
-        run: |
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          GIT_TAG=$(git describe --tags --always)
-          echo "tag=$GIT_TAG" >> $GITHUB_OUTPUT
-          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
-            echo "is_tag=true" >> $GITHUB_OUTPUT
-          else
-            echo "is_tag=false" >> $GITHUB_OUTPUT
-          fi
-
       - name: Create / Update GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.vars.outputs.tag }}
           name: Release ${{ steps.vars.outputs.tag }}
           draft: false
-          prerelease: ${{ steps.vars.outputs.is_tag == 'false' }}
+          prerelease: ${{ steps.vars.outputs.is_tag != 'true' }}
+          generate_release_notes: true
+          body_path: release_notes.md
           files: |
-            platform/3ds/mzm-3ds.cia
-            platform/3ds/mzm-3ds.3dsx
+            mzm-3ds-${{ steps.vars.outputs.tag }}.cia
+            mzm-3ds-${{ steps.vars.outputs.tag }}.3dsx
+            QR-${{ steps.vars.outputs.tag }}.png
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

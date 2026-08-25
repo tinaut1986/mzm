@@ -3,6 +3,7 @@
 #include "macros.h"
 #include "event.h"
 
+
 #include "data/sprites/kraid.h"
 #include "data/sprite_data.h"
 
@@ -167,8 +168,23 @@ static void KraidSyncSubSprites(void)
     u16 oamIdx;
 
     pData = gSubSpriteData1.pMultiOam[gSubSpriteData1.currentAnimationFrame].pData;
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+    /* pData is a raw GBA-space pointer copied straight out of the extracted
+     * ROM struct (Port_ResolveRomData only fixes up the *outer*
+     * MultiSpriteData table pointer, not nested pointers within it) -- it
+     * must be resolved to a real native pointer before dereferencing, same
+     * as SpriteUtilSyncCurrentSpritePositionWithSubSprite1Position
+     * (src/sprite_util.c) already does for the identical field. This call
+     * was missing here, so every KraidPart sprite indexed into whatever
+     * native memory happened to sit at that raw GBA address instead of the
+     * real per-part OAM-index/offset table -- since every part dereferences
+     * the same wrong base pointer, they all collapsed onto the same
+     * (garbage) OAM index and position, which is what produced the
+     * duplicated "two heads" (and other misplaced-part) artifacts. */
+    pData = GBA_RESOLVE(pData);
+#endif
     oamIdx = pData[gCurrentSprite.roomSlot][MULTI_SPRITE_DATA_ELEMENT_OAM_INDEX];
-    
+
     if (gCurrentSprite.pOam != sKraidFrameDataPointers[oamIdx])
     {
         gCurrentSprite.pOam = sKraidFrameDataPointers[oamIdx];
@@ -1973,9 +1989,9 @@ static void KraidPartInit(void)
             gCurrentSprite.properties |= SP_IMMUNE_TO_PROJECTILES;
             gCurrentSprite.samusCollision = SSC_HURTS_SAMUS;
             
-            gCurrentSprite.drawDistanceTop = BLOCK_SIZE * 2;
-            gCurrentSprite.drawDistanceBottom = (HALF_BLOCK_SIZE + EIGHTH_BLOCK_SIZE);
-            gCurrentSprite.drawDistanceHorizontal = BLOCK_SIZE + HALF_BLOCK_SIZE;
+            gCurrentSprite.drawDistanceTop = SUB_PIXEL_TO_PIXEL(BLOCK_SIZE * 2);
+            gCurrentSprite.drawDistanceBottom = SUB_PIXEL_TO_PIXEL(HALF_BLOCK_SIZE + EIGHTH_BLOCK_SIZE);
+            gCurrentSprite.drawDistanceHorizontal = SUB_PIXEL_TO_PIXEL(BLOCK_SIZE + HALF_BLOCK_SIZE);
 
             gCurrentSprite.drawOrder = 2;
             gCurrentSprite.pOam = sKraidPartOam_LeftArmIdle;
@@ -2024,7 +2040,7 @@ static void KraidPartInit(void)
             gCurrentSprite.samusCollision = SSC_HURTS_SAMUS;
 
             gCurrentSprite.drawDistanceTop = SUB_PIXEL_TO_PIXEL(BLOCK_SIZE * 3 + QUARTER_BLOCK_SIZE + EIGHTH_BLOCK_SIZE);
-            gCurrentSprite.drawDistanceBottom = (HALF_BLOCK_SIZE + EIGHTH_BLOCK_SIZE);
+            gCurrentSprite.drawDistanceBottom = SUB_PIXEL_TO_PIXEL(HALF_BLOCK_SIZE + EIGHTH_BLOCK_SIZE);
             gCurrentSprite.drawDistanceHorizontal = SUB_PIXEL_TO_PIXEL(BLOCK_SIZE * 7);
 
             gCurrentSprite.hitboxTop = BLOCK_SIZE * 2;
@@ -2343,8 +2359,8 @@ static void KraidPartDyingSinking(void)
                 gCurrentSprite.pOam = sKraidPartOam_RightArmIdle;
                 gCurrentSprite.animationDurationCounter = 0;
                 gCurrentSprite.currentAnimationFrame = 0;
-                gCurrentSprite.drawDistanceTop = (HALF_BLOCK_SIZE + EIGHTH_BLOCK_SIZE);
-                gCurrentSprite.drawDistanceBottom = (QUARTER_BLOCK_SIZE + EIGHTH_BLOCK_SIZE);
+                gCurrentSprite.drawDistanceTop = SUB_PIXEL_TO_PIXEL(HALF_BLOCK_SIZE + EIGHTH_BLOCK_SIZE);
+                gCurrentSprite.drawDistanceBottom = SUB_PIXEL_TO_PIXEL(QUARTER_BLOCK_SIZE + EIGHTH_BLOCK_SIZE);
                 gCurrentSprite.pose = KRAID_PART_POSE_DYING_STATIONNARY;
             }
         }
@@ -2355,8 +2371,8 @@ static void KraidPartDyingSinking(void)
                 gCurrentSprite.pOam = sKraidPartOam_LeftArmIdle;
                 gCurrentSprite.animationDurationCounter = 0;
                 gCurrentSprite.currentAnimationFrame = 0;
-                gCurrentSprite.drawDistanceTop = BLOCK_SIZE;
-                gCurrentSprite.drawDistanceBottom = (QUARTER_BLOCK_SIZE + EIGHTH_BLOCK_SIZE);
+                gCurrentSprite.drawDistanceTop = SUB_PIXEL_TO_PIXEL(BLOCK_SIZE);
+                gCurrentSprite.drawDistanceBottom = SUB_PIXEL_TO_PIXEL(QUARTER_BLOCK_SIZE + EIGHTH_BLOCK_SIZE);
                 gCurrentSprite.pose = KRAID_PART_POSE_DYING_STATIONNARY;
             }
         }
@@ -2855,9 +2871,9 @@ void KraidSpike(void)
             gCurrentSprite.pose = KRAID_SPIKE_POSE_DELAY_BEFORE_MOVING;
             gCurrentSprite.samusCollision = SSC_HURTS_SAMUS;
 
-            gCurrentSprite.drawDistanceTop = QUARTER_BLOCK_SIZE;
-            gCurrentSprite.drawDistanceBottom = QUARTER_BLOCK_SIZE;
-            gCurrentSprite.drawDistanceHorizontal = THREE_QUARTER_BLOCK_SIZE;
+            gCurrentSprite.drawDistanceTop = SUB_PIXEL_TO_PIXEL(BLOCK_SIZE);
+            gCurrentSprite.drawDistanceBottom = SUB_PIXEL_TO_PIXEL(BLOCK_SIZE);
+            gCurrentSprite.drawDistanceHorizontal = SUB_PIXEL_TO_PIXEL(BLOCK_SIZE * 3);
 
             gCurrentSprite.hitboxTop = -HALF_BLOCK_SIZE;
             gCurrentSprite.hitboxBottom = HALF_BLOCK_SIZE;

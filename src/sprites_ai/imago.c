@@ -130,6 +130,9 @@ static void ImagoSyncSubSprites(void)
     u16 oamidx;
 
     pData = gSubSpriteData1.pMultiOam[gSubSpriteData1.currentAnimationFrame].pData;
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+    pData = GBA_RESOLVE(pData);
+#endif
     oamidx = pData[gCurrentSprite.roomSlot][MULTI_SPRITE_DATA_ELEMENT_OAM_INDEX];
     
     if (gCurrentSprite.pOam != sImagoFrameDataPointers[oamidx])

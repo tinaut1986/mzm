@@ -4,7 +4,7 @@ This target builds the native dual-screen Nintendo 3DS port of **Metroid: Zero M
 
 ## Features
 
-- **Top Screen**: Selectable aspect ratios (Pixel Perfect, Scaled, Fullscreen), solid 60 FPS gameplay.
+- **Top Screen**: Selectable aspect ratios (Pixel Perfect, Scaled, Fullscreen), solid 60 FPS gameplay, and **Stereoscopic 3D** with multi-layer depth mapping (HUD overlay pop-out, foreground platforms, characters, mid and far background layers).
 - **Rendering Engine**: Hybrid renderer utilizing hardware GPU acceleration via PICA200/Citro3D/Citro2D with an automatic scanline CPU fallback when advanced GBA PPU special effects are active (affine backgrounds, windows, mosaic).
 - **Bottom Screen**: Real-time interactive area map, collectible item breakdown (Energy Tanks, Missiles, Super Missiles, Power Bombs), and a quick touch-activated Morph Ball toggle.
 - **Audio**: Native sound output driven by the decompiled MZM sound engine and output through 3DS DSP (NDSP) hardware.
@@ -54,7 +54,7 @@ make clean && make -j$(nproc)
 
 This produces `mzm-3ds.cia` (if `makerom` is available), `mzm-3ds.3dsx`, and `mzm-3ds.elf`.
 
-### Build Flags & Configuration
+### Build Flags & Useful Targets
 
 You can customize the build using Makefile variables and `EXTRA_CFLAGS`:
 
@@ -66,18 +66,25 @@ You can customize the build using Makefile variables and `EXTRA_CFLAGS`:
 | `EXTRA_CFLAGS="-DPORT_GPU_RENDERER_DIAG_LOG"` | Enables verbose GPU frame diagnostics and logs reason for CPU fallback. |
 | `EXTRA_CFLAGS="-DPORT_AUDIO_DIAG_LOG"` | Enables audio pipeline diagnostics. |
 
-Example:
-```sh
-make clean && make RENDERER=gpu FORCE_OLD3DS=1 -j$(nproc)
-```
+#### Deployment & Utility Targets:
+- **FTP Upload**: Deploy directly to a console running FBI or an FTP server:
+  ```sh
+  FTP_HOST=192.168.1.xxx FTP_PORT=5000 make ftp
+  ```
+  *(Automatically names the CIA with the current version tag/commit hash, e.g. `mzm-3ds-v0.2.0-dev.N+hash.cia`).*
+- **Print Version**: Display the dynamically computed version string:
+  ```sh
+  make print-version
+  ```
 
 ---
 
-## Testing
+## Testing & Diagnostics
 
 - **Local Testing (Azahar emulator)**:
   ```sh
   tools/run_azahar_test.sh 15
   ```
-- **Real Hardware**:
-  Send `mzm-3ds.cia` or `mzm-3ds.3dsx` to your console over FBI / FTP. Debug logs (if enabled) are written to `sdmc:/mzm-debug.log`.
+- **Real Hardware Diagnostics**:
+  - `L + R + X`: Dumps framebuffers and GBA VRAM/IO registers to `sdmc:/3ds/`.
+  - `L + R + Y`: Writes a timestamped marker in `sdmc:/mzm-debug.log`.

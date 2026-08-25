@@ -60,6 +60,12 @@ bool Platform3DS_StartLogicThread(void (*entry)(void)) {
     return sLogicThread != NULL;
 }
 
+/* See Platform3DS_IsActiveStackAddress's doc comment: needed to scope that
+ * check to the one thread it was designed for. */
+Thread Platform3DS_GetLogicThreadHandle(void) {
+    return sLogicThread;
+}
+
 int Platform3DS_Init(void) {
     gfxInitDefault();
 
@@ -384,6 +390,25 @@ int Platform3DS_IsNativeAddress(uintptr_t value) {
 }
 
 int Platform3DS_IsActiveStackAddress(uintptr_t value) {
+    /* This heuristic was calibrated against the game-logic thread's own
+     * stack (where SramWrite/SramTestFlash -- the calls that motivated it --
+     * always run from). It must NOT be applied when called from any other
+     * thread: the NDSP audio thread (port_mzm_audio_3ds.c) got its own
+     * separate stack once audio production moved off the logic thread, and
+     * that stack's address can legitimately land within +/-64KB of a real
+     * GBA ROM address purely by coincidence of allocation -- which made
+     * port_resolve_addr() misclassify genuine ROM pointers (pRawData,
+     * pVoice, ...) read by InitTrack/UpdateTrack as native stack pointers
+     * and return them unresolved, silently breaking music while leaving PSG
+     * SFX (which don't chase ROM pointers the same way) unaffected. Since
+     * threadGetCurrent() can only be called safely once <3ds.h> is usable
+     * (true in this file), compare against the recorded logic-thread handle
+     * and skip the check entirely for every other thread. */
+    extern Thread Platform3DS_GetLogicThreadHandle(void);
+    if (threadGetCurrent() != Platform3DS_GetLogicThreadHandle()) {
+        return 0;
+    }
+
     uintptr_t currentSp;
     __asm__ volatile("mov %0, sp" : "=r"(currentSp));
 

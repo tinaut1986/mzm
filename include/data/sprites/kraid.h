@@ -130,13 +130,13 @@ extern const struct FrameData sKraidPartOam_TopHoleLeft[5];
 
 extern const struct FrameData sKraidPartOam_TopHoleRight[5];
 
-extern const struct FrameData sKraidPartOam_MiddleHoleRight[5];
-
 extern const struct FrameData sKraidPartOam_MiddleHoleLeft[5];
 
-extern const struct FrameData sKraidPartOam_BottomHoleRight[5];
+extern const struct FrameData sKraidPartOam_MiddleHoleRight[5];
 
 extern const struct FrameData sKraidPartOam_BottomHoleLeft[5];
+
+extern const struct FrameData sKraidPartOam_BottomHoleRight[5];
 
 extern const struct FrameData sKraidNailOam[2];
 

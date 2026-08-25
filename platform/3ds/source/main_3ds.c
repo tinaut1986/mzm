@@ -77,7 +77,7 @@ int main(int argc, char** argv) {
     Port_DebugLog("main: Platform3DS_Init done");
     Platform3DS_ShowSplash();
 
-    printf("Metroid Zero Mission 3DS v" MZM_PORT_VERSION "\n\n");
+    printf("Metroid Zero Mission 3DS " MZM_PORT_VERSION "\n\n");
     printf("System: %s\n", Platform3DS_IsNew3DS() ? "New Nintendo 3DS" : "Nintendo 3DS");
     printf("Performance: %s\n",
            Platform3DS_IsNew3DS() ? "New 3DS full presentation"
@@ -142,6 +142,8 @@ int main(int argc, char** argv) {
     }
     extern void Port_Config_Load(void);
     Port_Config_Load();
+    extern void Port_RA_Init(void);
+    Port_RA_Init();
     extern void Port_LoadSram(void);
     Port_LoadSram();
 
