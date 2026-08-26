@@ -115,20 +115,58 @@ static int sDisplayStyle = 0; /* 0 = PIXEL PERFECT, 1 = SCALED, 2 = BLUR */
 static const char* const sConfigPath = "mzm3ds.ini";
 
 static bool sAutoHideHud = true;
+static bool sHideSpoilers = false;
+
 /* Button Actions:
  * 0 = NINGUNA (NONE)
  * 1 = AUTODISPARO (RAPID FIRE)
- * 2 = MORFOSFERA (QUICK MORPH BALL)
+ * 2 = MORFOSFERA RAPIDA (QUICK MORPH BALL)
  * 3 = DISPARO (FIRE / B)
- * 4 = SALTO (JUMP / A)
- * 5 = MISILES (SELECT)
- * 6 = APUNTAR ARRIBA (AIM UP / R)
- * 7 = APUNTAR ABAJO (AIM DOWN / L)
+ * 4 = SALTAR (JUMP / A)
+ * 5 = MISILES (SELECT / swap missile type)
+ * 6 = APUNTAR (AIM / DIAGONAL AIM MODIFIER / KEY_L)
+ * 7 = ARMAR MISILES (ARM WEAPON / KEY_R)
+ * 8 = PAUSA (PAUSE / KEY_START)
  */
-static int sBtnMapX = 1;  /* Default X: Rapid Fire */
-static int sBtnMapY = 2;  /* Default Y: Quick Morph */
-static int sBtnMapZL = 7; /* Default ZL: Aim Down (L) */
-static int sBtnMapZR = 6; /* Default ZR: Aim Up (R) */
+#define BTN_ACTION_COUNT 9
+
+/* Remappable button indices:
+ * 0=A, 1=B, 2=X, 3=Y, 4=L, 5=R, 6=ZL, 7=ZR, 8=Start, 9=Select
+ * D-Pad and Circle Pad are always fixed to movement. */
+#define BTN_REMAP_COUNT 10
+
+static int sBtnRemap[BTN_REMAP_COUNT] = {
+    4, /* 0: A      -> JUMP (4) */
+    3, /* 1: B      -> FIRE (3) */
+    1, /* 2: X      -> RAPID FIRE (1) */
+    2, /* 3: Y      -> QUICK MORPH (2) */
+    6, /* 4: L      -> AIM (6) */
+    7, /* 5: R      -> ARM WEAPON (7) */
+    6, /* 6: ZL     -> AIM (6) */
+    7, /* 7: ZR     -> ARM WEAPON (7) */
+    8, /* 8: Start  -> PAUSE (8) */
+    5, /* 9: Select -> MISSILES (5) */
+};
+
+/* C-Stick mode: 0=OFF, 1=AIM (UP/DOWN), 2=MOVEMENT (LEFT/RIGHT), 3=ALL (4 DIRECTIONS) */
+static int sCstickMode = 0;
+
+void Port_Config_Save(void);
+
+void Port_Config_ResetButtonMappingDefault(void) {
+    sBtnRemap[0] = 4; /* A      -> JUMP (4) */
+    sBtnRemap[1] = 3; /* B      -> FIRE (3) */
+    sBtnRemap[2] = 1; /* X      -> RAPID FIRE (1) */
+    sBtnRemap[3] = 2; /* Y      -> QUICK MORPH (2) */
+    sBtnRemap[4] = 6; /* L      -> AIM (6) */
+    sBtnRemap[5] = 7; /* R      -> ARM WEAPON (7) */
+    sBtnRemap[6] = 6; /* ZL     -> AIM (6) */
+    sBtnRemap[7] = 7; /* ZR     -> ARM WEAPON (7) */
+    sBtnRemap[8] = 8; /* Start  -> PAUSE (8) */
+    sBtnRemap[9] = 5; /* Select -> MISSILES (5) */
+    sCstickMode = 0;  /* OFF */
+    Port_Config_Save();
+}
 
 void Port_Config_Save(void) {
     FILE* file = fopen(sConfigPath, "wb");
@@ -138,10 +176,18 @@ void Port_Config_Save(void) {
     fprintf(file, "display_style=%d\n", sDisplayStyle);
     fprintf(file, "show_fps=%u\n", sShowFps ? 1u : 0u);
     fprintf(file, "auto_hide_hud=%u\n", sAutoHideHud ? 1u : 0u);
-    fprintf(file, "btn_map_x=%d\n", sBtnMapX);
-    fprintf(file, "btn_map_y=%d\n", sBtnMapY);
-    fprintf(file, "btn_map_zl=%d\n", sBtnMapZL);
-    fprintf(file, "btn_map_zr=%d\n", sBtnMapZR);
+    fprintf(file, "hide_spoilers=%u\n", sHideSpoilers ? 1u : 0u);
+    fprintf(file, "btn_map_a=%d\n", sBtnRemap[0]);
+    fprintf(file, "btn_map_b=%d\n", sBtnRemap[1]);
+    fprintf(file, "btn_map_x=%d\n", sBtnRemap[2]);
+    fprintf(file, "btn_map_y=%d\n", sBtnRemap[3]);
+    fprintf(file, "btn_map_l=%d\n", sBtnRemap[4]);
+    fprintf(file, "btn_map_r=%d\n", sBtnRemap[5]);
+    fprintf(file, "btn_map_zl=%d\n", sBtnRemap[6]);
+    fprintf(file, "btn_map_zr=%d\n", sBtnRemap[7]);
+    fprintf(file, "btn_map_start=%d\n", sBtnRemap[8]);
+    fprintf(file, "btn_map_select=%d\n", sBtnRemap[9]);
+    fprintf(file, "cstick_mode=%d\n", sCstickMode);
     fprintf(file, "bottom_tab=%d\n", (int)Port_BottomUI_GetTab());
     fprintf(file, "bottom_zoom=%d\n", Port_BottomUI_GetZoom());
     fprintf(file, "bottom_area=%d\n", Port_BottomUI_GetViewArea());
@@ -183,7 +229,8 @@ void Port_Config_Load(void) {
             Port_RA_SetEnabled(val != 0);
         } else if (strcmp(key, "ra_hardcore") == 0) {
             extern void Port_RA_SetHardcore(bool);
-            Port_RA_SetHardcore(val != 0);
+            /* Hardcore forced to false for now */
+            Port_RA_SetHardcore(false);
         } else if (strcmp(key, "ra_sound") == 0) {
             extern void Port_RA_SetNotificationSound(bool);
             Port_RA_SetNotificationSound(val != 0);
@@ -195,14 +242,30 @@ void Port_Config_Load(void) {
             sShowFps = (val != 0);
         } else if (strcmp(key, "auto_hide_hud") == 0) {
             sAutoHideHud = (val != 0);
+        } else if (strcmp(key, "hide_spoilers") == 0) {
+            sHideSpoilers = (val != 0);
+        } else if (strcmp(key, "btn_map_a") == 0) {
+            if (val >= 0 && val < BTN_ACTION_COUNT) sBtnRemap[0] = val;
+        } else if (strcmp(key, "btn_map_b") == 0) {
+            if (val >= 0 && val < BTN_ACTION_COUNT) sBtnRemap[1] = val;
         } else if (strcmp(key, "btn_map_x") == 0) {
-            if (val >= 0 && val < 8) sBtnMapX = val;
+            if (val >= 0 && val < BTN_ACTION_COUNT) sBtnRemap[2] = val;
         } else if (strcmp(key, "btn_map_y") == 0) {
-            if (val >= 0 && val < 8) sBtnMapY = val;
+            if (val >= 0 && val < BTN_ACTION_COUNT) sBtnRemap[3] = val;
+        } else if (strcmp(key, "btn_map_l") == 0) {
+            if (val >= 0 && val < BTN_ACTION_COUNT) sBtnRemap[4] = val;
+        } else if (strcmp(key, "btn_map_r") == 0) {
+            if (val >= 0 && val < BTN_ACTION_COUNT) sBtnRemap[5] = val;
         } else if (strcmp(key, "btn_map_zl") == 0) {
-            if (val >= 0 && val < 8) sBtnMapZL = val;
+            if (val >= 0 && val < BTN_ACTION_COUNT) sBtnRemap[6] = val;
         } else if (strcmp(key, "btn_map_zr") == 0) {
-            if (val >= 0 && val < 8) sBtnMapZR = val;
+            if (val >= 0 && val < BTN_ACTION_COUNT) sBtnRemap[7] = val;
+        } else if (strcmp(key, "btn_map_start") == 0) {
+            if (val >= 0 && val < BTN_ACTION_COUNT) sBtnRemap[8] = val;
+        } else if (strcmp(key, "btn_map_select") == 0) {
+            if (val >= 0 && val < BTN_ACTION_COUNT) sBtnRemap[9] = val;
+        } else if (strcmp(key, "cstick_mode") == 0) {
+            if (val >= 0 && val < 4) sCstickMode = val;
         } else if (strcmp(key, "bottom_tab") == 0) {
             if (val >= 0 && val < BOTTOM_TAB_COUNT) Port_BottomUI_SetTab((PortBottomTab)val);
         } else if (strcmp(key, "bottom_zoom") == 0) {
@@ -216,6 +279,60 @@ void Port_Config_Load(void) {
     fclose(file);
 }
 
+int Port_Config_GetButtonMapping(int buttonIndex) {
+    if (buttonIndex >= 0 && buttonIndex < BTN_REMAP_COUNT)
+        return sBtnRemap[buttonIndex];
+    return 0;
+}
+
+void Port_Config_CycleButtonMapping(int buttonIndex) {
+    if (buttonIndex < 0 || buttonIndex >= BTN_REMAP_COUNT) return;
+    int val = (sBtnRemap[buttonIndex] + 1) % BTN_ACTION_COUNT;
+    sBtnRemap[buttonIndex] = val;
+    Port_Config_Save();
+}
+
+void Port_Config_SetButtonMapping(int buttonIndex, int action) {
+    if (buttonIndex < 0 || buttonIndex >= BTN_REMAP_COUNT) return;
+    if (action < 0 || action >= BTN_ACTION_COUNT) return;
+    sBtnRemap[buttonIndex] = action;
+    Port_Config_Save();
+}
+
+int Port_Config_GetCstickMode(void) { return sCstickMode; }
+void Port_Config_SetCstickMode(int mode) { if (mode >= 0 && mode < 4) { sCstickMode = mode; Port_Config_Save(); } }
+
+const char* Port_Config_GetActionName(int action, int lang) {
+    if (lang == 6) {
+        switch (action) {
+            case 0: return "NINGUNA";
+            case 1: return "AUTODISPARO";
+            case 2: return "MORFOSFERA RAPIDA";
+            case 3: return "DISPARAR (B)";
+            case 4: return "SALTAR (A)";
+            case 5: return "MISILES (SELECT)";
+            case 6: return "APUNTAR (L)";
+            case 7: return "ARMAR MISILES (R)";
+            case 8: return "PAUSA (START)";
+            default: return "NINGUNA";
+        }
+    }
+    switch (action) {
+        case 0: return "NONE";
+        case 1: return "RAPID FIRE";
+        case 2: return "QUICK MORPH";
+        case 3: return "FIRE (B)";
+        case 4: return "JUMP (A)";
+        case 5: return "MISSILES (SELECT)";
+        case 6: return "AIM (L)";
+        case 7: return "ARM WEAPON (R)";
+        case 8: return "PAUSE (START)";
+        default: return "NONE";
+    }
+}
+
+bool Port_Config_GetHideSpoilers(void) { return sHideSpoilers; }
+void Port_Config_SetHideSpoilers(bool on) { sHideSpoilers = on; Port_Config_Save(); }
 bool Port_Config_GetAutoHideHud(void) { return sAutoHideHud; }
 void Port_Config_SetAutoHideHud(bool on) { sAutoHideHud = on; Port_Config_Save(); }
 
@@ -282,69 +399,6 @@ void Port_GetAreaItemTypeCounts(int area, int* outEnergy, int* outMissile, int* 
             case ITEM_TYPE_POWER_BOMB: (*outPowerBomb)++; break;
             default: break;
         }
-    }
-}
-
-int Port_Config_GetButtonMapping(int buttonIndex) {
-    switch (buttonIndex) {
-        case 0: return sBtnMapX;
-        case 1: return sBtnMapY;
-        case 2: return sBtnMapZL;
-        case 3: return sBtnMapZR;
-        default: return 0;
-    }
-}
-
-void Port_Config_CycleButtonMapping(int buttonIndex) {
-    /* Rapid Fire (action 1) is not allowed in RetroAchievements hardcore mode */
-    extern bool Port_RA_IsHardcore(void);
-    bool skipRapid = Port_RA_IsHardcore();
-
-    int val;
-    switch (buttonIndex) {
-        case 0: val = sBtnMapX; break;
-        case 1: val = sBtnMapY; break;
-        case 2: val = sBtnMapZL; break;
-        case 3: val = sBtnMapZR; break;
-        default: return;
-    }
-    do {
-        val = (val + 1) % 8;
-    } while (skipRapid && val == 1);
-
-    switch (buttonIndex) {
-        case 0: sBtnMapX = val; break;
-        case 1: sBtnMapY = val; break;
-        case 2: sBtnMapZL = val; break;
-        case 3: sBtnMapZR = val; break;
-    }
-    Port_Config_Save();
-}
-
-const char* Port_Config_GetActionName(int action, int lang) {
-    if (lang == 6) {
-        switch (action) {
-            case 0: return "NINGUNA";
-            case 1: return "AUTODISPARO";
-            case 2: return "MORFOSFERA RAPIDA";
-            case 3: return "DISPARAR (B)";
-            case 4: return "SALTAR (A)";
-            case 5: return "MISILES (SELECT)";
-            case 6: return "APUNTAR ARRIBA (R)";
-            case 7: return "APUNTAR ABAJO (L)";
-            default: return "NINGUNA";
-        }
-    }
-    switch (action) {
-        case 0: return "NONE";
-        case 1: return "RAPID FIRE";
-        case 2: return "QUICK MORPH";
-        case 3: return "FIRE (B)";
-        case 4: return "JUMP (A)";
-        case 5: return "MISSILES (SELECT)";
-        case 6: return "AIM UP (R)";
-        case 7: return "AIM DOWN (L)";
-        default: return "NONE";
     }
 }
 

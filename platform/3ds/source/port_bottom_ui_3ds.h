@@ -29,6 +29,11 @@ void Port_BottomUI_HandleTouchDrag(int touchX, int touchY, bool isNewTap);
 void Port_BottomUI_TouchReleased(void);
 void Port_BottomUI_Render(void);
 
+/* Returns true if the Debug tab should be visible (debug builds only).
+ * In production builds PORT_DEBUG_TOOLS_ACTIVE is not defined, so this
+ * returns false and the tab is hidden from the tab bar. */
+bool Port_BottomUI_DebugTabVisible(void);
+
 #ifdef __cplusplus
 }
 #endif
