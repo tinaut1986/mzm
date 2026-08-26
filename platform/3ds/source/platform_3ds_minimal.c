@@ -5,6 +5,7 @@
  * input handling, timing, and lifecycle management.
  */
 #include "platform_3ds.h"
+#include "port_debug_tools.h"
 
 #include <3ds.h>
 #include <stdio.h>
@@ -199,6 +200,14 @@ extern void gba_write16(uint32_t addr, uint16_t v);
  * forward declarations. */
 extern void PlatformGpu3DS_DumpScreens(void);
 
+/* L+R+START toggles the scene recorder (PlatformGpu3DS_ToggleRecording, in
+ * platform_gpu_3ds.c): first press starts sampling emulated GBA state to
+ * sdmc:/3ds/mzm-rec.bin every few frames, second press stops and closes the
+ * file. See that function's doc comment for why it exists -- a single L+R+X
+ * dump couldn't reliably catch the exact moment a fast-changing scene (e.g.
+ * issue #17's death animation) actually breaks. */
+extern void PlatformGpu3DS_ToggleRecording(void);
+
 /* L+R+Y drops a timestamped "USER MARK" line into mzm-debug.log so a play
  * session can flag "something happened right here" (e.g. a visible CPU/GPU
  * renderer fallback) without having to describe timing after the fact --
@@ -210,15 +219,18 @@ extern void PlatformGpu3DS_DumpScreens(void);
 extern void Port_DebugLog(const char* msg);
 
 extern int Port_Config_GetButtonMapping(int buttonIndex);
+extern int Port_Config_GetCstickMode(void);
 extern int Port_Samus_GetPoseClass(void); /* 0 = normal, 1 = crouching, 2 = morphed */
 
-static uint16_t ProcessButtonAction(int action, uint32_t keysHeld, uint32_t keysDown, uint32_t buttonMask, bool* outMorphPulse) {
+static uint16_t ProcessButtonAction(int action, uint32_t keysHeld, uint32_t keysDown, uint32_t buttonMask, bool* outMorphPulse, bool* outDiagAim) {
     if (!(keysHeld & buttonMask)) return 0;
 
     switch (action) {
-        case 1: { /* AUTODISPARO (RAPID FIRE) */
+        case 1: { /* AUTODISPARO (RAPID FIRE) - disabled in RA hardcore mode */
+            extern bool Port_RA_IsHardcore(void);
             static uint32_t sRapidCounter = 0;
             ++sRapidCounter;
+            if (Port_RA_IsHardcore()) return 0;
             /* Pulse KEY_B every other frame (30 shots/sec) */
             return (sRapidCounter & 1) ? (1 << 1) : 0;
         }
@@ -231,8 +243,12 @@ static uint16_t ProcessButtonAction(int action, uint32_t keysHeld, uint32_t keys
         case 3: return (1 << 1); /* DISPARO (KEY_B) */
         case 4: return (1 << 0); /* SALTO (KEY_A) */
         case 5: return (1 << 2); /* MISILES (KEY_SELECT) */
-        case 6: return (1 << 8); /* APUNTAR ARRIBA (KEY_R) */
-        case 7: return (1 << 9); /* APUNTAR ABAJO (KEY_L) */
+        case 6: { /* APUNTAR (KEY_L) */
+            if (outDiagAim) *outDiagAim = true;
+            return (1 << 9); /* KEY_L */
+        }
+        case 7: return (1 << 8); /* ARMAR MISILES (KEY_R) */
+        case 8: return (1 << 3); /* PAUSA (KEY_START) */
         default: return 0;
     }
 }
@@ -242,10 +258,10 @@ void Platform3DS_PollKeysIntoGba(void) {
     const uint32_t held3ds = hidKeysHeld();
     const uint32_t down3ds = hidKeysDown();
 
-    /* Standard GBA buttons from 3DS D-Pad / Face buttons */
-    uint16_t gbaKeys = (uint16_t)(held3ds & MZM_KEY_MASK);
+    /* 1. D-Pad direct passthrough (fixed to movement, bits 4-7) + Circle Pad
+     *    (analog stick, always maps to movement regardless of config). */
+    uint16_t gbaKeys = (uint16_t)((held3ds & MZM_KEY_MASK) & 0xF0); /* only D-Pad bits 4-7 */
 
-    /* 1. Circle Pad input (analog stick -> D-Pad) */
     circlePosition circle;
     hidCircleRead(&circle);
     const int16_t deadzone = 40;
@@ -254,71 +270,98 @@ void Platform3DS_PollKeysIntoGba(void) {
     if (circle.dy > deadzone) gbaKeys |= (1 << 6);  /* KEY_UP */
     if (circle.dy < -deadzone) gbaKeys |= (1 << 7); /* KEY_DOWN */
 
-    /* 2. C-Stick / New 3DS Right Analog Stick (Aim / Directions) */
+    bool hasDiagAim = false;
+
+    /* 2. C-Stick / New 3DS Right Analog (configurable via cstick_mode) */
     circlePosition cstick;
     irrstCstickRead(&cstick);
-    if (cstick.dx > deadzone) gbaKeys |= (1 << 4);
-    if (cstick.dx < -deadzone) gbaKeys |= (1 << 5);
-    if (cstick.dy > deadzone) gbaKeys |= (1 << 8);  /* C-Stick Up -> Aim Up (R) */
-    if (cstick.dy < -deadzone) gbaKeys |= (1 << 9); /* C-Stick Down -> Aim Down (L) */
+    int cstickMode = Port_Config_GetCstickMode();
+    /* cstickMode: 0=DESACTIVADO (OFF), 1=SOLO APUNTAR (UP/DOWN ONLY), 2=SOLO MOVIMIENTO (LEFT/RIGHT ONLY), 3=TODO (4 DIRECCIONES COMPLETAS) */
+    if (cstickMode == 1) {
+        /* SOLO APUNTAR: arriba y abajo (permite apuntar hacia arriba o abajo mientras se corre) */
+        if (cstick.dy > deadzone) gbaKeys |= (1 << 6);  /* KEY_UP */
+        if (cstick.dy < -deadzone) gbaKeys |= (1 << 7); /* KEY_DOWN */
+    } else if (cstickMode == 2) {
+        /* SOLO MOVIMIENTO: adelante y atras (horizontal) */
+        if (cstick.dx > deadzone) gbaKeys |= (1 << 4);  /* KEY_RIGHT */
+        if (cstick.dx < -deadzone) gbaKeys |= (1 << 5); /* KEY_LEFT */
+    } else if (cstickMode == 3) {
+        /* TODO: movimiento y apuntar/agacharse (4 direcciones completas) */
+        if (cstick.dx > deadzone) gbaKeys |= (1 << 4);
+        if (cstick.dx < -deadzone) gbaKeys |= (1 << 5);
+        if (cstick.dy > deadzone) gbaKeys |= (1 << 6);
+        if (cstick.dy < -deadzone) gbaKeys |= (1 << 7);
+    }
 
-    /* L+R held together is reserved as a diagnostics modifier, freeing X/Y
-     * up from their normal configurable gameplay actions for that instant:
-     * L+R+X dumps the real GPU-rendered screen content to the SD card
-     * (PlatformGpu3DS_DumpScreens -- this used to be plain KEY_X before X
-     * became a user-configurable action button, see the comment below),
-     * L+R+Y drops a timestamped "USER MARK" line into mzm-debug.log so a
-     * play session can flag a moment for later grep'ing without describing
-     * timing after the fact. Edge-triggered on down3ds so each physical
-     * press dumps/logs exactly once. */
-    const bool lrHeld = (held3ds & KEY_L) && (held3ds & KEY_R);
+    /* 3. Debug modifier (L+R held together -- raw hardware check, before
+     *    any remapping). Only active in debug builds. */
+    bool lrHeld = false;
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
+    lrHeld = (held3ds & KEY_L) && (held3ds & KEY_R);
     if (lrHeld) {
         if (down3ds & KEY_X) PlatformGpu3DS_DumpScreens();
         if (down3ds & KEY_Y) Port_DebugLog("USER MARK: L+R+Y pressed");
+        if (down3ds & KEY_START) PlatformGpu3DS_ToggleRecording();
+        if (down3ds & KEY_A) {
+            extern void PlatformGpu3DS_TogglePerfRecording(void);
+            PlatformGpu3DS_TogglePerfRecording();
+        }
+        if (down3ds & KEY_SELECT) {
+            extern void PortPpuMzm_DebugKillSamus(void);
+            PortPpuMzm_DebugKillSamus();
+        }
+        if (down3ds & KEY_B) {
+            extern void Port_GpuRenderer_DumpAtlas(const char* ppmPath, const char* csvPath);
+            Port_GpuRenderer_DumpAtlas("sdmc:/3ds/mzm-live-atlas.ppm", "sdmc:/3ds/mzm-live-atlas-keys.csv");
+        }
     }
+#endif
 
-    /* 3. Configurable Extra Buttons: X, Y, ZL, ZR (suppressed while L+R is
-     * held, so the diagnostics combo above doesn't also fire whatever
-     * gameplay action the player has assigned to X/Y). */
-    bool quickMorphPulse = false;
+    /* 4. Suppress passthrough for ALL remappable buttons (A/B/X/Y/L/R/ZL/ZR/Start/Select).
+     *    D-Pad (bits 4-7) and Circle Pad are already handled above.
+     *    Only suppress when L+R debug modifier is NOT active. */
     if (!lrHeld) {
-        gbaKeys |= ProcessButtonAction(Port_Config_GetButtonMapping(0), held3ds, down3ds, KEY_X, &quickMorphPulse);
-        gbaKeys |= ProcessButtonAction(Port_Config_GetButtonMapping(1), held3ds, down3ds, KEY_Y, &quickMorphPulse);
+        gbaKeys &= ~(1u << 0); /* KEY_A */
+        gbaKeys &= ~(1u << 1); /* KEY_B */
+        gbaKeys &= ~(1u << 2); /* KEY_SELECT */
+        gbaKeys &= ~(1u << 3); /* KEY_START */
+        gbaKeys &= ~(1u << 8); /* KEY_R */
+        gbaKeys &= ~(1u << 9); /* KEY_L */
     }
-    gbaKeys |= ProcessButtonAction(Port_Config_GetButtonMapping(2), held3ds, down3ds, KEY_ZL, &quickMorphPulse);
-    gbaKeys |= ProcessButtonAction(Port_Config_GetButtonMapping(3), held3ds, down3ds, KEY_ZR, &quickMorphPulse);
 
-    /* Quick Morph toggle handling.
-     *
-     * This is goal-directed rather than a fixed-length pulse, because both
-     * directions need a *variable* number of KEY_DOWN/KEY_UP edges depending
-     * on animation timing, not just one:
-     *   - Entering ball form: standing -> crouching on the first DOWN edge,
-     *     crouching -> morphing on a second DOWN edge (samus.c's
-     *     SamusStanding/SamusCrouching). Goal: pose class reaches MORPHED.
-     *   - Leaving ball form: one UP edge starts unmorphing
-     *     (SamusMorphball's "Check unmorphing" block), but that only lands
-     *     Samus in CROUCHING once the animation ends (SamusUnmorphingGfx
-     *     hard-sets it) -- a *second* UP edge is then needed to actually
-     *     stand up (SamusCrouching's own KEY_UP check). Goal: pose class
-     *     reaches NORMAL (not just "no longer morphed"), so Samus doesn't
-     *     end up stuck crouching after unmorphing.
-     * Each attempted edge is a short press with a release gap after it (so
-     * a held key still produces a fresh gChangedInput edge next attempt),
-     * repeated every frame the goal isn't met yet, with a safety frame cap
-     * in case a pose transition doesn't behave as expected. */
-    static int sQuickMorphGoalClass = -1; /* -1 = idle, else target Port_Samus_GetPoseClass() value */
-    static int sQuickMorphPhaseTimer = 0; /* frames left in the current press or release micro-step */
+    /* 5. Process all 10 remappable buttons through ProcessButtonAction.
+     *    Index mapping: 0=A, 1=B, 2=X, 3=Y, 4=L, 5=R, 6=ZL, 7=ZR, 8=Start, 9=Select.
+     *    Physical button -> config index -> action -> GBA bits. */
+    static const uint32_t btnMasks[10] = {
+        KEY_A, KEY_B, KEY_X, KEY_Y, KEY_L, KEY_R, KEY_ZL, KEY_ZR, KEY_START, KEY_SELECT
+    };
+
+    bool quickMorphPulse = false;
+
+    if (!lrHeld) {
+        for (int i = 0; i < 10; ++i) {
+            int action = Port_Config_GetButtonMapping(i);
+            gbaKeys |= ProcessButtonAction(action, held3ds, down3ds, btnMasks[i], &quickMorphPulse, &hasDiagAim);
+        }
+    }
+
+    /* 6. Diagonal aim modifier: inject virtual bit 10 into gbaKeys.
+     *    SamusAimCannon (samus.c) is modified to also check bit 10. */
+    if (hasDiagAim) gbaKeys |= (1u << 10);
+
+    /* Quick Morph toggle handling (unchanged) */
+    static int sQuickMorphGoalClass = -1;
+    static int sQuickMorphPhaseTimer = 0;
     static bool sQuickMorphPressing = false;
     static int sQuickMorphSafetyFrames = 0;
     if (quickMorphPulse && sQuickMorphGoalClass < 0) {
         sQuickMorphGoalClass = (Port_Samus_GetPoseClass() == 2) ? 0 : 2;
         sQuickMorphPhaseTimer = 0;
         sQuickMorphPressing = false;
-        sQuickMorphSafetyFrames = 120; /* ~2s at 60fps */
+        sQuickMorphSafetyFrames = 120;
     }
     if (sQuickMorphGoalClass >= 0) {
-        const uint16_t morphKey = (sQuickMorphGoalClass == 2) ? (1 << 7) /* DOWN */ : (1 << 6) /* UP */;
+        const uint16_t morphKey = (sQuickMorphGoalClass == 2) ? (1 << 7) : (1 << 6);
         if (Port_Samus_GetPoseClass() == sQuickMorphGoalClass || --sQuickMorphSafetyFrames <= 0) {
             sQuickMorphGoalClass = -1;
         } else if (sQuickMorphPhaseTimer > 0) {
@@ -326,7 +369,7 @@ void Platform3DS_PollKeysIntoGba(void) {
             if (sQuickMorphPressing) gbaKeys |= morphKey;
         } else if (sQuickMorphPressing) {
             sQuickMorphPressing = false;
-            sQuickMorphPhaseTimer = 4; /* release gap before the next edge */
+            sQuickMorphPhaseTimer = 4;
         } else {
             sQuickMorphPressing = true;
             sQuickMorphPhaseTimer = 4;

@@ -6,6 +6,11 @@
 #include <stdio.h>
 #include <string.h>
 
+/* Implemented in port_ppu_mzm.c, which can safely include structs/samus.h
+ * (this file can't: it also pulls in <3ds.h>/<citro3d.h>, whose u32 typedef
+ * conflicts with the GBA-port one dragged in by structs/samus.h). */
+void PortPpuMzm_DumpSamusState(void);
+
 static C3D_RenderTarget* sTopTarget;
 static C3D_RenderTarget* sTopRightTarget;
 static C3D_RenderTarget* sBottomTarget;
@@ -486,6 +491,14 @@ void PlatformGpu3DS_BeginTopStereo(const uint32_t* leftPixels, const uint32_t* r
 
 bool PlatformGpu3DS_BeginTopSceneGpu(void) {
     if (!sReady) return false;
+    /* Issue #17: tested C3D_FRAME_SYNCDRAW here (forces the CPU to wait for
+     * the GPU to finish the previous frame before this frame's CPU-side
+     * atlas decode writes start) as a test for a CPU/GPU frame-overlap race
+     * on the shared, non-double-buffered atlas texture. Confirmed on real
+     * hardware (2026-08-26) NOT to fix the death-scene corruption -- still
+     * broken, just slower (dropped FPS game-wide). Reverted to plain
+     * C3D_FrameBegin(0). See docs/3ds-issue17-session-2026-08-25.md's final
+     * update -- this rules out frame-overlap as the cause. */
     if (!C3D_FrameBegin(0)) {
         ++sStats.frameBeginFailures;
         return false;
@@ -675,6 +688,240 @@ static void WriteBlob(const char* path, const void* data, size_t size) {
     fclose(f);
 }
 
+/* Scene recorder: L+R+START (see Platform3DS_PollKeysIntoGba) toggles this
+ * on/off. Unlike PlatformGpu3DS_DumpScreens' one-shot dump, this samples the
+ * emulated GBA state (VRAM/OAM/palettes/IO + a bit of Samus state) every
+ * kRecordEveryNFrames frames and appends each sample to one growing file on
+ * the SD card -- built for tracking down issue #17, where a single L+R+X
+ * press couldn't catch the exact moment the death animation actually breaks
+ * (as opposed to the correct green-flash frames right after it starts).
+ * Deliberately skips the RGB screenshots DumpScreens takes (each is ~800KB
+ * and requires a GPU display-transfer sync): at 15 samples/sec those would
+ * either stall the frame pump or need buffering far bigger than this format,
+ * and the VRAM/OAM/palette state alone is enough to reconstruct the visual
+ * frame-by-frame offline (already proven doing that for the L+R+X dumps).
+ * One sample is ~101KB, so a multi-second recording (say 5s at 15Hz = 75
+ * samples, ~7.5MB) is trivial for the SD card; kRecordMaxSamples caps it so
+ * forgetting to press the combo again doesn't fill the card.
+ *
+ * Companion screenshots (issue #17 follow-up): every
+ * kRecordScreenshotEverySamples-th sample ALSO gets a real left-eye
+ * DumpOneTarget() screenshot (same ~800KB/GPU-sync cost DumpScreens' single
+ * shot has), written to its own indexed file rather than folded into
+ * mzm-rec.bin's fixed-size records. At 1-in-4 (~4/sec) this is affordable
+ * for the few seconds #17's death sequence lasts, unlike doing it every
+ * sample (see the no-screenshots reasoning above). This is the only way to
+ * tell apart "the emulated state was already wrong" (visible in every
+ * sample via the existing VRAM/OAM/palette reconstruction) from "the state
+ * was fine but the GPU renderer drew it wrong" (only provable by comparing
+ * against what was ACTUALLY on screen at that exact sample). */
+static bool sRecording;
+static FILE* sRecFile;
+static unsigned sRecFrameCounter;
+static unsigned sRecSampleCount;
+/* Wall-clock ticks of the emulated frame that just ended, measured between
+ * consecutive PlatformGpu3DS_RecordTick calls (which Port_Bios_Halt calls
+ * exactly once per emulated GBA frame). Recorded per sample so a recording
+ * can show WHEN frames overran the 16.7ms budget (issue #20's Skree-explosion
+ * hitch) instead of only what was on screen. */
+static u64 sRecLastTick;
+static u64 sRecLastFrameTicks;
+
+extern u64 Platform3DS_SystemTick(void);
+extern u64 Platform3DS_TicksPerSecond(void);
+static const unsigned kRecordEveryNFrames = 4; /* ~15Hz at 60fps */
+static const unsigned kRecordMaxSamples = 450; /* ~30s at 15Hz */
+static const unsigned kRecordScreenshotEverySamples = 4; /* ~1 screenshot/sec */
+
+bool PlatformGpu3DS_IsRecording(void) { return sRecording; }
+
+/* ---- Perf-only frame-time recorder (issue #20) ----------------------
+ * The full scene recorder above writes ~100KB/sample to SD (~1.5MB/s
+ * sustained), which by itself slows the whole game down -- masking exactly
+ * the kind of transient hitch we're hunting. This sibling records ONLY a
+ * 16-byte entry per emulated frame into a RAM ring buffer (no SD I/O while
+ * running, no screenshots): frame counter, wall-clock duration of that
+ * frame in microseconds, and the OAM census (total + affine sprites).
+ * L+R+A toggles; on stop the buffer is flushed to sdmc:/3ds/mzm-perf.bin
+ * as a flat little-endian array of PerfSample structs.
+ * 60 samples/sec * 120s capacity = 7200 entries * 16B = ~115KB BSS. ---- */
+typedef struct {
+    uint32_t frameCounter;
+    uint32_t durationUs;
+    uint32_t spriteCount;
+    uint32_t affineSpriteCount;
+} PerfSample;
+static const unsigned kPerfMaxSamples = 7200; /* ~2min at 60fps */
+static bool sPerfRecording;
+static PerfSample* sPerfSamples;
+static unsigned sPerfCount;
+static u64 sPerfLastTick;
+
+bool PlatformGpu3DS_IsPerfRecording(void) { return sPerfRecording; }
+
+void PlatformGpu3DS_TogglePerfRecording(void) {
+    if (sPerfRecording) {
+        extern void Port_DebugLog(const char* msg);
+        char msg[80];
+        snprintf(msg, sizeof(msg), "PERF REC STOP: %u frames -> mzm-perf.bin", sPerfCount);
+        Port_DebugLog(msg);
+        FILE* f = fopen("sdmc:/3ds/mzm-perf.bin", "wb");
+        if (f && sPerfSamples && sPerfCount) fwrite(sPerfSamples, sizeof(PerfSample), sPerfCount, f);
+        if (f) fclose(f);
+        linearFree(sPerfSamples);
+        sPerfSamples = NULL;
+        sPerfCount = 0;
+        sPerfRecording = false;
+        return;
+    }
+    if (!sPerfSamples) sPerfSamples = (PerfSample*)linearAlloc(kPerfMaxSamples * sizeof(PerfSample));
+    if (!sPerfSamples) {
+        extern void Port_DebugLog(const char* msg);
+        Port_DebugLog("PERF REC: linearAlloc FAILED (need 115KB linear heap)");
+        return;
+    }
+    sPerfCount = 0;
+    sPerfLastTick = 0;
+    sPerfRecording = true;
+}
+
+void PlatformGpu3DS_PerfRecordTick(void) {
+    if (!sPerfRecording || !sPerfSamples) return;
+    extern u16 gOamMem[0x400 / 2];
+
+    const u64 now = Platform3DS_SystemTick();
+    u64 durTicks = 0;
+    if (sPerfLastTick != 0) durTicks = now - sPerfLastTick;
+    sPerfLastTick = now;
+
+    if (sPerfCount >= kPerfMaxSamples) {
+        PlatformGpu3DS_TogglePerfRecording(); /* flush + stop at capacity */
+        return;
+    }
+
+    unsigned spriteCount = 0;
+    unsigned affineSpriteCount = 0;
+    for (unsigned i = 0; i < 128u; ++i) {
+        const uint16_t attr0 = gOamMem[i * 4];
+        if ((attr0 & 0xC000u) == 0xC000u) continue;
+        if ((attr0 & 0x0300u) == 0x0100u) continue;
+        ++spriteCount;
+        if (attr0 & 0x0100u) ++affineSpriteCount;
+    }
+
+    const u64 ticksPerSec = Platform3DS_TicksPerSecond();
+    sPerfSamples[sPerfCount++] = (PerfSample){
+        .frameCounter = sStats.frames,
+        .durationUs = (uint32_t)((durTicks * 1000000ull) / (ticksPerSec ? ticksPerSec : 1)),
+        .spriteCount = spriteCount,
+        .affineSpriteCount = affineSpriteCount,
+    };
+}
+
+void PlatformGpu3DS_ToggleRecording(void) {
+    if (sRecording) {
+        if (sRecFile) { fclose(sRecFile); sRecFile = NULL; }
+        sRecording = false;
+        return;
+    }
+
+    sRecFile = fopen("sdmc:/3ds/mzm-rec.bin", "wb");
+    if (!sRecFile) return;
+    sRecording = true;
+    sRecFrameCounter = 0;
+    sRecSampleCount = 0;
+    sRecLastTick = 0;
+    sRecLastFrameTicks = 0;
+}
+
+void PlatformGpu3DS_RecordTick(void) {
+    if (!sRecording) return;
+
+    const u64 now = Platform3DS_SystemTick();
+    if (sRecLastTick != 0) sRecLastFrameTicks = now - sRecLastTick;
+    sRecLastTick = now;
+
+    if (sRecFrameCounter++ % kRecordEveryNFrames != 0) return;
+
+    if (sRecSampleCount >= kRecordMaxSamples) {
+        PlatformGpu3DS_ToggleRecording();
+        return;
+    }
+    sRecSampleCount++;
+
+    extern u8 gIoMem[0x400];
+    extern u16 gBgPltt[256];
+    extern u16 gObjPltt[256];
+    extern u16 gOamMem[0x400 / 2];
+    extern u8 gVram[0x18000];
+    extern void PortPpuMzm_GetSamusRecordState(uint32_t* out);
+
+    /* Perf extension (issue #20): header grew from 32 to 64 bytes, magic
+     * bumped 'MZMR' -> 'MZM2' so old parsers fail loudly instead of
+     * misparsing. New fields: last emulated frame's wall-clock duration in
+     * microseconds, citro3d drawing/processing times (hundredths of ms,
+     * clamped to u32), and OAM census -- total non-disabled sprites and how
+     * many use affine rotation/scaling matrices (the Skree explosion spawns
+     * 4 of those at once; the hypothesis is that they're what blows the
+     * frame budget). */
+    unsigned spriteCount = 0;
+    unsigned affineSpriteCount = 0;
+    for (unsigned i = 0; i < 128u; ++i) {
+        const uint16_t attr0 = gOamMem[i * 4];
+        /* GBA disabled check: shape bits 15-14 = 3, OR bit8=0 bit9=1.
+         * NOT 0x0300 (bits 8-9 = 11) — that's affine double-size,
+         * used by e.g. Skree explosions. (This was the old bug: counting
+         * affine-double-size sprites as disabled → affine=0 always.) */
+        if ((attr0 & 0xC000u) == 0xC000u) continue;
+        if ((attr0 & 0x0300u) == 0x0100u) continue;
+        ++spriteCount;
+        if (attr0 & 0x0100u) ++affineSpriteCount;
+    }
+
+    const u64 ticksPerSec = Platform3DS_TicksPerSecond();
+    const uint32_t frameUs =
+        (uint32_t)((sRecLastFrameTicks * 1000000ull) / (ticksPerSec ? ticksPerSec : 1));
+    PlatformGpu3DSStats stats;
+    PlatformGpu3DS_GetStats(&stats);
+    uint32_t drawX100 = (uint32_t)(stats.drawingTime * 100.0f);
+    uint32_t procX100 = (uint32_t)(stats.processingTime * 100.0f);
+    /* citro3d can report negative/absurd values outside an active frame;
+     * clamp so the recorded u32 stays sane for offline parsing. */
+    if (stats.drawingTime < 0.0f) drawX100 = 0;
+    if (stats.processingTime < 0.0f) procX100 = 0;
+
+    uint32_t header[2 + 6 + 8]; /* magic, frame counter, 6 Samus words, perf */
+    header[0] = 0x324D5A4Du;   /* 'MZM2' */
+    header[1] = sRecFrameCounter;
+    PortPpuMzm_GetSamusRecordState(&header[2]);
+    header[8]  = frameUs;
+    header[9]  = drawX100;
+    header[10] = procX100;
+    header[11] = spriteCount;
+    header[12] = affineSpriteCount;
+    header[13] = 0; /* reserved */
+    header[14] = 0; /* reserved */
+    header[15] = 0; /* reserved */
+
+    fwrite(header, sizeof(header), 1, sRecFile);
+    fwrite(gIoMem, 1, sizeof(gIoMem), sRecFile);
+    fwrite(gBgPltt, 1, sizeof(gBgPltt), sRecFile);
+    fwrite(gObjPltt, 1, sizeof(gObjPltt), sRecFile);
+    fwrite(gOamMem, 1, sizeof(gOamMem), sRecFile);
+    fwrite(gVram, 1, sizeof(gVram), sRecFile);
+
+    /* sRecSampleCount was already incremented above, so sample #1 (the
+     * first one written this recording) always gets a screenshot too. File
+     * name embeds the sample index so it lines up with mzm-rec.bin's Nth
+     * record (0-indexed, matching the Python splitting snippet in
+     * docs/3ds-debug-tools.md) without needing to also parse frameCounter. */
+    if ((sRecSampleCount - 1) % kRecordScreenshotEverySamples == 0) {
+        char path[64];
+        snprintf(path, sizeof(path), "sdmc:/3ds/mzm-rec-shot-%04u.rgb", sRecSampleCount - 1);
+        DumpOneTarget(sTopTarget, path);
+    }
+}
+
 void PlatformGpu3DS_DumpScreens(void) {
     if (!sReady) return;
     DumpOneTarget(sTopTarget, "sdmc:/3ds/mzm-dump-left.rgb");
@@ -691,6 +938,8 @@ void PlatformGpu3DS_DumpScreens(void) {
     WriteBlob("sdmc:/3ds/mzm-dump-bgpltt.bin", gBgPltt, sizeof(gBgPltt));
     WriteBlob("sdmc:/3ds/mzm-dump-objpltt.bin", gObjPltt, sizeof(gObjPltt));
     WriteBlob("sdmc:/3ds/mzm-dump-oam.bin", gOamMem, sizeof(gOamMem));
+
+    PortPpuMzm_DumpSamusState();
 
     uint16_t dispcnt = (uint16_t)(gIoMem[0x00] | (gIoMem[0x01] << 8));
     uint16_t bg0cnt  = (uint16_t)(gIoMem[0x08] | (gIoMem[0x09] << 8));

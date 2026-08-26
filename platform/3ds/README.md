@@ -63,8 +63,9 @@ You can customize the build using Makefile variables and `EXTRA_CFLAGS`:
 | `RENDERER=gpu` *(default)* | Offloads Mode 0 tile and sprite rendering to the 3DS PICA200 GPU (`source/port_gpu_renderer.c`), falling back to CPU scanlines only when needed. |
 | `RENDERER=cpu` | Forces pure CPU scanline rendering (`port/ppu/src/mode1.c`) unconditionally for all frames. Useful for baseline testing and comparison. |
 | `FORCE_OLD3DS=1` | Runs on New 3DS hardware using Old 3DS clock rates, disabling L2 cache and Core 1 worker threads to benchmark Old 3DS / 2DS performance. |
-| `EXTRA_CFLAGS="-DPORT_GPU_RENDERER_DIAG_LOG"` | Enables verbose GPU frame diagnostics and logs reason for CPU fallback. |
-| `EXTRA_CFLAGS="-DPORT_AUDIO_DIAG_LOG"` | Enables audio pipeline diagnostics. |
+| `DEBUG_TOOLS=1` | Compiles in the L+R+`<button>` debug combos (instant-kill, scene recorder, fixture replay, live atlas dump, one-shot screen/state dump -- see `docs/3ds-debug-tools.md`). Source-level gate, not just runtime-disabled: a plain build has no code path to trigger any of them, not even by accident. This is the "simple debug" build -- no verbose per-frame logging on its own. |
+| `EXTRA_CFLAGS="-DPORT_GPU_RENDERER_DIAG_LOG"` | Enables verbose GPU frame diagnostics and logs reason for CPU fallback. Also turns on the `DEBUG_TOOLS=1` combos automatically (see `source/port_debug_tools.h`). |
+| `EXTRA_CFLAGS="-DPORT_AUDIO_DIAG_LOG"` | Enables audio pipeline diagnostics. Also turns on the `DEBUG_TOOLS=1` combos automatically. |
 
 #### Deployment & Utility Targets:
 - **FTP Upload**: Deploy directly to a console running FBI or an FTP server:
@@ -85,6 +86,7 @@ You can customize the build using Makefile variables and `EXTRA_CFLAGS`:
   ```sh
   tools/run_azahar_test.sh 15
   ```
-- **Real Hardware Diagnostics**:
-  - `L + R + X`: Dumps framebuffers and GBA VRAM/IO registers to `sdmc:/3ds/`.
-  - `L + R + Y`: Writes a timestamped marker in `sdmc:/mzm-debug.log`.
+- **Real Hardware Diagnostics** (full details, file formats, and known findings in [`docs/3ds-debug-tools.md`](../../docs/3ds-debug-tools.md)):
+  - `L + R + X`: One-shot dump of framebuffers, GBA VRAM/OAM/palettes/IO registers, and Samus's pose/animation state to `sdmc:/3ds/`.
+  - `L + R + Y`: Writes a timestamped marker in `sdmc:/3ds/mzm-debug.log`.
+  - `L + R + START`: Toggles a scene recorder (a blinking "REC" indicator shows on the bottom screen) -- samples emulated GBA state (no screenshots) every few frames to `sdmc:/3ds/mzm-rec.bin` until pressed again, for catching a bug across a whole sequence instead of a single frame.

@@ -2245,7 +2245,7 @@ void SamusCheckCarryFromCopy(struct SamusData* pData, struct SamusData* pCopy, s
     {
         case SPOSE_RUNNING:
             // Carry aim if diagonal or weapon is armed, otherwise default to none
-            if (gButtonInput & gButtonAssignments.diagonalAim || gButtonInput & gButtonAssignments.armWeapon)
+            if (gButtonInput & gButtonAssignments.diagonalAim || gButtonInput & (1 << 10) || gButtonInput & gButtonAssignments.armWeapon)
                 pData->armCannonDirection = pCopy->armCannonDirection;
             else
                 pData->armCannonDirection = ACD_NONE;
@@ -2318,7 +2318,7 @@ void SamusCheckCarryFromCopy(struct SamusData* pData, struct SamusData* pCopy, s
                 // Force upwards shinespark
                 pData->yVelocity = SAMUS_SIDEWARD_SHINESPARK_X_VELOCITY;
             }
-            else if (gButtonInput & gButtonAssignments.diagonalAim)
+            else if (gButtonInput & gButtonAssignments.diagonalAim || gButtonInput & (1 << 10))
             {
                 // Pressed diagonal input, do a diagonal shinespark
                 pData->forcedMovement = FORCED_MOVEMENT_DIAGONAL_SHINESPARK;
@@ -2972,7 +2972,7 @@ void SamusAimCannon(struct SamusData* pData)
 
     pWeapon = &gSamusWeaponInfo;
 
-    if (gButtonInput & gButtonAssignments.diagonalAim)
+    if (gButtonInput & gButtonAssignments.diagonalAim || gButtonInput & (1 << 10))
     {
         // Process diagonal aim button
         switch (pData->pose)
@@ -5389,7 +5389,7 @@ SamusPose SamusHangingOnLedge(struct SamusData* pData)
     }
 
     // Check either pressing the diagonal aim, up, down or the direction opposite to the block
-    if (gButtonInput & gButtonAssignments.diagonalAim || gButtonInput & (KEY_UP | KEY_DOWN) || gButtonInput & OPPOSITE_DIRECTION(pData->direction))
+    if (gButtonInput & gButtonAssignments.diagonalAim || gButtonInput & (1 << 10) || gButtonInput & (KEY_UP | KEY_DOWN) || gButtonInput & OPPOSITE_DIRECTION(pData->direction))
     {
         // Change direction to face outside the block
         pData->direction ^= KEY_RIGHT | KEY_LEFT;
@@ -5590,7 +5590,7 @@ SamusPose SamusAimingWhileHanging(struct SamusData* pData)
     }
 
     aimingUp = FALSE;
-    if (!(gButtonInput & gButtonAssignments.diagonalAim))
+    if (!(gButtonInput & gButtonAssignments.diagonalAim) && !(gButtonInput & (1 << 10)))
     {
         if (gChangedInput & OPPOSITE_DIRECTION(pData->direction))
         {

@@ -4,6 +4,10 @@
 #include "macros.h"
 #include "event.h"
 
+#ifdef MZM_3DS
+#include "port_gba_mem.h"
+#endif
+
 #include "data/demo_data.h"
 #include "data/shortcut_pointers.h"
 #include "data/save_file_data.h"
@@ -879,8 +883,46 @@ void StringCopy(u8* dst, const u8* const src, u8 length)
 
 /**
  * @brief 74304 | a0 | Performs a series of tests on flash sram to verify it's working correctly
- * 
+ *
  */
+#ifdef MZM_3DS
+/* On the 3DS port the original implementation round-trips a stack local
+ * through SramWriteChecked/SramWriteUnchecked, whose GBA-address resolution
+ * heuristics (stack-pointer disambiguation on the logic thread) can misroute
+ * one leg of the write/read/write/read chain. When that happens the test
+ * fails with flags=4, gSramCorruptFlag gets set and the whole save is treated
+ * as blank on every boot. The port's "flash" is just gSramMem, so resolve the
+ * destination once and do plain memcpys -- same semantics, no ambiguity. */
+void SramTestFlash(void)
+{
+    u8* flash = (u8*)gba_MemPtr(SRAM_BASE + OFFSET_OF(struct Sram, MetZeroSramCheck_Text));
+    u8 text[SRAM_TEXT_SIZE];
+    s32 i;
+
+    gSramCorruptFlag = FALSE;
+    if (!flash)
+    {
+        gSramCorruptFlag = TRUE;
+        return;
+    }
+
+    memcpy(flash, sMetZeroSramCheck_Text, SRAM_TEXT_SIZE);
+    memcpy(text, flash, SRAM_TEXT_SIZE);
+    for (i = 0; i < SRAM_TEXT_SIZE; i++)
+        text[i]++;
+    memcpy(flash, text, SRAM_TEXT_SIZE);
+    memcpy(text, flash, SRAM_TEXT_SIZE);
+
+    for (i = 0; i < SRAM_TEXT_SIZE; i++)
+    {
+        if (text[i] != (u8)(sMetZeroSramCheck_Text[i] + 1))
+        {
+            gSramCorruptFlag = TRUE;
+            break;
+        }
+    }
+}
+#else // !MZM_3DS
 void SramTestFlash(void)
 {
     u32 flags;
@@ -949,6 +991,7 @@ void SramTestFlash(void)
     }
 #endif
 }
+#endif // MZM_3DS
 
 /**
  * @brief 743a4 | 1d0 | To document
