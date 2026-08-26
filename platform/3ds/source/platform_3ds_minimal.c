@@ -294,6 +294,16 @@ void Platform3DS_PollKeysIntoGba(void) {
         if (down3ds & KEY_X) PlatformGpu3DS_DumpScreens();
         if (down3ds & KEY_Y) Port_DebugLog("USER MARK: L+R+Y pressed");
         if (down3ds & KEY_START) PlatformGpu3DS_ToggleRecording();
+        /* L+R+A: perf-only frame-time recorder (issue #20). The full
+         * L+R+START scene recorder's ~100KB/sample SD writes slow the whole
+         * game down, masking the transient hitch being hunted; this one
+         * buffers 16B/frame in RAM (no I/O while running) and flushes
+         * mzm-perf.bin on the second press. A is a real GBA button too --
+         * masked below alongside START for as long as L+R is held. */
+        if (down3ds & KEY_A) {
+            extern void PlatformGpu3DS_TogglePerfRecording(void);
+            PlatformGpu3DS_TogglePerfRecording();
+        }
         /* L+R+SELECT: debug instant-kill (issue #17 -- lets a session iterate
          * on the death animation without having to actually get hit down to
          * 0 energy in real gameplay every time). Physical SELECT isn't wired
@@ -340,6 +350,7 @@ void Platform3DS_PollKeysIntoGba(void) {
          * menu anyway. Same reasoning applies to B (bit 1, shoot). */
         if (held3ds & KEY_START) gbaKeys &= (uint16_t)~(1u << 3);
         if (held3ds & KEY_B) gbaKeys &= (uint16_t)~(1u << 1);
+        if (held3ds & KEY_A) gbaKeys &= (uint16_t)~(1u << 0);
     }
 #endif /* PORT_DEBUG_TOOLS_ACTIVE */
 

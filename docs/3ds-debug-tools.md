@@ -161,8 +161,9 @@ A sequence of fixed-size records, one per sample, back to back (no
 end-of-file marker -- just read records until EOF). Each record is:
 
 ```
-struct RecordHeader {   // 32 bytes total
-    uint32_t magic;                 // 'MZMR' = 0x4D5A4D52 (read as little-endian bytes)
+struct RecordHeader {   // 64 bytes total (was 32 with magic 'MZMR'; bumped to
+                        // 'MZM2' for issue #20's perf instrumentation)
+    uint32_t magic;                 // 'MZM2' = 0x324D5A4D (read as little-endian bytes)
     uint32_t frameCounter;          // running emulated-frame counter at capture time
     uint32_t pose;                  // gSamusData.pose (SamusPose enum, see constants/samus.h)
     uint32_t currentAnimationFrame; // gSamusData.currentAnimationFrame
@@ -170,6 +171,14 @@ struct RecordHeader {   // 32 bytes total
     uint32_t suitType;              // gEquipment.suitType (SuitType enum)
     uint32_t suitMiscActivation;    // gEquipment.suitMiscActivation (SuitMiscFlags bitmask)
     uint32_t unk_22;                // gSamusPhysics.unk_22 (arm cannon OAM draw-order flags)
+    // -- perf extension (issue #20) --
+    uint32_t lastFrameUs;           // wall-clock duration of the emulated frame that
+                                    // just ended, in microseconds (~16675 = on budget)
+    uint32_t drawingTimeX100;       // citro3d C3D_GetDrawingTime(), hundredths of ms
+    uint32_t processingTimeX100;    // citro3d C3D_GetProcessingTime(), hundredths of ms
+    uint32_t spriteCount;           // non-disabled OAM entries this frame (of 128)
+    uint32_t affineSpriteCount;     // of those, how many use rotation/scaling matrices
+    uint32_t reserved[3];           // zero
 };
 // followed immediately by, back to back:
 uint8_t  io[0x400];       // gIoMem
@@ -179,7 +188,7 @@ uint16_t oam[0x200];      // gOamMem
 uint8_t  vram[0x18000];   // gVram
 ```
 
-Record size = 32 + 0x400 + 512 + 512 + 0x400 + 0x18000 = 101,404 bytes
+Record size = 64 + 0x400 + 512 + 512 + 0x400 + 0x18000 = 101,436 bytes
 (`sizeof(header) + sizeof(gIoMem) + sizeof(gBgPltt) + sizeof(gObjPltt) +
 sizeof(gOamMem) + sizeof(gVram)` -- if any of those extern arrays change
 size, recompute this and update `PlatformGpu3DS_RecordTick` and this doc
@@ -187,19 +196,22 @@ together). To split a fetched `mzm-rec.bin` into per-sample dumps for
 analysis:
 
 ```python
-REC_SIZE = 32 + 0x400 + 512 + 512 + 0x400 + 0x18000
+REC_SIZE = 64 + 0x400 + 512 + 512 + 0x400 + 0x18000  # 'MZM2' format (issue #20)
 with open('mzm-rec.bin', 'rb') as f:
     data = f.read()
 n = len(data) // REC_SIZE
 print(f"{n} samples")
 for i in range(n):
     rec = data[i*REC_SIZE:(i+1)*REC_SIZE]
-    magic, frame, pose, caf, wjt, suit, suitMisc, unk22 = struct.unpack_from('<8I', rec, 0)
-    io = rec[32:32+0x400]
-    bgpltt = rec[32+0x400:32+0x400+512]
-    objpltt = rec[32+0x400+512:32+0x400+1024]
-    oam = rec[32+0x400+1024:32+0x400+1024+0x400]
-    vram = rec[32+0x400+1024+0x400:]
+    (magic, frame, pose, caf, wjt, suit, suitMisc, unk22,
+     frameUs, drawX100, procX100, sprites, affine) = struct.unpack_from('<13I', rec, 0)
+    io = rec[64:64+0x400]
+    bgpltt = rec[64+0x400:64+0x400+512]
+    objpltt = rec[64+0x400+512:64+0x400+1024]
+    oam = rec[64+0x400+1024:64+0x400+1024+0x400]
+    vram = rec[64+0x400+1024+0x400:]
+    if frameUs > 17000:
+        print(f"sample {i}: HITCH frame={frameUs}us sprites={sprites} affine={affine}")
     # ... decode DISPCNT/OAM/tiles/palette the same way as the L+R+X dump
 ```
 

@@ -68,6 +68,15 @@ void PlatformGpu3DS_ToggleRecording(void);
 void PlatformGpu3DS_RecordTick(void);
 bool PlatformGpu3DS_IsRecording(void);
 
+/* Perf-only frame-time recorder (L+R+A, issue #20): samples every emulated
+ * frame's duration + OAM census into a RAM buffer with no SD I/O while
+ * running (unlike the full recorder above, which slows the game down);
+ * flushing to sdmc:/3ds/mzm-perf.bin happens on stop. Same tick contract as
+ * RecordTick: once per emulated GBA frame from Port_Bios_Halt. */
+void PlatformGpu3DS_TogglePerfRecording(void);
+void PlatformGpu3DS_PerfRecordTick(void);
+bool PlatformGpu3DS_IsPerfRecording(void);
+
 /* Sets up the 3-stage TexEnv pipeline that any texture built with this
  * project's "R,G,B,A in memory order" packing (see mode1.c's ABGR8888
  * comment and Bgr555ToRgba8 in port_gpu_renderer.c) needs in order to

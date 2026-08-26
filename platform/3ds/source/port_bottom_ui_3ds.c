@@ -2092,10 +2092,25 @@ void Port_BottomUI_Render(void) {
 
     /* L+R+START scene recorder indicator (platform_gpu_3ds.c) -- drawn last,
      * on top of whichever tab is active, so it's never hidden by one. Blinks
-     * so it's noticeable even glanced at briefly mid-gameplay. */
+     * so it's noticeable even glanced at briefly mid-gameplay. Uses the same
+     * border+fill panel style as the rest of the bottom UI so it doesn't
+     * disappear against busy background art. */
     extern bool PlatformGpu3DS_IsRecording(void);
-    if (PlatformGpu3DS_IsRecording() && (sFrameCounter & 0x20) != 0) {
-        C2D_DrawRectSolid(8.0f, 8.0f, 0.05f, 10.0f, 10.0f, C2D_Color32(230, 30, 30, 255));
-        DrawText(24.0f, 6.0f, 1.0f, "REC", C2D_Color32(230, 30, 30, 255));
+    extern bool PlatformGpu3DS_IsPerfRecording(void);
+    const bool blink = (sFrameCounter & 0x20) != 0;
+    /* 10x10 colored square + 5x7 bitmap text (7px tall). Text vertically
+     * centered in the square: offset = (10-7)/2 = 1px. Panel wraps the
+     * content with 3px border + 2px fill padding on all sides. */
+    if (blink && (PlatformGpu3DS_IsRecording() || PlatformGpu3DS_IsPerfRecording())) {
+        C2D_DrawRectSolid(5.0f, 5.0f, 0.90f, 46.0f, 28.0f, C2D_Color32(40, 70, 120, 255));
+        C2D_DrawRectSolid(6.0f, 6.0f, 0.91f, 44.0f, 26.0f, C2D_Color32(14, 20, 32, 240));
+    }
+    if (PlatformGpu3DS_IsRecording() && blink) {
+        C2D_DrawRectSolid(8.0f, 8.0f, 0.95f, 10.0f, 10.0f, C2D_Color32(230, 30, 30, 255));
+        DrawText(24.0f, 9.0f, 0.95f, "REC", C2D_Color32(230, 30, 30, 255));
+    }
+    if (PlatformGpu3DS_IsPerfRecording() && blink) {
+        C2D_DrawRectSolid(8.0f, 20.0f, 0.95f, 10.0f, 10.0f, C2D_Color32(30, 120, 230, 255));
+        DrawText(24.0f, 21.0f, 0.95f, "PERF", C2D_Color32(30, 120, 230, 255));
     }
 }

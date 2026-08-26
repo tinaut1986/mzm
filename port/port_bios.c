@@ -227,6 +227,7 @@ extern void Port_DebugLog(const char* msg);
 extern void Port_PPU_RenderFrame(void);
 extern void Platform3DS_PollKeysIntoGba(void);
 extern void PlatformGpu3DS_RecordTick(void);
+extern void PlatformGpu3DS_PerfRecordTick(void);
 extern u64 Platform3DS_SystemTick(void);
 extern u64 Platform3DS_TicksPerSecond(void);
 
@@ -286,6 +287,7 @@ void Port_Bios_Halt(void) {
     }
     Platform3DS_PollKeysIntoGba();
     PlatformGpu3DS_RecordTick();
+    PlatformGpu3DS_PerfRecordTick();
     /* Temporarily sleep-paced instead of gspWaitForEvent(0, true): the
      * latter never unblocks on real hardware here (confirmed via
      * sdmc:/3ds/mzm-debug.log bisection -- neither the GSP-event-thread

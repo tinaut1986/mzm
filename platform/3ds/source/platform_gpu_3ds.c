@@ -719,11 +719,104 @@ static bool sRecording;
 static FILE* sRecFile;
 static unsigned sRecFrameCounter;
 static unsigned sRecSampleCount;
+/* Wall-clock ticks of the emulated frame that just ended, measured between
+ * consecutive PlatformGpu3DS_RecordTick calls (which Port_Bios_Halt calls
+ * exactly once per emulated GBA frame). Recorded per sample so a recording
+ * can show WHEN frames overran the 16.7ms budget (issue #20's Skree-explosion
+ * hitch) instead of only what was on screen. */
+static u64 sRecLastTick;
+static u64 sRecLastFrameTicks;
+
+extern u64 Platform3DS_SystemTick(void);
+extern u64 Platform3DS_TicksPerSecond(void);
 static const unsigned kRecordEveryNFrames = 4; /* ~15Hz at 60fps */
 static const unsigned kRecordMaxSamples = 450; /* ~30s at 15Hz */
 static const unsigned kRecordScreenshotEverySamples = 4; /* ~1 screenshot/sec */
 
 bool PlatformGpu3DS_IsRecording(void) { return sRecording; }
+
+/* ---- Perf-only frame-time recorder (issue #20) ----------------------
+ * The full scene recorder above writes ~100KB/sample to SD (~1.5MB/s
+ * sustained), which by itself slows the whole game down -- masking exactly
+ * the kind of transient hitch we're hunting. This sibling records ONLY a
+ * 16-byte entry per emulated frame into a RAM ring buffer (no SD I/O while
+ * running, no screenshots): frame counter, wall-clock duration of that
+ * frame in microseconds, and the OAM census (total + affine sprites).
+ * L+R+A toggles; on stop the buffer is flushed to sdmc:/3ds/mzm-perf.bin
+ * as a flat little-endian array of PerfSample structs.
+ * 60 samples/sec * 120s capacity = 7200 entries * 16B = ~115KB BSS. ---- */
+typedef struct {
+    uint32_t frameCounter;
+    uint32_t durationUs;
+    uint32_t spriteCount;
+    uint32_t affineSpriteCount;
+} PerfSample;
+static const unsigned kPerfMaxSamples = 7200; /* ~2min at 60fps */
+static bool sPerfRecording;
+static PerfSample* sPerfSamples;
+static unsigned sPerfCount;
+static u64 sPerfLastTick;
+
+bool PlatformGpu3DS_IsPerfRecording(void) { return sPerfRecording; }
+
+void PlatformGpu3DS_TogglePerfRecording(void) {
+    if (sPerfRecording) {
+        extern void Port_DebugLog(const char* msg);
+        char msg[80];
+        snprintf(msg, sizeof(msg), "PERF REC STOP: %u frames -> mzm-perf.bin", sPerfCount);
+        Port_DebugLog(msg);
+        FILE* f = fopen("sdmc:/3ds/mzm-perf.bin", "wb");
+        if (f && sPerfSamples && sPerfCount) fwrite(sPerfSamples, sizeof(PerfSample), sPerfCount, f);
+        if (f) fclose(f);
+        linearFree(sPerfSamples);
+        sPerfSamples = NULL;
+        sPerfCount = 0;
+        sPerfRecording = false;
+        return;
+    }
+    if (!sPerfSamples) sPerfSamples = (PerfSample*)linearAlloc(kPerfMaxSamples * sizeof(PerfSample));
+    if (!sPerfSamples) {
+        extern void Port_DebugLog(const char* msg);
+        Port_DebugLog("PERF REC: linearAlloc FAILED (need 115KB linear heap)");
+        return;
+    }
+    sPerfCount = 0;
+    sPerfLastTick = 0;
+    sPerfRecording = true;
+}
+
+void PlatformGpu3DS_PerfRecordTick(void) {
+    if (!sPerfRecording || !sPerfSamples) return;
+    extern u16 gOamMem[0x400 / 2];
+
+    const u64 now = Platform3DS_SystemTick();
+    u64 durTicks = 0;
+    if (sPerfLastTick != 0) durTicks = now - sPerfLastTick;
+    sPerfLastTick = now;
+
+    if (sPerfCount >= kPerfMaxSamples) {
+        PlatformGpu3DS_TogglePerfRecording(); /* flush + stop at capacity */
+        return;
+    }
+
+    unsigned spriteCount = 0;
+    unsigned affineSpriteCount = 0;
+    for (unsigned i = 0; i < 128u; ++i) {
+        const uint16_t attr0 = gOamMem[i * 4];
+        if ((attr0 & 0xC000u) == 0xC000u) continue;
+        if ((attr0 & 0x0300u) == 0x0100u) continue;
+        ++spriteCount;
+        if (attr0 & 0x0100u) ++affineSpriteCount;
+    }
+
+    const u64 ticksPerSec = Platform3DS_TicksPerSecond();
+    sPerfSamples[sPerfCount++] = (PerfSample){
+        .frameCounter = sStats.frames,
+        .durationUs = (uint32_t)((durTicks * 1000000ull) / (ticksPerSec ? ticksPerSec : 1)),
+        .spriteCount = spriteCount,
+        .affineSpriteCount = affineSpriteCount,
+    };
+}
 
 void PlatformGpu3DS_ToggleRecording(void) {
     if (sRecording) {
@@ -737,10 +830,16 @@ void PlatformGpu3DS_ToggleRecording(void) {
     sRecording = true;
     sRecFrameCounter = 0;
     sRecSampleCount = 0;
+    sRecLastTick = 0;
+    sRecLastFrameTicks = 0;
 }
 
 void PlatformGpu3DS_RecordTick(void) {
     if (!sRecording) return;
+
+    const u64 now = Platform3DS_SystemTick();
+    if (sRecLastTick != 0) sRecLastFrameTicks = now - sRecLastTick;
+    sRecLastTick = now;
 
     if (sRecFrameCounter++ % kRecordEveryNFrames != 0) return;
 
@@ -757,10 +856,52 @@ void PlatformGpu3DS_RecordTick(void) {
     extern u8 gVram[0x18000];
     extern void PortPpuMzm_GetSamusRecordState(uint32_t* out);
 
-    uint32_t header[2 + 6]; /* magic, frame counter, then the 6 Samus state words */
-    header[0] = 0x524D5A4Du; /* 'MZMR' */
+    /* Perf extension (issue #20): header grew from 32 to 64 bytes, magic
+     * bumped 'MZMR' -> 'MZM2' so old parsers fail loudly instead of
+     * misparsing. New fields: last emulated frame's wall-clock duration in
+     * microseconds, citro3d drawing/processing times (hundredths of ms,
+     * clamped to u32), and OAM census -- total non-disabled sprites and how
+     * many use affine rotation/scaling matrices (the Skree explosion spawns
+     * 4 of those at once; the hypothesis is that they're what blows the
+     * frame budget). */
+    unsigned spriteCount = 0;
+    unsigned affineSpriteCount = 0;
+    for (unsigned i = 0; i < 128u; ++i) {
+        const uint16_t attr0 = gOamMem[i * 4];
+        /* GBA disabled check: shape bits 15-14 = 3, OR bit8=0 bit9=1.
+         * NOT 0x0300 (bits 8-9 = 11) — that's affine double-size,
+         * used by e.g. Skree explosions. (This was the old bug: counting
+         * affine-double-size sprites as disabled → affine=0 always.) */
+        if ((attr0 & 0xC000u) == 0xC000u) continue;
+        if ((attr0 & 0x0300u) == 0x0100u) continue;
+        ++spriteCount;
+        if (attr0 & 0x0100u) ++affineSpriteCount;
+    }
+
+    const u64 ticksPerSec = Platform3DS_TicksPerSecond();
+    const uint32_t frameUs =
+        (uint32_t)((sRecLastFrameTicks * 1000000ull) / (ticksPerSec ? ticksPerSec : 1));
+    PlatformGpu3DSStats stats;
+    PlatformGpu3DS_GetStats(&stats);
+    uint32_t drawX100 = (uint32_t)(stats.drawingTime * 100.0f);
+    uint32_t procX100 = (uint32_t)(stats.processingTime * 100.0f);
+    /* citro3d can report negative/absurd values outside an active frame;
+     * clamp so the recorded u32 stays sane for offline parsing. */
+    if (stats.drawingTime < 0.0f) drawX100 = 0;
+    if (stats.processingTime < 0.0f) procX100 = 0;
+
+    uint32_t header[2 + 6 + 8]; /* magic, frame counter, 6 Samus words, perf */
+    header[0] = 0x324D5A4Du;   /* 'MZM2' */
     header[1] = sRecFrameCounter;
     PortPpuMzm_GetSamusRecordState(&header[2]);
+    header[8]  = frameUs;
+    header[9]  = drawX100;
+    header[10] = procX100;
+    header[11] = spriteCount;
+    header[12] = affineSpriteCount;
+    header[13] = 0; /* reserved */
+    header[14] = 0; /* reserved */
+    header[15] = 0; /* reserved */
 
     fwrite(header, sizeof(header), 1, sRecFile);
     fwrite(gIoMem, 1, sizeof(gIoMem), sRecFile);
