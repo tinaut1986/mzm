@@ -15,27 +15,174 @@ static const char sSramVersion[] = "SRAM_V113";
 
 #define SAVE_FILE_PATH "mzm.sav"
 
+/* Writes to SD are far too slow to run once per SramWrite* call (a single
+ * in-game save fans out into dozens of them via unk_fbc / SramSaveFile's
+ * staged state machine, and each one used to rewrite the whole 64 KB file
+ * synchronously -- the source of the save-point frame hitches, issue #22).
+ * Every write only touches gSramMem and marks it dirty. Once per frame
+ * Port_FlushSramIfDirty() snapshots gSramMem and hands it to a dedicated
+ * save thread that does the SD write in the background -- safe because the
+ * game keeps Samus frozen for several seconds during the save animation.
+ * Port_FlushSramWait() blocks until everything is on disk (shutdown path). */
+#ifdef MZM_3DS
+#include <pthread.h>
+
+static u8 sSramSnapshot[0x10000]; /* same size as gSramMem */
+static u8 sSramDirty = FALSE;          /* set by SramWrite*, game thread */
+static u8 sSnapshotPending = FALSE;    /* snapshot awaiting write, save thread */
+static u8 sShutdown = FALSE;
+static pthread_mutex_t sSaveMutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t sSaveCond = PTHREAD_COND_INITIALIZER;
+static pthread_t sSaveThread;
+static u8 sSaveThreadStarted = FALSE;
+
+static void SramWriteAtomic(const u8* data, u32 size);
+
+static void* SaveThreadMain(void* arg)
+{
+    (void)arg;
+    pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
+    for (;;)
+    {
+        pthread_mutex_lock(&sSaveMutex);
+        while (!sSnapshotPending && !sShutdown)
+            pthread_cond_wait(&sSaveCond, &sSaveMutex);
+        if (!sSnapshotPending && sShutdown)
+        {
+            pthread_mutex_unlock(&sSaveMutex);
+            break;
+        }
+        /* Consume the snapshot BEFORE releasing the lock: from this moment
+         * the producer is allowed to refill the buffer, but only once it
+         * sees pending==FALSE, which we only publish after the SD write has
+         * fully completed below. This closes the race where the producer
+         * refilled (and tore) the snapshot mid-fwrite and the lost update
+         * silently left stale data on disk. */
+        pthread_mutex_unlock(&sSaveMutex);
+
+        SramWriteAtomic(sSramSnapshot, sizeof(sSramSnapshot));
+        Port_DebugLog("Port_SaveSram: wrote mzm.sav");
+
+        pthread_mutex_lock(&sSaveMutex);
+        sSnapshotPending = FALSE;
+        pthread_cond_broadcast(&sSaveCond);
+        pthread_mutex_unlock(&sSaveMutex);
+    }
+    return NULL;
+}
+
+static void SaveThreadStart(void)
+{
+    if (!sSaveThreadStarted)
+    {
+        sSaveThreadStarted = TRUE;
+        if (pthread_create(&sSaveThread, NULL, SaveThreadMain, NULL) != 0)
+            sSaveThreadStarted = FALSE;
+    }
+}
+#endif
+
 void Port_LoadSram(void)
 {
     FILE* f = fopen(SAVE_FILE_PATH, "rb");
-    if (f)
+    if (!f)
     {
-        fread(gSramMem, 1, sizeof(gSramMem), f);
+        /* Main save missing but a complete .tmp survived a crash between
+         * remove() and rename()? Recover it instead of starting blank. */
+        f = fopen(SAVE_FILE_PATH ".tmp", "rb");
+        if (!f)
+            return;
+    }
+    fread(gSramMem, 1, sizeof(gSramMem), f);
+    fclose(f);
+}
+
+/* Atomic save write: the data lands in a temp file first and only replaces
+ * mzm.sav via rename once fully written. A power loss mid-write can then
+ * never leave a truncated/zeroed mzm.sav (issue #22 follow-up: a "wb" open
+ * truncates immediately, so dying mid-fwrite looked like a wiped save). */
+static void SramWriteAtomic(const u8* data, u32 size)
+{
+    FILE* f = fopen(SAVE_FILE_PATH ".tmp", "wb");
+    if (!f)
+        return;
+    if (fwrite(data, 1, size, f) != size)
+    {
         fclose(f);
+        remove(SAVE_FILE_PATH ".tmp");
+        return;
+    }
+    fclose(f);
+    /* FatFs rename fails if the destination exists -- swap by hand. The
+     * window between remove() and rename() is two metadata ops wide; the
+     * .tmp file itself is always complete, so worst case after a crash here
+     * is recovering it manually. */
+    remove(SAVE_FILE_PATH);
+    if (rename(SAVE_FILE_PATH ".tmp", SAVE_FILE_PATH) != 0)
+    {
+        /* rename can legitimately fail on some filesystems if dest exists;
+         * we already removed it above, so this should not happen. */
     }
 }
 
 void Port_SaveSram(void)
 {
-    FILE* f = fopen(SAVE_FILE_PATH, "wb");
-    if (f)
-    {
-        fwrite(gSramMem, 1, sizeof(gSramMem), f);
-        fclose(f);
+    SramWriteAtomic(gSramMem, sizeof(gSramMem));
 #ifdef MZM_3DS
-        Port_DebugLog("Port_SaveSram: wrote mzm.sav");
+    Port_DebugLog("Port_SaveSram: wrote mzm.sav");
 #endif
+}
+
+void Port_FlushSramIfDirty(void)
+{
+    if (!sSramDirty)
+        return;
+    sSramDirty = FALSE;
+#ifdef MZM_3DS
+    SaveThreadStart();
+    if (sSaveThreadStarted)
+    {
+        pthread_mutex_lock(&sSaveMutex);
+        /* Never refill while the consumer is still writing the previous
+         * snapshot out to SD: overwriting sSramSnapshot mid-fwrite both tore
+         * the file being written and lost the newest update when the
+         * consumer then cleared the single pending flag. Blocking here is
+         * bounded by one SD write (~tens of ms) and only happens if saves
+         * come faster than the drive -- which the staged save machine never
+         * does two frames in a row. */
+        while (sSnapshotPending)
+            pthread_cond_wait(&sSaveCond, &sSaveMutex);
+        memcpy(sSramSnapshot, gSramMem, sizeof(gSramMem));
+        sSnapshotPending = TRUE;
+        pthread_cond_signal(&sSaveCond);
+        pthread_mutex_unlock(&sSaveMutex);
+        /* Piggyback diagnostics on the (rare) SD write instead of per frame. */
+        Port_DebugLogFlush();
+        return;
     }
+#endif
+    Port_SaveSram();
+}
+
+void Port_FlushSramWait(void)
+{
+#ifdef MZM_3DS
+    Port_FlushSramIfDirty();
+    if (!sSaveThreadStarted)
+        return;
+    pthread_mutex_lock(&sSaveMutex);
+    while (sSnapshotPending)
+        pthread_cond_wait(&sSaveCond, &sSaveMutex);
+    pthread_mutex_unlock(&sSaveMutex);
+    /* Make sure diagnostics from this session reach the SD before exit. */
+    Port_DebugLogFlush();
+#else
+    if (sSramDirty)
+    {
+        sSramDirty = FALSE;
+        Port_SaveSram();
+    }
+#endif
 }
 
 void SramWriteUnchecked(u8* src, u8* dest, u32 size)
@@ -43,23 +190,15 @@ void SramWriteUnchecked(u8* src, u8* dest, u32 size)
     void* d = port_resolve_write_addr((uintptr_t)dest);
     const void* s = port_resolve_copy_src(src, size);
     if (d && s) memcpy(d, s, size);
-    Port_SaveSram();
+    sSramDirty = TRUE;
 }
 
 void SramWrite(u8* src, u8* dest, u32 size)
 {
     void* d = port_resolve_write_addr((uintptr_t)dest);
     const void* s = port_resolve_copy_src(src, size);
-#ifdef MZM_3DS
-    {
-        char msg[160];
-        __builtin_snprintf(msg, sizeof(msg), "SramWrite: src=%p->%p dest=%p->%p size=%u",
-            (void*)src, s, (void*)dest, d, (unsigned)size);
-        Port_DebugLog(msg);
-    }
-#endif
     if (d && s) memcpy(d, s, size);
-    Port_SaveSram();
+    sSramDirty = TRUE;
 }
 
 u8* SramCheck(u8* src, u8* dest, u32 size)

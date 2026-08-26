@@ -503,6 +503,14 @@ void agbmain(void)
         Port_RA_EvaluateTriggers();
 #endif
 
+        /* Coalesce this frame's SRAM writes into at most one SD write
+         * (issue #22: save-point hitches came from a full 64 KB file write
+         * per SramWrite* call). */
+        {
+            extern void Port_FlushSramIfDirty(void);
+            Port_FlushSramIfDirty();
+        }
+
         gVBlankRequestFlag &= ~TRUE;
         gVblankActive = TRUE;
 
@@ -513,4 +521,11 @@ void agbmain(void)
         Port_DebugLog("agbmain: Halt wait done, looping");
 #endif
     }
+
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+    {
+        extern void Port_FlushSramWait(void);
+        Port_FlushSramWait();
+    }
+#endif
 }
