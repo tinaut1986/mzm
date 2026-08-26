@@ -9,11 +9,15 @@
 #define PORT_DEBUG_LOG_PATH "sdmc:/3ds/mzm-debug.log"
 #endif
 
+void Port_DebugLogBuffered(const char* msg);
+
+/* Synchronous SD writes (open/append/close per call) from hot game paths
+ * (RoomLoad, SpriteLoadAllData, music wrappers, ...) were stalling the logic
+ * thread long enough to drain the audio ring -- visible as a full stop with
+ * music dropout during room transitions (issue #22). Everything now goes
+ * through the in-memory buffer, flushed when full or explicitly. */
 void Port_DebugLog(const char* msg) {
-    FILE* f = fopen(PORT_DEBUG_LOG_PATH, "a");
-    if (!f) return;
-    fprintf(f, "%s\n", msg);
-    fclose(f);
+    Port_DebugLogBuffered(msg);
 }
 
 /* 4KB is comfortably more than the throttled per-frame diagnostics
