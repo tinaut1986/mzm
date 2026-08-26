@@ -18,7 +18,9 @@ extern uint8_t gCurrentArea;
 extern uint8_t gCurrentRoom;
 extern int8_t gLanguage;
 
-struct BottomEquipmentView {
+/* Equipment struct (from include/structs/samus.h) — declared here to avoid
+ * pulling in the GBA types.h which conflicts with the 3DS SDK headers. */
+struct Equipment {
     uint16_t maxEnergy;
     uint16_t maxMissiles;
     uint8_t maxSuperMissiles;
@@ -36,7 +38,15 @@ struct BottomEquipmentView {
     uint8_t suitType;
     uint8_t grabbedByMetroid;
 };
-extern struct BottomEquipmentView gEquipment;
+extern struct Equipment gEquipment;
+
+/* Weapon state — missilesSelected is at offset 3 in the real struct.
+ * We only need this one field, so declare a matching stub. */
+struct WeaponInfoStub {
+    uint8_t _pad[3];            /* diagonalAim + newProjectile + weaponHighlighted */
+    uint8_t missilesSelected;   /* FALSE = normals, TRUE = supers */
+};
+extern struct WeaponInfoStub gSamusWeaponInfo;
 
 /* ROM-resolved minimap graphic and palette tables */
 extern const uint8_t(*p_sMinimapTilesGfx)[5120];
@@ -792,11 +802,42 @@ static void RenderTabBar(void) {
         { 238.0f, 78.0f, BOTTOM_TAB_OPTIONS }
     };
 
+    /* Health tint: only active during real gameplay. Blinks to catch attention
+     * even without looking directly at the screen. */
+    bool inRealGameplay = ((uint8_t)gMainGameMode == 4 /* GM_INGAME */);
+    uint16_t curE = gEquipment.currentEnergy;
+    bool warnYellow = inRealGameplay && curE >= 30 && curE < 60;
+    bool warnRed    = inRealGameplay && curE < 30;
+    bool blinkOn    = ((sFrameCounter & 0x0F) < 8);
+
     for (int i = 0; i < 4; ++i) {
         bool active = (sCurrentTab == tabs[i].tab);
-        uint32_t bg = active ? C2D_Color32(18, 70, 130, 255) : C2D_Color32(26, 30, 42, 255);
-        uint32_t border = active ? C2D_Color32(45, 150, 240, 255) : C2D_Color32(50, 56, 75, 255);
-        uint32_t textColor = active ? C2D_Color32(255, 255, 255, 255) : C2D_Color32(140, 150, 175, 255);
+        uint32_t bg, border, textColor;
+
+        if (warnRed) {
+            if (blinkOn) {
+                bg = active ? C2D_Color32(140, 28, 22, 255) : C2D_Color32(60, 18, 16, 255);
+                border = active ? C2D_Color32(230, 55, 40, 255) : C2D_Color32(100, 30, 24, 255);
+            } else {
+                bg = active ? C2D_Color32(80, 18, 18, 255) : C2D_Color32(35, 12, 12, 255);
+                border = active ? C2D_Color32(160, 38, 30, 255) : C2D_Color32(65, 22, 18, 255);
+            }
+            textColor = active ? C2D_Color32(255, 200, 190, 255) : C2D_Color32(200, 120, 110, 255);
+        } else if (warnYellow) {
+            if (blinkOn) {
+                bg = active ? C2D_Color32(130, 100, 24, 255) : C2D_Color32(55, 44, 16, 255);
+                border = active ? C2D_Color32(230, 180, 45, 255) : C2D_Color32(100, 80, 28, 255);
+            } else {
+                bg = active ? C2D_Color32(90, 70, 18, 255) : C2D_Color32(38, 32, 12, 255);
+                border = active ? C2D_Color32(170, 130, 35, 255) : C2D_Color32(70, 58, 22, 255);
+            }
+            textColor = active ? C2D_Color32(255, 245, 200, 255) : C2D_Color32(200, 175, 110, 255);
+        } else {
+            /* Normal: original blue palette */
+            bg = active ? C2D_Color32(18, 70, 130, 255) : C2D_Color32(26, 30, 42, 255);
+            border = active ? C2D_Color32(45, 150, 240, 255) : C2D_Color32(50, 56, 75, 255);
+            textColor = active ? C2D_Color32(255, 255, 255, 255) : C2D_Color32(140, 150, 175, 255);
+        }
 
         C2D_DrawRectSolid(tabs[i].x, 3.0f, 0.4f, tabs[i].w, 20.0f, border);
         C2D_DrawRectSolid(tabs[i].x + 1.0f, 4.0f, 0.5f, tabs[i].w - 2.0f, 18.0f, bg);
@@ -1568,30 +1609,52 @@ static void RenderStatusView(void) {
     /* 1. Header Resource Card (X: 8, Y: 44 to 72, W: 304, H: 28) */
     C2D_DrawRectSolid(8.0f, 44.0f, 0.45f, 304.0f, 30.0f, C2D_Color32(20, 26, 40, 255));
 
-    /* Health */
+    /* Health — color shifts with life level (only during real gameplay) */
     DrawEnergyIcon(14.0f, 55.0f);
     char eBuf[32];
     snprintf(eBuf, sizeof(eBuf), "%02u/%02u", gEquipment.currentEnergy, gEquipment.maxEnergy);
-    DrawText(31.0f, 56.0f, 1.0f, eBuf, C2D_Color32(255, 215, 0, 255));
+    bool inRealGameplay = ((uint8_t)gMainGameMode == 4 /* GM_INGAME */);
+    uint32_t energyCol = C2D_Color32(255, 215, 0, 255); /* normal gold */
+    if (inRealGameplay && gEquipment.currentEnergy < 30)
+        energyCol = C2D_Color32(255, 70, 50, 255);       /* critical red */
+    else if (inRealGameplay && gEquipment.currentEnergy < 60)
+        energyCol = C2D_Color32(255, 200, 50, 255);      /* warning yellow */
+    DrawText(31.0f, 56.0f, 1.0f, eBuf, energyCol);
 
-    /* Missiles */
-    DrawMissileIcon(90.0f, 55.0f);
-    char mBuf[32];
-    if (gEquipment.maxMissiles > 0) {
-        snprintf(mBuf, sizeof(mBuf), "%03u/%03u", gEquipment.currentMissiles, gEquipment.maxMissiles);
-        DrawText(107.0f, 56.0f, 1.0f, mBuf, C2D_Color32(255, 140, 140, 255));
-    } else {
-        DrawText(107.0f, 56.0f, 1.0f, "---/---", C2D_Color32(100, 110, 130, 255));
+    /* Missiles — highlight when selected */
+    {
+        bool normSelected = (gSamusWeaponInfo.missilesSelected == 0);
+        if (normSelected && gEquipment.maxMissiles > 0) {
+            C2D_DrawRectSolid(86.0f, 50.0f, 0.46f, 74.0f, 22.0f, C2D_Color32(30, 50, 90, 255));
+            C2D_DrawRectSolid(86.0f, 50.0f, 0.47f, 74.0f, 1.0f, C2D_Color32(80, 180, 255, 255));
+            C2D_DrawRectSolid(86.0f, 71.0f, 0.47f, 74.0f, 1.0f, C2D_Color32(80, 180, 255, 255));
+        }
+        DrawMissileIcon(90.0f, 55.0f);
+        char mBuf[32];
+        if (gEquipment.maxMissiles > 0) {
+            snprintf(mBuf, sizeof(mBuf), "%03u/%03u", gEquipment.currentMissiles, gEquipment.maxMissiles);
+            DrawText(107.0f, 56.0f, 1.0f, mBuf, normSelected ? C2D_Color32(255, 200, 200, 255) : C2D_Color32(255, 140, 140, 255));
+        } else {
+            DrawText(107.0f, 56.0f, 1.0f, "---/---", C2D_Color32(100, 110, 130, 255));
+        }
     }
 
-    /* Super Missiles */
-    DrawSuperMissileIcon(166.0f, 55.0f);
-    char smBuf[32];
-    if (gEquipment.maxSuperMissiles > 0) {
-        snprintf(smBuf, sizeof(smBuf), "%02u/%02u", gEquipment.currentSuperMissiles, gEquipment.maxSuperMissiles);
-        DrawText(183.0f, 56.0f, 1.0f, smBuf, C2D_Color32(100, 255, 140, 255));
-    } else {
-        DrawText(183.0f, 56.0f, 1.0f, "--/--", C2D_Color32(100, 110, 130, 255));
+    /* Super Missiles — highlight when selected */
+    {
+        bool superSelected = (gSamusWeaponInfo.missilesSelected != 0);
+        if (superSelected && gEquipment.maxSuperMissiles > 0) {
+            C2D_DrawRectSolid(162.0f, 50.0f, 0.46f, 74.0f, 22.0f, C2D_Color32(20, 50, 30, 255));
+            C2D_DrawRectSolid(162.0f, 50.0f, 0.47f, 74.0f, 1.0f, C2D_Color32(80, 255, 140, 255));
+            C2D_DrawRectSolid(162.0f, 71.0f, 0.47f, 74.0f, 1.0f, C2D_Color32(80, 255, 140, 255));
+        }
+        DrawSuperMissileIcon(166.0f, 55.0f);
+        char smBuf[32];
+        if (gEquipment.maxSuperMissiles > 0) {
+            snprintf(smBuf, sizeof(smBuf), "%02u/%02u", gEquipment.currentSuperMissiles, gEquipment.maxSuperMissiles);
+            DrawText(183.0f, 56.0f, 1.0f, smBuf, superSelected ? C2D_Color32(160, 255, 200, 255) : C2D_Color32(100, 255, 140, 255));
+        } else {
+            DrawText(183.0f, 56.0f, 1.0f, "--/--", C2D_Color32(100, 110, 130, 255));
+        }
     }
 
     /* Power Bombs */
@@ -2061,8 +2124,25 @@ static void RenderDebugView(void) {
 void Port_BottomUI_Render(void) {
     ++sFrameCounter;
 
-    /* Background clear for UI */
-    C2D_DrawRectSolid(0.0f, 0.0f, 0.1f, 320.0f, 240.0f, C2D_Color32(6, 8, 14, 255));
+    /* Background clear for UI — blinks during low health to catch attention.
+     * Blink pattern: 14 frames ON (warning color), 14 frames dimmed.
+     * The entire screen background participates so even a glance shows it. */
+    {
+        bool inRealGameplay = ((uint8_t)gMainGameMode == 4 /* GM_INGAME */);
+        uint16_t curE = gEquipment.currentEnergy;
+        bool blinkOn = ((sFrameCounter & 0x0F) < 8);
+        uint32_t bgCol;
+        if (inRealGameplay && curE < 30) {
+            bgCol = blinkOn ? C2D_Color32(30, 8, 8, 255)
+                            : C2D_Color32(12, 5, 5, 255);
+        } else if (inRealGameplay && curE < 60) {
+            bgCol = blinkOn ? C2D_Color32(30, 22, 8, 255)
+                            : C2D_Color32(12, 10, 5, 255);
+        } else {
+            bgCol = C2D_Color32(6, 8, 14, 255);       /* original dark blue */
+        }
+        C2D_DrawRectSolid(0.0f, 0.0f, 0.1f, 320.0f, 240.0f, bgCol);
+    }
 
     /* Always draw the top tab navigation bar */
     RenderTabBar();
