@@ -86,6 +86,16 @@ static uint32_t sFrameCounter = 0;
 static bool sShowRemapModal = false;
 static bool sShowCollectiblesModal = false;
 static bool sShowAchievementsModal = false;
+/* Confirmation dialog: false = enable hardcore (+restart), true = plain restart */
+static bool sShowConfirmModal = false;
+static bool sConfirmIsRestart = false;
+
+/* Triggers the game's soft reset flow (returns to intro/title like L+R+Start+Select).
+ * GameMode is s16; GM_START_SOFT_RESET == 14. */
+extern int16_t gMainGameMode;
+static void TriggerGameRestart(void) {
+    gMainGameMode = 14; /* GM_START_SOFT_RESET */
+}
 
 /* Config & Display Helper Externs */
 extern bool Port_Config_GetAutoHideHud(void);
@@ -626,6 +636,26 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
 
     /* Options Tab Interactive Rows & Touch Scrolling */
     if (sCurrentTab == BOTTOM_TAB_OPTIONS) {
+        /* Confirmation dialog (hardcore enable / restart game) */
+        if (sShowConfirmModal) {
+            if (isNewTap) {
+                if (x >= 40 && x <= 150 && y >= 140 && y <= 168) {
+                    /* ACCEPT */
+                    bool wasRestart = sConfirmIsRestart;
+                    sShowConfirmModal = false;
+                    if (!wasRestart) {
+                        Port_RA_SetHardcore(true);
+                        Port_Config_Save();
+                    }
+                    TriggerGameRestart();
+                } else if (x >= 170 && x <= 280 && y >= 140 && y <= 168) {
+                    /* CANCEL */
+                    sShowConfirmModal = false;
+                }
+            }
+            return;
+        }
+
         if (sShowRemapModal) {
             if (isNewTap && x >= 16 && x <= 304) {
                 if (y >= 50 && y <= 76) Port_Config_CycleButtonMapping(0); /* X */
@@ -638,7 +668,7 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
         }
 
         /* Options scrolling drag handling */
-        const float maxScroll = 166.0f;
+        const float maxScroll = 196.0f;
         if (y >= 28 && y <= 236 && x >= 4 && x <= 316) {
             if (isNewTap) {
                 /* Direct scrollbar touch on right (x >= 305) */
@@ -680,7 +710,7 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
 }
 
 void Port_BottomUI_TouchReleased(void) {
-    if (sCurrentTab == BOTTOM_TAB_OPTIONS && !sShowRemapModal && !sShowAchievementsModal && !sIsTouchDragging && sTouchStartX >= 0 && sTouchStartY >= 0) {
+    if (sCurrentTab == BOTTOM_TAB_OPTIONS && !sShowRemapModal && !sShowAchievementsModal && !sShowConfirmModal && !sIsTouchDragging && sTouchStartX >= 0 && sTouchStartY >= 0) {
         int x = sTouchStartX;
         int y = sTouchStartY + (int)sOptionsScrollY;
 
@@ -706,9 +736,14 @@ void Port_BottomUI_TouchReleased(void) {
                 Port_RA_SetEnabled(!Port_RA_IsEnabled());
                 Port_Config_Save();
             } else if (y >= 274 && y <= 298) {
-                /* Hardcore Mode */
-                Port_RA_SetHardcore(!Port_RA_IsHardcore());
-                Port_Config_Save();
+                /* Hardcore Mode: enabling requires confirmation + restart */
+                if (!Port_RA_IsHardcore()) {
+                    sConfirmIsRestart = false;
+                    sShowConfirmModal = true;
+                } else {
+                    Port_RA_SetHardcore(false);
+                    Port_Config_Save();
+                }
             } else if (y >= 302 && y <= 326) {
                 /* Notification Sound */
                 Port_RA_SetNotificationSound(!Port_RA_GetNotificationSound());
@@ -717,6 +752,10 @@ void Port_BottomUI_TouchReleased(void) {
                 /* View achievements modal */
                 sAchievementsScrollY = 0.0f;
                 sShowAchievementsModal = true;
+            } else if (y >= 362 && y <= 388) {
+                /* Restart game (with confirmation) */
+                sConfirmIsRestart = true;
+                sShowConfirmModal = true;
             }
         }
     }
@@ -968,14 +1007,10 @@ static void GetAreaStats(int area, struct AreaItemStats* outStats) {
     outStats->superObtained = (uint8_t)superGot;
     outStats->powerBombObtained = (uint8_t)powerBombGot;
 
-    /* Count bits from gMinimapTilesWithObtainedItems for this area */
-    for (int row = 0; row < 32; ++row) {
-        uint32_t bits = gMinimapTilesWithObtainedItems[area * 32 + row];
-        while (bits) {
-            if (bits & 1) outStats->totalObtained++;
-            bits >>= 1;
-        }
-    }
+    /* Total = sum of the four tank/ammo types, so it always matches the
+     * per-type breakdown above (the map's obtained-items bitmap also logs
+     * major items, which are not part of these totals). */
+    outStats->totalObtained = (uint8_t)(energyGot + missileGot + superGot + powerBombGot);
 }
 
 static void GetGlobalItemStats(struct AreaItemStats* outStats) {
@@ -1004,12 +1039,21 @@ static void RenderCollectiblesModal(int lang) {
     C2D_DrawRectSolid(10.0f, 26.0f, 0.85f, 300.0f, 206.0f, C2D_Color32(10, 14, 24, 252));
     C2D_DrawRectSolid(10.0f, 26.0f, 0.84f, 300.0f, 206.0f, C2D_Color32(40, 70, 120, 255));
 
+    /* Hardcore mode: only show what has already been collected -- never totals
+     * or remaining counts (that would leak achievement-relevant info). */
+    bool hc = Port_RA_IsHardcore();
+
     struct AreaItemStats globalStats;
     GetGlobalItemStats(&globalStats);
     char globTitle[64];
-    unsigned pct = globalStats.totalItems > 0 ? (globalStats.totalObtained * 100 / globalStats.totalItems) : 0;
-    snprintf(globTitle, sizeof(globTitle), (lang == 6) ? "COLECCIONABLES POR ZONA: %u/%u (%u%%)" : "COLLECTIBLES BY AREA: %u/%u (%u%%)",
-             globalStats.totalObtained, globalStats.totalItems, pct);
+    if (hc) {
+        snprintf(globTitle, sizeof(globTitle), (lang == 6) ? "COLECCIONABLES POR ZONA: %u" : "COLLECTIBLES BY AREA: %u",
+                 globalStats.totalObtained);
+    } else {
+        unsigned pct = globalStats.totalItems > 0 ? (globalStats.totalObtained * 100 / globalStats.totalItems) : 0;
+        snprintf(globTitle, sizeof(globTitle), (lang == 6) ? "COLECCIONABLES POR ZONA: %u/%u (%u%%)" : "COLLECTIBLES BY AREA: %u/%u (%u%%)",
+                 globalStats.totalObtained, globalStats.totalItems, pct);
+    }
     DrawText(18.0f, 32.0f, 1.0f, globTitle, C2D_Color32(255, 215, 0, 255));
 
     /* Table Headers */
@@ -1018,7 +1062,7 @@ static void RenderCollectiblesModal(int lang) {
     DrawMissileIcon(148.0f, 46.0f);
     DrawSuperMissileIcon(193.0f, 46.0f);
     DrawPowerBombIcon(233.0f, 46.0f);
-    DrawText(272.0f, 48.0f, 1.0f, "TOT", C2D_Color32(255, 255, 255, 255));
+    if (!hc) DrawText(272.0f, 48.0f, 1.0f, "TOT", C2D_Color32(255, 255, 255, 255));
 
     for (int a = 0; a < 7; ++a) {
         struct AreaItemStats aStats;
@@ -1030,20 +1074,34 @@ static void RenderCollectiblesModal(int lang) {
         DrawText(20.0f, py + 3.0f, 1.0f, AreaName(a), C2D_Color32(220, 235, 255, 255));
 
         char cBuf[16];
-        snprintf(cBuf, sizeof(cBuf), "%u/%u", aStats.energyObtained, aStats.energyTotal);
-        DrawText(105.0f, py + 3.0f, 1.0f, cBuf, aStats.energyObtained == aStats.energyTotal ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 215, 0, 255));
+        if (hc) {
+            snprintf(cBuf, sizeof(cBuf), "%u", aStats.energyObtained);
+            DrawText(115.0f, py + 3.0f, 1.0f, cBuf, aStats.energyObtained > 0 ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(90, 100, 120, 255));
 
-        snprintf(cBuf, sizeof(cBuf), "%u/%u", aStats.missileObtained, aStats.missileTotal);
-        DrawText(145.0f, py + 3.0f, 1.0f, cBuf, aStats.missileObtained == aStats.missileTotal ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 140, 140, 255));
+            snprintf(cBuf, sizeof(cBuf), "%u", aStats.missileObtained);
+            DrawText(155.0f, py + 3.0f, 1.0f, cBuf, aStats.missileObtained > 0 ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(90, 100, 120, 255));
 
-        snprintf(cBuf, sizeof(cBuf), "%u/%u", aStats.superObtained, aStats.superTotal);
-        DrawText(190.0f, py + 3.0f, 1.0f, cBuf, aStats.superObtained == aStats.superTotal ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(100, 255, 140, 255));
+            snprintf(cBuf, sizeof(cBuf), "%u", aStats.superObtained);
+            DrawText(200.0f, py + 3.0f, 1.0f, cBuf, aStats.superObtained > 0 ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(90, 100, 120, 255));
 
-        snprintf(cBuf, sizeof(cBuf), "%u/%u", aStats.powerBombObtained, aStats.powerBombTotal);
-        DrawText(230.0f, py + 3.0f, 1.0f, cBuf, aStats.powerBombObtained == aStats.powerBombTotal ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 225, 80, 255));
+            snprintf(cBuf, sizeof(cBuf), "%u", aStats.powerBombObtained);
+            DrawText(240.0f, py + 3.0f, 1.0f, cBuf, aStats.powerBombObtained > 0 ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(90, 100, 120, 255));
+        } else {
+            snprintf(cBuf, sizeof(cBuf), "%u/%u", aStats.energyObtained, aStats.energyTotal);
+            DrawText(105.0f, py + 3.0f, 1.0f, cBuf, aStats.energyObtained == aStats.energyTotal ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 215, 0, 255));
 
-        snprintf(cBuf, sizeof(cBuf), "%u/%u", aStats.totalObtained, aStats.totalItems);
-        DrawText(268.0f, py + 3.0f, 1.0f, cBuf, aStats.totalObtained == aStats.totalItems ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 255, 255, 255));
+            snprintf(cBuf, sizeof(cBuf), "%u/%u", aStats.missileObtained, aStats.missileTotal);
+            DrawText(145.0f, py + 3.0f, 1.0f, cBuf, aStats.missileObtained == aStats.missileTotal ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 140, 140, 255));
+
+            snprintf(cBuf, sizeof(cBuf), "%u/%u", aStats.superObtained, aStats.superTotal);
+            DrawText(190.0f, py + 3.0f, 1.0f, cBuf, aStats.superObtained == aStats.superTotal ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(100, 255, 140, 255));
+
+            snprintf(cBuf, sizeof(cBuf), "%u/%u", aStats.powerBombObtained, aStats.powerBombTotal);
+            DrawText(230.0f, py + 3.0f, 1.0f, cBuf, aStats.powerBombObtained == aStats.powerBombTotal ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 225, 80, 255));
+
+            snprintf(cBuf, sizeof(cBuf), "%u/%u", aStats.totalObtained, aStats.totalItems);
+            DrawText(268.0f, py + 3.0f, 1.0f, cBuf, aStats.totalObtained == aStats.totalItems ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 255, 255, 255));
+        }
     }
 
     C2D_DrawRectSolid(100.0f, 204.0f, 0.9f, 120.0f, 20.0f, C2D_Color32(20, 70, 130, 255));
@@ -1270,6 +1328,36 @@ static void RenderAchievementsModal(int lang) {
     DrawTextCentered(160.0f, 209.0f, 1.0f, (lang == 6) ? "VOLVER" : "BACK", C2D_Color32(255, 255, 255, 255));
 }
 
+/* Render Confirmation Dialog (hardcore enable / restart game) */
+static void RenderConfirmModal(int lang) {
+    C2D_DrawRectSolid(10.0f, 26.0f, 0.85f, 300.0f, 206.0f, C2D_Color32(10, 14, 24, 250));
+    C2D_DrawRectSolid(10.0f, 26.0f, 0.84f, 300.0f, 206.0f, C2D_Color32(40, 70, 120, 255));
+
+    const char* title = sConfirmIsRestart
+        ? ((lang == 6) ? "REINICIAR PARTIDA" : "RESTART GAME")
+        : ((lang == 6) ? "MODO HARDCORE" : "HARDCORE MODE");
+    DrawTextCentered(160.0f, 60.0f, 1.0f, title, C2D_Color32(255, 215, 0, 255));
+
+    const char* msg;
+    if (sConfirmIsRestart) {
+        msg = (lang == 6)
+            ? "SE REINICIARA LA PARTIDA. TODO EL PROGRESO NO GUARDADO SE PERDERA. CONTINUAR?"
+            : "THE GAME WILL BE RESTARTED. ALL UNSAVED PROGRESS WILL BE LOST. CONTINUE?";
+    } else {
+        msg = (lang == 6)
+            ? "AL ACTIVAR EL MODO HARDCORE LA PARTIDA SE REINICIARA DESDE EL PRINCIPIO. CONTINUAR?"
+            : "ENABLING HARDCORE MODE WILL RESTART THE GAME FROM THE BEGINNING. CONTINUE?";
+    }
+    DrawWrappedTextClipped(30.0f, 84.0f, 1.0f, msg, 260.0f, 11.0f, C2D_Color32(220, 235, 255, 255), 50.0f, 136.0f);
+
+    /* ACCEPT button */
+    C2D_DrawRectSolid(40.0f, 140.0f, 0.9f, 110.0f, 28.0f, C2D_Color32(20, 90, 45, 255));
+    DrawTextCentered(95.0f, 149.0f, 1.0f, (lang == 6) ? "ACEPTAR" : "ACCEPT", C2D_Color32(255, 255, 255, 255));
+    /* CANCEL button */
+    C2D_DrawRectSolid(170.0f, 140.0f, 0.9f, 110.0f, 28.0f, C2D_Color32(110, 30, 30, 255));
+    DrawTextCentered(225.0f, 149.0f, 1.0f, (lang == 6) ? "CANCELAR" : "CANCEL", C2D_Color32(255, 255, 255, 255));
+}
+
 /* Render Button Remap Modal */
 static void RenderRemapModal(int lang) {
     C2D_DrawRectSolid(10.0f, 26.0f, 0.85f, 300.0f, 206.0f, C2D_Color32(10, 14, 24, 250));
@@ -1321,9 +1409,13 @@ static void RenderMapView(void) {
     C2D_DrawRectSolid(94.0f, 26.0f, 0.4f, 16.0f, 18.0f, C2D_Color32(30, 40, 60, 255));
     DrawTextCentered(102.0f, 31.0f, 1.0f, ">", C2D_Color32(100, 220, 255, 255));
 
-    /* Area Items Badge (Shows e.g. "5/12") */
+    /* Area Items Badge (Shows e.g. "5/12"; totals hidden in RA hardcore mode) */
     char itemBadge[24];
-    snprintf(itemBadge, sizeof(itemBadge), "%u/%u", areaStats.totalObtained, areaStats.totalItems);
+    if (Port_RA_IsHardcore()) {
+        snprintf(itemBadge, sizeof(itemBadge), "%u", areaStats.totalObtained);
+    } else {
+        snprintf(itemBadge, sizeof(itemBadge), "%u/%u", areaStats.totalObtained, areaStats.totalItems);
+    }
     C2D_DrawRectSolid(112.0f, 26.0f, 0.4f, 44.0f, 18.0f, C2D_Color32(20, 45, 35, 255));
     C2D_DrawRectSolid(113.0f, 27.0f, 0.45f, 42.0f, 16.0f, C2D_Color32(12, 28, 20, 255));
     DrawTextCentered(134.0f, 31.0f, 1.0f, itemBadge, C2D_Color32(120, 255, 160, 255));
@@ -1456,6 +1548,8 @@ static void RenderMapView(void) {
 /* Render Status (Estado) View */
 static void RenderStatusView(void) {
     int lang = GetLang();
+    /* In RA hardcore mode, unobtained equipment is hidden as "----" (no spoilers) */
+    bool hcStatus = Port_RA_IsHardcore();
 
     C2D_DrawRectSolid(4.0f, 26.0f, 0.4f, 312.0f, 210.0f, C2D_Color32(12, 16, 26, 255));
     C2D_DrawRectSolid(4.0f, 26.0f, 0.35f, 312.0f, 210.0f, C2D_Color32(35, 50, 75, 255));
@@ -1547,7 +1641,10 @@ static void RenderStatusView(void) {
                 DrawText(14.0f, py, 1.0f, pistolNames[lang], C2D_Color32(80, 255, 120, 255));
                 DrawText(130.0f, py, 1.0f, "OK", C2D_Color32(80, 255, 120, 255));
             } else {
-                DrawText(14.0f, py, 1.0f, beams[i].name[lang], C2D_Color32(75, 85, 105, 255));
+                bool gotSuitless = (gEquipment.suitMisc & beams[i].flag) != 0;
+                DrawText(14.0f, py, 1.0f,
+                         (hcStatus && !gotSuitless) ? "----" : beams[i].name[lang],
+                         C2D_Color32(75, 85, 105, 255));
                 DrawText(130.0f, py, 1.0f, "--", C2D_Color32(75, 85, 105, 255));
             }
             continue;
@@ -1558,6 +1655,7 @@ static void RenderStatusView(void) {
         bool unknown = beams[i].isUnknownItem && !isFullyPowered && has;
 
         const char* label = unknown ? unknownNames[lang] : beams[i].name[lang];
+        if (hcStatus && !has) label = "----";
         const char* statusStr = "--";
         uint32_t col = C2D_Color32(75, 85, 105, 255);
 
@@ -1621,6 +1719,7 @@ static void RenderStatusView(void) {
         bool unknown = suits[i].isUnknownItem && !isFullyPowered && has;
 
         const char* label = unknown ? unknownNames[lang] : suits[i].name[lang];
+        if (hcStatus && !has) label = "----";
         const char* statusStr = "--";
         uint32_t col = C2D_Color32(75, 85, 105, 255);
 
@@ -1654,9 +1753,14 @@ static void RenderStatusView(void) {
     struct AreaItemStats globalStats;
     GetGlobalItemStats(&globalStats);
     char globBtn[48];
-    unsigned pct = globalStats.totalItems > 0 ? (globalStats.totalObtained * 100 / globalStats.totalItems) : 0;
-    snprintf(globBtn, sizeof(globBtn), (lang == 6) ? "ITEMS: %u/%u (%u%%)" : "ITEMS: %u/%u (%u%%)",
-             globalStats.totalObtained, globalStats.totalItems, pct);
+    if (Port_RA_IsHardcore()) {
+        snprintf(globBtn, sizeof(globBtn), (lang == 6) ? "OBJETOS: %u" : "ITEMS: %u",
+                 globalStats.totalObtained);
+    } else {
+        unsigned pct = globalStats.totalItems > 0 ? (globalStats.totalObtained * 100 / globalStats.totalItems) : 0;
+        snprintf(globBtn, sizeof(globBtn), (lang == 6) ? "OBJETOS: %u/%u (%u%%)" : "ITEMS: %u/%u (%u%%)",
+                 globalStats.totalObtained, globalStats.totalItems, pct);
+    }
     C2D_DrawRectSolid(182.0f, 170.0f, 0.5f, 126.0f, 14.0f, C2D_Color32(20, 50, 90, 255));
     C2D_DrawRectSolid(183.0f, 171.0f, 0.55f, 124.0f, 12.0f, C2D_Color32(12, 30, 60, 255));
     DrawTextCentered(245.0f, 173.0f, 1.0f, globBtn, C2D_Color32(255, 215, 0, 255));
@@ -1842,12 +1946,17 @@ static void RenderOptionsView(void) {
     DRAW_CLIPPED_ROW(rY, 28.0f, C2D_Color32(28, 50, 40, 255), C2D_Color32(60, 160, 100, 255));
     DrawTextCenteredClipped(160.0f, rY + 8.0f, 1.0f, (lang == 6) ? "VER LISTA Y ESTADO DE LOGROS" : "VIEW ACHIEVEMENTS & PROGRESS", C2D_Color32(120, 255, 180, 255), viewY0, viewY1);
 
+    /* Option 6: Restart Game */
+    rY = 362.0f - sOptionsScrollY;
+    DRAW_CLIPPED_ROW(rY, 26.0f, C2D_Color32(70, 30, 30, 255), C2D_Color32(180, 70, 70, 255));
+    DrawTextCenteredClipped(160.0f, rY + 8.0f, 1.0f, (lang == 6) ? "REINICIAR PARTIDA" : "RESTART GAME", C2D_Color32(255, 140, 140, 255), viewY0, viewY1);
+
     /* Informational bottom footer with version */
-    float footY2 = 376.0f - sOptionsScrollY;
+    float footY2 = 404.0f - sOptionsScrollY;
     DrawTextCenteredClipped(160.0f, footY2, 1.0f, "METROID ZERO MISSION 3DS " MZM_PORT_VERSION, C2D_Color32(90, 115, 145, 255), viewY0, viewY1);
 
     /* Scroll Bar Indicator (Right side) - Supports direct scrollbar dragging */
-    const float maxScroll = 166.0f;
+    const float maxScroll = 196.0f;
     float thumbH = 35.0f;
     float trackH = viewH - thumbH;
     float thumbY = viewY0 + (sOptionsScrollY / maxScroll) * trackH;
@@ -1860,6 +1969,8 @@ static void RenderOptionsView(void) {
         RenderRemapModal(lang);
     } else if (sShowAchievementsModal) {
         RenderAchievementsModal(lang);
+    } else if (sShowConfirmModal) {
+        RenderConfirmModal(lang);
     }
 }
 

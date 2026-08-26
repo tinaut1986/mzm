@@ -296,11 +296,27 @@ int Port_Config_GetButtonMapping(int buttonIndex) {
 }
 
 void Port_Config_CycleButtonMapping(int buttonIndex) {
+    /* Rapid Fire (action 1) is not allowed in RetroAchievements hardcore mode */
+    extern bool Port_RA_IsHardcore(void);
+    bool skipRapid = Port_RA_IsHardcore();
+
+    int val;
     switch (buttonIndex) {
-        case 0: sBtnMapX = (sBtnMapX + 1) % 8; break;
-        case 1: sBtnMapY = (sBtnMapY + 1) % 8; break;
-        case 2: sBtnMapZL = (sBtnMapZL + 1) % 8; break;
-        case 3: sBtnMapZR = (sBtnMapZR + 1) % 8; break;
+        case 0: val = sBtnMapX; break;
+        case 1: val = sBtnMapY; break;
+        case 2: val = sBtnMapZL; break;
+        case 3: val = sBtnMapZR; break;
+        default: return;
+    }
+    do {
+        val = (val + 1) % 8;
+    } while (skipRapid && val == 1);
+
+    switch (buttonIndex) {
+        case 0: sBtnMapX = val; break;
+        case 1: sBtnMapY = val; break;
+        case 2: sBtnMapZL = val; break;
+        case 3: sBtnMapZR = val; break;
     }
     Port_Config_Save();
 }

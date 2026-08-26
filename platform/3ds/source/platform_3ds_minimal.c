@@ -225,9 +225,11 @@ static uint16_t ProcessButtonAction(int action, uint32_t keysHeld, uint32_t keys
     if (!(keysHeld & buttonMask)) return 0;
 
     switch (action) {
-        case 1: { /* AUTODISPARO (RAPID FIRE) */
+        case 1: { /* AUTODISPARO (RAPID FIRE) - disabled in RA hardcore mode */
+            extern bool Port_RA_IsHardcore(void);
             static uint32_t sRapidCounter = 0;
             ++sRapidCounter;
+            if (Port_RA_IsHardcore()) return 0;
             /* Pulse KEY_B every other frame (30 shots/sec) */
             return (sRapidCounter & 1) ? (1 << 1) : 0;
         }
