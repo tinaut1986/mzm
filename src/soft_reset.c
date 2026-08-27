@@ -8,6 +8,7 @@
 #include "constants/cutscene.h"
 #include "constants/audio.h"
 #include "constants/menus/pause_screen.h"
+#include "menus/pause_screen.h"  /* CHECK_MAINTAINED_INPUT */
 
 #include "structs/menus/language_select.h"
 #include "structs/display.h"
@@ -214,7 +215,7 @@ static u32 LanguageSelectHandler(void)
 {
     s32 language;
 
-    CheckForMaintainedInput(MAINTAINED_INPUT_SPEED_SLOW);
+    CHECK_MAINTAINED_INPUT(MAINTAINED_INPUT_SPEED_SLOW);
 
     if (gChangedInput & (KEY_A | KEY_START))
     {

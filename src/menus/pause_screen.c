@@ -1,4 +1,5 @@
 #include "menus/pause_screen.h"
+#include "region.h"
 #include "dma.h"
 #include "temp_globals.h"
 #include "gba.h"
@@ -290,9 +291,9 @@ static u8 sUnused_7601cc[16] = {
 #ifdef MZM_3DS
 const u8* sStatusScreenFlagsOrderPointers[4];
 const u32* sMinimapDataPointers[AREA_COUNT];
-#ifdef REGION_EU
+/* SLOW only exists in the EUR ROM, so that entry stays NULL elsewhere; it is
+ * only read when REGION_IS_EU(). */
 static const u8* sMaintainedInputDelaysPointers[MAINTAINED_INPUT_SPEED_COUNT];
-#endif
 
 void Init_sPauseScreenPointers(void) {
     sStatusScreenFlagsOrderPointers[ABILITY_GROUP_BEAMS] = sStatusScreenBeamFlagsOrder;
@@ -312,10 +313,8 @@ void Init_sPauseScreenPointers(void) {
     sMinimapDataPointers[AREA_TEST_2] = sTestMinimap;
     sMinimapDataPointers[AREA_TEST_3] = sTestMinimap;
 
-#ifdef REGION_EU
     sMaintainedInputDelaysPointers[MAINTAINED_INPUT_SPEED_FAST] = sMaintainedInputDelays_Fast;
     sMaintainedInputDelaysPointers[MAINTAINED_INPUT_SPEED_SLOW] = sMaintainedInputDelays_Slow;
-#endif
 }
 #else
 const u8* sStatusScreenFlagsOrderPointers[4] = {
@@ -3027,11 +3026,7 @@ u32 PauseScreenCallStateHandler(void)
     u32 leaving;
 
     leaving = FALSE;
-#ifdef REGION_EU
-    CheckForMaintainedInput(MAINTAINED_INPUT_SPEED_FAST);
-#else // !REGION_EU
-    CheckForMaintainedInput();
-#endif // REGION_EU
+    CHECK_MAINTAINED_INPUT(MAINTAINED_INPUT_SPEED_FAST);
 
     APPLY_DELTA_TIME_INC(PAUSE_SCREEN_DATA.stateInfo.timer);
 
@@ -3951,6 +3946,58 @@ s32 PauseScreenQuitEasySleep(void)
  * @brief 6c0e0 | 74 | Updates the maintained input
  * 
  */
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+/* Port variant: one binary for every region, so the speed is always a
+ * parameter and the delay table is chosen at runtime. The GBA version below
+ * is left exactly as the decomp has it, so `make check` still matches. */
+void CheckForMaintainedInput(MaintainedInputSpeed speed)
+{
+    const u8* pDelays;
+    u32 lastSet;
+
+    if (REGION_IS_EU())
+    {
+        pDelays = sMaintainedInputDelaysPointers[speed];
+        lastSet = sMaintainedInputDelaysLastSet[speed];
+    }
+    else
+    {
+        // USA/JAP only have the fast table, and always run to its last entry
+        pDelays = sMaintainedInputDelays_Fast;
+        lastSet = ARRAY_SIZE(sMaintainedInputDelays_Fast) - 1;
+    }
+
+    gPrevChangedInput = gChangedInput;
+
+    if (gButtonInput & KEY_ALL_DIRECTIONS)
+    {
+        // Pressing any concerned key
+        gMaintainedInputData.delay++;
+    }
+    else
+    {
+        // Not pressing any concerned key, reset
+        gMaintainedInputData.delay = 0;
+        gMaintainedInputData.set = 0;
+    }
+
+    // Check delay threshold
+    if (gMaintainedInputData.delay >= pDelays[gMaintainedInputData.set])
+    {
+        // Apply to changed input
+        gChangedInput |= gButtonInput & KEY_ALL_DIRECTIONS;
+
+        // Reset delay
+        gMaintainedInputData.delay = 0;
+
+        // Update set
+        if (gMaintainedInputData.set < lastSet)
+        {
+            gMaintainedInputData.set++;
+        }
+    }
+}
+#else
 #ifdef REGION_EU
 void CheckForMaintainedInput(MaintainedInputSpeed speed)
 #else // !REGION_EU
@@ -3995,3 +4042,4 @@ void CheckForMaintainedInput(void)
         }
     }
 }
+#endif

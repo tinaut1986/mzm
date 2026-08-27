@@ -1,4 +1,5 @@
 #include "menus/boot_debug.h"
+#include "menus/pause_screen.h"  /* CHECK_MAINTAINED_INPUT */
 #include "dma.h"
 
 #include "data/menus/boot_debug_data.h"
@@ -763,11 +764,7 @@ s32 BootDebugHandleInput(void)
     subMenuResult = TRUE;
     tempResult = 0;
 
-#ifdef REGION_EU
-    CheckForMaintainedInput(MAINTAINED_INPUT_SPEED_FAST);
-#else // !REGION_EU
-    CheckForMaintainedInput();
-#endif // REGION_EU
+    CHECK_MAINTAINED_INPUT(MAINTAINED_INPUT_SPEED_FAST);
 
     if (BOOT_DEBUG_DATA.menuDepth == BOOT_DEBUG_MENU_MAIN && gChangedInput & KEY_R)
     {

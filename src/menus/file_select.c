@@ -27,6 +27,7 @@
 #include "constants/game_state.h"
 #include "constants/menus/file_select.h"
 #include "constants/menus/pause_screen.h"
+#include "menus/pause_screen.h"  /* CHECK_MAINTAINED_INPUT */
 
 #include "structs/audio.h"
 #include "structs/cable_link.h"
@@ -3145,11 +3146,7 @@ static u8 OptionsHandler(void)
             break;
 
         case 2:
-#ifdef REGION_EU
-            CheckForMaintainedInput(MAINTAINED_INPUT_SPEED_FAST);
-#else // !REGION_EU
-            CheckForMaintainedInput();
-#endif // REGION_EU
+            CHECK_MAINTAINED_INPUT(MAINTAINED_INPUT_SPEED_FAST);
 
             if (!gChangedInput)
                 break;
@@ -5422,11 +5419,7 @@ static u8 FileSelectUpdateSubMenu(void)
     {
         case FILE_SELECT_SUB_MENU_MAIN:
             result = 0;
-#ifdef REGION_EU
-            CheckForMaintainedInput(MAINTAINED_INPUT_SPEED_FAST);
-#else // !REGION_EU
-            CheckForMaintainedInput();
-#endif // REGION_EU
+            CHECK_MAINTAINED_INPUT(MAINTAINED_INPUT_SPEED_FAST);
 
             if (gChangedInput)
             {
