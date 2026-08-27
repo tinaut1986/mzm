@@ -8,6 +8,7 @@
 #include "structs/game_state.h"
 
 #include "data/menus/language_select_data.h"
+#include "region.h"
 
 #define SOFT_RESET_KEYS (KEY_A | KEY_B | KEY_START | KEY_SELECT)
 
@@ -43,9 +44,7 @@ void SoftResetCheck(void)
  */
 void SoftReset(void)
 {
-#ifdef REGION_EU
     s32 tmp;
-#endif // REGION_EU
 
     HazeTransferAndDeactivate();
     RestartSound();
@@ -88,18 +87,17 @@ void SoftReset(void)
     gStereoFlag = FALSE;
 #endif // !BUGFIX
 
-#ifdef REGION_EU
 #ifdef DEBUG
     if (gMainGameMode == GM_INTRO)
 #endif // DEBUG
     {
-        if (INVALID_EU_LANGUAGE(gLanguage))
+        /* EUR asks for a language when the saved one is not one of its five. */
+        if (REGION_IS_EU() && INVALID_EU_LANGUAGE(gLanguage))
         {
             gMainGameMode = GM_SOFT_RESET;
             gSubGameMode1 = sLanguageSelectGameModeSub1Values[1];
         }
     }
-#endif // REGION_EU
 
     gButtonInput = KEY_NONE;
     gPreviousButtonInput = KEY_NONE;
@@ -107,11 +105,7 @@ void SoftReset(void)
 
     WRITE_16(REG_IF, USHORT_MAX);
     // TODO: Find a better way to get a match here
-#if defined(REGION_EU) && !defined(REGION_EU_BETA)
-    // Written this way to produce matching ASM
+    // Written this way to produce matching ASM on EUR; identical either way
     tmp = TRUE;
     WRITE_16(REG_IME, tmp);
-#else // !REGION_EU || REGION_EU_BETA
-    WRITE_16(REG_IME, TRUE);
-#endif // REGION_EU && !REGION_EU_BETA
 }

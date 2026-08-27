@@ -1,4 +1,5 @@
 #include "in_game.h"
+#include "region.h"
 #include "dma.h"
 #include "gba.h"
 #include "callbacks.h"
@@ -64,18 +65,18 @@ u32 InGameHandler(void)
             break;
 
         case SUB_GAME_MODE_DOOR_TRANSITION:
-#ifndef REGION_EU
-            IoWriteRegisters();
-#endif // !REGION_EU
+            if (!REGION_IS_EU())
+                IoWriteRegisters();
+
             if (ColorFadingFinishDoorTransition()) // Undefined
                 gSubGameMode1++;
             break;
 
         case SUB_GAME_MODE_PLAYING:
             DemoHandler();
-#ifndef REGION_EU
-            IoWriteRegisters();
-#endif // !REGION_EU
+
+            if (!REGION_IS_EU())
+                IoWriteRegisters();
 
 #ifdef DEBUG
             // Check for no-clip input
@@ -114,9 +115,9 @@ u32 InGameHandler(void)
             break;
 
         case SUB_GAME_MODE_LOADING_ROOM:
-#ifndef REGION_EU
-            IoWriteRegistersDuringTransition();
-#endif // !REGION_EU
+            if (!REGION_IS_EU())
+                IoWriteRegistersDuringTransition();
+
             if (ColorFadingProcess())
             {
                 gSubGameMode1 = 0;
@@ -126,9 +127,9 @@ u32 InGameHandler(void)
             break;
 
         case SUB_GAME_MODE_DYING:
-#ifndef REGION_EU
-            IoWriteRegisters();
-#endif // !REGION_EU
+            if (!REGION_IS_EU())
+                IoWriteRegisters();
+
             SamusUpdate();
             RoomUpdateGfxInfo();
             break;
@@ -237,9 +238,12 @@ void SetVBlankCodeInGame(void)
     }
 }
 
-#ifdef REGION_EU
 /**
  * @brief Calls IoWriteRegisters based on gSubGameMode1
+ *
+ * EUR only: the other regions call IoWriteRegisters from InGameHandler
+ * itself (see the !REGION_IS_EU() branches above). Compiled everywhere so
+ * agbmain can call it behind a runtime region test.
  * 
  */
 void InGameIoWriteRegisters(void)
@@ -260,7 +264,6 @@ void InGameIoWriteRegisters(void)
             break;
     }
 }
-#endif // REGION_EU
 
 /**
  * @brief c734 | 160 | Transfers Samus's graphics/palette to VRAM

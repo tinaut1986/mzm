@@ -6,6 +6,7 @@
 #include "port_debug_log.h"
 #include "audio/track_internal.h"
 #include "constants/game_state.h"
+#include "region.h"
 
 #include "structs/cutscene.h"
 #include "structs/demo.h"
@@ -48,10 +49,8 @@ void agbmain(void)
         }
 #endif
         gVblankActive = FALSE;
-#ifdef REGION_EU
-        if (gMainGameMode == GM_INGAME || gMainGameMode == GM_DEMO)
+        if (REGION_IS_EU() && (gMainGameMode == GM_INGAME || gMainGameMode == GM_DEMO))
             InGameIoWriteRegisters();
-#endif // REGION_EU
 #if defined(MZM_3DS) && defined(PORT_VERBOSE_FRAME_LOG)
         Port_DebugLog("agbmain: before UpdateAudio()");
 #endif
@@ -193,9 +192,9 @@ void agbmain(void)
 #endif // DEBUG
                 if (TitleScreenHandler())
                 {
-#ifdef REGION_EU
+                    /* EUR clears this before the dispatch below, the other
+                     * regions after it; nothing in between reads it. */
                     gSubGameMode1 = 0;
-#endif // REGION_EU
                     if (gSubGameMode2 == 1)
                     {
                         gMainGameMode = GM_FILE_SELECT;
@@ -205,13 +204,12 @@ void agbmain(void)
                         DemoStart();
                         gMainGameMode = GM_DEMO;
                     }
-#ifdef REGION_EU
-                    else if (gSubGameMode2 == 3)
+                    else if (REGION_IS_EU() && gSubGameMode2 == 3)
                     {
+                        // "Language" picked on the EUR title screen
                         gMainGameMode = GM_SOFT_RESET;
                         gSubGameMode1 = sLanguageSelectGameModeSub1Values[1];
                     }
-#endif // REGION_EU
                     else
                     {
 #ifdef DEBUG
@@ -221,9 +219,6 @@ void agbmain(void)
 #endif // DEBUG
                     }
 
-#ifndef REGION_EU
-                    gSubGameMode1 = 0;
-#endif // !REGION_EU
                     gPauseScreenFlag = 0;
                     gSubGameMode2 = 0;
                 }
@@ -448,14 +443,12 @@ void agbmain(void)
                             gMainGameMode = GM_INGAME;
                             break;
                         case 2:
-#ifdef REGION_EU
-                            if (INVALID_EU_LANGUAGE(gLanguage))
+                            if (REGION_IS_EU() && INVALID_EU_LANGUAGE(gLanguage))
                             {
                                 gMainGameMode = GM_SOFT_RESET;
                                 gSubGameMode1 = sLanguageSelectGameModeSub1Values[2];
                             }
                             else
-#endif // REGION_EU
                             {
                                 gMainGameMode = GM_INTRO;
                             }

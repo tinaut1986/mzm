@@ -18,11 +18,26 @@
 #include "port_gba_mem.h"
 #endif
 
-#ifdef REGION_EU
+#include <stddef.h>
+#include "region.h"
+
 static void LanguageSelectChangeHighlight(u8 highlight, u8 language);
 static void LanguageSelectUpdateHighlightAnimation(struct LanguageColorAnimation* pAnim);
 static u32 LanguageSelectHandler(void);
-#endif // REGION_EU
+
+/* EUR keeps soft-reset state in LANGUAGE_SELECT_DATA, the other regions in
+ * CUTSCENE_DATA. Both are members of the same union, and SoftResetInit's
+ * comment below guesses that bldcnt/dispcnt "line up" between them -- they do
+ * NOT: dispcnt is at +4 in LanguageSelectData but +28 in CutsceneData, bldcnt
+ * at +14 vs +30. So each region has to keep writing its own struct; a single
+ * region-neutral spelling would write the wrong bytes. Asserted here so a
+ * future struct edit that changes this is noticed. */
+_Static_assert(offsetof(struct LanguageSelectData, dispcnt) == 4
+    && offsetof(struct LanguageSelectData, bldcnt) == 14
+    && offsetof(struct CutsceneData, dispcnt) == 28
+    && offsetof(struct CutsceneData, bldcnt) == 30,
+    "soft reset: LanguageSelectData / CutsceneData layout changed, revisit the "
+    "region branches in SoftResetInit");
 
 /**
  * @brief 7ef9c | 54 | Main loop for a soft reset
@@ -35,14 +50,10 @@ u32 SoftResetHandler(void)
     {
         case 0:
             SoftResetInit();
-#ifdef REGION_EU
-            if (LANGUAGE_SELECT_DATA.loadLanguageSelect)
+            if (REGION_IS_EU() && LANGUAGE_SELECT_DATA.loadLanguageSelect)
                 gSubGameMode1 = 3;
             else
                 gSubGameMode1++;
-#else // !REGION_EU
-            gSubGameMode1++;
-#endif // REGION_EU
             break;
 
         case 1:
@@ -58,8 +69,9 @@ u32 SoftResetHandler(void)
         case 2:
             return TRUE;
 
-#ifdef REGION_EU
-
+        /* Language-select states. Only EUR ever sets gSubGameMode1 >= 3
+         * (loadLanguageSelect stays FALSE elsewhere), so these are simply
+         * unreachable on USA/JAP. */
         case 3:
             if (gWrittenToBldy_NonGameplay - 2 <= 0)
                 gWrittenToBldy_NonGameplay = 0;
@@ -114,14 +126,10 @@ u32 SoftResetHandler(void)
             else
                 gSubGameMode1 = 2;
             break;
-
-#endif // REGION_EU
     }
 
     return FALSE;
 }
-
-#ifdef REGION_EU
 
 /**
  * @brief Changes the highlight of a language on the language select menu
@@ -273,8 +281,6 @@ static u32 LanguageSelectHandler(void)
     return FALSE;
 }
 
-#endif // REGION_EU
-
 /**
  * @brief 7eff0 | 110 | Initializes a soft reset
  * 
@@ -292,30 +298,34 @@ void SoftResetInit(void)
     DMA3_FILL_32(0, &gNonGameplayRam, sizeof(gNonGameplayRam));
 #endif
 
-#ifdef REGION_EU
-    if (gSubGameMode1 == 0)
-        WRITE_16(REG_BLDCNT, LANGUAGE_SELECT_DATA.bldcnt = BLDCNT_SCREEN_FIRST_TARGET | BLDCNT_BRIGHTNESS_INCREASE_EFFECT);
+    if (REGION_IS_EU())
+    {
+        if (gSubGameMode1 == 0)
+            WRITE_16(REG_BLDCNT, LANGUAGE_SELECT_DATA.bldcnt = BLDCNT_SCREEN_FIRST_TARGET | BLDCNT_BRIGHTNESS_INCREASE_EFFECT);
+        else
+            WRITE_16(REG_BLDCNT, LANGUAGE_SELECT_DATA.bldcnt = UCHAR_MAX);
+    }
     else
-        WRITE_16(REG_BLDCNT, LANGUAGE_SELECT_DATA.bldcnt = UCHAR_MAX);
-#else // !REGION_EU
-    WRITE_16(REG_BLDCNT, CUTSCENE_DATA.bldcnt = BLDCNT_SCREEN_FIRST_TARGET | BLDCNT_BRIGHTNESS_INCREASE_EFFECT);
-#endif
-    
+    {
+        WRITE_16(REG_BLDCNT, CUTSCENE_DATA.bldcnt = BLDCNT_SCREEN_FIRST_TARGET | BLDCNT_BRIGHTNESS_INCREASE_EFFECT);
+    }
+
     WRITE_16(REG_BLDY, gWrittenToBldy_NonGameplay = BLDY_MAX_VALUE);
-#ifdef REGION_EU
-    WRITE_16(REG_DISPCNT, LANGUAGE_SELECT_DATA.dispcnt = 0);
-#else // !REGION_EU
-    WRITE_16(REG_DISPCNT, CUTSCENE_DATA.dispcnt = 0);
-#endif // REGION_EU
+
+    if (REGION_IS_EU())
+        WRITE_16(REG_DISPCNT, LANGUAGE_SELECT_DATA.dispcnt = 0);
+    else
+        WRITE_16(REG_DISPCNT, CUTSCENE_DATA.dispcnt = 0);
 
     gNextOamSlot = 0;
     ClearGfxRam();
     ResetFreeOam();
 
     gOamXOffset_NonGameplay = gOamYOffset_NonGameplay = 0;
-#ifndef REGION_EU
-    SET_BACKDROP_COLOR(COLOR_BLACK);
-#endif // !REGION_EU
+
+    /* EUR sets the backdrop inside the language-select block below instead. */
+    if (!REGION_IS_EU())
+        SET_BACKDROP_COLOR(COLOR_BLACK);
     gSubGameMode3 = 0;
 
     gBg0HOFS_NonGameplay = gBg0VOFS_NonGameplay = 0;
@@ -332,7 +342,16 @@ void SoftResetInit(void)
     WRITE_16(REG_BG3HOFS, 0);
     WRITE_16(REG_BG3VOFS, 0);
     
-#ifdef REGION_EU
+    if (!REGION_IS_EU())
+    {
+        /* No language select outside EUR. gNonGameplayRam was just zeroed, so
+         * loadLanguageSelect is already FALSE and must not be written here --
+         * those bytes belong to CutsceneData in this region. */
+        WRITE_16(REG_DISPCNT, CUTSCENE_DATA.dispcnt = 0);
+        CallbackSetVblank(SoftResetVBlank);
+        return;
+    }
+
     LANGUAGE_SELECT_DATA.selectedLanguage = gLanguage;
 
     if (INVALID_EU_LANGUAGE(LANGUAGE_SELECT_DATA.selectedLanguage))
@@ -370,9 +389,6 @@ void SoftResetInit(void)
     }
 
     WRITE_16(REG_DISPCNT, LANGUAGE_SELECT_DATA.dispcnt);
-#else // !REGION_EU
-    WRITE_16(REG_DISPCNT, CUTSCENE_DATA.dispcnt = 0);
-#endif // REGION_EU
 
     CallbackSetVblank(SoftResetVBlank);
 }
@@ -385,9 +401,8 @@ void SoftResetVBlank(void)
 {
     WRITE_16(REG_BLDY, gWrittenToBldy_NonGameplay);
 
-#ifdef REGION_EU
-    WRITE_16(REG_BLDCNT, LANGUAGE_SELECT_DATA.bldcnt);
-#endif // REGION_EU
+    if (REGION_IS_EU())
+        WRITE_16(REG_BLDCNT, LANGUAGE_SELECT_DATA.bldcnt);
 }
 
 /**
