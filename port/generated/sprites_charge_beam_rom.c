@@ -23,6 +23,24 @@ void PortGen_charge_beam_Init(void) {
             p_sChargeBeamGlowOam_Idle = (const struct FrameData(*)[15])Port_ResolveRomData(0x082b4614u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sChargeBeamIdleYMovement = (const s16(*)[66])Port_ResolveRomData(0x082b31acu);
+            p_sChargeBeamGfx = (const u32(*)[243])Port_ResolveRomData(0x082b3230u);
+            p_sChargeBeamPal = (const u16(*)[16])Port_ResolveRomData(0x082b35fcu);
+            p_sChargeBeamOam_Visible = (const struct FrameData(*)[5])Port_ResolveRomData(0x082b38f8u);
+            p_sChargeBeamOam_Spawning = (const struct FrameData(*)[13])Port_ResolveRomData(0x082b3920u);
+            p_sChargeBeamGlowOam_Idle = (const struct FrameData(*)[15])Port_ResolveRomData(0x082b3988u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sChargeBeamIdleYMovement = (const s16(*)[66])Port_ResolveRomData(0x082b3208u);
+            p_sChargeBeamGfx = (const u32(*)[243])Port_ResolveRomData(0x082b328cu);
+            p_sChargeBeamPal = (const u16(*)[16])Port_ResolveRomData(0x082b3658u);
+            p_sChargeBeamOam_Visible = (const struct FrameData(*)[5])Port_ResolveRomData(0x082b3954u);
+            p_sChargeBeamOam_Spawning = (const struct FrameData(*)[13])Port_ResolveRomData(0x082b397cu);
+            p_sChargeBeamGlowOam_Idle = (const struct FrameData(*)[15])Port_ResolveRomData(0x082b39e4u);
+            break;
+        }
         default:
             break;
     }

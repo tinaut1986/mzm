@@ -29,6 +29,28 @@ void PortGen_pause_screen_sub_menus_data_Init(void) {
             p_sChozoStatueTargetPathCrateria = (const s8(*)[9][2])Port_ResolveRomData(0x0840eee4u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sChozoStatueTargets = (const struct ChozoStatueTarget(*)[TARGET_COUNT])Port_ResolveRomData(0x0840df78u);
+            p_sChozoStatueTargetConditions = (const u8(*)[TARGET_COUNT][2])Port_ResolveRomData(0x0840e038u);
+            p_sChozoStatueHintEvents = (const Event(*)[TARGET_COUNT])Port_ResolveRomData(0x0840e058u);
+            p_sChozoStatueTargetPathBrinstar = (const s8(*)[9][2])Port_ResolveRomData(0x0840e068u);
+            p_sChozoStatueTargetPathKraid = (const s8(*)[9][2])Port_ResolveRomData(0x0840e07au);
+            p_sChozoStatueTargetPathNorfair = (const s8(*)[9][2])Port_ResolveRomData(0x0840e08cu);
+            p_sChozoStatueTargetPathRidley = (const s8(*)[9][2])Port_ResolveRomData(0x0840e09eu);
+            p_sChozoStatueTargetPathCrateria = (const s8(*)[9][2])Port_ResolveRomData(0x0840e0b0u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sChozoStatueTargets = (const struct ChozoStatueTarget(*)[TARGET_COUNT])Port_ResolveRomData(0x0840dfd4u);
+            p_sChozoStatueTargetConditions = (const u8(*)[TARGET_COUNT][2])Port_ResolveRomData(0x0840e094u);
+            p_sChozoStatueHintEvents = (const Event(*)[TARGET_COUNT])Port_ResolveRomData(0x0840e0b4u);
+            p_sChozoStatueTargetPathBrinstar = (const s8(*)[9][2])Port_ResolveRomData(0x0840e0c4u);
+            p_sChozoStatueTargetPathKraid = (const s8(*)[9][2])Port_ResolveRomData(0x0840e0d6u);
+            p_sChozoStatueTargetPathNorfair = (const s8(*)[9][2])Port_ResolveRomData(0x0840e0e8u);
+            p_sChozoStatueTargetPathRidley = (const s8(*)[9][2])Port_ResolveRomData(0x0840e0fau);
+            p_sChozoStatueTargetPathCrateria = (const s8(*)[9][2])Port_ResolveRomData(0x0840e10cu);
+            break;
+        }
         default:
             break;
     }

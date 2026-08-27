@@ -15,6 +15,14 @@ void PortGen_cutscenes_data_Init(void) {
             p_sCutsceneData = (const struct CutsceneInfo(*)[CUTSCENE_COUNT])Port_ResolveRomData(0x0836ca38u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sCutsceneData = (const struct CutsceneInfo(*)[CUTSCENE_COUNT])Port_ResolveRomData(0x0836bdacu);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sCutsceneData = (const struct CutsceneInfo(*)[CUTSCENE_COUNT])Port_ResolveRomData(0x0836be08u);
+            break;
+        }
         default:
             break;
     }

@@ -49,6 +49,48 @@ void PortGen_demo_data_Init(void) {
             p_sDemoNumbers = (const u8(*)[MAX_AMOUNT_OF_DEMOS])Port_ResolveRomData(0x08364974u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sDemo0_Ram = (const struct SaveDemo*)Port_ResolveRomData(0x083613e8u);
+            p_sDemo1_Ram = (const struct SaveDemo*)Port_ResolveRomData(0x08361668u);
+            p_sDemo2_Ram = (const struct SaveDemo*)Port_ResolveRomData(0x083618e8u);
+            p_sDemo3_Ram = (const struct SaveDemo*)Port_ResolveRomData(0x08361b68u);
+            p_sDemo4_Ram = (const struct SaveDemo*)Port_ResolveRomData(0x08361de8u);
+            p_sDemo5_Ram = (const struct SaveDemo*)Port_ResolveRomData(0x08362068u);
+            p_sDemo6_Ram = (const struct SaveDemo*)Port_ResolveRomData(0x083622e8u);
+            p_sDemo7_Ram = (const struct SaveDemo*)Port_ResolveRomData(0x08362568u);
+            p_sDemo8_Ram = (const struct SaveDemo*)Port_ResolveRomData(0x083627e8u);
+            p_sDemo9_Ram = (const struct SaveDemo*)Port_ResolveRomData(0x08362a68u);
+            p_sDemo10_Ram = (const struct SaveDemo*)Port_ResolveRomData(0x08362ce8u);
+            p_sDemo11_Ram = (const struct SaveDemo*)Port_ResolveRomData(0x08362f68u);
+            p_sDemo12_Ram = (const struct SaveDemo*)Port_ResolveRomData(0x083631e8u);
+            p_sDemo13_Ram = (const struct SaveDemo*)Port_ResolveRomData(0x08363468u);
+            p_sDemo14_Ram = (const struct SaveDemo*)Port_ResolveRomData(0x083636e8u);
+            p_sDemo15_Ram = (const struct SaveDemo*)Port_ResolveRomData(0x08363968u);
+            p_sDemoEntries = (const struct DemoEntry(*)[MAX_AMOUNT_OF_DEMOS])Port_ResolveRomData(0x08363be8u);
+            p_sDemoNumbers = (const u8(*)[MAX_AMOUNT_OF_DEMOS])Port_ResolveRomData(0x08363ce8u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sDemo0_Ram = (const struct SaveDemo*)Port_ResolveRomData(0x08361444u);
+            p_sDemo1_Ram = (const struct SaveDemo*)Port_ResolveRomData(0x083616c4u);
+            p_sDemo2_Ram = (const struct SaveDemo*)Port_ResolveRomData(0x08361944u);
+            p_sDemo3_Ram = (const struct SaveDemo*)Port_ResolveRomData(0x08361bc4u);
+            p_sDemo4_Ram = (const struct SaveDemo*)Port_ResolveRomData(0x08361e44u);
+            p_sDemo5_Ram = (const struct SaveDemo*)Port_ResolveRomData(0x083620c4u);
+            p_sDemo6_Ram = (const struct SaveDemo*)Port_ResolveRomData(0x08362344u);
+            p_sDemo7_Ram = (const struct SaveDemo*)Port_ResolveRomData(0x083625c4u);
+            p_sDemo8_Ram = (const struct SaveDemo*)Port_ResolveRomData(0x08362844u);
+            p_sDemo9_Ram = (const struct SaveDemo*)Port_ResolveRomData(0x08362ac4u);
+            p_sDemo10_Ram = (const struct SaveDemo*)Port_ResolveRomData(0x08362d44u);
+            p_sDemo11_Ram = (const struct SaveDemo*)Port_ResolveRomData(0x08362fc4u);
+            p_sDemo12_Ram = (const struct SaveDemo*)Port_ResolveRomData(0x08363244u);
+            p_sDemo13_Ram = (const struct SaveDemo*)Port_ResolveRomData(0x083634c4u);
+            p_sDemo14_Ram = (const struct SaveDemo*)Port_ResolveRomData(0x08363744u);
+            p_sDemo15_Ram = (const struct SaveDemo*)Port_ResolveRomData(0x083639c4u);
+            p_sDemoEntries = (const struct DemoEntry(*)[MAX_AMOUNT_OF_DEMOS])Port_ResolveRomData(0x08363c44u);
+            p_sDemoNumbers = (const u8(*)[MAX_AMOUNT_OF_DEMOS])Port_ResolveRomData(0x08363d44u);
+            break;
+        }
         default:
             break;
     }

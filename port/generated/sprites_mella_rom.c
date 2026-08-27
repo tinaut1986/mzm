@@ -29,6 +29,30 @@ void PortGen_mella_Init(void) {
             p_sMellowOam_Moving = (const struct FrameData(*)[9])Port_ResolveRomData(0x082f7440u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sMellaIdleYMovement = (const s16(*)[65])Port_ResolveRomData(0x082f6324u);
+            p_sMellaIdleXMovement = (const s16(*)[49])Port_ResolveRomData(0x082f63a6u);
+            p_sMellaGoingDownYMovement = (const u16(*)[6])Port_ResolveRomData(0x082f6408u);
+            p_sMellaGoingUpYMovement = (const u16(*)[7])Port_ResolveRomData(0x082f6414u);
+            p_sMellaMovingXMovement = (const u16(*)[7])Port_ResolveRomData(0x082f6422u);
+            p_sMellaGfx = (const u32(*)[162])Port_ResolveRomData(0x082f6430u);
+            p_sMellaPal = (const u16(*)[16])Port_ResolveRomData(0x082f66b8u);
+            p_sMellaOam_Idle = (const struct FrameData(*)[9])Port_ResolveRomData(0x082f676cu);
+            p_sMellowOam_Moving = (const struct FrameData(*)[9])Port_ResolveRomData(0x082f67b4u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sMellaIdleYMovement = (const s16(*)[65])Port_ResolveRomData(0x082f6380u);
+            p_sMellaIdleXMovement = (const s16(*)[49])Port_ResolveRomData(0x082f6402u);
+            p_sMellaGoingDownYMovement = (const u16(*)[6])Port_ResolveRomData(0x082f6464u);
+            p_sMellaGoingUpYMovement = (const u16(*)[7])Port_ResolveRomData(0x082f6470u);
+            p_sMellaMovingXMovement = (const u16(*)[7])Port_ResolveRomData(0x082f647eu);
+            p_sMellaGfx = (const u32(*)[162])Port_ResolveRomData(0x082f648cu);
+            p_sMellaPal = (const u16(*)[16])Port_ResolveRomData(0x082f6714u);
+            p_sMellaOam_Idle = (const struct FrameData(*)[9])Port_ResolveRomData(0x082f67c8u);
+            p_sMellowOam_Moving = (const struct FrameData(*)[9])Port_ResolveRomData(0x082f6810u);
+            break;
+        }
         default:
             break;
     }

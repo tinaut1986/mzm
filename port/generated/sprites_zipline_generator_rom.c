@@ -33,6 +33,34 @@ void PortGen_zipline_generator_Init(void) {
             p_sZiplineGeneratorPartOam_ElectricityActivating = (const struct FrameData(*)[12])Port_ResolveRomData(0x082e6d34u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sZiplineGeneratorGfx = (const u32(*)[1124])Port_ResolveRomData(0x082e49b8u);
+            p_sZiplineGeneratorPal = (const u16(*)[64])Port_ResolveRomData(0x082e5b48u);
+            p_sZiplineGeneratorPartOam_ConductorDeactivated = (const struct FrameData(*)[2])Port_ResolveRomData(0x082e5f28u);
+            p_sZiplineGeneratorOam_Deactivated = (const struct FrameData(*)[2])Port_ResolveRomData(0x082e5f38u);
+            p_sZiplineGeneratorPartOam_ConductorActivating = (const struct FrameData(*)[7])Port_ResolveRomData(0x082e5f48u);
+            p_sZiplineGeneratorOam_Activating = (const struct FrameData(*)[7])Port_ResolveRomData(0x082e5f80u);
+            p_sZiplineGeneratorPartOam_ConductorActivated = (const struct FrameData(*)[7])Port_ResolveRomData(0x082e5fb8u);
+            p_sZiplineGeneratorOam_Activated = (const struct FrameData(*)[7])Port_ResolveRomData(0x082e5ff0u);
+            p_sZiplineGeneratorPartOam_MorphSymbolActivating = (const struct FrameData(*)[7])Port_ResolveRomData(0x082e6028u);
+            p_sZiplineGeneratorPartOam_MorphSymbolActivated = (const struct FrameData(*)[9])Port_ResolveRomData(0x082e6060u);
+            p_sZiplineGeneratorPartOam_ElectricityActivating = (const struct FrameData(*)[12])Port_ResolveRomData(0x082e60a8u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sZiplineGeneratorGfx = (const u32(*)[1124])Port_ResolveRomData(0x082e4a14u);
+            p_sZiplineGeneratorPal = (const u16(*)[64])Port_ResolveRomData(0x082e5ba4u);
+            p_sZiplineGeneratorPartOam_ConductorDeactivated = (const struct FrameData(*)[2])Port_ResolveRomData(0x082e5f84u);
+            p_sZiplineGeneratorOam_Deactivated = (const struct FrameData(*)[2])Port_ResolveRomData(0x082e5f94u);
+            p_sZiplineGeneratorPartOam_ConductorActivating = (const struct FrameData(*)[7])Port_ResolveRomData(0x082e5fa4u);
+            p_sZiplineGeneratorOam_Activating = (const struct FrameData(*)[7])Port_ResolveRomData(0x082e5fdcu);
+            p_sZiplineGeneratorPartOam_ConductorActivated = (const struct FrameData(*)[7])Port_ResolveRomData(0x082e6014u);
+            p_sZiplineGeneratorOam_Activated = (const struct FrameData(*)[7])Port_ResolveRomData(0x082e604cu);
+            p_sZiplineGeneratorPartOam_MorphSymbolActivating = (const struct FrameData(*)[7])Port_ResolveRomData(0x082e6084u);
+            p_sZiplineGeneratorPartOam_MorphSymbolActivated = (const struct FrameData(*)[9])Port_ResolveRomData(0x082e60bcu);
+            p_sZiplineGeneratorPartOam_ElectricityActivating = (const struct FrameData(*)[12])Port_ResolveRomData(0x082e6104u);
+            break;
+        }
         default:
             break;
     }

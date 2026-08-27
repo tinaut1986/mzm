@@ -27,6 +27,26 @@ void PortGen_statue_opening_data_Init(void) {
             p_sStatueOpening_3effc8 = (const u32(*)[242])Port_ResolveRomData(0x083f0c54u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sStatueOpeningPageData = (const struct CutscenePageData(*)[3])Port_ResolveRomData(0x083ed498u);
+            p_sStatueOpening_Padding3ed4b0 = (const u8(*)[4])Port_ResolveRomData(0x083ed4b0u);
+            p_sStatueOpeningOam = (const struct OamArray(*)[STATUE_OPENING_OAM_ID_COUNT])Port_ResolveRomData(0x083ed4b4u);
+            p_sStatueOpeningPal = (const u16(*)[8*16])Port_ResolveRomData(0x083ed4fcu);
+            p_sStatueOpeningRoomGfx = (const u32(*)[2357])Port_ResolveRomData(0x083ed5fcu);
+            p_sStatueOpeningRoomTileTable = (const u32(*)[318])Port_ResolveRomData(0x083efad0u);
+            p_sStatueOpening_3effc8 = (const u32(*)[242])Port_ResolveRomData(0x083effc8u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sStatueOpeningPageData = (const struct CutscenePageData(*)[3])Port_ResolveRomData(0x083ed4f4u);
+            p_sStatueOpening_Padding3ed4b0 = (const u8(*)[4])Port_ResolveRomData(0x083ed50cu);
+            p_sStatueOpeningOam = (const struct OamArray(*)[STATUE_OPENING_OAM_ID_COUNT])Port_ResolveRomData(0x083ed510u);
+            p_sStatueOpeningPal = (const u16(*)[8*16])Port_ResolveRomData(0x083ed558u);
+            p_sStatueOpeningRoomGfx = (const u32(*)[2357])Port_ResolveRomData(0x083ed658u);
+            p_sStatueOpeningRoomTileTable = (const u32(*)[318])Port_ResolveRomData(0x083efb2cu);
+            p_sStatueOpening_3effc8 = (const u32(*)[242])Port_ResolveRomData(0x083f0024u);
+            break;
+        }
         default:
             break;
     }

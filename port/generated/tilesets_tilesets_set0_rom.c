@@ -32,6 +32,34 @@ void PortGen_tilesets_set0_Init(void) {
             p_sAnimatedPal_5 = (const u16(*)[4*16])Port_ResolveRomData(0x085f2df4u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sTileset_42_Gfx = (const u32(*)[736])Port_ResolveRomData(0x085db40cu);
+            p_sTileset_78_Gfx = (const u32(*)[736])Port_ResolveRomData(0x085dbf8cu);
+            p_sTileset_27_Gfx = (const u32(*)[807])Port_ResolveRomData(0x085dcb0cu);
+            p_sTileset_42_Bg_Gfx = (const u32(*)[591])Port_ResolveRomData(0x085dd7a8u);
+            p_sTileset_27_Bg_Gfx = (const u32(*)[1487])Port_ResolveRomData(0x085de0e4u);
+            p_sTileset_42_Pal = (const u16(*)[14*16])Port_ResolveRomData(0x085df820u);
+            p_sAnimatedPal_7 = (const u16(*)[4*16])Port_ResolveRomData(0x085df9e0u);
+            p_sAnimatedPal_16 = (const u16(*)[8*16])Port_ResolveRomData(0x085dfa60u);
+            p_sAnimatedPal_0 = (const u16(*)[4*16])Port_ResolveRomData(0x085dfb60u);
+            p_sTileset_27_Pal = (const u16(*)[14*16])Port_ResolveRomData(0x085dfbe0u);
+            p_sAnimatedPal_5 = (const u16(*)[4*16])Port_ResolveRomData(0x085dfda0u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sTileset_42_Gfx = (const u32(*)[736])Port_ResolveRomData(0x085db51cu);
+            p_sTileset_78_Gfx = (const u32(*)[736])Port_ResolveRomData(0x085dc09cu);
+            p_sTileset_27_Gfx = (const u32(*)[807])Port_ResolveRomData(0x085dcc1cu);
+            p_sTileset_42_Bg_Gfx = (const u32(*)[591])Port_ResolveRomData(0x085dd8b8u);
+            p_sTileset_27_Bg_Gfx = (const u32(*)[1487])Port_ResolveRomData(0x085de1f4u);
+            p_sTileset_42_Pal = (const u16(*)[14*16])Port_ResolveRomData(0x085df930u);
+            p_sAnimatedPal_7 = (const u16(*)[4*16])Port_ResolveRomData(0x085dfaf0u);
+            p_sAnimatedPal_16 = (const u16(*)[8*16])Port_ResolveRomData(0x085dfb70u);
+            p_sAnimatedPal_0 = (const u16(*)[4*16])Port_ResolveRomData(0x085dfc70u);
+            p_sTileset_27_Pal = (const u16(*)[14*16])Port_ResolveRomData(0x085dfcf0u);
+            p_sAnimatedPal_5 = (const u16(*)[4*16])Port_ResolveRomData(0x085dfeb0u);
+            break;
+        }
         default:
             break;
     }

@@ -87,6 +87,86 @@ void PortGen_kraid_rising_data_Init(void) {
             p_sKraidRisingCaveBackgroundTileTable = (const u32(*)[370])Port_ResolveRomData(0x083753e0u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sKraidRisingPagesData = (const struct CutscenePageData(*)[4])Port_ResolveRomData(0x0836bea4u);
+            p_sKraidRisingScreenShakeData = (const struct CutsceneScreenShakeInfo*)Port_ResolveRomData(0x0836bec4u);
+            p_sKraidRisingScrollingInfo = (const struct CutsceneScrollingInfo*)Port_ResolveRomData(0x0836bec8u);
+            p_sKraidRisingCutsceneOam = (const struct OamArray(*)[KRAID_RISING_OAM_ID_COUNT])Port_ResolveRomData(0x0836bed0u);
+            p_sKraidRisingOam_Samus_Frame0 = (const u16(*)[4])Port_ResolveRomData(0x0836bef8u);
+            p_sKraidRisingOam_Samus_Frame1 = (const u16(*)[4])Port_ResolveRomData(0x0836bf00u);
+            p_sKraidRisingOam_Debris_Frame0 = (const u16(*)[4])Port_ResolveRomData(0x0836bf08u);
+            p_sKraidRisingOam_Debris_Frame1 = (const u16(*)[4])Port_ResolveRomData(0x0836bf10u);
+            p_sKraidRisingOam_Debris_Frame2 = (const u16(*)[4])Port_ResolveRomData(0x0836bf18u);
+            p_sKraidRisingOam_Debris_Frame3 = (const u16(*)[4])Port_ResolveRomData(0x0836bf20u);
+            p_sKraidRisingOam_SmallPuff_Frame0 = (const u16(*)[4])Port_ResolveRomData(0x0836bf28u);
+            p_sKraidRisingOam_SmallPuff_Frame1 = (const u16(*)[4])Port_ResolveRomData(0x0836bf30u);
+            p_sKraidRisingOam_SmallPuff_Frame2 = (const u16(*)[4])Port_ResolveRomData(0x0836bf38u);
+            p_sKraidRisingOam_SmallPuff_Frame3 = (const u16(*)[4])Port_ResolveRomData(0x0836bf40u);
+            p_sKraidRisingOam_BigPuff_Frame0 = (const u16(*)[4])Port_ResolveRomData(0x0836bf48u);
+            p_sKraidRisingOam_BigPuff_Frame1 = (const u16(*)[4])Port_ResolveRomData(0x0836bf50u);
+            p_sKraidRisingOam_BigPuff_Frame2 = (const u16(*)[4])Port_ResolveRomData(0x0836bf58u);
+            p_sKraidRisingOam_BigPuff_Frame3 = (const u16(*)[4])Port_ResolveRomData(0x0836bf60u);
+            p_sKraidRisingOam_Samus = (const struct FrameData(*)[3])Port_ResolveRomData(0x0836bf68u);
+            p_sKraidRisingOam_Debris = (const struct FrameData(*)[5])Port_ResolveRomData(0x0836bf80u);
+            p_sKraidRisingOam_SmallPuff = (const struct FrameData(*)[5])Port_ResolveRomData(0x0836bfa8u);
+            p_sKraidRisingOam_BigPuff = (const struct FrameData(*)[5])Port_ResolveRomData(0x0836bfd0u);
+            p_sKraidRisingCloseUpPal = (const u16(*)[5*16])Port_ResolveRomData(0x0836bff8u);
+            p_sKraidRisingSamusPal = (const u16(*)[1*16])Port_ResolveRomData(0x0836c098u);
+            p_sKraidRisingParticlesPal = (const u16(*)[1*16])Port_ResolveRomData(0x0836c0b8u);
+            p_sKraidRisingSamusVariaPal = (const u16(*)[1*16])Port_ResolveRomData(0x0836c0d8u);
+            p_sKraidRisingRisingPal = (const u16(*)[7*16])Port_ResolveRomData(0x0836c0f8u);
+            p_sKraidRisingKraidCloseUpGfx = (const u32(*)[3087])Port_ResolveRomData(0x0836c1d8u);
+            p_sKraidRisingOamGfx = (const u32(*)[753])Port_ResolveRomData(0x0836f214u);
+            p_sKraidRisingKraidRisingGfx = (const u32(*)[1609])Port_ResolveRomData(0x0836fdd8u);
+            p_sKraidRisingCaveBackgroundGfx = (const u32(*)[1327])Port_ResolveRomData(0x083716fcu);
+            p_sKraidRisingKraidCloseUpEyesClosedTileTable = (const u32(*)[368])Port_ResolveRomData(0x08372bb8u);
+            p_sKraidRisingKraidCloseUpEyesBarelyOpenedTileTable = (const u32(*)[368])Port_ResolveRomData(0x08373178u);
+            p_sKraidRisingKraidCloseUpEyesALittleOpenedTileTable = (const u32(*)[368])Port_ResolveRomData(0x08373738u);
+            p_sKraidRisingKraidCloseUpEyesOpenedTileTable = (const u32(*)[368])Port_ResolveRomData(0x08373cf8u);
+            p_sKraidRisingKraidRisingTileTable = (const u32(*)[295])Port_ResolveRomData(0x083742b8u);
+            p_sKraidRisingCaveBackgroundTileTable = (const u32(*)[370])Port_ResolveRomData(0x08374754u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sKraidRisingPagesData = (const struct CutscenePageData(*)[4])Port_ResolveRomData(0x0836bf00u);
+            p_sKraidRisingScreenShakeData = (const struct CutsceneScreenShakeInfo*)Port_ResolveRomData(0x0836bf20u);
+            p_sKraidRisingScrollingInfo = (const struct CutsceneScrollingInfo*)Port_ResolveRomData(0x0836bf24u);
+            p_sKraidRisingCutsceneOam = (const struct OamArray(*)[KRAID_RISING_OAM_ID_COUNT])Port_ResolveRomData(0x0836bf2cu);
+            p_sKraidRisingOam_Samus_Frame0 = (const u16(*)[4])Port_ResolveRomData(0x0836bf54u);
+            p_sKraidRisingOam_Samus_Frame1 = (const u16(*)[4])Port_ResolveRomData(0x0836bf5cu);
+            p_sKraidRisingOam_Debris_Frame0 = (const u16(*)[4])Port_ResolveRomData(0x0836bf64u);
+            p_sKraidRisingOam_Debris_Frame1 = (const u16(*)[4])Port_ResolveRomData(0x0836bf6cu);
+            p_sKraidRisingOam_Debris_Frame2 = (const u16(*)[4])Port_ResolveRomData(0x0836bf74u);
+            p_sKraidRisingOam_Debris_Frame3 = (const u16(*)[4])Port_ResolveRomData(0x0836bf7cu);
+            p_sKraidRisingOam_SmallPuff_Frame0 = (const u16(*)[4])Port_ResolveRomData(0x0836bf84u);
+            p_sKraidRisingOam_SmallPuff_Frame1 = (const u16(*)[4])Port_ResolveRomData(0x0836bf8cu);
+            p_sKraidRisingOam_SmallPuff_Frame2 = (const u16(*)[4])Port_ResolveRomData(0x0836bf94u);
+            p_sKraidRisingOam_SmallPuff_Frame3 = (const u16(*)[4])Port_ResolveRomData(0x0836bf9cu);
+            p_sKraidRisingOam_BigPuff_Frame0 = (const u16(*)[4])Port_ResolveRomData(0x0836bfa4u);
+            p_sKraidRisingOam_BigPuff_Frame1 = (const u16(*)[4])Port_ResolveRomData(0x0836bfacu);
+            p_sKraidRisingOam_BigPuff_Frame2 = (const u16(*)[4])Port_ResolveRomData(0x0836bfb4u);
+            p_sKraidRisingOam_BigPuff_Frame3 = (const u16(*)[4])Port_ResolveRomData(0x0836bfbcu);
+            p_sKraidRisingOam_Samus = (const struct FrameData(*)[3])Port_ResolveRomData(0x0836bfc4u);
+            p_sKraidRisingOam_Debris = (const struct FrameData(*)[5])Port_ResolveRomData(0x0836bfdcu);
+            p_sKraidRisingOam_SmallPuff = (const struct FrameData(*)[5])Port_ResolveRomData(0x0836c004u);
+            p_sKraidRisingOam_BigPuff = (const struct FrameData(*)[5])Port_ResolveRomData(0x0836c02cu);
+            p_sKraidRisingCloseUpPal = (const u16(*)[5*16])Port_ResolveRomData(0x0836c054u);
+            p_sKraidRisingSamusPal = (const u16(*)[1*16])Port_ResolveRomData(0x0836c0f4u);
+            p_sKraidRisingParticlesPal = (const u16(*)[1*16])Port_ResolveRomData(0x0836c114u);
+            p_sKraidRisingSamusVariaPal = (const u16(*)[1*16])Port_ResolveRomData(0x0836c134u);
+            p_sKraidRisingRisingPal = (const u16(*)[7*16])Port_ResolveRomData(0x0836c154u);
+            p_sKraidRisingKraidCloseUpGfx = (const u32(*)[3087])Port_ResolveRomData(0x0836c234u);
+            p_sKraidRisingOamGfx = (const u32(*)[753])Port_ResolveRomData(0x0836f270u);
+            p_sKraidRisingKraidRisingGfx = (const u32(*)[1609])Port_ResolveRomData(0x0836fe34u);
+            p_sKraidRisingCaveBackgroundGfx = (const u32(*)[1327])Port_ResolveRomData(0x08371758u);
+            p_sKraidRisingKraidCloseUpEyesClosedTileTable = (const u32(*)[368])Port_ResolveRomData(0x08372c14u);
+            p_sKraidRisingKraidCloseUpEyesBarelyOpenedTileTable = (const u32(*)[368])Port_ResolveRomData(0x083731d4u);
+            p_sKraidRisingKraidCloseUpEyesALittleOpenedTileTable = (const u32(*)[368])Port_ResolveRomData(0x08373794u);
+            p_sKraidRisingKraidCloseUpEyesOpenedTileTable = (const u32(*)[368])Port_ResolveRomData(0x08373d54u);
+            p_sKraidRisingKraidRisingTileTable = (const u32(*)[295])Port_ResolveRomData(0x08374314u);
+            p_sKraidRisingCaveBackgroundTileTable = (const u32(*)[370])Port_ResolveRomData(0x083747b0u);
+            break;
+        }
         default:
             break;
     }

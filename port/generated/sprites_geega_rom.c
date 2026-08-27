@@ -23,6 +23,24 @@ void PortGen_geega_Init(void) {
             p_sGeegaOam_Moving = (const struct FrameData(*)[9])Port_ResolveRomData(0x082fe704u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sGeegaGfx = (const u32(*)[153])Port_ResolveRomData(0x082fd518u);
+            p_sGeegaPal = (const u16(*)[16])Port_ResolveRomData(0x082fd77cu);
+            p_sGeegaWhiteGfx = (const u32(*)[153])Port_ResolveRomData(0x082fd79cu);
+            p_sGeegaWhitePal = (const u16(*)[16])Port_ResolveRomData(0x082fda00u);
+            p_sGeegaOam_Idle = (const struct FrameData(*)[5])Port_ResolveRomData(0x082fda50u);
+            p_sGeegaOam_Moving = (const struct FrameData(*)[9])Port_ResolveRomData(0x082fda78u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sGeegaGfx = (const u32(*)[153])Port_ResolveRomData(0x082fd574u);
+            p_sGeegaPal = (const u16(*)[16])Port_ResolveRomData(0x082fd7d8u);
+            p_sGeegaWhiteGfx = (const u32(*)[153])Port_ResolveRomData(0x082fd7f8u);
+            p_sGeegaWhitePal = (const u16(*)[16])Port_ResolveRomData(0x082fda5cu);
+            p_sGeegaOam_Idle = (const struct FrameData(*)[5])Port_ResolveRomData(0x082fdaacu);
+            p_sGeegaOam_Moving = (const struct FrameData(*)[9])Port_ResolveRomData(0x082fdad4u);
+            break;
+        }
         default:
             break;
     }

@@ -124,9 +124,24 @@ endif
 endif
 VERSION ?= $(GIT_VERSION)
 
+# Which retail region's code paths / ROM offsets to compile in. The port
+# still detects the loaded ROM's region at runtime (gRomRegion), but the
+# decomp's `#if REGION_*` structure differences are a compile-time choice,
+# so one binary targets one region. eu = historical default.
+REGION  ?= eu
+ifeq ($(REGION),eu)
+  REGION_DEFINE := -DREGION_EU
+else ifeq ($(REGION),us)
+  REGION_DEFINE := -DREGION_US
+else ifeq ($(REGION),jp)
+  REGION_DEFINE := -DREGION_JP
+else
+  $(error REGION must be one of: eu us jp)
+endif
+
 ARCH    := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
 CFLAGS  := -O2 -fomit-frame-pointer -Wall -mword-relocations -ffunction-sections -fdata-sections \
-           -DREGION_EU -DMZM_PORT_VERSION=\"$(VERSION)\" -D__3DS__ -DMZM_3DS \
+           $(REGION_DEFINE) -DMZM_PORT_VERSION=\"$(VERSION)\" -D__3DS__ -DMZM_3DS \
            -DNON_MATCHING=1 \
            -Wno-implicit-function-declaration -Wno-implicit-int -Wno-builtin-declaration-mismatch \
            -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function \

@@ -19,6 +19,20 @@ void PortGen_unused_sprites_Init(void) {
             p_sUnusedSpritesPal = (const u16(*)[16])Port_ResolveRomData(0x082b3514u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sUnusedSpritesOam_Idle = (const struct FrameData(*)[3])Port_ResolveRomData(0x082b2848u);
+            p_sUnusedSpritesOam_Unused = (const struct FrameData(*)[2])Port_ResolveRomData(0x082b2860u);
+            p_sUnusedSpritesGfx = (const u32(*)[6])Port_ResolveRomData(0x082b2870u);
+            p_sUnusedSpritesPal = (const u16(*)[16])Port_ResolveRomData(0x082b2888u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sUnusedSpritesOam_Idle = (const struct FrameData(*)[3])Port_ResolveRomData(0x082b28a4u);
+            p_sUnusedSpritesOam_Unused = (const struct FrameData(*)[2])Port_ResolveRomData(0x082b28bcu);
+            p_sUnusedSpritesGfx = (const u32(*)[6])Port_ResolveRomData(0x082b28ccu);
+            p_sUnusedSpritesPal = (const u16(*)[16])Port_ResolveRomData(0x082b28e4u);
+            break;
+        }
         default:
             break;
     }

@@ -37,6 +37,38 @@ void PortGen_zipline_Init(void) {
             p_sZiplineButtonOam_Active = (const struct FrameData(*)[7])Port_ResolveRomData(0x082cf6fcu);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sZiplineGfx = (const u32(*)[264])Port_ResolveRomData(0x082ce404u);
+            p_sZiplinePal = (const u16(*)[16])Port_ResolveRomData(0x082ce824u);
+            p_sZiplineOam_OffIdle = (const struct FrameData(*)[2])Port_ResolveRomData(0x082ce918u);
+            p_sZiplineOam_OffGrabbingSamus = (const struct FrameData(*)[4])Port_ResolveRomData(0x082ce928u);
+            p_sZiplineOam_OffSamusGrabbed = (const struct FrameData(*)[2])Port_ResolveRomData(0x082ce948u);
+            p_sZiplineOam_OffReleasingSamus = (const struct FrameData(*)[4])Port_ResolveRomData(0x082ce958u);
+            p_sZiplineOam_OnIdle = (const struct FrameData(*)[7])Port_ResolveRomData(0x082ce978u);
+            p_sZiplineOam_OnGrabbingSamus = (const struct FrameData(*)[4])Port_ResolveRomData(0x082ce9b0u);
+            p_sZiplineOam_OnSamusGrabbed = (const struct FrameData(*)[7])Port_ResolveRomData(0x082ce9d0u);
+            p_sZiplineOam_OnReleasingSamus = (const struct FrameData(*)[4])Port_ResolveRomData(0x082cea08u);
+            p_sZiplineButtonOam_OffIdle = (const struct FrameData(*)[2])Port_ResolveRomData(0x082cea28u);
+            p_sZiplineButtonOam_OnIdle = (const struct FrameData(*)[7])Port_ResolveRomData(0x082cea38u);
+            p_sZiplineButtonOam_Active = (const struct FrameData(*)[7])Port_ResolveRomData(0x082cea70u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sZiplineGfx = (const u32(*)[264])Port_ResolveRomData(0x082ce460u);
+            p_sZiplinePal = (const u16(*)[16])Port_ResolveRomData(0x082ce880u);
+            p_sZiplineOam_OffIdle = (const struct FrameData(*)[2])Port_ResolveRomData(0x082ce974u);
+            p_sZiplineOam_OffGrabbingSamus = (const struct FrameData(*)[4])Port_ResolveRomData(0x082ce984u);
+            p_sZiplineOam_OffSamusGrabbed = (const struct FrameData(*)[2])Port_ResolveRomData(0x082ce9a4u);
+            p_sZiplineOam_OffReleasingSamus = (const struct FrameData(*)[4])Port_ResolveRomData(0x082ce9b4u);
+            p_sZiplineOam_OnIdle = (const struct FrameData(*)[7])Port_ResolveRomData(0x082ce9d4u);
+            p_sZiplineOam_OnGrabbingSamus = (const struct FrameData(*)[4])Port_ResolveRomData(0x082cea0cu);
+            p_sZiplineOam_OnSamusGrabbed = (const struct FrameData(*)[7])Port_ResolveRomData(0x082cea2cu);
+            p_sZiplineOam_OnReleasingSamus = (const struct FrameData(*)[4])Port_ResolveRomData(0x082cea64u);
+            p_sZiplineButtonOam_OffIdle = (const struct FrameData(*)[2])Port_ResolveRomData(0x082cea84u);
+            p_sZiplineButtonOam_OnIdle = (const struct FrameData(*)[7])Port_ResolveRomData(0x082cea94u);
+            p_sZiplineButtonOam_Active = (const struct FrameData(*)[7])Port_ResolveRomData(0x082ceaccu);
+            break;
+        }
         default:
             break;
     }

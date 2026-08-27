@@ -25,6 +25,24 @@ void PortGen_samus_in_blue_ship_data_Init(void) {
             p_sSamusInBlueShipSamusTileTable = (const u32(*)[368])Port_ResolveRomData(0x083fd5bcu);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sSamusInBlueShipPageData = (const struct CutscenePageData(*)[1])Port_ResolveRomData(0x083f6c0cu);
+            p_sSamusInBlueShipOam = (const struct OamArray(*)[3])Port_ResolveRomData(0x083f6c18u);
+            p_sSamusInBlueShipPal = (const u16(*)[9*16])Port_ResolveRomData(0x083f7584u);
+            p_sSamusInBlueShipSamusGfx = (const u32(*)[3641])Port_ResolveRomData(0x083f76a4u);
+            p_sSamusInBlueShipControlsGfx = (const u32(*)[1642])Port_ResolveRomData(0x083faf88u);
+            p_sSamusInBlueShipSamusTileTable = (const u32(*)[368])Port_ResolveRomData(0x083fc930u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sSamusInBlueShipPageData = (const struct CutscenePageData(*)[1])Port_ResolveRomData(0x083f6c68u);
+            p_sSamusInBlueShipOam = (const struct OamArray(*)[3])Port_ResolveRomData(0x083f6c74u);
+            p_sSamusInBlueShipPal = (const u16(*)[9*16])Port_ResolveRomData(0x083f75e0u);
+            p_sSamusInBlueShipSamusGfx = (const u32(*)[3641])Port_ResolveRomData(0x083f7700u);
+            p_sSamusInBlueShipControlsGfx = (const u32(*)[1642])Port_ResolveRomData(0x083fafe4u);
+            p_sSamusInBlueShipSamusTileTable = (const u32(*)[368])Port_ResolveRomData(0x083fc98cu);
+            break;
+        }
         default:
             break;
     }

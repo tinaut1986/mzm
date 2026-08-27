@@ -49,6 +49,50 @@ void PortGen_gunship_Init(void) {
             p_sGunshipPartOam_FlamesVertical = (const struct FrameData(*)[4])Port_ResolveRomData(0x0830be84u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sGunshipTakingOffYVelocity = (const s16(*)[153])Port_ResolveRomData(0x08309470u);
+            p_sGunshipFlyingYVelocity = (const s16(*)[22])Port_ResolveRomData(0x083095a2u);
+            p_sGunshipGfx = (const u32(*)[1027])Port_ResolveRomData(0x083095d0u);
+            p_sGunshipPal = (const u16(*)[48])Port_ResolveRomData(0x0830a5dcu);
+            p_sGunshipFlashingPal = (const u16(*)[8*16])Port_ResolveRomData(0x0830a63cu);
+            p_sGunshipOam_Idle = (const struct FrameData(*)[7])Port_ResolveRomData(0x0830af90u);
+            p_sGunshipOam_Refilling = (const struct FrameData(*)[7])Port_ResolveRomData(0x0830afc8u);
+            p_sGunshipPartOam_EntranceFrontClosed = (const struct FrameData(*)[2])Port_ResolveRomData(0x0830b000u);
+            p_sGunshipPartOam_EntranceFrontOpening = (const struct FrameData(*)[5])Port_ResolveRomData(0x0830b010u);
+            p_sGunshipPartOam_EntranceFrontOpened = (const struct FrameData(*)[7])Port_ResolveRomData(0x0830b038u);
+            p_sGunshipPartOam_EntranceFrontClosing = (const struct FrameData(*)[6])Port_ResolveRomData(0x0830b070u);
+            p_sGunshipPartOam_EntranceBackClosed = (const struct FrameData(*)[2])Port_ResolveRomData(0x0830b0a0u);
+            p_sGunshipPartOam_EntranceBackOpening = (const struct FrameData(*)[9])Port_ResolveRomData(0x0830b0b0u);
+            p_sGunshipPartOam_EntranceBackOpened = (const struct FrameData(*)[7])Port_ResolveRomData(0x0830b0f8u);
+            p_sGunshipPartOam_EntranceBackClosing = (const struct FrameData(*)[9])Port_ResolveRomData(0x0830b130u);
+            p_sGunshipPartOam_Platform = (const struct FrameData(*)[5])Port_ResolveRomData(0x0830b178u);
+            p_sGunshipOam_Flying = (const struct FrameData(*)[7])Port_ResolveRomData(0x0830b1a0u);
+            p_sGunshipPartOam_FlamesHorizontal = (const struct FrameData(*)[4])Port_ResolveRomData(0x0830b1d8u);
+            p_sGunshipPartOam_FlamesVertical = (const struct FrameData(*)[4])Port_ResolveRomData(0x0830b1f8u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sGunshipTakingOffYVelocity = (const s16(*)[153])Port_ResolveRomData(0x083094ccu);
+            p_sGunshipFlyingYVelocity = (const s16(*)[22])Port_ResolveRomData(0x083095feu);
+            p_sGunshipGfx = (const u32(*)[1027])Port_ResolveRomData(0x0830962cu);
+            p_sGunshipPal = (const u16(*)[48])Port_ResolveRomData(0x0830a638u);
+            p_sGunshipFlashingPal = (const u16(*)[8*16])Port_ResolveRomData(0x0830a698u);
+            p_sGunshipOam_Idle = (const struct FrameData(*)[7])Port_ResolveRomData(0x0830afecu);
+            p_sGunshipOam_Refilling = (const struct FrameData(*)[7])Port_ResolveRomData(0x0830b024u);
+            p_sGunshipPartOam_EntranceFrontClosed = (const struct FrameData(*)[2])Port_ResolveRomData(0x0830b05cu);
+            p_sGunshipPartOam_EntranceFrontOpening = (const struct FrameData(*)[5])Port_ResolveRomData(0x0830b06cu);
+            p_sGunshipPartOam_EntranceFrontOpened = (const struct FrameData(*)[7])Port_ResolveRomData(0x0830b094u);
+            p_sGunshipPartOam_EntranceFrontClosing = (const struct FrameData(*)[6])Port_ResolveRomData(0x0830b0ccu);
+            p_sGunshipPartOam_EntranceBackClosed = (const struct FrameData(*)[2])Port_ResolveRomData(0x0830b0fcu);
+            p_sGunshipPartOam_EntranceBackOpening = (const struct FrameData(*)[9])Port_ResolveRomData(0x0830b10cu);
+            p_sGunshipPartOam_EntranceBackOpened = (const struct FrameData(*)[7])Port_ResolveRomData(0x0830b154u);
+            p_sGunshipPartOam_EntranceBackClosing = (const struct FrameData(*)[9])Port_ResolveRomData(0x0830b18cu);
+            p_sGunshipPartOam_Platform = (const struct FrameData(*)[5])Port_ResolveRomData(0x0830b1d4u);
+            p_sGunshipOam_Flying = (const struct FrameData(*)[7])Port_ResolveRomData(0x0830b1fcu);
+            p_sGunshipPartOam_FlamesHorizontal = (const struct FrameData(*)[4])Port_ResolveRomData(0x0830b234u);
+            p_sGunshipPartOam_FlamesVertical = (const struct FrameData(*)[4])Port_ResolveRomData(0x0830b254u);
+            break;
+        }
         default:
             break;
     }

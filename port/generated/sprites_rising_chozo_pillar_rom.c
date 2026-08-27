@@ -25,6 +25,26 @@ void PortGen_rising_chozo_pillar_Init(void) {
             p_sRisingChozoPillarPlatformShadowOam = (const struct FrameData(*)[4])Port_ResolveRomData(0x083148b8u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sRisingChozoPillarGfx = (const u32(*)[671])Port_ResolveRomData(0x08312b98u);
+            p_sRisingChozoPillarPal = (const u16(*)[64])Port_ResolveRomData(0x08313614u);
+            p_sRisingChozoPillarPlatformOam_NoShadowSpawning = (const struct FrameData(*)[28])Port_ResolveRomData(0x08313a4cu);
+            p_sRisingChozoPillarPlatformOam_NoShadowSpawned = (const struct FrameData(*)[2])Port_ResolveRomData(0x08313b2cu);
+            p_sRisingChozoPillarPlatformOam_ShadowSpawning = (const struct FrameData(*)[28])Port_ResolveRomData(0x08313b3cu);
+            p_sRisingChozoPillarPlatformOam_ShadowSpawned = (const struct FrameData(*)[2])Port_ResolveRomData(0x08313c1cu);
+            p_sRisingChozoPillarPlatformShadowOam = (const struct FrameData(*)[4])Port_ResolveRomData(0x08313c2cu);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sRisingChozoPillarGfx = (const u32(*)[671])Port_ResolveRomData(0x08312bf4u);
+            p_sRisingChozoPillarPal = (const u16(*)[64])Port_ResolveRomData(0x08313670u);
+            p_sRisingChozoPillarPlatformOam_NoShadowSpawning = (const struct FrameData(*)[28])Port_ResolveRomData(0x08313aa8u);
+            p_sRisingChozoPillarPlatformOam_NoShadowSpawned = (const struct FrameData(*)[2])Port_ResolveRomData(0x08313b88u);
+            p_sRisingChozoPillarPlatformOam_ShadowSpawning = (const struct FrameData(*)[28])Port_ResolveRomData(0x08313b98u);
+            p_sRisingChozoPillarPlatformOam_ShadowSpawned = (const struct FrameData(*)[2])Port_ResolveRomData(0x08313c78u);
+            p_sRisingChozoPillarPlatformShadowOam = (const struct FrameData(*)[4])Port_ResolveRomData(0x08313c88u);
+            break;
+        }
         default:
             break;
     }

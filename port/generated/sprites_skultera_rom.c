@@ -21,6 +21,22 @@ void PortGen_skultera_Init(void) {
             p_sSkulteraOam_ChasingSamus = (const struct FrameData(*)[5])Port_ResolveRomData(0x08314f68u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sSkulteraGfx = (const u32(*)[285])Port_ResolveRomData(0x08313c4cu);
+            p_sSkulteraPal = (const u16(*)[16])Port_ResolveRomData(0x083140c0u);
+            p_sSkulteraOam_Idle = (const struct FrameData(*)[5])Port_ResolveRomData(0x0831426cu);
+            p_sSkulteraOam_TurningAround = (const struct FrameData(*)[9])Port_ResolveRomData(0x08314294u);
+            p_sSkulteraOam_ChasingSamus = (const struct FrameData(*)[5])Port_ResolveRomData(0x083142dcu);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sSkulteraGfx = (const u32(*)[285])Port_ResolveRomData(0x08313ca8u);
+            p_sSkulteraPal = (const u16(*)[16])Port_ResolveRomData(0x0831411cu);
+            p_sSkulteraOam_Idle = (const struct FrameData(*)[5])Port_ResolveRomData(0x083142c8u);
+            p_sSkulteraOam_TurningAround = (const struct FrameData(*)[9])Port_ResolveRomData(0x083142f0u);
+            p_sSkulteraOam_ChasingSamus = (const struct FrameData(*)[5])Port_ResolveRomData(0x08314338u);
+            break;
+        }
         default:
             break;
     }

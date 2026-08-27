@@ -62,6 +62,64 @@ void PortGen_tilesets_set6_Init(void) {
             p_sTileset_54_Tilemap = (const u8(*)[3332])Port_ResolveRomData(0x086ee428u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sTileset_11_Gfx = (const u32(*)[1632])Port_ResolveRomData(0x086c0fd4u);
+            p_sTileset_2_Gfx = (const u32(*)[2523])Port_ResolveRomData(0x086c2954u);
+            p_sTileset_36_Gfx = (const u32(*)[2847])Port_ResolveRomData(0x086c50c0u);
+            p_sTileset_3_Gfx = (const u32(*)[2536])Port_ResolveRomData(0x086c7d3cu);
+            p_sTileset_55_Gfx = (const u32(*)[3667])Port_ResolveRomData(0x086ca4dcu);
+            p_sTileset_54_Gfx = (const u32(*)[1973])Port_ResolveRomData(0x086cde28u);
+            p_sTileset_11_Bg_Gfx = (const u32(*)[808])Port_ResolveRomData(0x086cfcfcu);
+            p_sTileset_2_Bg_Gfx = (const u32(*)[1459])Port_ResolveRomData(0x086d099cu);
+            p_sTileset_32_Bg_Gfx = (const u32(*)[1309])Port_ResolveRomData(0x086d2068u);
+            p_sTileset_55_Bg_Gfx = (const u32(*)[1239])Port_ResolveRomData(0x086d34dcu);
+            p_sTileset_54_Bg_Gfx = (const u32(*)[1266])Port_ResolveRomData(0x086d4838u);
+            p_sTileset_11_Pal = (const u16(*)[14*16])Port_ResolveRomData(0x086d5c00u);
+            p_sTileset_21_Pal = (const u16(*)[14*16])Port_ResolveRomData(0x086d5dc0u);
+            p_sTileset_31_Pal = (const u16(*)[14*16])Port_ResolveRomData(0x086d5f80u);
+            p_sTileset_2_Pal = (const u16(*)[14*16])Port_ResolveRomData(0x086d6140u);
+            p_sTileset_36_Pal = (const u16(*)[14*16])Port_ResolveRomData(0x086d6300u);
+            p_sTileset_73_Pal = (const u16(*)[14*16])Port_ResolveRomData(0x086d64c0u);
+            p_sTileset_3_Pal = (const u16(*)[14*16])Port_ResolveRomData(0x086d6680u);
+            p_sTileset_55_Pal = (const u16(*)[14*16])Port_ResolveRomData(0x086d6840u);
+            p_sTileset_54_Pal = (const u16(*)[14*16])Port_ResolveRomData(0x086d6a00u);
+            p_sTileset_11_Tilemap = (const u8(*)[4228])Port_ResolveRomData(0x086d6bc0u);
+            p_sTileset_2_Tilemap = (const u8(*)[3460])Port_ResolveRomData(0x086d7c44u);
+            p_sTileset_36_Tilemap = (const u8(*)[3588])Port_ResolveRomData(0x086d89c8u);
+            p_sTileset_3_Tilemap = (const u8(*)[3460])Port_ResolveRomData(0x086d97ccu);
+            p_sTileset_55_Tilemap = (const u8(*)[4228])Port_ResolveRomData(0x086da550u);
+            p_sTileset_54_Tilemap = (const u8(*)[3332])Port_ResolveRomData(0x086db5d4u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sTileset_11_Gfx = (const u32(*)[1632])Port_ResolveRomData(0x086c10e4u);
+            p_sTileset_2_Gfx = (const u32(*)[2523])Port_ResolveRomData(0x086c2a64u);
+            p_sTileset_36_Gfx = (const u32(*)[2847])Port_ResolveRomData(0x086c51d0u);
+            p_sTileset_3_Gfx = (const u32(*)[2536])Port_ResolveRomData(0x086c7e4cu);
+            p_sTileset_55_Gfx = (const u32(*)[3667])Port_ResolveRomData(0x086ca5ecu);
+            p_sTileset_54_Gfx = (const u32(*)[1973])Port_ResolveRomData(0x086cdf38u);
+            p_sTileset_11_Bg_Gfx = (const u32(*)[808])Port_ResolveRomData(0x086cfe0cu);
+            p_sTileset_2_Bg_Gfx = (const u32(*)[1459])Port_ResolveRomData(0x086d0aacu);
+            p_sTileset_32_Bg_Gfx = (const u32(*)[1309])Port_ResolveRomData(0x086d2178u);
+            p_sTileset_55_Bg_Gfx = (const u32(*)[1239])Port_ResolveRomData(0x086d35ecu);
+            p_sTileset_54_Bg_Gfx = (const u32(*)[1266])Port_ResolveRomData(0x086d4948u);
+            p_sTileset_11_Pal = (const u16(*)[14*16])Port_ResolveRomData(0x086d5d10u);
+            p_sTileset_21_Pal = (const u16(*)[14*16])Port_ResolveRomData(0x086d5ed0u);
+            p_sTileset_31_Pal = (const u16(*)[14*16])Port_ResolveRomData(0x086d6090u);
+            p_sTileset_2_Pal = (const u16(*)[14*16])Port_ResolveRomData(0x086d6250u);
+            p_sTileset_36_Pal = (const u16(*)[14*16])Port_ResolveRomData(0x086d6410u);
+            p_sTileset_73_Pal = (const u16(*)[14*16])Port_ResolveRomData(0x086d65d0u);
+            p_sTileset_3_Pal = (const u16(*)[14*16])Port_ResolveRomData(0x086d6790u);
+            p_sTileset_55_Pal = (const u16(*)[14*16])Port_ResolveRomData(0x086d6950u);
+            p_sTileset_54_Pal = (const u16(*)[14*16])Port_ResolveRomData(0x086d6b10u);
+            p_sTileset_11_Tilemap = (const u8(*)[4228])Port_ResolveRomData(0x086d6cd0u);
+            p_sTileset_2_Tilemap = (const u8(*)[3460])Port_ResolveRomData(0x086d7d54u);
+            p_sTileset_36_Tilemap = (const u8(*)[3588])Port_ResolveRomData(0x086d8ad8u);
+            p_sTileset_3_Tilemap = (const u8(*)[3460])Port_ResolveRomData(0x086d98dcu);
+            p_sTileset_55_Tilemap = (const u8(*)[4228])Port_ResolveRomData(0x086da660u);
+            p_sTileset_54_Tilemap = (const u8(*)[3332])Port_ResolveRomData(0x086db6e4u);
+            break;
+        }
         default:
             break;
     }

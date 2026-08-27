@@ -17,6 +17,18 @@ void PortGen_falling_chozo_pillar_Init(void) {
             p_sFallingChozoPillarOam_Falling = (const struct FrameData(*)[2])Port_ResolveRomData(0x0831d7e0u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sFallingChozoPillarGfx = (const u32(*)[219])Port_ResolveRomData(0x0831c794u);
+            p_sFallingChozoPillarPal = (const u16(*)[16])Port_ResolveRomData(0x0831cb00u);
+            p_sFallingChozoPillarOam_Falling = (const struct FrameData(*)[2])Port_ResolveRomData(0x0831cb54u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sFallingChozoPillarGfx = (const u32(*)[219])Port_ResolveRomData(0x0831c7f0u);
+            p_sFallingChozoPillarPal = (const u16(*)[16])Port_ResolveRomData(0x0831cb5cu);
+            p_sFallingChozoPillarOam_Falling = (const struct FrameData(*)[2])Port_ResolveRomData(0x0831cbb0u);
+            break;
+        }
         default:
             break;
     }

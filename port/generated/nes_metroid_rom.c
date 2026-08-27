@@ -17,6 +17,18 @@ void PortGen_nes_metroid_Init(void) {
             p_sNesMetroidData = (const u8*)Port_ResolveRomData(0x087d80b2u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sNesEmuBootLoader = (const NesEmuFunc_T*)Port_ResolveRomData(0x087d8000u);
+            p_sNesMetroidData_Text = (const u8(*)[18])Port_ResolveRomData(0x087d80a0u);
+            p_sNesMetroidData = (const u8*)Port_ResolveRomData(0x087d80b2u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sNesEmuBootLoader = (const NesEmuFunc_T*)Port_ResolveRomData(0x087d8000u);
+            p_sNesMetroidData_Text = (const u8(*)[18])Port_ResolveRomData(0x087d80a0u);
+            p_sNesMetroidData = (const u8*)Port_ResolveRomData(0x087d80b2u);
+            break;
+        }
         default:
             break;
     }

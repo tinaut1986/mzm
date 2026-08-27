@@ -53,6 +53,46 @@ void PortGen_empty_datatypes_Init(void) {
             p_sDefaultTransparency_Empty = (const struct DefaultTransparency*)Port_ResolveRomData(0x08346568u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sHatchData_Empty = (const struct HatchData*)Port_ResolveRomData(0x08345868u);
+            p_sCoordsX_Empty = (const struct Coordinates*)Port_ResolveRomData(0x08345870u);
+            p_sLockScreen_Empty = (const struct LockScreen*)Port_ResolveRomData(0x08345874u);
+            p_sBackgroundEffect_Empty = (const struct BackgroundEffect*)Port_ResolveRomData(0x0834587cu);
+            p_sBrokenBlock_Empty = (const struct BrokenBlock*)Port_ResolveRomData(0x08345884u);
+            p_sBombChain_Empty = (const struct BombChain*)Port_ResolveRomData(0x0834588cu);
+            p_sPowerBomb_Empty = (const struct PowerBomb*)Port_ResolveRomData(0x08345890u);
+            p_sScreenShake_Empty = (const struct ScreenShake*)Port_ResolveRomData(0x083458a4u);
+            p_sBg0Movement_Empty = (const struct BG0Movement*)Port_ResolveRomData(0x083458a8u);
+            p_sBg3Movement_Empty = (const struct BG3Movement*)Port_ResolveRomData(0x083458b0u);
+            p_sUnusedStruct_3005504_Empty = (const struct Unused_3005504*)Port_ResolveRomData(0x083458b8u);
+            p_sWaterMovement_Empty = (const struct WaterMovement*)Port_ResolveRomData(0x083458c0u);
+            p_sTransparencyRelated_Empty = (const struct TransparencyRelated*)Port_ResolveRomData(0x083458c4u);
+            p_sLastElevatorUsed_Empty = (const struct LastElevatorUsed*)Port_ResolveRomData(0x083458c8u);
+            p_sBldalphaData_Empty = (const struct BldalphaData*)Port_ResolveRomData(0x083458ccu);
+            p_sBldyData_Empty = (const struct BldyData*)Port_ResolveRomData(0x083458d4u);
+            p_sDefaultTransparency_Empty = (const struct DefaultTransparency*)Port_ResolveRomData(0x083458dcu);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sHatchData_Empty = (const struct HatchData*)Port_ResolveRomData(0x083458c4u);
+            p_sCoordsX_Empty = (const struct Coordinates*)Port_ResolveRomData(0x083458ccu);
+            p_sLockScreen_Empty = (const struct LockScreen*)Port_ResolveRomData(0x083458d0u);
+            p_sBackgroundEffect_Empty = (const struct BackgroundEffect*)Port_ResolveRomData(0x083458d8u);
+            p_sBrokenBlock_Empty = (const struct BrokenBlock*)Port_ResolveRomData(0x083458e0u);
+            p_sBombChain_Empty = (const struct BombChain*)Port_ResolveRomData(0x083458e8u);
+            p_sPowerBomb_Empty = (const struct PowerBomb*)Port_ResolveRomData(0x083458ecu);
+            p_sScreenShake_Empty = (const struct ScreenShake*)Port_ResolveRomData(0x08345900u);
+            p_sBg0Movement_Empty = (const struct BG0Movement*)Port_ResolveRomData(0x08345904u);
+            p_sBg3Movement_Empty = (const struct BG3Movement*)Port_ResolveRomData(0x0834590cu);
+            p_sUnusedStruct_3005504_Empty = (const struct Unused_3005504*)Port_ResolveRomData(0x08345914u);
+            p_sWaterMovement_Empty = (const struct WaterMovement*)Port_ResolveRomData(0x0834591cu);
+            p_sTransparencyRelated_Empty = (const struct TransparencyRelated*)Port_ResolveRomData(0x08345920u);
+            p_sLastElevatorUsed_Empty = (const struct LastElevatorUsed*)Port_ResolveRomData(0x08345924u);
+            p_sBldalphaData_Empty = (const struct BldalphaData*)Port_ResolveRomData(0x08345928u);
+            p_sBldyData_Empty = (const struct BldyData*)Port_ResolveRomData(0x08345930u);
+            p_sDefaultTransparency_Empty = (const struct DefaultTransparency*)Port_ResolveRomData(0x08345938u);
+            break;
+        }
         default:
             break;
     }

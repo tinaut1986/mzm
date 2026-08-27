@@ -30,6 +30,16 @@ void PortGen_language_select_data_Init(void) {
 #endif
             break;
         }
+        case PORT_ROM_REGION_US: {
+#if (defined(REGION_EU))
+#endif
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+#if (defined(REGION_EU))
+#endif
+            break;
+        }
         default:
             break;
     }

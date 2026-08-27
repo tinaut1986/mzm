@@ -29,6 +29,30 @@ void PortGen_sidehopper_Init(void) {
             p_sSidehopperOam_Landing = (const struct FrameData(*)[7])Port_ResolveRomData(0x082fd904u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sSidehopperHighJumpVelocity = (const s16(*)[10])Port_ResolveRomData(0x082fc448u);
+            p_sSidehopperLowJumpVelocity = (const s16(*)[10])Port_ResolveRomData(0x082fc45cu);
+            p_sSidehopperGfx = (const u32(*)[303])Port_ResolveRomData(0x082fc470u);
+            p_sSidehopperPal = (const u16(*)[16])Port_ResolveRomData(0x082fc92cu);
+            p_sSidehopperOam_Idle = (const struct FrameData(*)[5])Port_ResolveRomData(0x082fcbb8u);
+            p_sSidehopperOam_ShakingHead = (const struct FrameData(*)[9])Port_ResolveRomData(0x082fcbe0u);
+            p_sSidehopperOam_JumpWarning = (const struct FrameData(*)[6])Port_ResolveRomData(0x082fcc28u);
+            p_sSidehopperOam_Jumping = (const struct FrameData(*)[4])Port_ResolveRomData(0x082fcc58u);
+            p_sSidehopperOam_Landing = (const struct FrameData(*)[7])Port_ResolveRomData(0x082fcc78u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sSidehopperHighJumpVelocity = (const s16(*)[10])Port_ResolveRomData(0x082fc4a4u);
+            p_sSidehopperLowJumpVelocity = (const s16(*)[10])Port_ResolveRomData(0x082fc4b8u);
+            p_sSidehopperGfx = (const u32(*)[303])Port_ResolveRomData(0x082fc4ccu);
+            p_sSidehopperPal = (const u16(*)[16])Port_ResolveRomData(0x082fc988u);
+            p_sSidehopperOam_Idle = (const struct FrameData(*)[5])Port_ResolveRomData(0x082fcc14u);
+            p_sSidehopperOam_ShakingHead = (const struct FrameData(*)[9])Port_ResolveRomData(0x082fcc3cu);
+            p_sSidehopperOam_JumpWarning = (const struct FrameData(*)[6])Port_ResolveRomData(0x082fcc84u);
+            p_sSidehopperOam_Jumping = (const struct FrameData(*)[4])Port_ResolveRomData(0x082fccb4u);
+            p_sSidehopperOam_Landing = (const struct FrameData(*)[7])Port_ResolveRomData(0x082fccd4u);
+            break;
+        }
         default:
             break;
     }

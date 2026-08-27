@@ -17,6 +17,18 @@ void PortGen_generic_data_Init(void) {
             p_sIntrTable = (const Func_T(*)[13])Port_ResolveRomData(0x0808d728u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sSineTable = (const s16(*)[2*PI+PI_2])Port_ResolveRomData(0x0808c71cu);
+            p_sRandomNumberTable = (const u8(*)[256])Port_ResolveRomData(0x0808c99cu);
+            p_sIntrTable = (const Func_T(*)[13])Port_ResolveRomData(0x0808ca9cu);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sSineTable = (const s16(*)[2*PI+PI_2])Port_ResolveRomData(0x0808c778u);
+            p_sRandomNumberTable = (const u8(*)[256])Port_ResolveRomData(0x0808c9f8u);
+            p_sIntrTable = (const Func_T(*)[13])Port_ResolveRomData(0x0808caf8u);
+            break;
+        }
         default:
             break;
     }

@@ -23,6 +23,24 @@ void PortGen_zeb_Init(void) {
             p_sZebOam_Moving = (const struct FrameData(*)[5])Port_ResolveRomData(0x082cd6e0u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sZebPinkGfx = (const u32(*)[162])Port_ResolveRomData(0x082cc4b0u);
+            p_sZebPinkPal = (const u16(*)[16])Port_ResolveRomData(0x082cc738u);
+            p_sZebBlueGfx = (const u32(*)[162])Port_ResolveRomData(0x082cc758u);
+            p_sZebBluePal = (const u16(*)[16])Port_ResolveRomData(0x082cc9e0u);
+            p_sZebOam_Idle = (const struct FrameData(*)[5])Port_ResolveRomData(0x082cca2cu);
+            p_sZebOam_Moving = (const struct FrameData(*)[5])Port_ResolveRomData(0x082cca54u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sZebPinkGfx = (const u32(*)[162])Port_ResolveRomData(0x082cc50cu);
+            p_sZebPinkPal = (const u16(*)[16])Port_ResolveRomData(0x082cc794u);
+            p_sZebBlueGfx = (const u32(*)[162])Port_ResolveRomData(0x082cc7b4u);
+            p_sZebBluePal = (const u16(*)[16])Port_ResolveRomData(0x082cca3cu);
+            p_sZebOam_Idle = (const struct FrameData(*)[5])Port_ResolveRomData(0x082cca88u);
+            p_sZebOam_Moving = (const struct FrameData(*)[5])Port_ResolveRomData(0x082ccab0u);
+            break;
+        }
         default:
             break;
     }

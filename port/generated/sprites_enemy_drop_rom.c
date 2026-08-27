@@ -27,6 +27,28 @@ void PortGen_enemy_drop_Init(void) {
             p_sEnemyDropOam_MultipleLargeEnergySlot2 = (const struct FrameData(*)[5])Port_ResolveRomData(0x082b349cu);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sEnemyDropOam_SmallEnergy = (const struct FrameData(*)[5])Port_ResolveRomData(0x082b2728u);
+            p_sEnemyDropOam_LargeEnergy = (const struct FrameData(*)[5])Port_ResolveRomData(0x082b2750u);
+            p_sEnemyDropOam_Missile = (const struct FrameData(*)[3])Port_ResolveRomData(0x082b2778u);
+            p_sEnemyDropOam_SuperMissile = (const struct FrameData(*)[3])Port_ResolveRomData(0x082b2790u);
+            p_sEnemyDropOam_PowerBomb = (const struct FrameData(*)[3])Port_ResolveRomData(0x082b27a8u);
+            p_sEnemyDropOam_MultipleLargeEnergySlot1 = (const struct FrameData(*)[5])Port_ResolveRomData(0x082b27c0u);
+            p_sEnemyDropOam_MultipleLargeEnergySlot3 = (const struct FrameData(*)[5])Port_ResolveRomData(0x082b27e8u);
+            p_sEnemyDropOam_MultipleLargeEnergySlot2 = (const struct FrameData(*)[5])Port_ResolveRomData(0x082b2810u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sEnemyDropOam_SmallEnergy = (const struct FrameData(*)[5])Port_ResolveRomData(0x082b2784u);
+            p_sEnemyDropOam_LargeEnergy = (const struct FrameData(*)[5])Port_ResolveRomData(0x082b27acu);
+            p_sEnemyDropOam_Missile = (const struct FrameData(*)[3])Port_ResolveRomData(0x082b27d4u);
+            p_sEnemyDropOam_SuperMissile = (const struct FrameData(*)[3])Port_ResolveRomData(0x082b27ecu);
+            p_sEnemyDropOam_PowerBomb = (const struct FrameData(*)[3])Port_ResolveRomData(0x082b2804u);
+            p_sEnemyDropOam_MultipleLargeEnergySlot1 = (const struct FrameData(*)[5])Port_ResolveRomData(0x082b281cu);
+            p_sEnemyDropOam_MultipleLargeEnergySlot3 = (const struct FrameData(*)[5])Port_ResolveRomData(0x082b2844u);
+            p_sEnemyDropOam_MultipleLargeEnergySlot2 = (const struct FrameData(*)[5])Port_ResolveRomData(0x082b286cu);
+            break;
+        }
         default:
             break;
     }
