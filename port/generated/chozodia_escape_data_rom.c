@@ -21,19 +21,15 @@ __attribute__((weak)) const u16(*p_sChozodiaEscapeOam_BlueShipFarAway_Frame0)[OA
 __attribute__((weak)) const u16(*p_sChozodiaEscapeOam_BlueShipVeryClose_Frame0)[OAM_DATA_SIZE(4)];
 __attribute__((weak)) const u16(*p_sChozodiaEscapeOam_MissionAccomplishedEnglish_Frame0)[OAM_DATA_SIZE(20)];
 __attribute__((weak)) const u16(*p_sChozodiaEscapeOam_MissionAccomplishedHiragana_Frame0)[OAM_DATA_SIZE(9)];
-#if (defined(REGION_EU))
 __attribute__((weak)) const u16(*p_sChozodiaEscapeOam_MissionAccomplishedGerman_Frame0)[OAM_DATA_SIZE(21)];
 __attribute__((weak)) const u16(*p_sChozodiaEscapeOam_MissionAccomplishedFrench_Frame0)[OAM_DATA_SIZE(15)];
 __attribute__((weak)) const u16(*p_sChozodiaEscapeOam_MissionAccomplishedItalian_Frame0)[OAM_DATA_SIZE(17)];
 __attribute__((weak)) const u16(*p_sChozodiaEscapeOam_MissionAccomplishedSpanish_Frame0)[OAM_DATA_SIZE(16)];
-#endif
 __attribute__((weak)) const u8(*p_sChozodiaEscapeHeatingUpPalOffsets)[8];
 __attribute__((weak)) const struct FrameData* const(*p_sChozodiaEscape_5ca0c4)[5];
 __attribute__((weak)) const u16(*p_sChozodiaEscape_5ca0d8)[8][2];
 __attribute__((weak)) const u16(*p_sChozodiaEscape_5ca0f8)[8][2];
-#if (defined(REGION_EU))
 __attribute__((weak)) const u16 * const(*p_sChozodiaEscapeOamPointers_MissionAccomplished)[LANGUAGE_COUNT];
-#endif
 __attribute__((weak)) const u32(*p_sChozodiaEscapeCraterBackgroundGfx)[5227];
 __attribute__((weak)) const u32(*p_sChozodiaEscapeCraterBackgroundTileTable)[418];
 __attribute__((weak)) const u32(*p_sChozodiaEscapeBlueShipVeryCloseGfx)[1079];
@@ -61,19 +57,15 @@ void PortGen_chozodia_escape_data_Init(void) {
             p_sChozodiaEscapeOam_BlueShipVeryClose_Frame0 = (const u16(*)[OAM_DATA_SIZE(4)])Port_ResolveRomData(0x085dcb00u);
             p_sChozodiaEscapeOam_MissionAccomplishedEnglish_Frame0 = (const u16(*)[OAM_DATA_SIZE(20)])Port_ResolveRomData(0x085dcb1au);
             p_sChozodiaEscapeOam_MissionAccomplishedHiragana_Frame0 = (const u16(*)[OAM_DATA_SIZE(9)])Port_ResolveRomData(0x085dcb94u);
-#if (defined(REGION_EU))
             p_sChozodiaEscapeOam_MissionAccomplishedGerman_Frame0 = (const u16(*)[OAM_DATA_SIZE(21)])Port_ResolveRomData(0x085dcbccu);
             p_sChozodiaEscapeOam_MissionAccomplishedFrench_Frame0 = (const u16(*)[OAM_DATA_SIZE(15)])Port_ResolveRomData(0x085dcc4cu);
             p_sChozodiaEscapeOam_MissionAccomplishedItalian_Frame0 = (const u16(*)[OAM_DATA_SIZE(17)])Port_ResolveRomData(0x085dcca8u);
             p_sChozodiaEscapeOam_MissionAccomplishedSpanish_Frame0 = (const u16(*)[OAM_DATA_SIZE(16)])Port_ResolveRomData(0x085dcd10u);
-#endif
             p_sChozodiaEscapeHeatingUpPalOffsets = (const u8(*)[8])Port_ResolveRomData(0x085dcd72u);
             p_sChozodiaEscape_5ca0c4 = (const struct FrameData* const(*)[5])Port_ResolveRomData(0x085dcd7cu);
             p_sChozodiaEscape_5ca0d8 = (const u16(*)[8][2])Port_ResolveRomData(0x085dcd90u);
             p_sChozodiaEscape_5ca0f8 = (const u16(*)[8][2])Port_ResolveRomData(0x085dcdb0u);
-#if (defined(REGION_EU))
             p_sChozodiaEscapeOamPointers_MissionAccomplished = (const u16 * const(*)[LANGUAGE_COUNT])Port_ResolveRomData(0x085dcdd0u);
-#endif
             p_sChozodiaEscapeCraterBackgroundGfx = (const u32(*)[5227])Port_ResolveRomData(0x085dcdecu);
             p_sChozodiaEscapeCraterBackgroundTileTable = (const u32(*)[418])Port_ResolveRomData(0x085e1f98u);
             p_sChozodiaEscapeBlueShipVeryCloseGfx = (const u32(*)[1079])Port_ResolveRomData(0x085e2620u);
@@ -100,14 +92,10 @@ void PortGen_chozodia_escape_data_Init(void) {
             p_sChozodiaEscapeOam_BlueShipVeryClose_Frame0 = (const u16(*)[OAM_DATA_SIZE(4)])Port_ResolveRomData(0x085c9ff0u);
             p_sChozodiaEscapeOam_MissionAccomplishedEnglish_Frame0 = (const u16(*)[OAM_DATA_SIZE(20)])Port_ResolveRomData(0x085ca00au);
             p_sChozodiaEscapeOam_MissionAccomplishedHiragana_Frame0 = (const u16(*)[OAM_DATA_SIZE(9)])Port_ResolveRomData(0x085ca084u);
-#if (defined(REGION_EU))
-#endif
             p_sChozodiaEscapeHeatingUpPalOffsets = (const u8(*)[8])Port_ResolveRomData(0x085ca0bcu);
             p_sChozodiaEscape_5ca0c4 = (const struct FrameData* const(*)[5])Port_ResolveRomData(0x085ca0c4u);
             p_sChozodiaEscape_5ca0d8 = (const u16(*)[8][2])Port_ResolveRomData(0x085ca0d8u);
             p_sChozodiaEscape_5ca0f8 = (const u16(*)[8][2])Port_ResolveRomData(0x085ca0f8u);
-#if (defined(REGION_EU))
-#endif
             p_sChozodiaEscapeCraterBackgroundGfx = (const u32(*)[5227])Port_ResolveRomData(0x085ca118u);
             p_sChozodiaEscapeCraterBackgroundTileTable = (const u32(*)[418])Port_ResolveRomData(0x085cf2c4u);
             p_sChozodiaEscapeBlueShipVeryCloseGfx = (const u32(*)[1079])Port_ResolveRomData(0x085cf94cu);
@@ -134,14 +122,10 @@ void PortGen_chozodia_escape_data_Init(void) {
             p_sChozodiaEscapeOam_BlueShipVeryClose_Frame0 = (const u16(*)[OAM_DATA_SIZE(4)])Port_ResolveRomData(0x085ca100u);
             p_sChozodiaEscapeOam_MissionAccomplishedEnglish_Frame0 = (const u16(*)[OAM_DATA_SIZE(20)])Port_ResolveRomData(0x085ca11au);
             p_sChozodiaEscapeOam_MissionAccomplishedHiragana_Frame0 = (const u16(*)[OAM_DATA_SIZE(9)])Port_ResolveRomData(0x085ca194u);
-#if (defined(REGION_EU))
-#endif
             p_sChozodiaEscapeHeatingUpPalOffsets = (const u8(*)[8])Port_ResolveRomData(0x085ca1ccu);
             p_sChozodiaEscape_5ca0c4 = (const struct FrameData* const(*)[5])Port_ResolveRomData(0x085ca1d4u);
             p_sChozodiaEscape_5ca0d8 = (const u16(*)[8][2])Port_ResolveRomData(0x085ca1e8u);
             p_sChozodiaEscape_5ca0f8 = (const u16(*)[8][2])Port_ResolveRomData(0x085ca208u);
-#if (defined(REGION_EU))
-#endif
             p_sChozodiaEscapeCraterBackgroundGfx = (const u32(*)[5227])Port_ResolveRomData(0x085ca228u);
             p_sChozodiaEscapeCraterBackgroundTileTable = (const u32(*)[418])Port_ResolveRomData(0x085cf3d4u);
             p_sChozodiaEscapeBlueShipVeryCloseGfx = (const u32(*)[1079])Port_ResolveRomData(0x085cfa5cu);

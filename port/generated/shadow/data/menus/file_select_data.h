@@ -35,16 +35,12 @@ extern const struct FrameData(*p_sFileSelectOam_SamusHeadSuitlessTurning)[8];
 #define sFileSelectOam_SamusHeadSuitlessTurning (*p_sFileSelectOam_SamusHeadSuitlessTurning)
 extern const u32(*p_sFileSelectChozoBackgroundGfx)[2985];
 #define sFileSelectChozoBackgroundGfx (*p_sFileSelectChozoBackgroundGfx)
-#if (defined(REGION_EU))
 extern const u32(*p_sFileSelectAreaNamesGfx)[331];
 #define sFileSelectAreaNamesGfx (*p_sFileSelectAreaNamesGfx)
 extern const u32(*p_sFileSelectBgIconsGfx)[651];
 #define sFileSelectBgIconsGfx (*p_sFileSelectBgIconsGfx)
-#endif
-#if (!((defined(REGION_EU))))
 extern const u32(*p_sFileSelectCharactersGfx)[1531];
 #define sFileSelectCharactersGfx (*p_sFileSelectCharactersGfx)
-#endif
 extern const u32(*p_sFileSelectOptionsTextEnglishGfx)[345];
 #define sFileSelectOptionsTextEnglishGfx (*p_sFileSelectOptionsTextEnglishGfx)
 extern const u32*p_sFileSelectOptionsTextGermanGfx;
@@ -55,7 +51,6 @@ extern const u32*p_sFileSelectOptionsTextItalianGfx;
 #define sFileSelectOptionsTextItalianGfx p_sFileSelectOptionsTextItalianGfx
 extern const u32*p_sFileSelectOptionsTextSpanishGfx;
 #define sFileSelectOptionsTextSpanishGfx p_sFileSelectOptionsTextSpanishGfx
-#if (defined(REGION_EU))
 extern const u32(*p_sFileSelectLargeTextEnglishGfx)[332];
 #define sFileSelectLargeTextEnglishGfx (*p_sFileSelectLargeTextEnglishGfx)
 extern const u32(*p_sFileSelectLargeTextGermanGfx)[391];
@@ -76,7 +71,6 @@ extern const u32(*p_sFileSelectDifficultyTextItalianGfx)[71];
 #define sFileSelectDifficultyTextItalianGfx (*p_sFileSelectDifficultyTextItalianGfx)
 extern const u32(*p_sFileSelectDifficultyTextSpanishGfx)[70];
 #define sFileSelectDifficultyTextSpanishGfx (*p_sFileSelectDifficultyTextSpanishGfx)
-#endif
 extern const u32(*p_sFileSelectObjIconsGfx)[1722];
 #define sFileSelectObjIconsGfx (*p_sFileSelectObjIconsGfx)
 extern const u32(*p_sFileSelectChozoBackgroundTileTable)[368];

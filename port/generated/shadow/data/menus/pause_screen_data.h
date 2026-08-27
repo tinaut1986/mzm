@@ -184,12 +184,10 @@ extern const struct OamArray(*p_sPauseScreenWorldMapOam)[WORLD_MAP_OAM_ID_COUNT]
 #define sPauseScreenWorldMapOam (*p_sPauseScreenWorldMapOam)
 extern const u8(*p_sMaintainedInputDelays_Fast)[7];
 #define sMaintainedInputDelays_Fast (*p_sMaintainedInputDelays_Fast)
-#if (defined(REGION_EU))
 extern const u8(*p_sMaintainedInputDelays_Slow)[4];
 #define sMaintainedInputDelays_Slow (*p_sMaintainedInputDelays_Slow)
 extern const u8(*p_sMaintainedInputDelaysLastSet)[MAINTAINED_INPUT_SPEED_COUNT];
 #define sMaintainedInputDelaysLastSet (*p_sMaintainedInputDelaysLastSet)
-#endif
 extern const struct MapScreenAreaIds*p_sMapScreenAreaIds;
 #define sMapScreenAreaIds (*p_sMapScreenAreaIds)
 extern const u8(*p_sMapScreenAreasViewOrder)[MAX_AMOUNT_OF_AREAS];

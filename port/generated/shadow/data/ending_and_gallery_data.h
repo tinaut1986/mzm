@@ -25,7 +25,6 @@ extern const u16(*p_sEndingImageTextPal)[14*16];
 #define sEndingImageTextPal (*p_sEndingImageTextPal)
 extern const u16(*p_sEndingImageOam_NewRecordEnglish)[OAM_DATA_SIZE(6)];
 #define sEndingImageOam_NewRecordEnglish (*p_sEndingImageOam_NewRecordEnglish)
-#if (defined(REGION_EU))
 extern const u16(*p_sEndingImageOam_NewRecordFrench)[OAM_DATA_SIZE(4)];
 #define sEndingImageOam_NewRecordFrench (*p_sEndingImageOam_NewRecordFrench)
 extern const u16(*p_sEndingImageOam_NewRecordItalian)[OAM_DATA_SIZE(6)];
@@ -34,7 +33,6 @@ extern const u16(*p_sEndingImageOam_NewRecordSpanish)[OAM_DATA_SIZE(6)];
 #define sEndingImageOam_NewRecordSpanish (*p_sEndingImageOam_NewRecordSpanish)
 extern const u16(*p_sEndingImageOam_NewRecordGerman)[OAM_DATA_SIZE(6)];
 #define sEndingImageOam_NewRecordGerman (*p_sEndingImageOam_NewRecordGerman)
-#endif
 extern const u16(*p_sCreditsCharactersPal)[3*16];
 #define sCreditsCharactersPal (*p_sCreditsCharactersPal)
 extern const u16(*p_sCreditsChozoWallPal)[15*16];
@@ -59,7 +57,6 @@ extern const struct EndingImageOam(*p_sEndingImageOam_YourRate_English)[11];
 #define sEndingImageOam_YourRate_English (*p_sEndingImageOam_YourRate_English)
 extern const struct EndingImageOam(*p_sEndingImageOam_Collecting_English)[17];
 #define sEndingImageOam_Collecting_English (*p_sEndingImageOam_Collecting_English)
-#if (defined(REGION_EU))
 extern const struct EndingImageOam(*p_sEndingImageOam_FullLines_German)[ENDING_IMAGE_LINE_COUNT];
 #define sEndingImageOam_FullLines_German (*p_sEndingImageOam_FullLines_German)
 extern const struct EndingImageOam(*p_sEndingImageOam_ClearTime_German)[13];
@@ -86,7 +83,6 @@ extern const struct EndingImageOam(*p_sEndingImageOam_ClearTime_Spanish)[15];
 #define sEndingImageOam_ClearTime_Spanish (*p_sEndingImageOam_ClearTime_Spanish)
 extern const struct EndingImageOam(*p_sEndingImageOam_Collecting_Spanish)[19];
 #define sEndingImageOam_Collecting_Spanish (*p_sEndingImageOam_Collecting_Spanish)
-#endif
 extern const struct EndingImageOam(*p_sEndingImageOam_FullLines_Hiragana)[ENDING_IMAGE_LINE_COUNT];
 #define sEndingImageOam_FullLines_Hiragana (*p_sEndingImageOam_FullLines_Hiragana)
 extern const struct EndingImageOam(*p_sEndingImageOam_ClearTime_Hiragana)[6];
@@ -121,17 +117,14 @@ extern const u8(*p_sEndingImage_54e2dc)[8];
 #define sEndingImage_54e2dc (*p_sEndingImage_54e2dc)
 extern const u8(*p_sEndingImageNewRecordPalettes)[12];
 #define sEndingImageNewRecordPalettes (*p_sEndingImageNewRecordPalettes)
-#if (defined(REGION_EU))
 extern const u16 * const(*p_sEndingImageOamPointers_NewRecord)[LANGUAGE_COUNT];
 #define sEndingImageOamPointers_NewRecord (*p_sEndingImageOamPointers_NewRecord)
-#endif
 extern const u32*p_sCreditsCharactersGfx;
 #define sCreditsCharactersGfx p_sCreditsCharactersGfx
 extern const u32(*p_sEndingImageTextEnglishGfx)[803];
 #define sEndingImageTextEnglishGfx (*p_sEndingImageTextEnglishGfx)
 extern const u32(*p_sEndingImageTextHiraganaGfx)[511];
 #define sEndingImageTextHiraganaGfx (*p_sEndingImageTextHiraganaGfx)
-#if (defined(REGION_EU))
 extern const u32(*p_sEndingImageTextFrenchGfx)[759];
 #define sEndingImageTextFrenchGfx (*p_sEndingImageTextFrenchGfx)
 extern const u32(*p_sEndingImageTextGermanGfx)[726];
@@ -140,14 +133,12 @@ extern const u32(*p_sEndingImageTextItalianGfx)[883];
 #define sEndingImageTextItalianGfx (*p_sEndingImageTextItalianGfx)
 extern const u32(*p_sEndingImageTextSpanishGfx)[773];
 #define sEndingImageTextSpanishGfx (*p_sEndingImageTextSpanishGfx)
-#endif
 extern const u8(*p_sEndingImageNumbersGfx_Upper)[10*64];
 #define sEndingImageNumbersGfx_Upper (*p_sEndingImageNumbersGfx_Upper)
 extern const u8(*p_sEndingImageNumbersGfx_Lower)[10*64];
 #define sEndingImageNumbersGfx_Lower (*p_sEndingImageNumbersGfx_Lower)
 extern const u32(*p_sEndingImageNumbersMiscEnglishGfx)[218];
 #define sEndingImageNumbersMiscEnglishGfx (*p_sEndingImageNumbersMiscEnglishGfx)
-#if (defined(REGION_EU))
 extern const u32(*p_sEndingImageNumbersMiscGermanGfx)[209];
 #define sEndingImageNumbersMiscGermanGfx (*p_sEndingImageNumbersMiscGermanGfx)
 extern const u32(*p_sEndingImageNumbersMiscFrenchGfx)[217];
@@ -156,7 +147,6 @@ extern const u32(*p_sEndingImageNumbersMiscItalianGfx)[208];
 #define sEndingImageNumbersMiscItalianGfx (*p_sEndingImageNumbersMiscItalianGfx)
 extern const u32(*p_sEndingImageNumbersMiscSpanishGfx)[225];
 #define sEndingImageNumbersMiscSpanishGfx (*p_sEndingImageNumbersMiscSpanishGfx)
-#endif
 extern const u32(*p_sEndingSamusPosingSpaceBackgroundGfx)[2938];
 #define sEndingSamusPosingSpaceBackgroundGfx (*p_sEndingSamusPosingSpaceBackgroundGfx)
 extern const u32(*p_sEndingSamusPosingSpaceBackgroundTileTable)[412];

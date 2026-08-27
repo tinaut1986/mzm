@@ -204,7 +204,6 @@ __attribute__((weak)) const u16*p_sEnglishText_Location_Unused15;
 __attribute__((weak)) const u16*p_sEnglishText_Location_Unused16;
 __attribute__((weak)) const u16*p_sEnglishText_Location_Unused17;
 __attribute__((weak)) const u16*p_sEnglishText_Location_Unused18;
-#if (defined(REGION_EU))
 __attribute__((weak)) const u16*p_sGermanText_Message_Dummy;
 __attribute__((weak)) const u16*p_sGermanText_Message_EnergyTankAcquired;
 __attribute__((weak)) const u16*p_sGermanText_Message_MissileTankAcquired;
@@ -465,7 +464,6 @@ __attribute__((weak)) const u16*p_sSpanishText_Location_Unused15;
 __attribute__((weak)) const u16*p_sSpanishText_Location_Unused16;
 __attribute__((weak)) const u16*p_sSpanishText_Location_Unused17;
 __attribute__((weak)) const u16*p_sSpanishText_Location_Unused18;
-#endif
 __attribute__((weak)) const u16*p_sJapaneseText_Description_LongBeam;
 __attribute__((weak)) const u16*p_sJapaneseText_Description_ChargeBeam;
 __attribute__((weak)) const u16*p_sJapaneseText_Description_IceBeam;
@@ -1236,7 +1234,6 @@ void PortGen_text_data_Init(void) {
             p_sEnglishText_Location_Unused16 = (const u16*)Port_ResolveRomData(0x08443ec8u);
             p_sEnglishText_Location_Unused17 = (const u16*)Port_ResolveRomData(0x08443ee6u);
             p_sEnglishText_Location_Unused18 = (const u16*)Port_ResolveRomData(0x08443f04u);
-#if (defined(REGION_EU))
             p_sGermanText_Message_Dummy = (const u16*)Port_ResolveRomData(0x08443f22u);
             p_sGermanText_Message_EnergyTankAcquired = (const u16*)Port_ResolveRomData(0x08443f60u);
             p_sGermanText_Message_MissileTankAcquired = (const u16*)Port_ResolveRomData(0x08443fceu);
@@ -1497,7 +1494,6 @@ void PortGen_text_data_Init(void) {
             p_sSpanishText_Location_Unused16 = (const u16*)Port_ResolveRomData(0x084473f8u);
             p_sSpanishText_Location_Unused17 = (const u16*)Port_ResolveRomData(0x08447416u);
             p_sSpanishText_Location_Unused18 = (const u16*)Port_ResolveRomData(0x08447434u);
-#endif
             p_sJapaneseText_Description_LongBeam = (const u16*)Port_ResolveRomData(0x08447454u);
             p_sJapaneseText_Description_ChargeBeam = (const u16*)Port_ResolveRomData(0x08447498u);
             p_sJapaneseText_Description_IceBeam = (const u16*)Port_ResolveRomData(0x084474feu);
@@ -2267,8 +2263,6 @@ void PortGen_text_data_Init(void) {
             p_sEnglishText_Location_Unused16 = (const u16*)Port_ResolveRomData(0x08443094u);
             p_sEnglishText_Location_Unused17 = (const u16*)Port_ResolveRomData(0x084430b2u);
             p_sEnglishText_Location_Unused18 = (const u16*)Port_ResolveRomData(0x084430d0u);
-#if (defined(REGION_EU))
-#endif
             p_sJapaneseText_Description_LongBeam = (const u16*)Port_ResolveRomData(0x084430f0u);
             p_sJapaneseText_Description_ChargeBeam = (const u16*)Port_ResolveRomData(0x08443134u);
             p_sJapaneseText_Description_IceBeam = (const u16*)Port_ResolveRomData(0x0844319au);
@@ -2455,10 +2449,6 @@ void PortGen_text_data_Init(void) {
             p_sEnglishText_FileScreen_TimeAttackRecordUnlock = (const u16*)Port_ResolveRomData(0x08446c0cu);
             p_sEnglishText_FileScreen_SoundTestUnlock = (const u16*)Port_ResolveRomData(0x08446c88u);
             p_sEnglishText_FileScreen_NesMetroidUnlock = (const u16*)Port_ResolveRomData(0x08446cf2u);
-#if (defined(REGION_EU))
-#endif
-#if ((defined(REGION_US_BETA)) && !((defined(REGION_EU))))
-#endif
             p_sLocationTextPointers = (const u16**(*)[LANGUAGE_COUNT])Port_ResolveRomData(0x08760764u);
             p_sMessageTextPointers = (const u16**(*)[LANGUAGE_COUNT])Port_ResolveRomData(0x08760780u);
             p_sFileScreenTextPointers = (const u16**(*)[LANGUAGE_COUNT])Port_ResolveRomData(0x0876079cu);
@@ -2471,10 +2461,6 @@ void PortGen_text_data_Init(void) {
             p_sEnglishTextPointers_Description = (const u16*(*)[DESCRIPTION_TEXT_COUNT])Port_ResolveRomData(0x087609a8u);
             p_sEnglishTextPointers_Story = (const u16*(*)[STORY_TEXT_COUNT])Port_ResolveRomData(0x087609f4u);
             p_sEnglishTextPointers_FileScreen = (const u16*(*)[FILE_SCREEN_TEXT_COUNT])Port_ResolveRomData(0x08760a0cu);
-#if (defined(REGION_EU))
-#endif
-#if ((defined(REGION_US_BETA)) && !((defined(REGION_EU))))
-#endif
             break;
         }
         case PORT_ROM_REGION_JP: {
@@ -2674,8 +2660,6 @@ void PortGen_text_data_Init(void) {
             p_sEnglishText_Location_Unused16 = (const u16*)Port_ResolveRomData(0x084430f0u);
             p_sEnglishText_Location_Unused17 = (const u16*)Port_ResolveRomData(0x0844310eu);
             p_sEnglishText_Location_Unused18 = (const u16*)Port_ResolveRomData(0x0844312cu);
-#if (defined(REGION_EU))
-#endif
             p_sJapaneseText_Description_LongBeam = (const u16*)Port_ResolveRomData(0x0844314cu);
             p_sJapaneseText_Description_ChargeBeam = (const u16*)Port_ResolveRomData(0x08443190u);
             p_sJapaneseText_Description_IceBeam = (const u16*)Port_ResolveRomData(0x084431f6u);
@@ -2862,10 +2846,6 @@ void PortGen_text_data_Init(void) {
             p_sEnglishText_FileScreen_TimeAttackRecordUnlock = (const u16*)Port_ResolveRomData(0x08446c68u);
             p_sEnglishText_FileScreen_SoundTestUnlock = (const u16*)Port_ResolveRomData(0x08446ce4u);
             p_sEnglishText_FileScreen_NesMetroidUnlock = (const u16*)Port_ResolveRomData(0x08446d4eu);
-#if (defined(REGION_EU))
-#endif
-#if ((defined(REGION_US_BETA)) && !((defined(REGION_EU))))
-#endif
             p_sLocationTextPointers = (const u16**(*)[LANGUAGE_COUNT])Port_ResolveRomData(0x08760874u);
             p_sMessageTextPointers = (const u16**(*)[LANGUAGE_COUNT])Port_ResolveRomData(0x08760890u);
             p_sFileScreenTextPointers = (const u16**(*)[LANGUAGE_COUNT])Port_ResolveRomData(0x087608acu);
@@ -2878,10 +2858,6 @@ void PortGen_text_data_Init(void) {
             p_sEnglishTextPointers_Description = (const u16*(*)[DESCRIPTION_TEXT_COUNT])Port_ResolveRomData(0x08760ab8u);
             p_sEnglishTextPointers_Story = (const u16*(*)[STORY_TEXT_COUNT])Port_ResolveRomData(0x08760b04u);
             p_sEnglishTextPointers_FileScreen = (const u16*(*)[FILE_SCREEN_TEXT_COUNT])Port_ResolveRomData(0x08760b1cu);
-#if (defined(REGION_EU))
-#endif
-#if ((defined(REGION_US_BETA)) && !((defined(REGION_EU))))
-#endif
             break;
         }
         default:

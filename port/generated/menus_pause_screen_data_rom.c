@@ -95,10 +95,8 @@ __attribute__((weak)) const struct OamArray(*p_sPauseScreenBossIconsOam)[BOSS_IC
 __attribute__((weak)) const struct OamArray(*p_sPauseScreenTargetsOam)[TARGET_OAM_COUNT];
 __attribute__((weak)) const struct OamArray(*p_sPauseScreenWorldMapOam)[WORLD_MAP_OAM_ID_COUNT];
 __attribute__((weak)) const u8(*p_sMaintainedInputDelays_Fast)[7];
-#if (defined(REGION_EU))
 __attribute__((weak)) const u8(*p_sMaintainedInputDelays_Slow)[4];
 __attribute__((weak)) const u8(*p_sMaintainedInputDelaysLastSet)[MAINTAINED_INPUT_SPEED_COUNT];
-#endif
 __attribute__((weak)) const struct MapScreenAreaIds*p_sMapScreenAreaIds;
 __attribute__((weak)) const u8(*p_sMapScreenAreasViewOrder)[MAX_AMOUNT_OF_AREAS];
 __attribute__((weak)) const struct MinimapAreaName(*p_sMinimapAreaNames)[10];
@@ -201,10 +199,8 @@ void PortGen_pause_screen_data_Init(void) {
             p_sPauseScreenTargetsOam = (const struct OamArray(*)[TARGET_OAM_COUNT])Port_ResolveRomData(0x0840e388u);
             p_sPauseScreenWorldMapOam = (const struct OamArray(*)[WORLD_MAP_OAM_ID_COUNT])Port_ResolveRomData(0x0840e408u);
             p_sMaintainedInputDelays_Fast = (const u8(*)[7])Port_ResolveRomData(0x0840e498u);
-#if (defined(REGION_EU))
             p_sMaintainedInputDelays_Slow = (const u8(*)[4])Port_ResolveRomData(0x0840e49fu);
             p_sMaintainedInputDelaysLastSet = (const u8(*)[MAINTAINED_INPUT_SPEED_COUNT])Port_ResolveRomData(0x0840e4a3u);
-#endif
             p_sMapScreenAreaIds = (const struct MapScreenAreaIds*)Port_ResolveRomData(0x0840e4a8u);
             p_sMapScreenAreasViewOrder = (const u8(*)[MAX_AMOUNT_OF_AREAS])Port_ResolveRomData(0x0840e4b0u);
             p_sMinimapAreaNames = (const struct MinimapAreaName(*)[10])Port_ResolveRomData(0x0840e4b8u);
@@ -306,8 +302,6 @@ void PortGen_pause_screen_data_Init(void) {
             p_sPauseScreenTargetsOam = (const struct OamArray(*)[TARGET_OAM_COUNT])Port_ResolveRomData(0x0840d55cu);
             p_sPauseScreenWorldMapOam = (const struct OamArray(*)[WORLD_MAP_OAM_ID_COUNT])Port_ResolveRomData(0x0840d5dcu);
             p_sMaintainedInputDelays_Fast = (const u8(*)[7])Port_ResolveRomData(0x0840d66cu);
-#if (defined(REGION_EU))
-#endif
             p_sMapScreenAreaIds = (const struct MapScreenAreaIds*)Port_ResolveRomData(0x0840d674u);
             p_sMapScreenAreasViewOrder = (const u8(*)[MAX_AMOUNT_OF_AREAS])Port_ResolveRomData(0x0840d67cu);
             p_sMinimapAreaNames = (const struct MinimapAreaName(*)[10])Port_ResolveRomData(0x0840d684u);
@@ -409,8 +403,6 @@ void PortGen_pause_screen_data_Init(void) {
             p_sPauseScreenTargetsOam = (const struct OamArray(*)[TARGET_OAM_COUNT])Port_ResolveRomData(0x0840d5b8u);
             p_sPauseScreenWorldMapOam = (const struct OamArray(*)[WORLD_MAP_OAM_ID_COUNT])Port_ResolveRomData(0x0840d638u);
             p_sMaintainedInputDelays_Fast = (const u8(*)[7])Port_ResolveRomData(0x0840d6c8u);
-#if (defined(REGION_EU))
-#endif
             p_sMapScreenAreaIds = (const struct MapScreenAreaIds*)Port_ResolveRomData(0x0840d6d0u);
             p_sMapScreenAreasViewOrder = (const u8(*)[MAX_AMOUNT_OF_AREAS])Port_ResolveRomData(0x0840d6d8u);
             p_sMinimapAreaNames = (const struct MinimapAreaName(*)[10])Port_ResolveRomData(0x0840d6e0u);

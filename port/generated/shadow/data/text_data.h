@@ -408,7 +408,6 @@ extern const u16*p_sEnglishText_Location_Unused17;
 #define sEnglishText_Location_Unused17 p_sEnglishText_Location_Unused17
 extern const u16*p_sEnglishText_Location_Unused18;
 #define sEnglishText_Location_Unused18 p_sEnglishText_Location_Unused18
-#if (defined(REGION_EU))
 extern const u16*p_sGermanText_Message_Dummy;
 #define sGermanText_Message_Dummy p_sGermanText_Message_Dummy
 extern const u16*p_sGermanText_Message_EnergyTankAcquired;
@@ -929,7 +928,6 @@ extern const u16*p_sSpanishText_Location_Unused17;
 #define sSpanishText_Location_Unused17 p_sSpanishText_Location_Unused17
 extern const u16*p_sSpanishText_Location_Unused18;
 #define sSpanishText_Location_Unused18 p_sSpanishText_Location_Unused18
-#endif
 extern const u16*p_sJapaneseText_Description_LongBeam;
 #define sJapaneseText_Description_LongBeam p_sJapaneseText_Description_LongBeam
 extern const u16*p_sJapaneseText_Description_ChargeBeam;
