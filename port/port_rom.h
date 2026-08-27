@@ -49,6 +49,12 @@ int Port_LoadRom(const char* path);
 const char* Port_RomRegionLabel(PortRomRegion region);
 
 /*
+ * Clamp gLanguage to a value valid for the loaded ROM's region (needed when
+ * a save is shared between region builds). Returns 1 if gLanguage changed.
+ */
+int Port_ClampLanguageToRegion(void);
+
+/*
  * Resolve a GBA ROM address (0x08000000-0x09FFFFFF) to a native pointer
  * into gRomData. Returns NULL if gRomData isn't loaded or the address is
  * out of range.

@@ -98,6 +98,18 @@ void SramRead_All(void)
         SramWrite_Language();
     }
 #endif // REGION_EU
+
+#ifdef MZM_3DS
+    /* A save shared between region builds can hold a gLanguage that is valid
+     * data but wrong for the loaded ROM's region; the decomp only clamps on
+     * new-game init, so the post-boot intro would use the stale language. */
+    {
+        extern int Port_ClampLanguageToRegion(void);
+        extern void SramWrite_Language(void);
+        if (Port_ClampLanguageToRegion())
+            SramWrite_Language();
+    }
+#endif
 }
 
 /**
