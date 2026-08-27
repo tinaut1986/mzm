@@ -138,7 +138,7 @@ void agbmain(void)
         APPLY_DELTA_TIME_INC(gFrameCounter8Bit);
         APPLY_DELTA_TIME_INC(gFrameCounter16Bit);
 
-#ifdef MZM_3DS
+#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
         {
             static u8 sLastGM = 0xFF;
             static u8 sLastSub1 = 0xFF;
@@ -150,7 +150,7 @@ void agbmain(void)
                 sLastSub1 = gSubGameMode1;
             }
         }
-#endif
+#endif // MZM_3DS && PORT_DEBUG_TOOLS
 
         switch (gMainGameMode)
 

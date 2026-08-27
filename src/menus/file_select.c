@@ -5710,7 +5710,7 @@ static u8 FileSelectProcessFileSelection(void)
     leaving = FALSE;
     FILE_SELECT_DATA.subMenuTimer++;
 
-#ifdef MZM_3DS
+#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
     {
         static u8 sLastStage = 0xFF;
         if (FILE_SELECT_DATA.subMenuStage != sLastStage) {
@@ -5721,7 +5721,7 @@ static u8 FileSelectProcessFileSelection(void)
             sLastStage = FILE_SELECT_DATA.subMenuStage;
         }
     }
-#endif
+#endif // MZM_3DS && PORT_DEBUG_TOOLS
 
     switch (FILE_SELECT_DATA.subMenuStage)
     {

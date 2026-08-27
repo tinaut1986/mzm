@@ -1625,7 +1625,7 @@ void SpriteUpdate(void)
 
         SpriteDebrisProcessAll();
 
-#ifdef MZM_3DS
+#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
         {
             static u16 sTick = 0;
             static u8 sLastStop = 0xFF;
@@ -1682,7 +1682,7 @@ void SpriteUpdate(void)
                 Port_DebugLog(msg4);
             }
         }
-#endif
+#endif // MZM_3DS && PORT_DEBUG_TOOLS
         if (!SpriteUtilCheckStopSpritesPose())
         {
             // Samus is able, update sprites normally
@@ -1710,7 +1710,7 @@ void SpriteUpdate(void)
                 else
                     sPrimarySpritesAIPointers[pCurrent->spriteId]();
 
-#ifdef MZM_3DS
+#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
                 {
                     static u8 sLogged = 0;
                     if (!sLogged && pCurrent->spriteId == PSPRITE_DEOREM_FIRST_LOCATION && pCurrent->pose == 9)
@@ -1724,7 +1724,7 @@ void SpriteUpdate(void)
                         sLogged = 1;
                     }
                 }
-#endif
+#endif // MZM_3DS && PORT_DEBUG_TOOLS
                 // Check update sprite info if still alive
                 if (pCurrent->status & SPRITE_STATUS_EXISTS)
                 {
@@ -1733,7 +1733,7 @@ void SpriteUpdate(void)
                     SpriteCheckOnScreen(pCurrent);
                 }
 
-#ifdef MZM_3DS
+#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
                 {
                     static u8 sLogged2 = 0;
                     if (!sLogged2 && pCurrent->spriteId == PSPRITE_DEOREM_FIRST_LOCATION && pCurrent->pose == 9)
@@ -1747,7 +1747,7 @@ void SpriteUpdate(void)
                         sLogged2 = 1;
                     }
                 }
-#endif
+#endif // MZM_3DS && PORT_DEBUG_TOOLS
                 // Transfer current back to array
                 DMA3_COPY_16(&gCurrentSprite, &gSpriteData[count], sizeof(struct SpriteData) / 2);
             }
@@ -2510,7 +2510,7 @@ void SpriteCheckOnScreen(struct SpriteData* pSprite)
  */
 void SpriteLoadAllData(void)
 {
-#ifdef MZM_3DS
+#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
     {
         extern void Port_DebugLog(const char* msg);
         extern u8 gCurrentArea;
@@ -2519,7 +2519,7 @@ void SpriteLoadAllData(void)
         __builtin_snprintf(_msg, sizeof(_msg), "SpriteLoadAllData: pauseFlag=%u area=%u room=%u", (unsigned)gPauseScreenFlag, (unsigned)gCurrentArea, (unsigned)gCurrentRoom);
         Port_DebugLog(_msg);
     }
-#endif
+#endif // MZM_3DS && PORT_DEBUG_TOOLS
     if (gPauseScreenFlag != PAUSE_SCREEN_NONE)
     {
         // Don't load sprites if psf was active, this indirectly means that the room was already loaded before
@@ -2756,7 +2756,7 @@ void SpriteInitPrimary(u8 spritesetSlot, u16 yPosition, u16 xPosition, u8 roomSl
         pSprite->primarySpriteRamSlot = ramSlot;
         pSprite->freezeTimer = 0;
         pSprite->standingOnSprite = SAMUS_STANDING_ON_SPRITE_OFF;
-#ifdef MZM_3DS
+#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
         {
             char msg[160];
             __builtin_snprintf(msg, sizeof(msg), "SpriteInitPrimary: slot=%u spriteId=%u gfxSlot=%u y=%u x=%u",
@@ -2764,7 +2764,7 @@ void SpriteInitPrimary(u8 spritesetSlot, u16 yPosition, u16 xPosition, u8 roomSl
                 (unsigned)pSprite->spritesetGfxSlot, (unsigned)yPosition, (unsigned)xPosition);
             Port_DebugLog(msg);
         }
-#endif
+#endif // MZM_3DS && PORT_DEBUG_TOOLS
         break;
     }
 }
@@ -2786,7 +2786,6 @@ u8 SpriteSpawnSecondary(u8 spriteId, u8 partNumber, u8 gfxSlot, u8 ramSlot, u16 
     u8 newSlot;
     struct SpriteData* pSprite;
 #ifdef MZM_3DS
-    u8 result = UCHAR_MAX;
 #endif
 
     // Try to find an empty slot
@@ -2822,21 +2821,20 @@ u8 SpriteSpawnSecondary(u8 spriteId, u8 partNumber, u8 gfxSlot, u8 ramSlot, u16 
         pSprite->freezeTimer = 0;
         pSprite->standingOnSprite = SAMUS_STANDING_ON_SPRITE_OFF;
 
-#ifdef MZM_3DS
-        result = newSlot;
+#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
         {
             extern void Port_DebugLog(const char* msg);
             char _msg[160];
             __builtin_snprintf(_msg, sizeof(_msg), "SpriteSpawnSecondary: slot=%u id=%u part=%u gfx=%u ramSlot=%u y=%u x=%u",
-                (unsigned)result, (unsigned)spriteId, (unsigned)partNumber, (unsigned)gfxSlot,
+                (unsigned)newSlot, (unsigned)spriteId, (unsigned)partNumber, (unsigned)gfxSlot,
                 (unsigned)ramSlot, (unsigned)yPosition, (unsigned)xPosition);
             Port_DebugLog(_msg);
         }
-#endif
+#endif // MZM_3DS && PORT_DEBUG_TOOLS
         return newSlot;
     }
 
-#ifdef MZM_3DS
+#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
     {
         extern void Port_DebugLog(const char* msg);
         char _msg[128];
@@ -2844,7 +2842,7 @@ u8 SpriteSpawnSecondary(u8 spriteId, u8 partNumber, u8 gfxSlot, u8 ramSlot, u16 
             (unsigned)spriteId, (unsigned)partNumber, (unsigned)gfxSlot);
         Port_DebugLog(_msg);
     }
-#endif
+#endif // MZM_3DS && PORT_DEBUG_TOOLS
     return UCHAR_MAX;
 }
 
@@ -2864,14 +2862,14 @@ u8 SpriteSpawnPrimary(u8 spriteId, u8 partNumber, u8 gfxSlot, u16 yPosition, u16
     u8 newSlot;
     struct SpriteData* pSprite;
 
-#ifdef MZM_3DS
+#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
     {
         extern void Port_DebugLog(const char* msg);
         char _msg[128];
         __builtin_snprintf(_msg, sizeof(_msg), "SpriteSpawnPrimary: id=%u part=%u gfx=%u y=%u x=%u", (unsigned)spriteId, (unsigned)partNumber, (unsigned)gfxSlot, (unsigned)yPosition, (unsigned)xPosition);
         Port_DebugLog(_msg);
     }
-#endif
+#endif // MZM_3DS && PORT_DEBUG_TOOLS
 
     // Try to find an empty slot
     for (newSlot = 0, pSprite = gSpriteData; pSprite < gSpriteData + MAX_AMOUNT_OF_SPRITES; newSlot++, pSprite++)

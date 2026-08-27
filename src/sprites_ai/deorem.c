@@ -659,26 +659,26 @@ static void DeoremSpawnGoingDown(void)
         DeoremSpriteDebrisSpawn(yPosition + BLOCK_SIZE, xPosition, timer);
         if (timer == 0)
         {
-#ifdef MZM_3DS
+#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
             Port_DebugLog("DeoremSpawnGoingDown: first frame, before ParticleSet");
-#endif
+#endif // MZM_3DS && PORT_DEBUG_TOOLS
             // First frame of going down
             ParticleSet(yPosition + BLOCK_SIZE, xPosition, PE_TWO_MEDIUM_DUST);
-#ifdef MZM_3DS
+#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
             Port_DebugLog("DeoremSpawnGoingDown: before SoundPlay(SPAWN_GOING_DOWN)");
-#endif
+#endif // MZM_3DS && PORT_DEBUG_TOOLS
             SoundPlay(SOUND_DEOREM_SPAWN_GOING_DOWN);
-#ifdef MZM_3DS
+#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
             Port_DebugLog("DeoremSpawnGoingDown: before SoundPlay(SCREAMING)");
-#endif
+#endif // MZM_3DS && PORT_DEBUG_TOOLS
             SoundPlay(SOUND_DEOREM_SCREAMING);
-#ifdef MZM_3DS
+#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
             Port_DebugLog("DeoremSpawnGoingDown: before PlayMusic(WORMS_BATTLE)");
-#endif
+#endif // MZM_3DS && PORT_DEBUG_TOOLS
             PlayMusic(MUSIC_WORMS_BATTLE, 0);
-#ifdef MZM_3DS
+#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
             Port_DebugLog("DeoremSpawnGoingDown: after PlayMusic(WORMS_BATTLE)");
-#endif
+#endif // MZM_3DS && PORT_DEBUG_TOOLS
         }
     }
 
@@ -830,7 +830,7 @@ static void DeoremSpawnDelayBeforeHead(void)
 
         if (eyeSlot == UCHAR_MAX)
         {
-#ifdef MZM_3DS
+#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
             {
                 u8 usedSlots = 0, i;
                 for (i = 0; i < MAX_AMOUNT_OF_SPRITES; i++)
@@ -842,7 +842,7 @@ static void DeoremSpawnDelayBeforeHead(void)
                     (unsigned)usedSlots, (unsigned)MAX_AMOUNT_OF_SPRITES);
                 Port_DebugLog(_msg);
             }
-#endif
+#endif // MZM_3DS && PORT_DEBUG_TOOLS
             gCurrentSprite.status = 0;
         }
         else
@@ -2812,7 +2812,7 @@ static void DeoremThornMovement(void)
  */
 void Deorem(void)
 {
-#ifdef MZM_3DS
+#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
     {
         static u16 sLastPose = 0xFFFF;
         static u16 sLastSlot = 0xFFFF;
@@ -2849,7 +2849,7 @@ void Deorem(void)
             }
         }
     }
-#endif
+#endif // MZM_3DS && PORT_DEBUG_TOOLS
     switch (gCurrentSprite.pose)
     {
         case SPRITE_POSE_UNINITIALIZED:
@@ -2927,7 +2927,7 @@ void Deorem(void)
         case DEOREM_POSE_CALL_SPAWN_CHARGE_BEAM:
             DeoremCallSpawnChargeBeam();
     }
-#ifdef MZM_3DS
+#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
     {
         static u8 sLoggedOnce = 0;
         if (!sLoggedOnce && gCurrentSprite.pose == DEOREM_POSE_SPAWN_GOING_DOWN)
@@ -2942,7 +2942,7 @@ void Deorem(void)
             sLoggedOnce = 1;
         }
     }
-#endif
+#endif // MZM_3DS && PORT_DEBUG_TOOLS
 }
 
 /**

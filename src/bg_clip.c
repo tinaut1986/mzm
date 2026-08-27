@@ -508,7 +508,7 @@ void BgClipCheckTouchingTransitionOrTank(void)
         // Get item type
         i = sTankBehaviors[BEHAVIOR_TO_TANK(behaviors[j])].itemType;
 
-#ifdef MZM_3DS
+#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
         {
             char msg[160];
             __builtin_snprintf(msg, sizeof(msg),
@@ -521,7 +521,7 @@ void BgClipCheckTouchingTransitionOrTank(void)
                     yPositions[sBlockTouchOffsets[j][0]]));
             Port_DebugLog(msg);
         }
-#endif
+#endif // MZM_3DS && PORT_DEBUG_TOOLS
 
         // Check is an item (hidden tanks not broken aren't tanks yet)
         if (i != ITEM_TYPE_NONE)

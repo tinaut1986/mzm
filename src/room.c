@@ -133,14 +133,14 @@ const struct RoomEntryRom* sAreaRoomEntryPointers[AREA_ENTRY_COUNT] = {
  */
 void RoomLoad(void)
 {
-#ifdef MZM_3DS
+#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
     extern void Port_DebugLog(const char* msg);
     {
         char _msg[160];
         __builtin_snprintf(_msg, sizeof(_msg), "RoomLoad: start pauseFlag=%u isSamusInitLoading=%u area=%u room=%u", (unsigned)gPauseScreenFlag, (unsigned)gIsLoadingFile, (unsigned)gCurrentArea, (unsigned)gCurrentRoom);
         Port_DebugLog(_msg);
     }
-#endif
+#endif // MZM_3DS && PORT_DEBUG_TOOLS
     ClipdataSetupCode();
     RoomReset();
 
@@ -148,13 +148,13 @@ void RoomLoad(void)
     if (gPauseScreenFlag == PAUSE_SCREEN_NONE)
     {
         // No PSF, fully load room
-#ifdef MZM_3DS
+#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
         Port_DebugLog("RoomLoad: before RoomLoadEntry");
-#endif
+#endif // MZM_3DS && PORT_DEBUG_TOOLS
         RoomLoadEntry();
-#ifdef MZM_3DS
+#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
         Port_DebugLog("RoomLoad: before ScrollLoad");
-#endif
+#endif // MZM_3DS && PORT_DEBUG_TOOLS
         ScrollLoad();
         RoomSetBackgroundScrolling();
     }
@@ -199,13 +199,13 @@ void RoomLoad(void)
         PlayMusic(MUSIC_CHOZO_RUINS, 0x10);
 
     // Load graphics
-#ifdef MZM_3DS
+#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
     Port_DebugLog("RoomLoad: before RoomLoadTileset");
-#endif
+#endif // MZM_3DS && PORT_DEBUG_TOOLS
     RoomLoadTileset();
-#ifdef MZM_3DS
+#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
     Port_DebugLog("RoomLoad: before RoomLoadBackgrounds");
-#endif
+#endif // MZM_3DS && PORT_DEBUG_TOOLS
     RoomLoadBackgrounds();
     RoomRemoveNeverReformBlocksAndCollectedTanks();
     gPreviousXPosition = gSamusData.xPosition;
@@ -225,14 +225,14 @@ void RoomLoad(void)
     // Load states, entities
     AnimatedGraphicsCheckPlayLightningEffect();
     RoomUpdateBackgroundsPosition();
-#ifdef MZM_3DS
+#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
     Port_DebugLog("RoomLoad: before ConnectionLoadDoors");
-#endif
+#endif // MZM_3DS && PORT_DEBUG_TOOLS
     ConnectionLoadDoors();
     ConnectionCheckHatchLockEvents();
-#ifdef MZM_3DS
+#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
     Port_DebugLog("RoomLoad: before RoomSetInitialTilemap");
-#endif
+#endif // MZM_3DS && PORT_DEBUG_TOOLS
     RoomSetInitialTilemap(0);
     RoomSetInitialTilemap(1);
     RoomSetInitialTilemap(2);
@@ -241,9 +241,9 @@ void RoomLoad(void)
     HazeSetBackgroundEffect();
     HazeProcess();
     MinimapCheckOnTransition();
-#ifdef MZM_3DS
+#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
     Port_DebugLog("RoomLoad: finished");
-#endif
+#endif // MZM_3DS && PORT_DEBUG_TOOLS
 
 
     // Check using elevator
@@ -436,7 +436,7 @@ void RoomLoadEntry(void)
         gSpriteset = entry.defaultSpriteset;
     }
 
-#ifdef MZM_3DS
+#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
     {
         extern u32 gEventsTriggered[8];
         char msg[256];
@@ -452,7 +452,7 @@ void RoomLoadEntry(void)
             (unsigned)gEventsTriggered[2], (unsigned)gEventsTriggered[3]);
         Port_DebugLog(msg);
     }
-#endif
+#endif // MZM_3DS && PORT_DEBUG_TOOLS
 
     gCurrentRoomEntry.scrollsFlag = ROOM_SCROLLS_FLAG_NO_SCROLLS;
     gCurrentRoomEntry.damageEffect = EFFECT_NONE;
