@@ -133,14 +133,6 @@ const struct RoomEntryRom* sAreaRoomEntryPointers[AREA_ENTRY_COUNT] = {
  */
 void RoomLoad(void)
 {
-#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
-    extern void Port_DebugLog(const char* msg);
-    {
-        char _msg[160];
-        __builtin_snprintf(_msg, sizeof(_msg), "RoomLoad: start pauseFlag=%u isSamusInitLoading=%u area=%u room=%u", (unsigned)gPauseScreenFlag, (unsigned)gIsLoadingFile, (unsigned)gCurrentArea, (unsigned)gCurrentRoom);
-        Port_DebugLog(_msg);
-    }
-#endif // MZM_3DS && PORT_DEBUG_TOOLS
     ClipdataSetupCode();
     RoomReset();
 
@@ -148,13 +140,7 @@ void RoomLoad(void)
     if (gPauseScreenFlag == PAUSE_SCREEN_NONE)
     {
         // No PSF, fully load room
-#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
-        Port_DebugLog("RoomLoad: before RoomLoadEntry");
-#endif // MZM_3DS && PORT_DEBUG_TOOLS
         RoomLoadEntry();
-#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
-        Port_DebugLog("RoomLoad: before ScrollLoad");
-#endif // MZM_3DS && PORT_DEBUG_TOOLS
         ScrollLoad();
         RoomSetBackgroundScrolling();
     }
@@ -199,13 +185,7 @@ void RoomLoad(void)
         PlayMusic(MUSIC_CHOZO_RUINS, 0x10);
 
     // Load graphics
-#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
-    Port_DebugLog("RoomLoad: before RoomLoadTileset");
-#endif // MZM_3DS && PORT_DEBUG_TOOLS
     RoomLoadTileset();
-#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
-    Port_DebugLog("RoomLoad: before RoomLoadBackgrounds");
-#endif // MZM_3DS && PORT_DEBUG_TOOLS
     RoomLoadBackgrounds();
     RoomRemoveNeverReformBlocksAndCollectedTanks();
     gPreviousXPosition = gSamusData.xPosition;
@@ -225,14 +205,8 @@ void RoomLoad(void)
     // Load states, entities
     AnimatedGraphicsCheckPlayLightningEffect();
     RoomUpdateBackgroundsPosition();
-#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
-    Port_DebugLog("RoomLoad: before ConnectionLoadDoors");
-#endif // MZM_3DS && PORT_DEBUG_TOOLS
     ConnectionLoadDoors();
     ConnectionCheckHatchLockEvents();
-#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
-    Port_DebugLog("RoomLoad: before RoomSetInitialTilemap");
-#endif // MZM_3DS && PORT_DEBUG_TOOLS
     RoomSetInitialTilemap(0);
     RoomSetInitialTilemap(1);
     RoomSetInitialTilemap(2);
@@ -241,9 +215,6 @@ void RoomLoad(void)
     HazeSetBackgroundEffect();
     HazeProcess();
     MinimapCheckOnTransition();
-#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
-    Port_DebugLog("RoomLoad: finished");
-#endif // MZM_3DS && PORT_DEBUG_TOOLS
 
 
     // Check using elevator
@@ -283,9 +254,6 @@ void RoomLoad(void)
 
 #if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "port_gba_mem.h"
-#ifdef MZM_3DS
-#include "port_debug_log.h"
-#endif
 
 static struct TilesetEntry Port_ResolveTilesetEntry(struct TilesetEntry entry)
 {
@@ -435,24 +403,6 @@ void RoomLoadEntry(void)
         gCurrentRoomEntry.pEnemyRoomData = entry.pDefaultSpriteData;
         gSpriteset = entry.defaultSpriteset;
     }
-
-#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
-    {
-        extern u32 gEventsTriggered[8];
-        char msg[256];
-        __builtin_snprintf(msg, sizeof(msg),
-            "RoomLoadEntry: area=%u room=%u spritesetUsed=%u ev1=%u ev2=%u pEnemyData=%p firstBytes=%02x%02x%02x events=%08x%08x%08x%08x",
-            (unsigned)gCurrentArea, (unsigned)gCurrentRoom, (unsigned)gSpritesetEntryUsed,
-            (unsigned)gCurrentRoomEntry.firstSpritesetEvent, (unsigned)gCurrentRoomEntry.secondSpritesetEvent,
-            (void*)gCurrentRoomEntry.pEnemyRoomData,
-            (unsigned)((const u8*)gCurrentRoomEntry.pEnemyRoomData)[0],
-            (unsigned)((const u8*)gCurrentRoomEntry.pEnemyRoomData)[1],
-            (unsigned)((const u8*)gCurrentRoomEntry.pEnemyRoomData)[2],
-            (unsigned)gEventsTriggered[0], (unsigned)gEventsTriggered[1],
-            (unsigned)gEventsTriggered[2], (unsigned)gEventsTriggered[3]);
-        Port_DebugLog(msg);
-    }
-#endif // MZM_3DS && PORT_DEBUG_TOOLS
 
     gCurrentRoomEntry.scrollsFlag = ROOM_SCROLLS_FLAG_NO_SCROLLS;
     gCurrentRoomEntry.damageEffect = EFFECT_NONE;
