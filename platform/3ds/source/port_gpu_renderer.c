@@ -1499,10 +1499,36 @@ static inline C2D_DrawParams BuildDrawParams(const DrawItem* item, float screenB
         params.center.y = h * 0.5f;
         params.angle = item->angle;
     } else {
-        params.pos.x = screenBaseX + eyeOffset + item->x * scaleX;
-        params.pos.y = screenBaseY + item->y * scaleY;
-        params.pos.w = item->w * scaleX;
-        params.pos.h = item->h * scaleY;
+        /* Snap the quad to whole device pixels, deriving the size from the
+         * snapped edges rather than rounding the size on its own.
+         *
+         * Every 8x8 tile is its own quad, so tile N's right edge and tile
+         * N+1's left edge are computed independently. At a non-integer scale
+         * (the 400/240 = 1.6667 stretch modes: 8 * 1.6667 = 13.333px per
+         * tile) those two edges land on different fractional positions and
+         * the rasterizer rounds each one on its own -- dropping or
+         * duplicating a column of pixels at tile boundaries. On 8px-wide
+         * text glyphs that reads as a letter losing a stroke.
+         *
+         * Computing right = round(x + w) and then w = right - x guarantees
+         * tile N's right edge IS tile N+1's left edge, so the tiling is
+         * seamless whatever the scale. Individual tiles end up 13 or 14
+         * device px wide, which is what an honest nearest-neighbour upscale
+         * of a 13.333px tile looks like.
+         *
+         * Affine items are deliberately left unsnapped: they are rotated or
+         * scaled sprites where snapping the bounding quad would quantize the
+         * rotation, and they carry no text. */
+        float left = screenBaseX + eyeOffset + item->x * scaleX;
+        float top = screenBaseY + item->y * scaleY;
+        float right = screenBaseX + eyeOffset + (item->x + item->w) * scaleX;
+        float bottom = screenBaseY + (item->y + item->h) * scaleY;
+        float sl = floorf(left + 0.5f);
+        float st = floorf(top + 0.5f);
+        params.pos.x = sl;
+        params.pos.y = st;
+        params.pos.w = floorf(right + 0.5f) - sl;
+        params.pos.h = floorf(bottom + 0.5f) - st;
         params.center.x = 0.0f;
         params.center.y = 0.0f;
         params.angle = 0.0f;
@@ -1897,7 +1923,23 @@ void Port_GpuRenderer_RenderFrame(void) {
                     }
                     blendModeActive = wantBlend;
                 }
-                float eyeOffset = eyeSign * slider3d * kTierEyeOffsetPx[item->depthTier];
+                /* Whole device pixels, rounded ONCE per tier per eye.
+                 *
+                 * A fractional parallax offset cannot be drawn: with
+                 * GPU_NEAREST every tile quad rounds it independently, so
+                 * part of a layer shifts by a pixel and part of it doesn't.
+                 * Within one layer that tears glyphs apart -- and because
+                 * the fractional part changes with the slider, WHICH glyphs
+                 * tear changes as the slider moves, which is the "text gets
+                 * cut when I change the depth" symptom exactly.
+                 *
+                 * Rounding here makes each tier shift rigidly, as one plane.
+                 * The cost is that a tier whose offset never reaches half a
+                 * pixel (BG priority 0's -0.3f at any slider position) now
+                 * renders with no parallax at all -- but it never really had
+                 * any: what it had was per-tile rounding noise that read as
+                 * shimmer. */
+                float eyeOffset = floorf(eyeSign * slider3d * kTierEyeOffsetPx[item->depthTier] + 0.5f);
                 C2D_DrawParams params = BuildDrawParams(item, screenBaseX, screenBaseY, eyeOffset, scaleX, scaleY);
 #ifdef PORT_GPU_RENDERER_DIAG_LOG
                 if (sDiagObjSceneLog && eye == 0) {
