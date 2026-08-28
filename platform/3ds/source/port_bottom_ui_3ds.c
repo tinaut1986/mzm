@@ -100,6 +100,67 @@ static bool sShowCollectiblesModal = false;
 static bool sShowAchievementsModal = false;
 static bool sShowRASettingsModal = false;
 static bool sShowDisplayModal = false;
+
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
+/* DEBUG tab -> [HERRAMIENTAS] modal. Touchable equivalent of the L+R+<btn>
+ * combos documented in docs/3ds-debug-tools.md: same entry points, just
+ * reachable without memorizing (or mis-pressing) a hold-two-shoulders
+ * chord mid-gameplay. The combos stay wired up in
+ * Platform3DS_PollKeysIntoGba -- this is an addition, not a replacement,
+ * since some of them (the scene recorder especially) are worth triggering
+ * without taking a hand off the controller. */
+static bool sShowDebugToolsModal = false;
+static bool sShowDebugWarpModal = false;
+static bool sShowDebugEquipModal = false;
+/* MAP tab: when armed from the tools menu, the next tap on the map canvas
+ * warps to the door nearest that tile instead of panning. One-shot -- it
+ * disarms itself on use -- so a stray tap can't teleport the player later. */
+static bool sDebugMapWarpArmed = false;
+/* Largest distance (squared, px) the stylus wandered from where it first
+ * touched down, for the current touch. See the tap test in
+ * Port_BottomUI_TouchReleased. */
+static int sDebugMapWarpDevSq = 0;
+/* Transient one-line feedback under the list ("PUNTO GUARDADO", ...).
+ * Frame-counted rather than timed: this UI already has sFrameCounter and
+ * no clock source of its own. */
+static char sDebugToolsMsg[48] = { 0 };
+static uint32_t sDebugToolsMsgUntil = 0;
+
+extern void PortPpuMzm_DebugKillSamus(void);
+extern void Port_GpuRenderer_DumpAtlas(const char* ppmPath, const char* csvPath);
+extern void Port_DebugLog(const char* msg);
+extern void PortPpuMzm_DebugSaveWarpPoint(void);
+extern bool PortPpuMzm_DebugHasWarpPoint(void);
+extern void PortPpuMzm_DebugGetWarpPointInfo(char* out, int outSize);
+extern bool PortPpuMzm_DebugRequestWarp(void);
+extern int PortPpuMzm_DebugGetDoorCount(int area);
+extern int PortPpuMzm_DebugGetDoorRoom(int area, int door);
+extern void PortPpuMzm_DebugGetWarpSelection(int* outArea, int* outDoor, int* outRoom);
+extern void PortPpuMzm_DebugStepWarpArea(int delta);
+extern void PortPpuMzm_DebugStepWarpDoor(int delta);
+extern bool PortPpuMzm_DebugRequestWarpToSelection(void);
+extern int PortPpuMzm_DebugRequestWarpToMapTile(int area, int tileX, int tileY);
+extern void PortPpuMzm_DebugRevealAllMaps(void);
+extern void PortPpuMzm_DebugGetEquipment(unsigned* outBeams, unsigned* outMisc);
+extern void PortPpuMzm_DebugToggleBeam(unsigned bit);
+extern void PortPpuMzm_DebugToggleMisc(unsigned bit);
+extern void PortPpuMzm_DebugSetAllEquipment(bool on);
+extern void PortPpuMzm_DebugSetAmmo(bool full);
+extern void PortPpuMzm_DebugRefillAmmo(void);
+extern void PortPpuMzm_DebugGetAmmoText(char* out, int outSize);
+
+static void RenderDebugToolsModal(int lang);
+static bool HandleDebugToolsModalTouch(int x, int y);
+static void RenderDebugWarpModal(int lang);
+static void HandleDebugWarpModalTouch(int x, int y);
+static void RenderDebugEquipModal(int lang);
+static void HandleDebugEquipModalTouch(int x, int y);
+
+static void DebugToolsSetMsg(const char* msg) {
+    snprintf(sDebugToolsMsg, sizeof(sDebugToolsMsg), "%s", msg);
+    sDebugToolsMsgUntil = sFrameCounter + 180; /* ~3s at 60Hz */
+}
+#endif
 /* Confirmation dialog: false = enable hardcore (+restart), true = plain restart */
 static bool sShowConfirmModal = false;
 static bool sConfirmIsRestart = false;
@@ -428,6 +489,30 @@ static float GetTileSizeForZoom(int zoom) {
     }
 }
 
+/* Inverse of the map canvas' draw transform in RenderMapView -- screen
+ * pixel to map tile. Kept next to CenterMapOnTile (its forward twin) so the
+ * two stay in sync; the canvas origin/size constants are the ones that
+ * function hardcodes. Returns false when the tap falls outside the 32x32
+ * map. */
+static bool MapTileAtTouch(int x, int y, int* outTileX, int* outTileY) {
+    const float canvasX = 4.0f, canvasY = 48.0f, canvasW = 312.0f, canvasH = 188.0f;
+    float tileSize = GetTileSizeForZoom(sZoomLevel);
+    float startDrawX, startDrawY;
+    if (sZoomLevel == 0) {
+        startDrawX = canvasX + (canvasW - 32.0f * tileSize) / 2.0f;
+        startDrawY = canvasY + (canvasH - 32.0f * tileSize) / 2.0f;
+    } else {
+        startDrawX = canvasX - sScrollX;
+        startDrawY = canvasY - sScrollY;
+    }
+    int tx = (int)(((float)x - startDrawX) / tileSize);
+    int ty = (int)(((float)y - startDrawY) / tileSize);
+    if (tx < 0 || tx > 31 || ty < 0 || ty > 31) return false;
+    *outTileX = tx;
+    *outTileY = ty;
+    return true;
+}
+
 static void CenterMapOnTile(uint8_t tileX, uint8_t tileY) {
     float tileSize = GetTileSizeForZoom(sZoomLevel);
     const float viewW = 312.0f;
@@ -583,6 +668,29 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
 
         /* Map Canvas Dragging Area (Y: 48 to 236, X: 4 to 316) */
         if (y >= 48 && y <= 236 && x >= 4 && x <= 316) {
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
+            /* Armed from DEBUG -> HERRAMIENTAS -> TELETRANSPORTE. The warp
+             * itself fires on RELEASE, in Port_BottomUI_TouchReleased, and
+             * only if the finger barely moved -- panning the map to find the
+             * place you want to jump to must not be a jump. Just remember
+             * where the touch started and fall through to the normal
+             * drag/pan handling below. */
+            if (sDebugMapWarpArmed) {
+                if (isNewTap) {
+                    sTouchStartX = x;
+                    sTouchStartY = y;
+                    sDebugMapWarpDevSq = 0;
+                } else if (sTouchStartX >= 0) {
+                    /* Track the WORST deviation over the whole touch, not
+                     * just where the stylus happened to be at release: a
+                     * pan that drifts out and comes back is still a pan. */
+                    int dx = x - sTouchStartX;
+                    int dy = y - sTouchStartY;
+                    int devSq = dx * dx + dy * dy;
+                    if (devSq > sDebugMapWarpDevSq) sDebugMapWarpDevSq = devSq;
+                }
+            }
+#endif
             if (sZoomLevel > 0) {
                 if (!isNewTap && sLastTouchX >= 0 && sLastTouchY >= 0) {
                     float dx = (float)(sLastTouchX - x);
@@ -614,6 +722,23 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
     }
 
     /* Status Tab Interactive Taps (Collectibles breakdown modal toggle) */
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
+    if (sCurrentTab == BOTTOM_TAB_DEBUG) {
+        if (isNewTap) {
+            if (sShowDebugToolsModal) {
+                HandleDebugToolsModalTouch(x, y);
+            } else if (sShowDebugWarpModal) {
+                HandleDebugWarpModalTouch(x, y);
+            } else if (sShowDebugEquipModal) {
+                HandleDebugEquipModalTouch(x, y);
+            } else if (x >= 16 && x <= 304 && y >= 198 && y <= 224) {
+                sShowDebugToolsModal = true;
+            }
+        }
+        return;
+    }
+#endif
+
     if (sCurrentTab == BOTTOM_TAB_STATUS && isNewTap) {
         if (sShowCollectiblesModal) {
             sShowCollectiblesModal = false;
@@ -897,6 +1022,29 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
 }
 
 void Port_BottomUI_TouchReleased(void) {
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
+    /* Tap-to-warp: a release close to where the touch started counts as a
+     * tap, anything further was a pan. */
+    if (sDebugMapWarpArmed && sCurrentTab == BOTTOM_TAB_MAP &&
+        sTouchStartX >= 0 && sTouchStartY >= 0) {
+        /* Distance-only test, and a generous one. Two earlier attempts were
+         * both far too strict for a stylus: `!sIsDragging` is useless here
+         * because the pan handler sets that flag on a SINGLE pixel of
+         * movement, and a 6px radius is smaller than the wobble the act of
+         * pressing a stylus against the screen produces on its own -- it
+         * took the better part of ten tries to land a warp. 20px is still
+         * well under any deliberate pan, which crosses tens of pixels. */
+        if (sDebugMapWarpDevSq <= 400) {
+            int tx = 0, ty = 0;
+            if (MapTileAtTouch(sTouchStartX, sTouchStartY, &tx, &ty)) {
+                sDebugMapWarpArmed = false;
+                int door = PortPpuMzm_DebugRequestWarpToMapTile(sViewArea, tx, ty);
+                DebugToolsSetMsg(door >= 0 ? "TELETRANSPORTANDO..." : "SIN PUERTA CERCA");
+            }
+        }
+    }
+#endif
+
     /* Handle tap selection on remap modal without accidental drag triggering */
     if (sCurrentTab == BOTTOM_TAB_OPTIONS && sShowRemapModal && sRemapSelectButtonIdx < 0) {
         if (!sIsTouchDragging && sTouchStartX >= 0 && sTouchStartY >= 0) {
@@ -1907,6 +2055,15 @@ static void RenderMapView(void) {
     const float clipY1 = canvasY + canvasH;
 
     /* Bezel & Canvas background */
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
+    /* Armed tap-to-warp: a warning border, since the next tap on this canvas
+     * teleports instead of panning. */
+    if (sDebugMapWarpArmed) {
+        C2D_DrawRectSolid(canvasX - 3.0f, canvasY - 3.0f, 0.28f, canvasW + 6.0f, canvasH + 6.0f,
+                          ((sFrameCounter & 0x10) != 0) ? C2D_Color32(255, 200, 60, 255)
+                                                        : C2D_Color32(120, 90, 20, 255));
+    }
+#endif
     C2D_DrawRectSolid(canvasX - 1.0f, canvasY - 1.0f, 0.3f, canvasW + 2.0f, canvasH + 2.0f, C2D_Color32(35, 50, 75, 255));
     C2D_DrawRectSolid(canvasX, canvasY, 0.35f, canvasW, canvasH, C2D_Color32(6, 10, 18, 255));
 
@@ -2350,6 +2507,446 @@ static void RenderOptionsView(void) {
     else if (sShowConfirmModal) RenderConfirmModal(lang);
 }
 
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
+/* Geometry shared by the debug modals and their touch handlers. The modal
+ * body is y 26..232 with a close button at 208, so anything drawn past ~204
+ * lands under it -- which is exactly what a one-row-per-tool list did once
+ * there were nine tools. Everything below is laid out as a two-per-line
+ * grid instead, which fits every tool on screen without scrolling. */
+#define DBGTOOL_COL_L_X   16
+#define DBGTOOL_COL_R_X   164
+#define DBGTOOL_COL_W     140
+#define DBGTOOL_GRID_Y0   48
+#define DBGTOOL_GRID_PITCH 30
+#define DBGTOOL_CELL_H    26
+#define DBGTOOL_GRID_ROWS 5
+#define DBGTOOL_COUNT     9
+
+#define DBGTOOL_CELL_Y(r) ((float)(DBGTOOL_GRID_Y0 + (r) * DBGTOOL_GRID_PITCH))
+#define DBGTOOL_CELL_X(c) ((float)((c) == 0 ? DBGTOOL_COL_L_X : DBGTOOL_COL_R_X))
+
+/* A cell is a label plus a small state/affordance line under it. `accent`
+ * tints the state line -- green for an active toggle, yellow for something
+ * that opens a submenu, muted blue for a plain action. */
+static void DrawDebugCell(int index, const char* label, const char* state, uint32_t accent) {
+    float x = DBGTOOL_CELL_X(index & 1);
+    float y = DBGTOOL_CELL_Y(index >> 1);
+    C2D_DrawRectSolid(x, y, 0.9f, (float)DBGTOOL_COL_W, (float)DBGTOOL_CELL_H, C2D_Color32(24, 32, 50, 255));
+    C2D_DrawRectSolid(x, y, 0.91f, (float)DBGTOOL_COL_W, 1.0f, C2D_Color32(50, 80, 130, 255));
+    DrawTextMaxWClipped(x + 6.0f, y + 4.0f, 1.0f, label, C2D_Color32(255, 255, 255, 255),
+                        0.0f, 240.0f, (float)DBGTOOL_COL_W - 12.0f);
+    if (state) DrawText(x + 6.0f, y + 15.0f, 1.0f, state, accent);
+}
+
+/* Index of the grid cell a tap landed on, or -1. */
+static int DebugCellHit(int x, int y, int count) {
+    int col;
+    if (x >= DBGTOOL_COL_L_X && x <= DBGTOOL_COL_L_X + DBGTOOL_COL_W) col = 0;
+    else if (x >= DBGTOOL_COL_R_X && x <= DBGTOOL_COL_R_X + DBGTOOL_COL_W) col = 1;
+    else return -1;
+    for (int r = 0; r < DBGTOOL_GRID_ROWS; ++r) {
+        int cy = DBGTOOL_GRID_Y0 + r * DBGTOOL_GRID_PITCH;
+        if (y < cy || y > cy + DBGTOOL_CELL_H) continue;
+        int idx = r * 2 + col;
+        return (idx < count) ? idx : -1;
+    }
+    return -1;
+}
+
+/* Single-row helper, still used by the warp submenu's spinner rows. */
+#define DBGTOOL_ROW_X0    16
+#define DBGTOOL_ROW_X1    304
+#define DBGTOOL_ROW_Y0    48
+#define DBGTOOL_ROW_PITCH 21
+#define DBGTOOL_ROW_H     20
+#define DBGTOOL_ROW_Y(i) ((float)(DBGTOOL_ROW_Y0 + (i) * DBGTOOL_ROW_PITCH))
+
+static void DrawDebugRow(int i, const char* label, const char* value, uint32_t valueCol) {
+    float ry = DBGTOOL_ROW_Y(i);
+    C2D_DrawRectSolid((float)DBGTOOL_ROW_X0, ry, 0.9f,
+                      (float)(DBGTOOL_ROW_X1 - DBGTOOL_ROW_X0), (float)DBGTOOL_ROW_H,
+                      C2D_Color32(24, 32, 50, 255));
+    DrawText((float)DBGTOOL_ROW_X0 + 8.0f, ry + 6.0f, 1.0f, label, C2D_Color32(255, 255, 255, 255));
+    if (value) DrawText(224.0f, ry + 6.0f, 1.0f, value, valueCol);
+}
+
+static int DebugRowHit(int x, int y, int rowCount) {
+    if (x < DBGTOOL_ROW_X0 || x > DBGTOOL_ROW_X1) return -1;
+    for (int i = 0; i < rowCount; ++i) {
+        int ry = DBGTOOL_ROW_Y0 + i * DBGTOOL_ROW_PITCH;
+        if (y >= ry && y <= ry + DBGTOOL_ROW_H) return i;
+    }
+    return -1;
+}
+
+static void DrawDebugModalFrame(int lang, const char* titleEs, const char* titleEn) {
+    C2D_DrawRectSolid(10.0f, 26.0f, 0.85f, 300.0f, 206.0f, C2D_Color32(10, 14, 24, 250));
+    C2D_DrawRectSolid(10.0f, 26.0f, 0.84f, 300.0f, 206.0f, C2D_Color32(40, 70, 120, 255));
+    DrawText(20.0f, 32.0f, 1.0f, (lang == 6) ? titleEs : titleEn, C2D_Color32(255, 215, 0, 255));
+    C2D_DrawRectSolid(100.0f, 208.0f, 0.9f, 120.0f, 20.0f, C2D_Color32(20, 70, 130, 255));
+    DrawTextCentered(160.0f, 213.0f, 1.0f, (lang == 6) ? "CERRAR" : "CLOSE", C2D_Color32(255, 255, 255, 255));
+}
+
+static bool DebugCloseHit(int x, int y) {
+    return (x >= 100 && x <= 220 && y >= 208 && y <= 228);
+}
+
+static void RenderDebugToolsModal(int lang) {
+    DrawDebugModalFrame(lang, "HERRAMIENTAS DE DEPURACION", "DEBUG TOOLS");
+
+    const bool rec = PlatformGpu3DS_IsRecording();
+    const bool perf = PlatformGpu3DS_IsPerfRecording();
+    const char* onTxt = (lang == 6) ? "ACTIVO" : "ON";
+    const char* offTxt = (lang == 6) ? "PARADO" : "OFF";
+    const uint32_t colAct = C2D_Color32(140, 170, 210, 255);
+    const uint32_t colOn = C2D_Color32(80, 255, 120, 255);
+    const uint32_t colMenu = C2D_Color32(255, 215, 0, 255);
+
+    DrawDebugCell(0, (lang == 6) ? "VOLCADO PANTALLA" : "SCREEN DUMP",
+                  (lang == 6) ? "VOLCAR" : "DUMP", colAct);
+    DrawDebugCell(1, (lang == 6) ? "MARCA EN EL LOG" : "LOG MARKER",
+                  (lang == 6) ? "MARCAR" : "MARK", colAct);
+    DrawDebugCell(2, (lang == 6) ? "GRAB. ESCENA" : "SCENE RECORDER",
+                  rec ? onTxt : offTxt, rec ? colOn : colAct);
+    DrawDebugCell(3, (lang == 6) ? "GRAB. RENDIMIENTO" : "PERF RECORDER",
+                  perf ? onTxt : offTxt, perf ? colOn : colAct);
+    DrawDebugCell(4, (lang == 6) ? "ATLAS GPU" : "GPU ATLAS",
+                  (lang == 6) ? "VOLCAR" : "DUMP", colAct);
+    DrawDebugCell(5, (lang == 6) ? "MATAR A SAMUS" : "KILL SAMUS",
+                  (lang == 6) ? "MATAR" : "KILL", C2D_Color32(255, 130, 130, 255));
+    DrawDebugCell(6, (lang == 6) ? "TELETRANSPORTE" : "WARP", ">", colMenu);
+    DrawDebugCell(7, (lang == 6) ? "EQUIPO Y OBJETOS" : "EQUIPMENT", ">", colMenu);
+    DrawDebugCell(8, (lang == 6) ? "REVELAR MAPAS" : "REVEAL MAPS",
+                  (lang == 6) ? "REVELAR" : "REVEAL", colMenu);
+
+    if (sDebugToolsMsg[0] && sFrameCounter < sDebugToolsMsgUntil) {
+        DrawTextCentered(160.0f, 200.0f, 1.0f, sDebugToolsMsg, C2D_Color32(120, 255, 160, 255));
+    }
+}
+
+static bool HandleDebugToolsModalTouch(int x, int y) {
+    if (DebugCloseHit(x, y)) {
+        sShowDebugToolsModal = false;
+        return true;
+    }
+    switch (DebugCellHit(x, y, DBGTOOL_COUNT)) {
+        case 0:
+            PlatformGpu3DS_DumpScreens();
+            DebugToolsSetMsg("DUMP -> sdmc:/3ds/");
+            break;
+        case 1:
+            Port_DebugLog("USER MARK: debug tools menu");
+            DebugToolsSetMsg("MARCA EN EL LOG");
+            break;
+        case 2:
+            PlatformGpu3DS_ToggleRecording();
+            DebugToolsSetMsg(PlatformGpu3DS_IsRecording() ? "REC ON" : "REC OFF");
+            break;
+        case 3:
+            PlatformGpu3DS_TogglePerfRecording();
+            DebugToolsSetMsg(PlatformGpu3DS_IsPerfRecording() ? "PERF ON" : "PERF OFF");
+            break;
+        case 4:
+            Port_GpuRenderer_DumpAtlas("sdmc:/3ds/mzm-live-atlas.ppm", "sdmc:/3ds/mzm-live-atlas-keys.csv");
+            DebugToolsSetMsg("ATLAS -> sdmc:/3ds/");
+            break;
+        case 5:
+            PortPpuMzm_DebugKillSamus();
+            DebugToolsSetMsg("SAMUS MUERTA");
+            break;
+        case 6:
+            sShowDebugToolsModal = false;
+            sShowDebugWarpModal = true;
+            break;
+        case 7:
+            sShowDebugToolsModal = false;
+            sShowDebugEquipModal = true;
+            break;
+        case 8:
+            PortPpuMzm_DebugRevealAllMaps();
+            /* The MAP tab caches the decompressed tiles of whichever area it
+             * last drew that wasn't the current one; that copy is now stale. */
+            sCachedOtherArea = 0xFF;
+            DebugToolsSetMsg("MAPAS REVELADOS");
+            break;
+        default:
+            break;
+    }
+    return true;
+}
+
+/* Warp submenu. Jumps are addressed by (area, door id) -- see the long
+ * comment on the warp block in port_ppu_mzm.c for why a door and not a room
+ * number plus coordinates. The door spinner shows which room each door
+ * leads into, so a room can be found by stepping doors without knowing any
+ * door ids beforehand. */
+#define DBGWARP_ROW_COUNT 6
+
+static void RenderDebugWarpModal(int lang) {
+    DrawDebugModalFrame(lang, "TELETRANSPORTE", "WARP");
+
+    int selArea = 0, selDoor = 0, selRoom = -1;
+    PortPpuMzm_DebugGetWarpSelection(&selArea, &selDoor, &selRoom);
+    const int doorCount = PortPpuMzm_DebugGetDoorCount(selArea);
+    const bool hasWarp = PortPpuMzm_DebugHasWarpPoint();
+
+    char valBuf[24];
+
+    /* Row 0/1: the spinner. The whole row is a hit target split in three:
+     * left third = previous, right third = next, middle = nothing, so a
+     * mis-tap in the middle does nothing rather than jumping a step. */
+    DrawDebugRow(0, (lang == 6) ? "AREA" : "AREA", NULL, 0);
+    DrawText(120.0f, DBGTOOL_ROW_Y(0) + 6.0f, 1.0f, "<", C2D_Color32(255, 215, 0, 255));
+    DrawText(140.0f, DBGTOOL_ROW_Y(0) + 6.0f, 1.0f, AreaName((uint8_t)selArea), C2D_Color32(220, 235, 255, 255));
+    DrawText(288.0f, DBGTOOL_ROW_Y(0) + 6.0f, 1.0f, ">", C2D_Color32(255, 215, 0, 255));
+
+    snprintf(valBuf, sizeof(valBuf), "%d / %d", selDoor, doorCount > 0 ? doorCount - 1 : 0);
+    DrawDebugRow(1, (lang == 6) ? "PUERTA" : "DOOR", NULL, 0);
+    DrawText(120.0f, DBGTOOL_ROW_Y(1) + 6.0f, 1.0f, "<", C2D_Color32(255, 215, 0, 255));
+    DrawText(140.0f, DBGTOOL_ROW_Y(1) + 6.0f, 1.0f, valBuf, C2D_Color32(220, 235, 255, 255));
+    DrawText(288.0f, DBGTOOL_ROW_Y(1) + 6.0f, 1.0f, ">", C2D_Color32(255, 215, 0, 255));
+
+    if (selRoom >= 0) snprintf(valBuf, sizeof(valBuf), "%s %d", (lang == 6) ? "SALA" : "ROOM", selRoom);
+    else snprintf(valBuf, sizeof(valBuf), "--");
+    DrawDebugRow(2, (lang == 6) ? "IR A ESA PUERTA" : "GO TO THAT DOOR",
+                 valBuf, selRoom >= 0 ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(110, 120, 140, 255));
+
+    DrawDebugRow(3, (lang == 6) ? "GUARDAR PUNTO AQUI" : "SAVE POINT HERE",
+                 (lang == 6) ? "GUARDAR" : "SAVE", C2D_Color32(255, 215, 0, 255));
+    DrawDebugRow(4, (lang == 6) ? "IR AL PUNTO GUARDADO" : "GO TO SAVED POINT",
+                 hasWarp ? ((lang == 6) ? "IR" : "GO") : "--",
+                 hasWarp ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(110, 120, 140, 255));
+
+    DrawDebugRow(5, (lang == 6) ? "IR TOCANDO EL MAPA" : "WARP BY TOUCHING MAP",
+                 sDebugMapWarpArmed ? ((lang == 6) ? "ARMADO" : "ARMED")
+                                    : ((lang == 6) ? "ARMAR" : "ARM"),
+                 sDebugMapWarpArmed ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 215, 0, 255));
+
+    char warpInfo[48];
+    PortPpuMzm_DebugGetWarpPointInfo(warpInfo, (int)sizeof(warpInfo));
+    DrawText((float)DBGTOOL_ROW_X0, 176.0f, 1.0f, warpInfo, C2D_Color32(150, 190, 240, 255));
+
+    /* Current position, so "save point here" is verifiable before pressing
+     * it and the spinner has something to aim at. */
+    char hereBuf[64];
+    snprintf(hereBuf, sizeof(hereBuf), "%s: %s %s %u",
+             (lang == 6) ? "AHORA" : "NOW", AreaName(gCurrentArea),
+             (lang == 6) ? "SALA" : "ROOM", gCurrentRoom);
+    DrawText((float)DBGTOOL_ROW_X0, 187.0f, 1.0f, hereBuf, C2D_Color32(150, 190, 240, 255));
+
+    if (sDebugToolsMsg[0] && sFrameCounter < sDebugToolsMsgUntil) {
+        DrawTextCentered(160.0f, 198.0f, 1.0f, sDebugToolsMsg, C2D_Color32(120, 255, 160, 255));
+    }
+}
+
+static void HandleDebugWarpModalTouch(int x, int y) {
+    if (DebugCloseHit(x, y)) {
+        sShowDebugWarpModal = false;
+        return;
+    }
+    int row = DebugRowHit(x, y, DBGWARP_ROW_COUNT);
+    const int step = (x < 140) ? -1 : (x > 270 ? 1 : 0);
+    switch (row) {
+        case 0:
+            if (step) PortPpuMzm_DebugStepWarpArea(step);
+            break;
+        case 1:
+            if (step) PortPpuMzm_DebugStepWarpDoor(step);
+            break;
+        case 2:
+            /* The jump itself is deferred to src/agbmain.c's loop (see
+             * PortPpuMzm_DebugApplyPendingWarp). Closing the modal so the
+             * top screen is watchable the moment the room reloads. */
+            if (PortPpuMzm_DebugRequestWarpToSelection()) {
+                DebugToolsSetMsg("TELETRANSPORTANDO...");
+                sShowDebugWarpModal = false;
+            } else {
+                DebugToolsSetMsg("PUERTA NO VALIDA");
+            }
+            break;
+        case 3:
+            PortPpuMzm_DebugSaveWarpPoint();
+            DebugToolsSetMsg("PUNTO GUARDADO");
+            break;
+        case 4:
+            if (PortPpuMzm_DebugRequestWarp()) {
+                DebugToolsSetMsg("TELETRANSPORTANDO...");
+                sShowDebugWarpModal = false;
+            } else {
+                DebugToolsSetMsg("NO HAY PUNTO GUARDADO");
+            }
+            break;
+        case 5:
+            /* Arms the MAP tab's tap-to-warp and gets out of the way, so the
+             * next thing the player touches is the map itself. */
+            sDebugMapWarpArmed = !sDebugMapWarpArmed;
+            if (sDebugMapWarpArmed) {
+                sShowDebugWarpModal = false;
+                sCurrentTab = BOTTOM_TAB_MAP;
+                DebugToolsSetMsg("TOCA UN PUNTO DEL MAPA");
+            }
+            break;
+        default:
+            break;
+    }
+}
+
+/* Equipment editor. Every flag is a two-state chip in a two-column grid;
+ * the bottom rows are the bulk actions. The bit constants are duplicated
+ * from include/constants/samus.h (the BBF_ and SMF_ enums) rather than
+ * included,
+ * because this file can't pull in the GBA-side headers -- same <3ds.h>
+ * typedef clash that keeps all the game-state pokes in port_ppu_mzm.c. */
+#define DBG_BBF_LONG_BEAM   (1u << 0)
+#define DBG_BBF_ICE_BEAM    (1u << 1)
+#define DBG_BBF_WAVE_BEAM   (1u << 2)
+#define DBG_BBF_PLASMA_BEAM (1u << 3)
+#define DBG_BBF_CHARGE_BEAM (1u << 4)
+#define DBG_BBF_BOMBS       (1u << 7)
+
+#define DBG_SMF_HIGH_JUMP    (1u << 0)
+#define DBG_SMF_SPEEDBOOSTER (1u << 1)
+#define DBG_SMF_SPACE_JUMP   (1u << 2)
+#define DBG_SMF_SCREW_ATTACK (1u << 3)
+#define DBG_SMF_VARIA_SUIT   (1u << 4)
+#define DBG_SMF_GRAVITY_SUIT (1u << 5)
+#define DBG_SMF_MORPH_BALL   (1u << 6)
+#define DBG_SMF_POWER_GRIP   (1u << 7)
+
+/* isBeam picks which of the two equipment bytes the bit belongs to. */
+struct DebugEquipEntry { const char* es; const char* en; unsigned bit; bool isBeam; };
+
+static const struct DebugEquipEntry kDebugEquipLeft[] = {
+    { "LARGO",   "LONG",   DBG_BBF_LONG_BEAM,   true },
+    { "HIELO",   "ICE",    DBG_BBF_ICE_BEAM,    true },
+    { "ONDA",    "WAVE",   DBG_BBF_WAVE_BEAM,   true },
+    { "PLASMA",  "PLASMA", DBG_BBF_PLASMA_BEAM, true },
+    { "CARGA",   "CHARGE", DBG_BBF_CHARGE_BEAM, true },
+    { "BOMBAS",  "BOMBS",  DBG_BBF_BOMBS,       true },
+    { "MORFO",   "MORPH",  DBG_SMF_MORPH_BALL,  false },
+};
+
+static const struct DebugEquipEntry kDebugEquipRight[] = {
+    { "SALTO ALTO", "HIGH JUMP",  DBG_SMF_HIGH_JUMP,    false },
+    { "TURBO",      "SPEED",      DBG_SMF_SPEEDBOOSTER, false },
+    { "ESPACIAL",   "SPACE JUMP", DBG_SMF_SPACE_JUMP,   false },
+    { "TORNILLO",   "SCREW",      DBG_SMF_SCREW_ATTACK, false },
+    { "VARIA",      "VARIA",      DBG_SMF_VARIA_SUIT,   false },
+    { "GRAVEDAD",   "GRAVITY",    DBG_SMF_GRAVITY_SUIT, false },
+    { "AGARRE",     "POWER GRIP", DBG_SMF_POWER_GRIP,   false },
+};
+
+#define DBGEQUIP_ROWS      7
+#define DBGEQUIP_COL_W     140
+#define DBGEQUIP_COL_L_X   16
+#define DBGEQUIP_COL_R_X   164
+#define DBGEQUIP_GRID_Y0   46
+#define DBGEQUIP_GRID_PITCH 17
+#define DBGEQUIP_CELL_H    16
+/* Bulk-action rows, below the grid. The second one has to end before the
+ * frame's close button at y=208, which is what the previous layout ran
+ * into. */
+#define DBGEQUIP_ACT_Y0    166
+#define DBGEQUIP_ACT_H     18
+#define DBGEQUIP_ACT2_Y0   186
+
+static bool DebugEquipHas(const struct DebugEquipEntry* e, unsigned beams, unsigned misc) {
+    return ((e->isBeam ? beams : misc) & e->bit) != 0;
+}
+
+static void DrawEquipCell(float x, float y, const struct DebugEquipEntry* e, int lang,
+                          unsigned beams, unsigned misc) {
+    bool on = DebugEquipHas(e, beams, misc);
+    C2D_DrawRectSolid(x, y, 0.9f, (float)DBGEQUIP_COL_W, (float)DBGEQUIP_CELL_H,
+                      on ? C2D_Color32(20, 60, 35, 255) : C2D_Color32(24, 32, 50, 255));
+    DrawText(x + 6.0f, y + 5.0f, 1.0f, (lang == 6) ? e->es : e->en,
+             on ? C2D_Color32(120, 255, 160, 255) : C2D_Color32(140, 150, 170, 255));
+    DrawText(x + (float)DBGEQUIP_COL_W - 26.0f, y + 5.0f, 1.0f, on ? "ON" : "--",
+             on ? C2D_Color32(120, 255, 160, 255) : C2D_Color32(110, 120, 140, 255));
+}
+
+static void DrawEquipAction(float x, float y, float w, const char* label, uint32_t col) {
+    C2D_DrawRectSolid(x, y, 0.9f, w, (float)DBGEQUIP_ACT_H, C2D_Color32(28, 44, 70, 255));
+    DrawTextCentered(x + w / 2.0f, y + 5.0f, 1.0f, label, col);
+}
+
+static void RenderDebugEquipModal(int lang) {
+    DrawDebugModalFrame(lang, "EQUIPO Y OBJETOS", "EQUIPMENT & ITEMS");
+
+    unsigned beams = 0, misc = 0;
+    PortPpuMzm_DebugGetEquipment(&beams, &misc);
+
+    for (int i = 0; i < DBGEQUIP_ROWS; ++i) {
+        float y = (float)(DBGEQUIP_GRID_Y0 + i * DBGEQUIP_GRID_PITCH);
+        DrawEquipCell((float)DBGEQUIP_COL_L_X, y, &kDebugEquipLeft[i], lang, beams, misc);
+        DrawEquipCell((float)DBGEQUIP_COL_R_X, y, &kDebugEquipRight[i], lang, beams, misc);
+    }
+
+    DrawEquipAction((float)DBGEQUIP_COL_L_X, (float)DBGEQUIP_ACT_Y0, 140.0f,
+                    (lang == 6) ? "TODO ON" : "ALL ON", C2D_Color32(120, 255, 160, 255));
+    DrawEquipAction((float)DBGEQUIP_COL_R_X, (float)DBGEQUIP_ACT_Y0, 140.0f,
+                    (lang == 6) ? "TODO OFF" : "ALL OFF", C2D_Color32(255, 150, 150, 255));
+
+    float ay = (float)DBGEQUIP_ACT2_Y0;
+    DrawEquipAction((float)DBGEQUIP_COL_L_X, ay, 90.0f,
+                    (lang == 6) ? "MUNIC MAX" : "AMMO MAX", C2D_Color32(255, 215, 0, 255));
+    DrawEquipAction((float)(DBGEQUIP_COL_L_X + 94), ay, 90.0f,
+                    (lang == 6) ? "MUNIC MIN" : "AMMO MIN", C2D_Color32(255, 150, 150, 255));
+    DrawEquipAction((float)(DBGEQUIP_COL_L_X + 188), ay, 100.0f,
+                    (lang == 6) ? "RELLENAR" : "REFILL", C2D_Color32(120, 255, 160, 255));
+
+    /* Deliberately no energy/missile readout here: the game's own HUD on the
+     * top screen already shows all of it, and the line collided with the
+     * action buttons. */
+}
+
+static void HandleDebugEquipModalTouch(int x, int y) {
+    if (DebugCloseHit(x, y)) {
+        sShowDebugEquipModal = false;
+        return;
+    }
+
+    /* Toggle grid */
+    for (int i = 0; i < DBGEQUIP_ROWS; ++i) {
+        int cy = DBGEQUIP_GRID_Y0 + i * DBGEQUIP_GRID_PITCH;
+        if (y < cy || y > cy + DBGEQUIP_CELL_H) continue;
+        const struct DebugEquipEntry* e = NULL;
+        if (x >= DBGEQUIP_COL_L_X && x <= DBGEQUIP_COL_L_X + DBGEQUIP_COL_W) e = &kDebugEquipLeft[i];
+        else if (x >= DBGEQUIP_COL_R_X && x <= DBGEQUIP_COL_R_X + DBGEQUIP_COL_W) e = &kDebugEquipRight[i];
+        if (!e) return;
+        if (e->isBeam) PortPpuMzm_DebugToggleBeam(e->bit);
+        else PortPpuMzm_DebugToggleMisc(e->bit);
+        return;
+    }
+
+    /* Bulk equipment rows */
+    if (y >= DBGEQUIP_ACT_Y0 && y <= DBGEQUIP_ACT_Y0 + DBGEQUIP_ACT_H) {
+        if (x >= DBGEQUIP_COL_L_X && x <= DBGEQUIP_COL_L_X + DBGEQUIP_COL_W) {
+            PortPpuMzm_DebugSetAllEquipment(true);
+            DebugToolsSetMsg("EQUIPO COMPLETO");
+        } else if (x >= DBGEQUIP_COL_R_X && x <= DBGEQUIP_COL_R_X + DBGEQUIP_COL_W) {
+            PortPpuMzm_DebugSetAllEquipment(false);
+            DebugToolsSetMsg("EQUIPO VACIADO");
+        }
+        return;
+    }
+
+    int ay = DBGEQUIP_ACT2_Y0;
+    if (y >= ay && y <= ay + DBGEQUIP_ACT_H) {
+        if (x >= DBGEQUIP_COL_L_X && x < DBGEQUIP_COL_L_X + 94) {
+            PortPpuMzm_DebugSetAmmo(true);
+            DebugToolsSetMsg("MUNICION AL MAXIMO");
+        } else if (x >= DBGEQUIP_COL_L_X + 94 && x < DBGEQUIP_COL_L_X + 188) {
+            PortPpuMzm_DebugSetAmmo(false);
+            DebugToolsSetMsg("MUNICION A CERO");
+        } else if (x >= DBGEQUIP_COL_L_X + 188 && x <= DBGEQUIP_COL_L_X + 288) {
+            PortPpuMzm_DebugRefillAmmo();
+            DebugToolsSetMsg("RECARGADO");
+        }
+    }
+}
+#endif /* PORT_DEBUG_TOOLS_ACTIVE */
+
 /* Render Debug View with Map Tile Inspector */
 static void RenderDebugView(void) {
     C2D_DrawRectSolid(8.0f, 28.0f, 0.4f, 304.0f, 204.0f, C2D_Color32(14, 18, 28, 255));
@@ -2431,7 +3028,24 @@ static void RenderDebugView(void) {
     snprintf(raDiag, sizeof(raDiag), "RA: %s (%s)", Port_RA_GetStatusString(GetLang()), Port_RA_GetLastDebugLog());
     DrawText(16.0f, 186.0f, 1.0f, raDiag, C2D_Color32(255, 220, 100, 255));
 
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
+    /* [HERRAMIENTAS] button (Y: 198 to 224). Only exists in a DEBUG_TOOLS /
+     * *_DIAG_LOG build -- a production build has no way to reach any of the
+     * actions behind it, matching how the L+R+<btn> combos are compiled out
+     * entirely rather than just hidden (see port_debug_tools.h). */
+    C2D_DrawRectSolid(16.0f, 198.0f, 0.5f, 288.0f, 26.0f, C2D_Color32(30, 55, 90, 255));
+    C2D_DrawRectSolid(17.0f, 199.0f, 0.55f, 286.0f, 24.0f, C2D_Color32(18, 34, 58, 255));
+    C2D_DrawRectSolid(17.0f, 199.0f, 0.56f, 286.0f, 1.0f, C2D_Color32(90, 160, 240, 255));
+    DrawTextCentered(160.0f, 205.0f, 1.0f,
+        (GetLang() == 6) ? "HERRAMIENTAS DE DEPURACION" : "DEBUG TOOLS",
+        C2D_Color32(150, 210, 255, 255));
+
+    if (sShowDebugToolsModal) RenderDebugToolsModal(GetLang());
+    else if (sShowDebugWarpModal) RenderDebugWarpModal(GetLang());
+    else if (sShowDebugEquipModal) RenderDebugEquipModal(GetLang());
+#else
     DrawText(16.0f, 212.0f, 1.0f, (GetLang() == 6) ? "TOCA LA PESTANA [MAPA] PARA VOLVER" : "TOUCH [MAP] TAB TO RETURN TO MAP VIEW", C2D_Color32(120, 140, 170, 255));
+#endif
 }
 
 void Port_BottomUI_Render(void) {

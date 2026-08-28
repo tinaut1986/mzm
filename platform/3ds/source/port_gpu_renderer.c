@@ -330,7 +330,7 @@ static const uint8_t kObjHeights[3][4] = { { 8, 16, 32, 64 }, { 8, 8, 16, 32 }, 
  * parallax shift at full slider; sign flips between eyes in the caller.
  * Samus (OBJ) is placed slightly behind BG1 platforms so platforms appear
  * with depth/thickness in front of Samus. */
-static const float kTierEyeOffsetPx[7] = {
+static const float kTierEyeOffsetPx[11] = {
     -4.0f, /* 0: BG3: far background / sky */
     -2.0f, /* 1: BG2: mid background / caves */
     -0.3f, /* 2: BG1: platforms / interactive ground / scenery */
@@ -345,6 +345,26 @@ static const float kTierEyeOffsetPx[7] = {
             * tier instead of just raising tier 4's magnitude so real
             * gameplay Samus/enemy depth (tier 4, used every frame during
             * play) stays untouched by a change aimed only at map screens. */
+    -1.5f, /* 7: World OBJ with OAM priority 2: composites BEHIND any BG of
+            * priority 0/1 (tier 2, -0.3f) and in front of priority-2 BGs
+            * (tier 1, -2.0f), so its parallax must sit between those two.
+            * Tier 4's -0.8f put such sprites nearer than the very BG layers
+            * that draw over them, which read as background scenery popping
+            * in FRONT of Samus once the 3D slider was up. */
+    -3.2f, /* 8: World OBJ with OAM priority 3: backmost sprites, drawn
+            * behind every BG of priority 0..2; sits between tier 1 (-2.0f)
+            * and tier 0 (-4.0f). */
+    -1.0f, /* 9: BG with priority 1. Used to be lumped in with priority 0 on
+            * tier 2 (-0.3f), which is wrong whenever a room puts real
+            * background art on a priority-1 layer: OBJ priority 1 (Samus,
+            * tier 4, -0.8f) beats a priority-1 BG in the 2D compositor
+            * (equal priority -> OBJ wins), so the BG must read as slightly
+            * FARTHER than -0.8f, not nearer. Confirmed on hardware in
+            * Crateria room 8, where the big Chozo statue backdrop is exactly
+            * such a layer. */
+    -0.2f, /* 10: World OBJ with OAM priority 0: explosions, shot impacts,
+            * bombs -- sprites the game deliberately draws above every BG,
+            * so they must be nearer than tier 2's -0.3f platforms. */
 };
 
 bool Port_GpuRenderer_IsActive(void) { return sGpuRendererActive; }
@@ -974,22 +994,39 @@ static void CollectBgLayer(int bgIndex) {
              * tiebreak: lower BG index draws later (on top), matching GBA
              * hardware (BG0 > BG1 > BG2 > BG3 at equal priority). */
             int sortKey = (3 - priority) * 10 + (3 - bgIndex);
-            /* Determine depthTier:
-             * BG0 is the game HUD/UI layer (or dialog/text). It MUST ALWAYS be
-             * the topmost foreground layer (tier 3, +1.8f offset) regardless of
-             * transparency priority tweaks.
-             * For world BG layers (BG1..BG3), map priority to background tiers (0..2). */
+            /* Determine depthTier. Parallax has to follow the SAME ordering
+             * the 2D compositor uses, which on GBA is BGCNT priority -- not
+             * the BG index.
+             *
+             * This used to force bgIndex 0 to tier 3 (+1.8f, nearest of all)
+             * on the assumption that BG0 is always the HUD/dialog/text
+             * overlay. That holds on menu and text screens; it is flatly
+             * wrong during gameplay, where BG0 is just another world layer
+             * whose priority the room picks. Crateria room 8 is the case
+             * that exposed it: BG0CNT=0x4005 (priority 1) carries the big
+             * Chozo statue backdrop while BG1CNT=0x4204 (priority 0) carries
+             * the platforms. Samus is OBJ priority 1, which beats a
+             * priority-1 BG (equal priority -> OBJ wins), so she correctly
+             * draws OVER the statue in 2D -- but the +1.8f tier shoved that
+             * same statue in front of her the moment the 3D slider came up.
+             * Confirmed from an on-device IO dump of that room.
+             *
+             * So: the BG0-is-an-overlay rule now applies only outside real
+             * gameplay (GM_INGAME == 4, include/constants/game_state.h),
+             * which is where BG0 genuinely is the text/dialog layer. In
+             * gameplay every BG, BG0 included, maps by its own priority. */
+            extern s16 gMainGameMode;
             int depthTier;
-            if (bgIndex == 0) {
-                depthTier = 3; /* Topmost foreground (HUD) */
+            if (bgIndex == 0 && gMainGameMode != 4) {
+                depthTier = 3; /* Menu/dialog text overlay, topmost */
+            } else if (priority == 0) {
+                depthTier = 2; /* platforms / interactive foreground, -0.3f */
+            } else if (priority == 1) {
+                depthTier = 9; /* just behind OBJ priority 1 (Samus), -1.0f */
+            } else if (priority == 2) {
+                depthTier = 1; /* mid background, -2.0f */
             } else {
-                /* Map remaining world BGs into far/mid/near tiers:
-                 * priority 0/1 -> tier 2 (platforms / foreground world, -0.3f)
-                 * priority 2   -> tier 1 (mid background, -2.0f)
-                 * priority 3   -> tier 0 (far background / sky, -4.0f) */
-                if (priority <= 1) depthTier = 2;
-                else if (priority == 2) depthTier = 1;
-                else depthTier = 0;
+                depthTier = 0; /* far background / sky, -4.0f */
             }
             PushItem(slot, drawX, drawY, sortKey, depthTier, blendAlpha, rectWinVis);
         }
@@ -1195,8 +1232,21 @@ static void CollectSprite(int oamIndex, bool obj1D) {
             int depthTier;
             if (inMapOrPauseScreen) {
                 depthTier = (priority == 0) ? 5 : 6;
+            } else if (isRealHud) {
+                depthTier = 5;
             } else {
-                depthTier = isRealHud ? 5 : 4;
+                /* World sprites: parallax must follow the same ordering the
+                 * 2D compositor already uses. An OBJ of priority p draws in
+                 * front of BGs whose priority is >= p and BEHIND those with
+                 * a lower priority, so a high-priority-number sprite has to
+                 * get a farther offset too -- otherwise a sprite the BGs
+                 * paint over still appears nearest to the viewer in stereo.
+                 * Priority 0/1 keeps tier 4's tuned -0.8f (Samus, enemies,
+                 * particles); 2 and 3 map to the new intermediate tiers. */
+                if (priority == 0) depthTier = 10;
+                else if (priority == 1) depthTier = 4;
+                else if (priority == 2) depthTier = 7;
+                else depthTier = 8;
             }
             if (!isAffine) {
                 float drawX = (float)(x + tx * 8);
@@ -1655,7 +1705,8 @@ void Port_GpuRenderer_RenderFrame(void) {
     {
         int objItems = 0;
         for (int i = 0; i < sDrawItemCount; ++i) {
-            if (sDrawItems[i].depthTier == 4) ++objItems;
+            if (sDrawItems[i].depthTier == 4 || sDrawItems[i].depthTier == 7 ||
+                    sDrawItems[i].depthTier == 8 || sDrawItems[i].depthTier == 10) ++objItems;
         }
         sLastObjItemCount = objItems;
     }
@@ -1668,7 +1719,8 @@ void Port_GpuRenderer_RenderFrame(void) {
             int objItems = 0, cacheSlots = sCacheCount;
             float minY = 999.0f, maxY = -999.0f;
             for (int i = 0; i < sDrawItemCount; ++i) {
-                if (sDrawItems[i].depthTier == 4) ++objItems;
+                if (sDrawItems[i].depthTier == 4 || sDrawItems[i].depthTier == 7 ||
+                    sDrawItems[i].depthTier == 8 || sDrawItems[i].depthTier == 10) ++objItems;
                 if (sDrawItems[i].y < minY) minY = sDrawItems[i].y;
                 if (sDrawItems[i].y > maxY) maxY = sDrawItems[i].y;
             }

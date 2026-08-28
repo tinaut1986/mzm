@@ -1,42 +1,43 @@
 # 3DS port: on-device debugging tools
 
-Reference for the L+R+`<button>` diagnostic combos in the 3DS port, added
-while investigating [#17](https://github.com/tinaut1986/mzm/issues/17)
-(Samus's death animation showing the wrong sprite/palette). Kept here so a
-future session (or a future bug) doesn't have to rediscover how these work
-or how to parse their output from scratch.
+Reference for the on-device diagnostic tools in the 3DS port, added while
+investigating [#17](https://github.com/tinaut1986/mzm/issues/17) (Samus's
+death animation showing the wrong sprite/palette). Kept here so a future
+session (or a future bug) doesn't have to rediscover how these work or how
+to parse their output from scratch.
 
-**None of this exists in a plain build.** Every combo below is compiled out
-entirely -- not just runtime-disabled -- unless the build defines
-`PORT_DEBUG_TOOLS_ACTIVE` (`source/port_debug_tools.h`), which happens when
-either:
-- `make DEBUG_TOOLS=1` (the "simple debug" build -- just the combos, no
+All of them live behind one button: bottom screen -> **DEBUG** tab ->
+**HERRAMIENTAS DE DEPURACION** / **DEBUG TOOLS**, which opens a list where
+each row triggers one tool. A second screen behind the **TELETRANSPORTE** /
+**WARP** row holds the room-jump tools.
+
+These were originally L+R+`<button>` chords held during gameplay. Those are
+gone: the chord stole L/R/X/Y/START/SELECT from whatever the player had
+mapped them to for the frame it fired, was easy to trip by accident, and had
+to be memorized. The menu has none of those problems. Nothing else about
+what each tool does changed, so the old section names below still name the
+combo they used to be reached by, in parentheses.
+
+**None of this exists in a plain build.** The button, the menu and every
+action behind it are compiled out entirely -- not just hidden -- unless the
+build defines `PORT_DEBUG_TOOLS_ACTIVE` (`source/port_debug_tools.h`), which
+happens when either:
+- `make DEBUG_TOOLS=1` (the "simple debug" build -- just the tools, no
   verbose per-frame tracing), or
 - any existing `*_DIAG_LOG` flag is set (`PORT_GPU_RENDERER_DIAG_LOG`,
-  `PORT_AUDIO_DIAG_LOG`) -- those turn the combos on automatically too, so a
+  `PORT_AUDIO_DIAG_LOG`) -- those turn the menu on automatically too, so a
   session tracing GPU or audio behavior doesn't also have to remember this
   flag separately.
 
-A plain production build (no flags) has no source-level path to trigger any
-of these from a controller, not even by accident -- L+R+`<button>` behaves
-as whatever plain input that combination naturally produces (e.g. L+R+START
-just opens the pause menu, same as START alone).
-
-All these combos require holding **L+R** together first -- see the comment
-on `lrHeld` in `platform/3ds/source/platform_3ds_minimal.c`
-(`Platform3DS_PollKeysIntoGba`). That frees X/Y/START from whatever gameplay
-action the player has mapped to them for the instant they're used this way.
-X and Y aren't real GBA buttons so nothing else needs to happen for them;
-START *is* a real GBA button (pause menu), so it's explicitly masked out of
-`gbaKeys` for the frame it's used in this combo, or L+R+START would also
-pause the game the instant it's pressed.
+A plain production build (no flags) shows no button on the DEBUG tab and has
+no source-level path to trigger any of these.
 
 All dumped files land in `sdmc:/3ds/` (i.e. the SD card's `3ds` folder, next
 to the `Metroid Zero Mission 3DS` save folder), fetchable over FTP if the
 console is running an FTP server (see `make ftp` / `FTP_HOST`/`FTP_PORT` in
 `platform/3ds/README.md`).
 
-## L+R+X -- one-shot dump
+## Screen dump (was L+R+X)
 
 Implemented in `PlatformGpu3DS_DumpScreens` (`platform_gpu_3ds.c`). Writes,
 all overwritten in place on every press (no per-press filename suffix):
@@ -77,49 +78,49 @@ img.save('left.png')
 # bottom target is 240x320 instead of 240x400
 ```
 
-## L+R+SELECT -- debug instant-kill
+## Kill Samus (was L+R+SELECT)
 
-Implemented in `PortPpuMzm_DebugKillSamus` (`port_ppu_mzm.c`), triggered from
-`Platform3DS_PollKeysIntoGba` (`platform_3ds_minimal.c`). Zeroes
+Implemented in `PortPpuMzm_DebugKillSamus` (`port_ppu_mzm.c`), triggered from the
+debug tools menu (`port_bottom_ui_3ds.c`). Zeroes
 `gEquipment.currentEnergy` and calls `SamusSetPose(SPOSE_HURT_REQUEST)` --
 the same real entry point lethal damage uses in
 `SpriteUtilTakeDamageFromSprite` (`src/sprite_util.c`) -- so Samus starts the
 real death sequence (`SPOSE_DYING`) on the next update, exactly as if she'd
 been killed by an enemy, without needing to actually get hit down to 0
 energy in gameplay first. No-op while already in a hurt/knockback/dying pose
-so mashing the combo mid-animation doesn't re-trigger it. Added while
-iterating on issue #17 to make repeated death-sequence captures (L+R+X,
-L+R+START) fast to set up.
+so mashing the row mid-animation doesn't re-trigger it. Added while
+iterating on issue #17 to make repeated death-sequence captures (screen dump,
+scene recorder) fast to set up.
 
-## L+R+Y -- log marker
+## Log marker (was L+R+Y)
 
-Drops `"USER MARK: L+R+Y pressed"` with a timestamp into
+Drops a `"USER MARK: ..."` line with a timestamp into
 `sdmc:/3ds/mzm-debug.log` (via `Port_DebugLog`) so a play session can flag
 "something happened right here" without describing timing after the fact.
 Grep the log for `USER MARK` and read the surrounding lines (needs
 `-DPORT_GPU_RENDERER_DIAG_LOG` for the `GPU_REJECT`/`GPUDIAG` lines) to see
 what the renderer was doing at that moment.
 
-## L+R+START -- scene recorder
+## Scene recorder (was L+R+START)
 
 Implemented in `PlatformGpu3DS_ToggleRecording` / `PlatformGpu3DS_RecordTick`
 (`platform_gpu_3ds.c`), ticked once per emulated GBA frame from
-`Port_Bios_Halt` (`port/port_bios.c`). Exists because a single L+R+X press
+`Port_Bios_Halt` (`port/port_bios.c`). Exists because a single screen dump
 only ever catches one frame -- not enough to find the exact moment a
 fast-changing scene breaks (e.g. issue #17's death animation, where the
 first few frames -- a green palette flash -- turned out to be *correct*,
 and the actual corruption happens some number of frames later).
 
-- **First press**: opens `sdmc:/3ds/mzm-rec.bin` (truncating any previous
+- **First touch**: opens `sdmc:/3ds/mzm-rec.bin` (truncating any previous
   recording) and starts sampling.
 - **While active**: every 4 frames (~15 samples/sec at 60 FPS,
   `kRecordEveryNFrames` in `platform_gpu_3ds.c`), appends one fixed-size
   record to the file: VRAM + IO + BG palette + OBJ palette + OAM (the same
-  data as the L+R+X dump, minus the RGB screenshots -- see below for why)
+  data as the screen dump, minus the RGB screenshots -- see below for why)
   plus a small header. Capped at `kRecordMaxSamples` (450, ~30s) so
-  forgetting to press the combo again doesn't fill the SD card; recording
+  forgetting to stop it doesn't fill the SD card; recording
   auto-stops at the cap.
-- **Second press**: stops sampling and closes the file.
+- **Touching the row again**: stops sampling and closes the file.
 - A small red "● REC" indicator blinks on the bottom screen while active
   (`Port_BottomUI_Render` in `port_bottom_ui_3ds.c`), independent of which
   tab (map/status/debug/options) is currently open.
@@ -129,7 +130,7 @@ combined (left+right+bottom) and needs a GPU display-transfer sync
 (`C3D_SyncDisplayTransfer`). At 15 samples/sec that's either a frame-pump
 stall or an unreasonable amount of buffering. The VRAM/OAM/palette state
 alone is enough to reconstruct the visual frame-by-frame offline -- already
-proven doing exactly that by hand for the L+R+X dumps during the #17
+proven doing exactly that by hand for the screen dumps during the #17
 investigation (see the Python snippet above, extended to decode OAM entries
 and tiles; ask for the exact script if starting a fresh session on this).
 
@@ -137,14 +138,14 @@ and tiles; ask for the exact script if starting a fresh session on this).
 (default 4, i.e. ~4/sec):** a real left-eye screenshot (same mechanism as
 `PlatformGpu3DS_DumpScreens`' single shot) is written to its own file,
 `sdmc:/3ds/mzm-rec-shot-NNNN.rgb` (headerless raw RGB8, 240x400 portrait,
-same rotate-90 handling as the L+R+X `.rgb` dumps), where `NNNN` is the
+same rotate-90 handling as the screen dump `.rgb` files), where `NNNN` is the
 0-indexed sample number -- i.e. it lines up with the Nth record when
 splitting `mzm-rec.bin` per the snippet below. This is the only way to tell
 apart "the emulated state was already wrong at this sample" (visible in the
 VRAM/OAM/palette reconstruction alone) from "the state was correct but the
 GPU renderer drew it wrong" (only provable by diffing the reconstruction
 against what was actually on screen at that same sample) -- needed after a
-2026-08-25 #17 session where a *different*, unsynced capture (an L+R+X dump
+2026-08-25 #17 session where a *different*, unsynced capture (a screen dump
 whose files turned out to be a truncated/mismatched mix from separate
 button presses) briefly looked like it showed corrupted source data, when
 the actual recorder-based reconstruction across the whole death sequence
@@ -212,7 +213,7 @@ for i in range(n):
     vram = rec[64+0x400+1024+0x400:]
     if frameUs > 17000:
         print(f"sample {i}: HITCH frame={frameUs}us sprites={sprites} affine={affine}")
-    # ... decode DISPCNT/OAM/tiles/palette the same way as the L+R+X dump
+    # ... decode DISPCNT/OAM/tiles/palette the same way as the screen dump
 ```
 
 Cross-reference `pose`/`currentAnimationFrame` against the `SamusPose` enum
@@ -220,6 +221,42 @@ Cross-reference `pose`/`currentAnimationFrame` against the `SamusPose` enum
 function in `src/samus.c` to know what the game logic *should* be doing at
 that exact sample, then compare against what the reconstructed VRAM/OAM/
 palette actually show.
+
+## Warp / teleport (new -- no combo equivalent)
+
+Behind the **TELETRANSPORTE** / **WARP** row of the tools menu. Exists so a
+rendering bug that only reproduces in one specific room doesn't cost a full
+replay to that room after every new CIA install.
+
+Jumps are addressed by **(area, door id)**, never by a room number plus
+coordinates. `RoomReset` (`src/room.c`) derives everything from
+`gLastDoorUsed`: `gCurrentRoom = pDoor->sourceRoom`, and Samus's position
+from the door's `xStart`/`yEnd`/`xExit`/`yExit` -- exactly what a real door
+transition does, so Samus always lands somewhere legal. Setting a room
+number plus a guessed x/y instead (what the `PORT_LINUX_DIAG_WARP_TO_DEOREM`
+block in `src/agbmain.c` does, with coordinates hand-tuned for one room)
+drops her wherever those coordinates happen to land in the new room's
+geometry.
+
+| Row | What it does |
+| --- | --- |
+| `AREA  < name >` | Steps the target area. Resets the door index if the current one is out of range for the new area. |
+| `PUERTA < n / max >` | Steps the target door. The next row shows which room that door leads into, so a room can be found by stepping doors without knowing any door ids up front. |
+| `IR A ESA PUERTA` | Warps to the selected (area, door). |
+| `GUARDAR PUNTO AQUI` | Records the door Samus last came through (`gCurrentArea` + `gLastDoorUsed`), i.e. "bring me back to this room". Persisted to `sdmc:/3ds/mzm-warp-point.txt`, so it survives a reflash. |
+| `IR AL PUNTO GUARDADO` | Warps to that saved point. |
+
+The two lines under the rows show the saved point and where Samus is right
+now (`AHORA: <area> SALA <n>`), so the spinner has something to aim at.
+
+**Where the jump actually happens:** the menu only raises a pending flag.
+`PortPpuMzm_DebugApplyPendingWarp` (`port_ppu_mzm.c`) is called from
+`src/agbmain.c` at the top of its main loop, and only fires while really in
+gameplay (`GM_INGAME` / `SUB_GAME_MODE_PLAYING`). It cannot run from the
+touch handler itself: that runs inside `Port_Bios_Halt`, which
+`src/transfer.c` also calls mid-frame, so resetting `gSubGameMode1` from
+there could land in the middle of a room's own update. A request raised
+from a pause screen stays pending and fires as soon as play resumes.
 
 ## Known findings so far (#17)
 
@@ -243,9 +280,8 @@ palette actually show.
 - Still unconfirmed: the actual moment the sprite becomes "scrambled/
   unrecognizable" (per the reporter's description of real hardware
   behavior: crouch -> green flashes -> stretch back -> suit disappears to
-  reveal Zero Suit, background fades black-to-white in parallel). The L+R+X
-  single dump only ever caught the early, correct-looking flash frames --
-  this is exactly why the L+R+START recorder was built. Next step when
+  reveal Zero Suit, background fades black-to-white in parallel). The single screen dump only ever caught the early, correct-looking flash frames --
+  this is exactly why the scene recorder was built. Next step when
   resuming this investigation: get an `mzm-rec.bin` covering the whole
   death sequence, decode every sample, and find where the reconstructed
   image first looks wrong.

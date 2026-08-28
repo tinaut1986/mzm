@@ -5,7 +5,6 @@
  * input handling, timing, and lifecycle management.
  */
 #include "platform_3ds.h"
-#include "port_debug_tools.h"
 
 #include <3ds.h>
 #include <stdio.h>
@@ -187,35 +186,10 @@ extern void gba_write16(uint32_t addr, uint16_t v);
 /* KEY_X and KEY_Y (bits 10/11) fall outside MZM_KEY_MASK (bits 0-9, GBA's
  * own button set), so neither reaches the game directly -- both are
  * user-configurable action buttons instead (see ProcessButtonAction below).
- * They also each carry a secondary diagnostics function, gated behind
- * holding L+R at the same time (see the lrHeld block in
- * Platform3DS_PollKeysIntoGba) so it doesn't collide with whatever gameplay
- * action X/Y are currently assigned to: L+R+X dumps the actual GPU-rendered
- * content of the left/right/bottom render targets to the SD card
- * (PlatformGpu3DS_DumpScreens, in platform_gpu_3ds.c) -- added to inspect
- * what the right-eye stereo target really contains when the 3D slider is on,
- * since the CPU-side debug log alone couldn't explain reported content
- * missing there. Declared extern rather than #include "platform_gpu_3ds.h"
- * purely out of consistency with this file's existing style of narrow
- * forward declarations. */
-extern void PlatformGpu3DS_DumpScreens(void);
-
-/* L+R+START toggles the scene recorder (PlatformGpu3DS_ToggleRecording, in
- * platform_gpu_3ds.c): first press starts sampling emulated GBA state to
- * sdmc:/3ds/mzm-rec.bin every few frames, second press stops and closes the
- * file. See that function's doc comment for why it exists -- a single L+R+X
- * dump couldn't reliably catch the exact moment a fast-changing scene (e.g.
- * issue #17's death animation) actually breaks. */
-extern void PlatformGpu3DS_ToggleRecording(void);
-
-/* L+R+Y drops a timestamped "USER MARK" line into mzm-debug.log so a play
- * session can flag "something happened right here" (e.g. a visible CPU/GPU
- * renderer fallback) without having to describe timing after the fact --
- * grep the log for "USER MARK" and read the surrounding GPU_REJECT/GPUDIAG
- * lines (needs -DPORT_GPU_RENDERER_DIAG_LOG for those) or ModeChange lines
- * to see what the game was doing at that exact moment. Unbuffered
- * (Port_DebugLog, not Port_DebugLogBuffered) so the mark is flushed to disk
- * immediately even if the app is killed moments later. */
+ * They used to carry secondary diagnostics functions behind an L+R+<button>
+ * chord; those all moved to the bottom screen's DEBUG -> HERRAMIENTAS menu
+ * (port_bottom_ui_3ds.c) so nothing here competes with the player's own
+ * button mapping anymore. */
 extern void Port_DebugLog(const char* msg);
 
 extern int Port_Config_GetButtonMapping(int buttonIndex);
@@ -293,34 +267,18 @@ void Platform3DS_PollKeysIntoGba(void) {
         if (cstick.dy < -deadzone) gbaKeys |= (1 << 7);
     }
 
-    /* 3. Debug modifier (L+R held together -- raw hardware check, before
-     *    any remapping). Only active in debug builds. */
-    bool lrHeld = false;
-#ifdef PORT_DEBUG_TOOLS_ACTIVE
-    lrHeld = (held3ds & KEY_L) && (held3ds & KEY_R);
-    if (lrHeld) {
-        if (down3ds & KEY_X) PlatformGpu3DS_DumpScreens();
-        if (down3ds & KEY_Y) Port_DebugLog("USER MARK: L+R+Y pressed");
-        if (down3ds & KEY_START) PlatformGpu3DS_ToggleRecording();
-        if (down3ds & KEY_A) {
-            extern void PlatformGpu3DS_TogglePerfRecording(void);
-            PlatformGpu3DS_TogglePerfRecording();
-        }
-        if (down3ds & KEY_SELECT) {
-            extern void PortPpuMzm_DebugKillSamus(void);
-            PortPpuMzm_DebugKillSamus();
-        }
-        if (down3ds & KEY_B) {
-            extern void Port_GpuRenderer_DumpAtlas(const char* ppmPath, const char* csvPath);
-            Port_GpuRenderer_DumpAtlas("sdmc:/3ds/mzm-live-atlas.ppm", "sdmc:/3ds/mzm-live-atlas-keys.csv");
-        }
-    }
-#endif
+    /* 3. (was: L+R+<button> debug modifier.) Removed -- every debug tool
+     *    it used to trigger now lives behind the bottom screen's
+     *    DEBUG -> HERRAMIENTAS menu (port_bottom_ui_3ds.c). The combos
+     *    stole L/R/X/Y/START/SELECT from whatever the player had mapped
+     *    them to for the frame they fired, and were easy to trip by
+     *    accident; the on-screen menu has neither problem and needs no
+     *    memorizing. See docs/3ds-debug-tools.md. */
 
     /* 4. Suppress passthrough for ALL remappable buttons (A/B/X/Y/L/R/ZL/ZR/Start/Select).
      *    D-Pad (bits 4-7) and Circle Pad are already handled above.
      *    Only suppress when L+R debug modifier is NOT active. */
-    if (!lrHeld) {
+    {
         gbaKeys &= ~(1u << 0); /* KEY_A */
         gbaKeys &= ~(1u << 1); /* KEY_B */
         gbaKeys &= ~(1u << 2); /* KEY_SELECT */
@@ -338,7 +296,7 @@ void Platform3DS_PollKeysIntoGba(void) {
 
     bool quickMorphPulse = false;
 
-    if (!lrHeld) {
+    {
         for (int i = 0; i < 10; ++i) {
             int action = Port_Config_GetButtonMapping(i);
             gbaKeys |= ProcessButtonAction(action, held3ds, down3ds, btnMasks[i], &quickMorphPulse, &hasDiagAim);

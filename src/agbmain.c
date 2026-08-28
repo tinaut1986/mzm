@@ -152,6 +152,20 @@ void agbmain(void)
         }
 #endif // MZM_3DS && PORT_DEBUG_TOOLS
 
+#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
+        /* Debug warp point, requested from the bottom screen's DEBUG ->
+         * HERRAMIENTAS menu. Applied HERE, at the top of the main loop
+         * between frames, and not from the touch handler itself: that runs
+         * inside Port_Bios_Halt, which src/transfer.c also calls mid-frame,
+         * so resetting gSubGameMode1 from there could land in the middle of
+         * a room's own update. See PortPpuMzm_DebugApplyPendingWarp in
+         * platform/3ds/source/port_ppu_mzm.c. */
+        {
+            extern void PortPpuMzm_DebugApplyPendingWarp(void);
+            PortPpuMzm_DebugApplyPendingWarp();
+        }
+#endif
+
         switch (gMainGameMode)
 
         {
