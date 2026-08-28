@@ -5592,9 +5592,9 @@ static u8 FileSelectUpdateSubMenu(void)
                             // On JP, the language is updated based on whether Japanese or hiragana was chosen.
                             // Debug allows any language, so it has an extra check.
 #if defined(REGION_LANGUAGE_RUNTIME) || defined(REGION_JP)
-#if defined(DEBUG)
+#ifdef REGION_LANGUAGE_RUNTIME
                             if (gSaveFilesInfo[gMostRecentSaveFile].language <= LANGUAGE_HIRAGANA)
-#endif // DEBUG
+#endif // REGION_LANGUAGE_RUNTIME
                             {
                                 gSaveFilesInfo[gMostRecentSaveFile].language = FILE_SELECT_DATA.fileSelectCursors.japaneseText;
                             }
@@ -6085,10 +6085,10 @@ static u8 FileSelectProcessFileSelection(void)
             // attack file (since the difficulty menu is skipped). Debug allows any language,
             // so it has an extra check.
 #if defined(REGION_LANGUAGE_RUNTIME) || !defined(REGION_JP)
-#if defined(DEBUG)
+#ifdef REGION_LANGUAGE_RUNTIME
             action = TRUE;
             if (gSaveFilesInfo[FILE_SELECT_DATA.fileSelectCursorPosition].language >= LANGUAGE_ENGLISH)
-#endif // DEBUG
+#endif // REGION_LANGUAGE_RUNTIME
             {
                 action = FILE_SELECT_DATA.fileSelectCursors.completedFileOptions != 2;
             }
@@ -6124,18 +6124,18 @@ static u8 FileSelectProcessFileSelection(void)
             // JP goes to the Japanese/hiragana menu, while non-JP goes to the difficulty menu.
             // Debug allows any language, so it checks the language to decide the next menu.
 #if defined(REGION_LANGUAGE_RUNTIME) || defined(REGION_JP)
-#if defined(DEBUG)
+#ifdef REGION_LANGUAGE_RUNTIME
             if (gSaveFilesInfo[FILE_SELECT_DATA.fileSelectCursorPosition].language <= LANGUAGE_HIRAGANA)
-#endif // DEBUG
+#endif // REGION_LANGUAGE_RUNTIME
             {
                 FILE_SELECT_DATA.subMenuStage = 22;
                 FileScreenUpdateMessageInfoIdQueue(0, FILE_SCREEN_MESSAGE_INFO_ID_MESSAGE_OPTION);
             }
 #endif // REGION_LANGUAGE_RUNTIME || REGION_JP
 #if defined(REGION_LANGUAGE_RUNTIME) || !defined(REGION_JP)
-#if defined(DEBUG)
+#ifdef REGION_LANGUAGE_RUNTIME
             else
-#endif // DEBUG
+#endif // REGION_LANGUAGE_RUNTIME
             {
                 FILE_SELECT_DATA.subMenuStage = 28;
             }
@@ -6318,17 +6318,17 @@ static u8 FileSelectProcessFileSelection(void)
                 // while non-JP goes to the "Start Game" menu. Debug allows any language, so it
                 // checks the language to decide the next menu.
 #if defined(REGION_LANGUAGE_RUNTIME) || defined(REGION_JP)
-#if defined(DEBUG)
+#ifdef REGION_LANGUAGE_RUNTIME
                 if (gSaveFilesInfo[FILE_SELECT_DATA.fileSelectCursorPosition].language <= LANGUAGE_HIRAGANA)
-#endif // DEBUG
+#endif // REGION_LANGUAGE_RUNTIME
                 {
                     FILE_SELECT_DATA.subMenuStage = 22;
                 }
 #endif // REGION_LANGUAGE_RUNTIME || REGION_JP
 #if defined(REGION_LANGUAGE_RUNTIME) || !defined(REGION_JP)
-#if defined(DEBUG)
+#ifdef REGION_LANGUAGE_RUNTIME
                 else
-#endif // DEBUG
+#endif // REGION_LANGUAGE_RUNTIME
                 {
                     if (gSaveFilesInfo[FILE_SELECT_DATA.fileSelectCursorPosition].exists)
                         FILE_SELECT_DATA.subMenuStage = 8;
