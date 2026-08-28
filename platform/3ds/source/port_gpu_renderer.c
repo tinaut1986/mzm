@@ -1016,9 +1016,21 @@ static void CollectBgLayer(int bgIndex) {
              * which is where BG0 genuinely is the text/dialog layer. In
              * gameplay every BG, BG0 included, maps by its own priority. */
             extern s16 gMainGameMode;
+            extern bool PortPpuMzm_ClipIsSolidAtScreen(int screenX, int screenY);
             int depthTier;
             if (bgIndex == 0 && gMainGameMode != 4) {
                 depthTier = 3; /* Menu/dialog text overlay, topmost */
+            } else if (PortPpuMzm_ClipIsSolidAtScreen((int)drawX + 4, (int)drawY + 4)) {
+                /* Solid world geometry goes on the play plane whatever layer
+                 * drew it. Room data splits single objects across layers --
+                 * see the crate platform documented on
+                 * PortPpuMzm_ClipIsSolidAtScreen -- and priority alone then
+                 * tears them across two depth planes. Clipdata is the same
+                 * information the game uses for collision, so it groups an
+                 * object by what it IS rather than by which layer holds it.
+                 * Probed at the tile's center (+4,+4) so an 8x8 tile is
+                 * attributed to the 16x16 clip block it actually sits in. */
+                depthTier = 2;
             } else if (priority == 0) {
                 depthTier = 2; /* platforms / interactive foreground, -0.3f */
             } else if (priority == 1) {

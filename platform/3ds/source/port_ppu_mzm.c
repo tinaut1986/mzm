@@ -13,6 +13,9 @@
 #include "samus.h"
 #include "gba/memory.h"
 #include "structs/bg_clip.h"
+#include "structs/clipdata.h"
+#include "structs/scroll.h"
+#include "constants/clipdata.h"
 #include "constants/block.h"
 #include "constants/game_state.h"
 #include "structs/game_state.h"
@@ -1193,4 +1196,126 @@ void PortPpuMzm_DebugGetAmmoText(char* out, int outSize) {
              gEquipment.currentEnergy, gEquipment.maxEnergy,
              gEquipment.maxMissiles, gEquipment.maxSuperMissiles,
              gEquipment.maxPowerBombs);
+}
+
+
+/* ---------------------------------------------------------------------
+ * Clipdata probe for the stereo renderer.
+ *
+ * Which BG layer a tile is painted on turns out to be a poor source of
+ * depth. Room data routinely spreads one solid object across two layers:
+ * in the Chozodia room recorded on 2026-08-28 a single crate platform has
+ * its left half on BG1 (priority 1) and its right half on BG2 (priority 2)
+ * using the IDENTICAL tile pair 0x3139/0x313A, with both layers on the same
+ * scroll. On real hardware that is invisible -- both halves are opaque and
+ * nothing draws between them -- so nothing in the original game could ever
+ * expose it. Deriving parallax from priority does expose it: the platform
+ * splits across two depth planes.
+ *
+ * Clipdata is the right source instead: it is what the game itself uses to
+ * decide what Samus collides with, so "solid" means "in the play plane" by
+ * definition, whichever layer happened to draw it.
+ *
+ * Same lookup as ClipdataProcessForSamus (src/clipdata.c), minus the
+ * sub-pixel/slope resolution -- this only needs to know whether the block
+ * is part of the solid world. Lives here rather than in port_gpu_renderer.c
+ * because that file has no access to the GBA-side structs.
+ * ------------------------------------------------------------------- */
+bool PortPpuMzm_ClipIsSolidAtScreen(int screenX, int screenY) {
+    if (gMainGameMode != GM_INGAME) return false;
+    if (gTilemapAndClipPointers.pClipCollisions == NULL) return false;
+
+    /* Camera position is in sub-pixels, like every world coordinate in this
+     * game. It MUST be truncated to whole pixels before the screen offset is
+     * added, because that is the grid the PPU actually draws on: the BG
+     * scroll registers are whole pixels (floor(camera / SUB_PIXEL_RATIO)),
+     * so a tile drawn at screen pixel p always shows world pixel
+     * (cameraPixel + p) no matter what the camera's sub-pixel remainder is.
+     *
+     * Probing at full sub-pixel precision instead -- camera + p * 4 -- adds
+     * that remainder back and can land the probe in the NEXT clip block for
+     * tiles whose center sits within a sub-pixel of a 16px block boundary.
+     * The result was tiles flipping depth plane for a frame while the
+     * camera moved with a non-zero remainder (grabbing a ledge, jumping):
+     * only the tiles near a boundary, and only while moving, which is
+     * exactly how it looked on hardware. */
+    int camPixelX = (int)gCamera.xPosition / SUB_PIXEL_RATIO;
+    int camPixelY = (int)gCamera.yPosition / SUB_PIXEL_RATIO;
+    int worldPixelX = camPixelX + screenX;
+    int worldPixelY = camPixelY + screenY;
+    if (worldPixelX < 0 || worldPixelY < 0) return false;
+
+    u32 blockX = (u32)worldPixelX / PIXEL_PER_BLOCK;
+    u32 blockY = (u32)worldPixelY / PIXEL_PER_BLOCK;
+    if (blockX >= gBgPointersAndDimensions.clipdataWidth) return false;
+    if (blockY >= gBgPointersAndDimensions.clipdataHeight) return false;
+
+    u8 type = gTilemapAndClipPointers.pClipCollisions[GET_CLIP_BLOCK_(blockX, blockY)];
+    switch (type) {
+        /* Air, and the two "blocks enemies but not Samus" types: none of
+         * these are part of the solid world Samus walks on. */
+        case CLIPDATA_TYPE_AIR:
+        case CLIPDATA_TYPE_ENEMY_ONLY:
+        case CLIPDATA_TYPE_STOP_ENEMY:
+            return false;
+        default:
+            /* Solid, plus every slope variant. */
+            return true;
+    }
+}
+
+
+/* ---------------------------------------------------------------------
+ * Clip/camera snapshot for the scene recorder.
+ *
+ * mzm-rec.bin captures VRAM, IO, palettes and OAM -- everything the PPU
+ * draws from -- but the clipdata and the camera live in EWRAM, so nothing
+ * in a recording could confirm whether PortPpuMzm_ClipIsSolidAtScreen picks
+ * the same block the renderer drew. That made the "tiles flip depth plane
+ * for a frame while the camera moves" report impossible to verify offline;
+ * this block is what makes it checkable.
+ *
+ * Layout is fixed and appended after VRAM in each sample (recorder magic
+ * 'MZM3'). The clip grid covers the visible screen plus one block of slack
+ * on each axis, at the same block resolution clipdata uses.
+ * ------------------------------------------------------------------- */
+#define PORT_CLIPREC_COLS 17
+#define PORT_CLIPREC_ROWS 12
+
+void PortPpuMzm_GetClipRecordBlock(uint8_t* out) {
+    /* 16 bytes of scalars, then the grid. */
+    uint16_t* w = (uint16_t*)out;
+    w[0] = gCamera.xPosition;
+    w[1] = gCamera.yPosition;
+    w[2] = gSamusData.xPosition;
+    w[3] = gSamusData.yPosition;
+    w[4] = (uint16_t)gBgPointersAndDimensions.clipdataWidth;
+    w[5] = (uint16_t)gBgPointersAndDimensions.clipdataHeight;
+    w[6] = (uint16_t)gMainGameMode;
+    w[7] = (uint16_t)gSamusData.pose;
+
+    uint8_t* grid = out + 16;
+    int camPixelX = (int)gCamera.xPosition / SUB_PIXEL_RATIO;
+    int camPixelY = (int)gCamera.yPosition / SUB_PIXEL_RATIO;
+    int baseBlockX = camPixelX / PIXEL_PER_BLOCK;
+    int baseBlockY = camPixelY / PIXEL_PER_BLOCK;
+
+    for (int r = 0; r < PORT_CLIPREC_ROWS; ++r) {
+        for (int c = 0; c < PORT_CLIPREC_COLS; ++c) {
+            int bx = baseBlockX + c;
+            int by = baseBlockY + r;
+            uint8_t v = 0xFF; /* out of bounds marker */
+            if (bx >= 0 && by >= 0 &&
+                (u32)bx < gBgPointersAndDimensions.clipdataWidth &&
+                (u32)by < gBgPointersAndDimensions.clipdataHeight &&
+                gTilemapAndClipPointers.pClipCollisions != NULL) {
+                v = gTilemapAndClipPointers.pClipCollisions[GET_CLIP_BLOCK_((u32)bx, (u32)by)];
+            }
+            grid[r * PORT_CLIPREC_COLS + c] = v;
+        }
+    }
+}
+
+int PortPpuMzm_GetClipRecordBlockSize(void) {
+    return 16 + PORT_CLIPREC_COLS * PORT_CLIPREC_ROWS;
 }
