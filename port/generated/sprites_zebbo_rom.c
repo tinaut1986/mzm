@@ -23,6 +23,24 @@ void PortGen_zebbo_Init(void) {
             p_sZebboOam_Moving = (const struct FrameData(*)[5])Port_ResolveRomData(0x082e7d4cu);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sZebboGreenGfx = (const u32(*)[124])Port_ResolveRomData(0x082e6c48u);
+            p_sZebboGreenPal = (const u16(*)[16])Port_ResolveRomData(0x082e6e38u);
+            p_sZebboYellowGfx = (const u32(*)[124])Port_ResolveRomData(0x082e6e58u);
+            p_sZebboYellowPal = (const u16(*)[16])Port_ResolveRomData(0x082e7048u);
+            p_sZebboOam_Idle = (const struct FrameData(*)[5])Port_ResolveRomData(0x082e7098u);
+            p_sZebboOam_Moving = (const struct FrameData(*)[5])Port_ResolveRomData(0x082e70c0u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sZebboGreenGfx = (const u32(*)[124])Port_ResolveRomData(0x082e6ca4u);
+            p_sZebboGreenPal = (const u16(*)[16])Port_ResolveRomData(0x082e6e94u);
+            p_sZebboYellowGfx = (const u32(*)[124])Port_ResolveRomData(0x082e6eb4u);
+            p_sZebboYellowPal = (const u16(*)[16])Port_ResolveRomData(0x082e70a4u);
+            p_sZebboOam_Idle = (const struct FrameData(*)[5])Port_ResolveRomData(0x082e70f4u);
+            p_sZebboOam_Moving = (const struct FrameData(*)[5])Port_ResolveRomData(0x082e711cu);
+            break;
+        }
         default:
             break;
     }

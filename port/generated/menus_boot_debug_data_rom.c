@@ -67,6 +67,14 @@ void PortGen_boot_debug_data_Init(void) {
             /* no symbols from this header found in this region's .map */
             break;
         }
+        case PORT_ROM_REGION_US: {
+            /* no symbols from this header found in this region's .map */
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            /* no symbols from this header found in this region's .map */
+            break;
+        }
         default:
             break;
     }

@@ -37,6 +37,38 @@ void PortGen_enter_tourian_data_Init(void) {
             p_sEnterTourianForegroundTileTable = (const u32(*)[385])Port_ResolveRomData(0x083f7294u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sEnterTourianPageData = (const struct CutscenePageData(*)[2])Port_ResolveRomData(0x083f0390u);
+            p_sEnterTourianOam = (const struct OamArray(*)[7])Port_ResolveRomData(0x083f03b0u);
+            p_sEnterTourianOam_SpacePirate_Frame0 = (const u16(*)[16])Port_ResolveRomData(0x083f03e8u);
+            p_sEnterTourianOam_Empty = (const struct FrameData(*)[1])Port_ResolveRomData(0x083f0408u);
+            p_sEnterTourianBackgroundPal = (const u16(*)[10*16])Port_ResolveRomData(0x083f0410u);
+            p_sEnterTourianMetroidPal = (const u16(*)[6*16])Port_ResolveRomData(0x083f0550u);
+            p_sEnterTourianBackgroundGfx = (const u32(*)[3110])Port_ResolveRomData(0x083f0610u);
+            p_sEnterTourianForegroundGfx = (const u32(*)[2483])Port_ResolveRomData(0x083f36a8u);
+            p_sEnterTourianDeadSpacePirateGfx_1 = (const u32(*)[55])Port_ResolveRomData(0x083f5d74u);
+            p_sEnterTourianDeadSpacePirateGfx_2 = (const u32(*)[77])Port_ResolveRomData(0x083f5e50u);
+            p_sEnterTourianDeadSpacePirateGfx_3 = (const u32(*)[32])Port_ResolveRomData(0x083f5f84u);
+            p_sEnterTourianBackgroundTileTable = (const u32(*)[385])Port_ResolveRomData(0x083f6004u);
+            p_sEnterTourianForegroundTileTable = (const u32(*)[385])Port_ResolveRomData(0x083f6608u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sEnterTourianPageData = (const struct CutscenePageData(*)[2])Port_ResolveRomData(0x083f03ecu);
+            p_sEnterTourianOam = (const struct OamArray(*)[7])Port_ResolveRomData(0x083f040cu);
+            p_sEnterTourianOam_SpacePirate_Frame0 = (const u16(*)[16])Port_ResolveRomData(0x083f0444u);
+            p_sEnterTourianOam_Empty = (const struct FrameData(*)[1])Port_ResolveRomData(0x083f0464u);
+            p_sEnterTourianBackgroundPal = (const u16(*)[10*16])Port_ResolveRomData(0x083f046cu);
+            p_sEnterTourianMetroidPal = (const u16(*)[6*16])Port_ResolveRomData(0x083f05acu);
+            p_sEnterTourianBackgroundGfx = (const u32(*)[3110])Port_ResolveRomData(0x083f066cu);
+            p_sEnterTourianForegroundGfx = (const u32(*)[2483])Port_ResolveRomData(0x083f3704u);
+            p_sEnterTourianDeadSpacePirateGfx_1 = (const u32(*)[55])Port_ResolveRomData(0x083f5dd0u);
+            p_sEnterTourianDeadSpacePirateGfx_2 = (const u32(*)[77])Port_ResolveRomData(0x083f5eacu);
+            p_sEnterTourianDeadSpacePirateGfx_3 = (const u32(*)[32])Port_ResolveRomData(0x083f5fe0u);
+            p_sEnterTourianBackgroundTileTable = (const u32(*)[385])Port_ResolveRomData(0x083f6060u);
+            p_sEnterTourianForegroundTileTable = (const u32(*)[385])Port_ResolveRomData(0x083f6664u);
+            break;
+        }
         default:
             break;
     }

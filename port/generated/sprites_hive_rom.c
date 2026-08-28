@@ -33,6 +33,34 @@ void PortGen_hive_Init(void) {
             p_sHiveOam_Dying = (const struct FrameData(*)[32])Port_ResolveRomData(0x082db6f8u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sMellowIdleYVelocity = (const s16(*)[65])Port_ResolveRomData(0x082d88e4u);
+            p_sMellowIdleXVelocity = (const s16(*)[81])Port_ResolveRomData(0x082d8966u);
+            p_sHiveGfx = (const u32(*)[1799])Port_ResolveRomData(0x082d8a08u);
+            p_sHivePal = (const u16(*)[96])Port_ResolveRomData(0x082da624u);
+            p_sMellowOam_Idle = (const struct FrameData(*)[6])Port_ResolveRomData(0x082da88cu);
+            p_sMellowOam_SamusDetected = (const struct FrameData(*)[6])Port_ResolveRomData(0x082da8bcu);
+            p_sHiveOam_Idle = (const struct FrameData(*)[19])Port_ResolveRomData(0x082da8ecu);
+            p_sHiveRootsOam_Idle = (const struct FrameData(*)[4])Port_ResolveRomData(0x082da984u);
+            p_sHiveOam_Phase2 = (const struct FrameData(*)[12])Port_ResolveRomData(0x082da9a4u);
+            p_sHiveOam_Phase3 = (const struct FrameData(*)[13])Port_ResolveRomData(0x082daa04u);
+            p_sHiveOam_Dying = (const struct FrameData(*)[32])Port_ResolveRomData(0x082daa6cu);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sMellowIdleYVelocity = (const s16(*)[65])Port_ResolveRomData(0x082d8940u);
+            p_sMellowIdleXVelocity = (const s16(*)[81])Port_ResolveRomData(0x082d89c2u);
+            p_sHiveGfx = (const u32(*)[1799])Port_ResolveRomData(0x082d8a64u);
+            p_sHivePal = (const u16(*)[96])Port_ResolveRomData(0x082da680u);
+            p_sMellowOam_Idle = (const struct FrameData(*)[6])Port_ResolveRomData(0x082da8e8u);
+            p_sMellowOam_SamusDetected = (const struct FrameData(*)[6])Port_ResolveRomData(0x082da918u);
+            p_sHiveOam_Idle = (const struct FrameData(*)[19])Port_ResolveRomData(0x082da948u);
+            p_sHiveRootsOam_Idle = (const struct FrameData(*)[4])Port_ResolveRomData(0x082da9e0u);
+            p_sHiveOam_Phase2 = (const struct FrameData(*)[12])Port_ResolveRomData(0x082daa00u);
+            p_sHiveOam_Phase3 = (const struct FrameData(*)[13])Port_ResolveRomData(0x082daa60u);
+            p_sHiveOam_Dying = (const struct FrameData(*)[32])Port_ResolveRomData(0x082daac8u);
+            break;
+        }
         default:
             break;
     }

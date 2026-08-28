@@ -37,6 +37,38 @@ void PortGen_escape_ship_Init(void) {
             p_sEscapeShipPartOam_TailMoving = (const struct FrameData(*)[26])Port_ResolveRomData(0x0831d11cu);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sEscapeShipHoveringYMovement = (const s16(*)[65])Port_ResolveRomData(0x0831a548u);
+            p_sEscapeShipHoveringXMovement = (const s16(*)[57])Port_ResolveRomData(0x0831a5cau);
+            p_sEscapeShipGfx = (const u32(*)[919])Port_ResolveRomData(0x0831a63cu);
+            p_sEscapeShipPal = (const u16(*)[64])Port_ResolveRomData(0x0831b498u);
+            p_sEscapeShipFlashingPal = (const u16(*)[3*16])Port_ResolveRomData(0x0831b518u);
+            p_sEscapeShipOam_Idle = (const struct FrameData(*)[2])Port_ResolveRomData(0x0831c370u);
+            p_sEscapeShipOam_Opening = (const struct FrameData(*)[9])Port_ResolveRomData(0x0831c380u);
+            p_sEscapeShipOam_Closing = (const struct FrameData(*)[9])Port_ResolveRomData(0x0831c3c8u);
+            p_sEscapeShipOam_Flying = (const struct FrameData(*)[5])Port_ResolveRomData(0x0831c410u);
+            p_sEscapeShipPartOam_Top = (const struct FrameData(*)[5])Port_ResolveRomData(0x0831c438u);
+            p_sEscapeShipPartOam_Flames = (const struct FrameData(*)[4])Port_ResolveRomData(0x0831c460u);
+            p_sEscapeShipPartOam_Tail = (const struct FrameData(*)[2])Port_ResolveRomData(0x0831c480u);
+            p_sEscapeShipPartOam_TailMoving = (const struct FrameData(*)[26])Port_ResolveRomData(0x0831c490u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sEscapeShipHoveringYMovement = (const s16(*)[65])Port_ResolveRomData(0x0831a5a4u);
+            p_sEscapeShipHoveringXMovement = (const s16(*)[57])Port_ResolveRomData(0x0831a626u);
+            p_sEscapeShipGfx = (const u32(*)[919])Port_ResolveRomData(0x0831a698u);
+            p_sEscapeShipPal = (const u16(*)[64])Port_ResolveRomData(0x0831b4f4u);
+            p_sEscapeShipFlashingPal = (const u16(*)[3*16])Port_ResolveRomData(0x0831b574u);
+            p_sEscapeShipOam_Idle = (const struct FrameData(*)[2])Port_ResolveRomData(0x0831c3ccu);
+            p_sEscapeShipOam_Opening = (const struct FrameData(*)[9])Port_ResolveRomData(0x0831c3dcu);
+            p_sEscapeShipOam_Closing = (const struct FrameData(*)[9])Port_ResolveRomData(0x0831c424u);
+            p_sEscapeShipOam_Flying = (const struct FrameData(*)[5])Port_ResolveRomData(0x0831c46cu);
+            p_sEscapeShipPartOam_Top = (const struct FrameData(*)[5])Port_ResolveRomData(0x0831c494u);
+            p_sEscapeShipPartOam_Flames = (const struct FrameData(*)[4])Port_ResolveRomData(0x0831c4bcu);
+            p_sEscapeShipPartOam_Tail = (const struct FrameData(*)[2])Port_ResolveRomData(0x0831c4dcu);
+            p_sEscapeShipPartOam_TailMoving = (const struct FrameData(*)[26])Port_ResolveRomData(0x0831c4ecu);
+            break;
+        }
         default:
             break;
     }

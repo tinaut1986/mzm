@@ -1,3 +1,4 @@
+#include "region.h"
 #include "haze.h"
 #include "dma.h"
 #include "gba.h"
@@ -252,9 +253,13 @@ void HazeSetupCode(HazeValue hazeValue)
 
             PowerBombYellowTint(0);
 
-#if defined(REGION_EU) || defined(BUGFIX)
+#ifdef BUGFIX
             WRITE_16(COLOR_DATA_BG_EWRAM, COLOR_WHITE);
-#endif // REGION_EU || BUGFIX
+#else
+            // EUR added this (see docs/bugs_and_glitches.md)
+            if (REGION_IS_EU())
+                WRITE_16(COLOR_DATA_BG_EWRAM, COLOR_WHITE);
+#endif
 
             if (gIoRegistersBackup.Dispcnt_NonGameplay & DCNT_BG0 && gCurrentRoomEntry.bg0Prop != BG_PROP_DISABLE_TRANSPARENCY)
                 gWrittenToDispcnt = READ_16(REG_DISPCNT) ^ DCNT_BG0;

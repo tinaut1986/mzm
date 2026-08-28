@@ -57,15 +57,17 @@ static u16* DispstatWord(void) {
     return (u16*)&gIoMem[0x004];
 }
 
-/* Temporary boot-hang diagnostic, see port/port_debug_log.h. Logs a
- * heartbeat every ~1.5s (20000 scanlines) so a stuck main thread and a dead
- * timing thread are distinguishable in the log. */
+/* One-shot "thread is alive" line at startup, see port/port_debug_log.h.
+ * There used to be a periodic heartbeat here too, from back when a boot hang
+ * had to be told apart from a dead timing thread; it was removed once that
+ * was fixed -- Port_DebugLog is one fopen+fwrite+fclose (~18-20ms on real
+ * hardware) and paying it from THIS thread stalls the emulated
+ * VCOUNT/DISPSTAT cadence for that long, every 1.5s, forever. */
 extern void Port_DebugLog(const char* msg);
 
 void Port_GbaTiming_ThreadMain(void* arg) {
     (void)arg;
     u8 line = 0;
-    u32 heartbeatCounter = 0;
     Port_DebugLog("timing thread: started");
     while (sTimingThreadRunning) {
         svcSleepThread(SCANLINE_NS);
@@ -75,10 +77,6 @@ void Port_GbaTiming_ThreadMain(void* arg) {
             line = 0;
         }
         *VCountByte() = line;
-
-        if (++heartbeatCounter % 20000 == 0) {
-            Port_DebugLog("timing thread: heartbeat (still running)");
-        }
 
         u16 dispstat = *DispstatWord();
         if (line >= GBA_VBLANK_START_LINE) {

@@ -4,6 +4,7 @@
 #include "callbacks.h"
 #include "oam_id.h"
 #include "gba/rom_header.h"
+#include "region.h"
 
 #if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "port_gba_mem.h"
@@ -27,9 +28,7 @@
 
 #define TITLE_SCREEN_SPARKLE_DELAY CONVERT_SECONDS(.35f + 1.f / 60)
 
-#ifdef REGION_EU
 static void TitleScreenSetMenuPalette(TitleScreenMenuOption param0);
-#endif // REGION_EU
 
 static struct TitleScreenAnimatedPalette sTitleScreenAnimatedPaletteTemplates[4] = {
     [0] = {
@@ -59,17 +58,14 @@ static struct TitleScreenAnimatedPalette sTitleScreenAnimatedPaletteTemplates[4]
 };
 
 #ifdef MZM_3DS
-#ifdef REGION_EU
-static const u8* sRomInfoStringPointers[1];
-static const u32* sTitleScreenMenuGfxPointers[(LANGUAGE_COUNT - LANGUAGE_ENGLISH) * 2];
-#else
+/* Region-neutral: both the EUR-only menu gfx table and the (debug-only)
+ * ROM info strings are declared and filled in every build. Symbols that do
+ * not exist in the loaded ROM resolve to NULL and are only read behind a
+ * REGION_IS_*() test. */
 static const u8* sRomInfoStringPointers[4];
-#endif
+static const u32* sTitleScreenMenuGfxPointers[(LANGUAGE_COUNT - LANGUAGE_ENGLISH) * 2];
 
 void Init_sTitleScreenPointers(void) {
-#ifdef REGION_EU
-    sRomInfoStringPointers[0] = sTitleScreenRomInfoTime;
-
     sTitleScreenMenuGfxPointers[0] = sTitleScreenEnglishMenuGfx_Top;
     sTitleScreenMenuGfxPointers[1] = sTitleScreenEnglishMenuGfx_Bottom;
     sTitleScreenMenuGfxPointers[2] = sTitleScreenGermanMenuGfx_Top;
@@ -80,12 +76,11 @@ void Init_sTitleScreenPointers(void) {
     sTitleScreenMenuGfxPointers[7] = sTitleScreenItalianMenuGfx_Bottom;
     sTitleScreenMenuGfxPointers[8] = sTitleScreenSpanishMenuGfx_Top;
     sTitleScreenMenuGfxPointers[9] = sTitleScreenSpanishMenuGfx_Bottom;
-#else
+
     sRomInfoStringPointers[0] = sTitleScreenRomInfoTime;
     sRomInfoStringPointers[1] = sTitleScreenRomInfoRegionJPN;
     sRomInfoStringPointers[2] = sTitleScreenRomInfoRegionEUR;
     sRomInfoStringPointers[3] = sTitleScreenRomInfoRegionUSA;
-#endif
 }
 #else
 #ifdef REGION_EU
@@ -983,10 +978,8 @@ u32 TitleScreenProcessBottomSparkle(struct TitleScreenOamTiming* pTiming, struct
  */
 u32 TitleScreenCheckPlayEffects(void)
 {
-#ifdef REGION_EU
     u32 tmp1;
     u32 tmp2;
-#endif // REGION_EU
 
     TITLE_SCREEN_DATA.demoTimer++;
     if (TITLE_SCREEN_DATA.demoTimer > 60 * 17)
@@ -1021,17 +1014,17 @@ u32 TitleScreenCheckPlayEffects(void)
     }
     else if (gChangedInput & (KEY_A | KEY_START))
     {
-#ifdef REGION_EU
-        tmp1 = TITLE_SCREEN_DATA.oamTimings[2].menuOption != TITLE_SCREEN_MENU_OPTION_START_GAME ? 3 : 1;
-        tmp2 = tmp1;
-        return tmp2;
-#else // !REGION
+        if (REGION_IS_EU())
+        {
+            tmp1 = TITLE_SCREEN_DATA.oamTimings[2].menuOption != TITLE_SCREEN_MENU_OPTION_START_GAME ? 3 : 1;
+            tmp2 = tmp1;
+            return tmp2;
+        }
+
         return 1;
-#endif // REGION_EU
     }
 
-#ifdef REGION_EU
-    if (gChangedInput & (KEY_UP | KEY_DOWN))
+    if (REGION_IS_EU() && gChangedInput & (KEY_UP | KEY_DOWN))
     {
         tmp2 = FALSE;
 
@@ -1053,7 +1046,6 @@ u32 TitleScreenCheckPlayEffects(void)
             TITLE_SCREEN_DATA.demoTimer = 0;
         }
     }
-#endif // REGION_EU
 
 #ifdef DEBUG
     if (gChangedInput & KEY_L)
@@ -1129,13 +1121,11 @@ u32 TitleScreenHandler(void)
 #endif // DEBUG
                 else
                 {
-#ifdef REGION_EU
-                    if (gSubGameMode2 == 3)
+                    if (REGION_IS_EU() && gSubGameMode2 == 3)
                     {
                         SoundPlay(SOUND_ACCEPT_CONFIRM_MENU);
                     }
                     else
-#endif // REGION_EU
                     {
                         SoundPlay(SOUND_TITLE_SCREEN_PRESSING_START);
                     }
@@ -1325,32 +1315,29 @@ void TitleScreenInit(void)
 
     SET_BACKDROP_COLOR(COLOR_BLACK);
 
-#ifdef REGION_EU
-    DmaTransfer(3, &sTitleScreenUnselectedMenuPal, PALRAM_BASE + 0x1E0, sizeof(sTitleScreenUnselectedMenuPal), 16);
-    TITLE_SCREEN_DATA.oamTimings[2].menuOption = TITLE_SCREEN_MENU_OPTION_START_GAME;
-#endif // REGION_EU
+    if (REGION_IS_EU())
+    {
+        DmaTransfer(3, &sTitleScreenUnselectedMenuPal, PALRAM_BASE + 0x1E0, sizeof(sTitleScreenUnselectedMenuPal), 16);
+        TITLE_SCREEN_DATA.oamTimings[2].menuOption = TITLE_SCREEN_MENU_OPTION_START_GAME;
+    }
 
     TitleScreenLoadPageData(&sTitleScreenPageData[0]);
     TitleScreenLoadPageData(&sTitleScreenPageData[1]);
 
     // JP uses the registered trademark symbol, while non-JP uses the trademark symbol.
     // Debug allows any language, so it checks the language to decide which to use.
-#if defined(DEBUG) || !defined(REGION_JP)
-#if defined(DEBUG)
+#ifdef DEBUG
     if (gLanguage >= LANGUAGE_ENGLISH)
+#else // !DEBUG
+    if (!REGION_IS_JP())
 #endif // DEBUG
     {
         TitleScreenSetCopyrightSymbol(TITLE_SCREEN_COPYRIGHT_SYMBOL_TRADEMARK);
     }
-#endif // DEBUG || !REGION_JP
-#if defined(DEBUG) || defined(REGION_JP)
-#if defined(DEBUG)
     else
-#endif // DEBUG
     {
         TitleScreenSetCopyrightSymbol(TITLE_SCREEN_COPYRIGHT_SYMBOL_REGISTERED_TRADEMARK);
     }
-#endif // DEBUG || REGION_JP
 
     CallLZ77UncompVram(sTitleScreenTitleGfx, VRAM_BASE + 0xC000);
     CallLZ77UncompVram(sTitleScreenSpaceBackgroundGfx, VRAM_BASE + 0x4000);
@@ -1361,11 +1348,12 @@ void TitleScreenInit(void)
 
     CallLZ77UncompVram(sTitleScreenSparklesGfx, VRAM_OBJ);
 
-#ifdef REGION_EU
-    CallLZ77UncompVram(sTitleScreenMenuGfxPointers[(gLanguage - LANGUAGE_ENGLISH) * 2], VRAM_BASE + 0xE800);
-    CallLZ77UncompVram(sTitleScreenMenuGfxPointers[(gLanguage - LANGUAGE_ENGLISH) * 2 + 1], VRAM_BASE + 0xEC00);
-    TitleScreenSetMenuPalette(TITLE_SCREEN_DATA.oamTimings[2].menuOption);
-#endif // REGION_EU
+    if (REGION_IS_EU())
+    {
+        CallLZ77UncompVram(sTitleScreenMenuGfxPointers[(gLanguage - LANGUAGE_ENGLISH) * 2], VRAM_BASE + 0xE800);
+        CallLZ77UncompVram(sTitleScreenMenuGfxPointers[(gLanguage - LANGUAGE_ENGLISH) * 2 + 1], VRAM_BASE + 0xEC00);
+        TitleScreenSetMenuPalette(TITLE_SCREEN_DATA.oamTimings[2].menuOption);
+    }
 
     // Undefined
     TitleScreenSetBGCNTPageData(&sTitleScreenPageData[0]);
@@ -1460,7 +1448,6 @@ void TitleScreenVBlank_Empty(void)
     vu8 c = 0;
 }
 
-#ifdef REGION_EU
 /**
  * @brief Sets the palette for "Start Game" and "Language" on the title screen
  * 
@@ -1527,7 +1514,6 @@ static void TitleScreenSetMenuPalette(TitleScreenMenuOption option)
         }
     }
 }
-#endif // REGION_EU
 
 /**
  * @brief 777d8 | 4c | Changes the copyright symbol

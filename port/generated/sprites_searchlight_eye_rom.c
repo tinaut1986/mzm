@@ -25,6 +25,26 @@ void PortGen_searchlight_eye_Init(void) {
             p_sSearchlightEyeOam_Shooting = (const struct FrameData(*)[4])Port_ResolveRomData(0x083082e8u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sSearchlightEyeGfx = (const u32(*)[177])Port_ResolveRomData(0x083070e8u);
+            p_sSearchlightEyePal = (const u16(*)[16])Port_ResolveRomData(0x083073acu);
+            p_sSearchlightEyeOam_Idle = (const struct FrameData(*)[13])Port_ResolveRomData(0x08307574u);
+            p_sSearchlightEyeBeamOam_Idle = (const struct FrameData(*)[5])Port_ResolveRomData(0x083075dcu);
+            p_sSearchlightEyeBeamOam_Unused = (const struct FrameData(*)[2])Port_ResolveRomData(0x08307604u);
+            p_sSearchlightEyeProjectileOam_Moving = (const struct FrameData(*)[9])Port_ResolveRomData(0x08307614u);
+            p_sSearchlightEyeOam_Shooting = (const struct FrameData(*)[4])Port_ResolveRomData(0x0830765cu);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sSearchlightEyeGfx = (const u32(*)[177])Port_ResolveRomData(0x08307144u);
+            p_sSearchlightEyePal = (const u16(*)[16])Port_ResolveRomData(0x08307408u);
+            p_sSearchlightEyeOam_Idle = (const struct FrameData(*)[13])Port_ResolveRomData(0x083075d0u);
+            p_sSearchlightEyeBeamOam_Idle = (const struct FrameData(*)[5])Port_ResolveRomData(0x08307638u);
+            p_sSearchlightEyeBeamOam_Unused = (const struct FrameData(*)[2])Port_ResolveRomData(0x08307660u);
+            p_sSearchlightEyeProjectileOam_Moving = (const struct FrameData(*)[9])Port_ResolveRomData(0x08307670u);
+            p_sSearchlightEyeOam_Shooting = (const struct FrameData(*)[4])Port_ResolveRomData(0x083076b8u);
+            break;
+        }
         default:
             break;
     }

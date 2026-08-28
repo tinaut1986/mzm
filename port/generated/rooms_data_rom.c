@@ -56,6 +56,56 @@ void PortGen_rooms_data_Init(void) {
             p_sTestRoomEntries = (const struct RoomEntryRom(*)[1])Port_ResolveRomData(0x083464b8u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sEnemyRoomData_Empty = (const u8(*)[3])Port_ResolveRomData(0x0833dfd8u);
+            p_sTilesetEntries = (const struct TilesetEntry(*)[79])Port_ResolveRomData(0x0833dfdcu);
+            p_sBrinstarDoors = (const struct Door(*)[99])Port_ResolveRomData(0x0833e608u);
+            p_sKraidDoors = (const struct Door(*)[107])Port_ResolveRomData(0x0833eaacu);
+            p_sNorfairDoors = (const struct Door(*)[133])Port_ResolveRomData(0x0833efb0u);
+            p_sRidleyDoors = (const struct Door(*)[77])Port_ResolveRomData(0x0833f5ecu);
+            p_sTourianDoors = (const struct Door(*)[44])Port_ResolveRomData(0x0833f988u);
+            p_sCrateriaDoors = (const struct Door(*)[53])Port_ResolveRomData(0x0833fb98u);
+            p_sChozodiaDoors = (const struct Door(*)[246])Port_ResolveRomData(0x0833fe14u);
+            p_sTest123Doors = (const struct Door(*)[24])Port_ResolveRomData(0x0834099cu);
+            p_sTestDoors = (const struct Door(*)[2])Port_ResolveRomData(0x08340abcu);
+            p_sBrinstarRoomEntries = (const struct RoomEntryRom(*)[42])Port_ResolveRomData(0x08340ad4u);
+            p_sKraidRoomEntries = (const struct RoomEntryRom(*)[42])Port_ResolveRomData(0x083414acu);
+            p_sNorfairRoomEntries = (const struct RoomEntryRom(*)[57])Port_ResolveRomData(0x08341e84u);
+            p_sRidleyRoomEntries = (const struct RoomEntryRom(*)[33])Port_ResolveRomData(0x08342be0u);
+            p_sTourianRoomEntries = (const struct RoomEntryRom(*)[20])Port_ResolveRomData(0x0834339cu);
+            p_sCrateriaRoomEntries = (const struct RoomEntryRom(*)[22])Port_ResolveRomData(0x0834384cu);
+            p_sChozodiaRoomEntries = (const struct RoomEntryRom(*)[99])Port_ResolveRomData(0x08343d74u);
+            p_sTest1RoomEntries = (const struct RoomEntryRom(*)[5])Port_ResolveRomData(0x083454a8u);
+            p_sTest2RoomEntries = (const struct RoomEntryRom(*)[5])Port_ResolveRomData(0x083455d4u);
+            p_sTest3RoomEntries = (const struct RoomEntryRom(*)[5])Port_ResolveRomData(0x08345700u);
+            p_sTestRoomEntries = (const struct RoomEntryRom(*)[1])Port_ResolveRomData(0x0834582cu);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sEnemyRoomData_Empty = (const u8(*)[3])Port_ResolveRomData(0x0833e034u);
+            p_sTilesetEntries = (const struct TilesetEntry(*)[79])Port_ResolveRomData(0x0833e038u);
+            p_sBrinstarDoors = (const struct Door(*)[99])Port_ResolveRomData(0x0833e664u);
+            p_sKraidDoors = (const struct Door(*)[107])Port_ResolveRomData(0x0833eb08u);
+            p_sNorfairDoors = (const struct Door(*)[133])Port_ResolveRomData(0x0833f00cu);
+            p_sRidleyDoors = (const struct Door(*)[77])Port_ResolveRomData(0x0833f648u);
+            p_sTourianDoors = (const struct Door(*)[44])Port_ResolveRomData(0x0833f9e4u);
+            p_sCrateriaDoors = (const struct Door(*)[53])Port_ResolveRomData(0x0833fbf4u);
+            p_sChozodiaDoors = (const struct Door(*)[246])Port_ResolveRomData(0x0833fe70u);
+            p_sTest123Doors = (const struct Door(*)[24])Port_ResolveRomData(0x083409f8u);
+            p_sTestDoors = (const struct Door(*)[2])Port_ResolveRomData(0x08340b18u);
+            p_sBrinstarRoomEntries = (const struct RoomEntryRom(*)[42])Port_ResolveRomData(0x08340b30u);
+            p_sKraidRoomEntries = (const struct RoomEntryRom(*)[42])Port_ResolveRomData(0x08341508u);
+            p_sNorfairRoomEntries = (const struct RoomEntryRom(*)[57])Port_ResolveRomData(0x08341ee0u);
+            p_sRidleyRoomEntries = (const struct RoomEntryRom(*)[33])Port_ResolveRomData(0x08342c3cu);
+            p_sTourianRoomEntries = (const struct RoomEntryRom(*)[20])Port_ResolveRomData(0x083433f8u);
+            p_sCrateriaRoomEntries = (const struct RoomEntryRom(*)[22])Port_ResolveRomData(0x083438a8u);
+            p_sChozodiaRoomEntries = (const struct RoomEntryRom(*)[99])Port_ResolveRomData(0x08343dd0u);
+            p_sTest1RoomEntries = (const struct RoomEntryRom(*)[5])Port_ResolveRomData(0x08345504u);
+            p_sTest2RoomEntries = (const struct RoomEntryRom(*)[5])Port_ResolveRomData(0x08345630u);
+            p_sTest3RoomEntries = (const struct RoomEntryRom(*)[5])Port_ResolveRomData(0x0834575cu);
+            p_sTestRoomEntries = (const struct RoomEntryRom(*)[1])Port_ResolveRomData(0x08345888u);
+            break;
+        }
         default:
             break;
     }

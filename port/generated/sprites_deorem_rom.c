@@ -49,6 +49,50 @@ void PortGen_deorem_Init(void) {
             p_sDeoremOam_Dying = (const struct FrameData(*)[5])Port_ResolveRomData(0x082d8738u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sDeoremSegmentXVelocity = (const s16(*)[33])Port_ResolveRomData(0x082d5ba0u);
+            p_sDeoremThornYVelocity = (const s16(*)[40])Port_ResolveRomData(0x082d5be2u);
+            p_sDeoremGfx = (const u32(*)[1569])Port_ResolveRomData(0x082d5c34u);
+            p_sDeoremPal = (const u16(*)[16*5])Port_ResolveRomData(0x082d74b8u);
+            p_sDeoremSegmentOam_Middle = (const struct FrameData(*)[5])Port_ResolveRomData(0x082d7894u);
+            p_sDeoremSegmentOam_Junction = (const struct FrameData(*)[5])Port_ResolveRomData(0x082d78bcu);
+            p_sDeoremSegmentOam_Tail = (const struct FrameData(*)[5])Port_ResolveRomData(0x082d78e4u);
+            p_sDeoremThornOam_Idle = (const struct FrameData(*)[2])Port_ResolveRomData(0x082d790cu);
+            p_sDeoremEyeOam_Idle = (const struct FrameData(*)[2])Port_ResolveRomData(0x082d791cu);
+            p_sDeoremEyeOam_Pulsing = (const struct FrameData(*)[6])Port_ResolveRomData(0x082d792cu);
+            p_sDeoremOam_ClosedSlow = (const struct FrameData(*)[5])Port_ResolveRomData(0x082d795cu);
+            p_sDeoremOam_Opening = (const struct FrameData(*)[5])Port_ResolveRomData(0x082d7984u);
+            p_sDeoremOam_OpenedSlow = (const struct FrameData(*)[5])Port_ResolveRomData(0x082d79acu);
+            p_sDeoremOam_Closing = (const struct FrameData(*)[5])Port_ResolveRomData(0x082d79d4u);
+            p_sDeoremOam_Warning = (const struct FrameData(*)[9])Port_ResolveRomData(0x082d79fcu);
+            p_sDeoremOam_GoingDown = (const struct FrameData(*)[3])Port_ResolveRomData(0x082d7a44u);
+            p_sDeoremOam_OpenedFast = (const struct FrameData(*)[5])Port_ResolveRomData(0x082d7a5cu);
+            p_sDeoremOam_ClosedFast = (const struct FrameData(*)[5])Port_ResolveRomData(0x082d7a84u);
+            p_sDeoremOam_Dying = (const struct FrameData(*)[5])Port_ResolveRomData(0x082d7aacu);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sDeoremSegmentXVelocity = (const s16(*)[33])Port_ResolveRomData(0x082d5bfcu);
+            p_sDeoremThornYVelocity = (const s16(*)[40])Port_ResolveRomData(0x082d5c3eu);
+            p_sDeoremGfx = (const u32(*)[1569])Port_ResolveRomData(0x082d5c90u);
+            p_sDeoremPal = (const u16(*)[16*5])Port_ResolveRomData(0x082d7514u);
+            p_sDeoremSegmentOam_Middle = (const struct FrameData(*)[5])Port_ResolveRomData(0x082d78f0u);
+            p_sDeoremSegmentOam_Junction = (const struct FrameData(*)[5])Port_ResolveRomData(0x082d7918u);
+            p_sDeoremSegmentOam_Tail = (const struct FrameData(*)[5])Port_ResolveRomData(0x082d7940u);
+            p_sDeoremThornOam_Idle = (const struct FrameData(*)[2])Port_ResolveRomData(0x082d7968u);
+            p_sDeoremEyeOam_Idle = (const struct FrameData(*)[2])Port_ResolveRomData(0x082d7978u);
+            p_sDeoremEyeOam_Pulsing = (const struct FrameData(*)[6])Port_ResolveRomData(0x082d7988u);
+            p_sDeoremOam_ClosedSlow = (const struct FrameData(*)[5])Port_ResolveRomData(0x082d79b8u);
+            p_sDeoremOam_Opening = (const struct FrameData(*)[5])Port_ResolveRomData(0x082d79e0u);
+            p_sDeoremOam_OpenedSlow = (const struct FrameData(*)[5])Port_ResolveRomData(0x082d7a08u);
+            p_sDeoremOam_Closing = (const struct FrameData(*)[5])Port_ResolveRomData(0x082d7a30u);
+            p_sDeoremOam_Warning = (const struct FrameData(*)[9])Port_ResolveRomData(0x082d7a58u);
+            p_sDeoremOam_GoingDown = (const struct FrameData(*)[3])Port_ResolveRomData(0x082d7aa0u);
+            p_sDeoremOam_OpenedFast = (const struct FrameData(*)[5])Port_ResolveRomData(0x082d7ab8u);
+            p_sDeoremOam_ClosedFast = (const struct FrameData(*)[5])Port_ResolveRomData(0x082d7ae0u);
+            p_sDeoremOam_Dying = (const struct FrameData(*)[5])Port_ResolveRomData(0x082d7b08u);
+            break;
+        }
         default:
             break;
     }

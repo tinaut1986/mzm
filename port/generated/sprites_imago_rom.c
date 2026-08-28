@@ -88,6 +88,68 @@ void PortGen_imago_Init(void) {
             p_sImagoEggOam_Standing = (const struct FrameData(*)[2])Port_ResolveRomData(0x08304ae8u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sImagoMultiSpriteData_Idle = (const struct MultiSpriteData(*)[2])Port_ResolveRomData(0x083019b0u);
+            p_sImagoMultiSpriteData_Growling_Unused = (const struct MultiSpriteData(*)[2])Port_ResolveRomData(0x083019c0u);
+            p_sImagoMultiSpriteData_ShootingNeedles = (const struct MultiSpriteData(*)[3])Port_ResolveRomData(0x083019d0u);
+            p_sImagoMultiSpriteData_RechargingNeedles = (const struct MultiSpriteData(*)[2])Port_ResolveRomData(0x083019e8u);
+            p_sImagoMultiSpriteData_Dying = (const struct MultiSpriteData(*)[2])Port_ResolveRomData(0x083019f8u);
+            p_sImagoDamagedStingerFallingYVelocity = (const s16(*)[10])Port_ResolveRomData(0x08301a08u);
+            p_sImagoAttackingXVelocity = (const s16(*)[49])Port_ResolveRomData(0x08301a1cu);
+            p_sImagoDynamicPaletteData = (const u8(*)[9][2])Port_ResolveRomData(0x08301a7eu);
+            p_sImagoGfx = (const u32(*)[1503])Port_ResolveRomData(0x08301a90u);
+            p_sImagoPal = (const u16(*)[96])Port_ResolveRomData(0x0830320cu);
+            p_sImagoPartOam_BodyIdle = (const struct FrameData(*)[8])Port_ResolveRomData(0x08303a84u);
+            p_sImagoPartOam_BodyGrowling = (const struct FrameData(*)[16])Port_ResolveRomData(0x08303ac4u);
+            p_sImagoOam_BrokenStinger = (const struct FrameData(*)[3])Port_ResolveRomData(0x08303b44u);
+            p_sImagoPartOam_LeftWingIdle = (const struct FrameData(*)[8])Port_ResolveRomData(0x08303b5cu);
+            p_sImagoPartOam_LeftWingShootingNeedles = (const struct FrameData(*)[6])Port_ResolveRomData(0x08303b9cu);
+            p_sImagoPartOam_LeftWingDying = (const struct FrameData(*)[7])Port_ResolveRomData(0x08303bccu);
+            p_sImagoPartOam_RightWingIdle = (const struct FrameData(*)[8])Port_ResolveRomData(0x08303c04u);
+            p_sImagoPartOam_RightWingShootingNeedles = (const struct FrameData(*)[6])Port_ResolveRomData(0x08303c44u);
+            p_sImagoPartOam_RightWingDying = (const struct FrameData(*)[5])Port_ResolveRomData(0x08303c74u);
+            p_sImagoPartOam_Core = (const struct FrameData(*)[9])Port_ResolveRomData(0x08303c9cu);
+            p_sImagoOam_Flying = (const struct FrameData(*)[9])Port_ResolveRomData(0x08303ce4u);
+            p_sImagoOam_ShootingNeedles = (const struct FrameData(*)[11])Port_ResolveRomData(0x08303d2cu);
+            p_sImagoOam_RechargingNeedles = (const struct FrameData(*)[4])Port_ResolveRomData(0x08303d84u);
+            p_sImagoDamagedStingerOam = (const struct FrameData(*)[2])Port_ResolveRomData(0x08303da4u);
+            p_sImagoNeedleOam = (const struct FrameData(*)[2])Port_ResolveRomData(0x08303db4u);
+            p_sImagoDamagedStingerOam_Unused = (const struct FrameData(*)[9])Port_ResolveRomData(0x08303dc4u);
+            p_sImagoEggOam_Breaking = (const struct FrameData(*)[10])Port_ResolveRomData(0x08303e0cu);
+            p_sImagoEggOam_Standing = (const struct FrameData(*)[2])Port_ResolveRomData(0x08303e5cu);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sImagoMultiSpriteData_Idle = (const struct MultiSpriteData(*)[2])Port_ResolveRomData(0x08301a0cu);
+            p_sImagoMultiSpriteData_Growling_Unused = (const struct MultiSpriteData(*)[2])Port_ResolveRomData(0x08301a1cu);
+            p_sImagoMultiSpriteData_ShootingNeedles = (const struct MultiSpriteData(*)[3])Port_ResolveRomData(0x08301a2cu);
+            p_sImagoMultiSpriteData_RechargingNeedles = (const struct MultiSpriteData(*)[2])Port_ResolveRomData(0x08301a44u);
+            p_sImagoMultiSpriteData_Dying = (const struct MultiSpriteData(*)[2])Port_ResolveRomData(0x08301a54u);
+            p_sImagoDamagedStingerFallingYVelocity = (const s16(*)[10])Port_ResolveRomData(0x08301a64u);
+            p_sImagoAttackingXVelocity = (const s16(*)[49])Port_ResolveRomData(0x08301a78u);
+            p_sImagoDynamicPaletteData = (const u8(*)[9][2])Port_ResolveRomData(0x08301adau);
+            p_sImagoGfx = (const u32(*)[1503])Port_ResolveRomData(0x08301aecu);
+            p_sImagoPal = (const u16(*)[96])Port_ResolveRomData(0x08303268u);
+            p_sImagoPartOam_BodyIdle = (const struct FrameData(*)[8])Port_ResolveRomData(0x08303ae0u);
+            p_sImagoPartOam_BodyGrowling = (const struct FrameData(*)[16])Port_ResolveRomData(0x08303b20u);
+            p_sImagoOam_BrokenStinger = (const struct FrameData(*)[3])Port_ResolveRomData(0x08303ba0u);
+            p_sImagoPartOam_LeftWingIdle = (const struct FrameData(*)[8])Port_ResolveRomData(0x08303bb8u);
+            p_sImagoPartOam_LeftWingShootingNeedles = (const struct FrameData(*)[6])Port_ResolveRomData(0x08303bf8u);
+            p_sImagoPartOam_LeftWingDying = (const struct FrameData(*)[7])Port_ResolveRomData(0x08303c28u);
+            p_sImagoPartOam_RightWingIdle = (const struct FrameData(*)[8])Port_ResolveRomData(0x08303c60u);
+            p_sImagoPartOam_RightWingShootingNeedles = (const struct FrameData(*)[6])Port_ResolveRomData(0x08303ca0u);
+            p_sImagoPartOam_RightWingDying = (const struct FrameData(*)[5])Port_ResolveRomData(0x08303cd0u);
+            p_sImagoPartOam_Core = (const struct FrameData(*)[9])Port_ResolveRomData(0x08303cf8u);
+            p_sImagoOam_Flying = (const struct FrameData(*)[9])Port_ResolveRomData(0x08303d40u);
+            p_sImagoOam_ShootingNeedles = (const struct FrameData(*)[11])Port_ResolveRomData(0x08303d88u);
+            p_sImagoOam_RechargingNeedles = (const struct FrameData(*)[4])Port_ResolveRomData(0x08303de0u);
+            p_sImagoDamagedStingerOam = (const struct FrameData(*)[2])Port_ResolveRomData(0x08303e00u);
+            p_sImagoNeedleOam = (const struct FrameData(*)[2])Port_ResolveRomData(0x08303e10u);
+            p_sImagoDamagedStingerOam_Unused = (const struct FrameData(*)[9])Port_ResolveRomData(0x08303e20u);
+            p_sImagoEggOam_Breaking = (const struct FrameData(*)[10])Port_ResolveRomData(0x08303e68u);
+            p_sImagoEggOam_Standing = (const struct FrameData(*)[2])Port_ResolveRomData(0x08303eb8u);
+            break;
+        }
         default:
             break;
     }

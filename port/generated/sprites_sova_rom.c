@@ -37,6 +37,38 @@ void PortGen_sova_Init(void) {
             p_sSovaOam_Falling = (const struct FrameData(*)[7])Port_ResolveRomData(0x082d09f4u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sSovaGfx = (const u32(*)[851])Port_ResolveRomData(0x082ceaa8u);
+            p_sSovaPal = (const u16(*)[3*16])Port_ResolveRomData(0x082cf7f4u);
+            p_sSovaOam_OnGround = (const struct FrameData(*)[7])Port_ResolveRomData(0x082cfb98u);
+            p_sSovaOam_WalkingOnLeftSlope = (const struct FrameData(*)[7])Port_ResolveRomData(0x082cfbd0u);
+            p_sSovaOam_WalkingOnRightSlope = (const struct FrameData(*)[7])Port_ResolveRomData(0x082cfc08u);
+            p_sSovaOam_WalkingOnLeft = (const struct FrameData(*)[7])Port_ResolveRomData(0x082cfc40u);
+            p_sSovaOam_WalkingOnRight = (const struct FrameData(*)[7])Port_ResolveRomData(0x082cfc78u);
+            p_sSovaOam_WalkingOnCeiling = (const struct FrameData(*)[7])Port_ResolveRomData(0x082cfcb0u);
+            p_sSovaOam_TurningCornerRight = (const struct FrameData(*)[4])Port_ResolveRomData(0x082cfce8u);
+            p_sSovaOam_TurningEdgeRight = (const struct FrameData(*)[4])Port_ResolveRomData(0x082cfd08u);
+            p_sSovaOam_TurningEdgeLeft = (const struct FrameData(*)[4])Port_ResolveRomData(0x082cfd28u);
+            p_sSovaOam_TurningCornerLeft = (const struct FrameData(*)[4])Port_ResolveRomData(0x082cfd48u);
+            p_sSovaOam_Falling = (const struct FrameData(*)[7])Port_ResolveRomData(0x082cfd68u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sSovaGfx = (const u32(*)[851])Port_ResolveRomData(0x082ceb04u);
+            p_sSovaPal = (const u16(*)[3*16])Port_ResolveRomData(0x082cf850u);
+            p_sSovaOam_OnGround = (const struct FrameData(*)[7])Port_ResolveRomData(0x082cfbf4u);
+            p_sSovaOam_WalkingOnLeftSlope = (const struct FrameData(*)[7])Port_ResolveRomData(0x082cfc2cu);
+            p_sSovaOam_WalkingOnRightSlope = (const struct FrameData(*)[7])Port_ResolveRomData(0x082cfc64u);
+            p_sSovaOam_WalkingOnLeft = (const struct FrameData(*)[7])Port_ResolveRomData(0x082cfc9cu);
+            p_sSovaOam_WalkingOnRight = (const struct FrameData(*)[7])Port_ResolveRomData(0x082cfcd4u);
+            p_sSovaOam_WalkingOnCeiling = (const struct FrameData(*)[7])Port_ResolveRomData(0x082cfd0cu);
+            p_sSovaOam_TurningCornerRight = (const struct FrameData(*)[4])Port_ResolveRomData(0x082cfd44u);
+            p_sSovaOam_TurningEdgeRight = (const struct FrameData(*)[4])Port_ResolveRomData(0x082cfd64u);
+            p_sSovaOam_TurningEdgeLeft = (const struct FrameData(*)[4])Port_ResolveRomData(0x082cfd84u);
+            p_sSovaOam_TurningCornerLeft = (const struct FrameData(*)[4])Port_ResolveRomData(0x082cfda4u);
+            p_sSovaOam_Falling = (const struct FrameData(*)[7])Port_ResolveRomData(0x082cfdc4u);
+            break;
+        }
         default:
             break;
     }

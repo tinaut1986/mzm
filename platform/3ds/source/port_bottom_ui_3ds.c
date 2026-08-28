@@ -111,6 +111,10 @@ static float sRemapScrollY = 0.0f;
  * GameMode is s16; GM_START_SOFT_RESET == 14. */
 extern int16_t gMainGameMode;
 static void TriggerGameRestart(void) {
+    /* Traced so mzm-debug.log can tell this apart from a controller-combo
+     * reset -- see the RESET TRACE block in Platform3DS_PollKeysIntoGba. */
+    extern void Port_DebugLog(const char* msg);
+    Port_DebugLog("RESET TRACE: bottom-screen RESTART button");
     gMainGameMode = 14; /* GM_START_SOFT_RESET */
 }
 

@@ -46,6 +46,42 @@ void PortGen_block_data_Init(void) {
             p_sMotherBrainGlassBreakingBaseTilemapValues = (const u16(*)[5])Port_ResolveRomData(0x08346982u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sNumberOfTanksPerArea = (const struct TankList(*)[MAX_AMOUNT_OF_AREAS])Port_ResolveRomData(0x083459a0u);
+            p_sStartingHealthAmmo = (const struct TankList*)Port_ResolveRomData(0x083459c0u);
+            p_sTankIncreaseAmount = (const struct TankList(*)[DIFF_COUNT])Port_ResolveRomData(0x083459c4u);
+            p_sClipdataAffectingActionDamageTypes = (const CaaDamageType(*)[CAA_COUNT])Port_ResolveRomData(0x083459d0u);
+            p_sBlockBehaviors = (const struct BlockBehavior(*)[BEHAVIOR_BLOCK_AMOUNT])Port_ResolveRomData(0x083459f0u);
+            p_sBlockWeaknesses = (const CaaDamageType(*)[BLOCK_TYPE_COUNT])Port_ResolveRomData(0x08345ab0u);
+            p_sReformingBlocksTilemapValue = (const ClipdataTilemap(*)[BLOCK_TYPE_COUNT])Port_ResolveRomData(0x08345adcu);
+            p_sBrokenBlocksTimers = (const u8(*)[BLOCK_TYPE_COUNT][13])Port_ResolveRomData(0x08345b08u);
+            p_sBombChainReverseData = (const struct BombChainReverseData(*)[8])Port_ResolveRomData(0x08345c28u);
+            p_sTankBehaviors = (const struct TankBehavior(*)[BEHAVIOR_TANK_AMOUNT])Port_ResolveRomData(0x08345c48u);
+            p_sHatchBehaviors = (const u16(*)[HATCH_COUNT][2])Port_ResolveRomData(0x08345ca8u);
+            p_sBldalphaValuesForClipdata = (const u16(*)[BEHAVIOR_BLDALPHA_AMOUNT])Port_ResolveRomData(0x08345cc8u);
+            p_sSubBombChainPositionOffset = (const s8(*)[4][4])Port_ResolveRomData(0x08345cdeu);
+            p_sBlockTouchOffsets = (const u8(*)[4][2])Port_ResolveRomData(0x08345ceeu);
+            p_sMotherBrainGlassBreakingBaseTilemapValues = (const u16(*)[5])Port_ResolveRomData(0x08345cf6u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sNumberOfTanksPerArea = (const struct TankList(*)[MAX_AMOUNT_OF_AREAS])Port_ResolveRomData(0x083459fcu);
+            p_sStartingHealthAmmo = (const struct TankList*)Port_ResolveRomData(0x08345a1cu);
+            p_sTankIncreaseAmount = (const struct TankList(*)[DIFF_COUNT])Port_ResolveRomData(0x08345a20u);
+            p_sClipdataAffectingActionDamageTypes = (const CaaDamageType(*)[CAA_COUNT])Port_ResolveRomData(0x08345a2cu);
+            p_sBlockBehaviors = (const struct BlockBehavior(*)[BEHAVIOR_BLOCK_AMOUNT])Port_ResolveRomData(0x08345a4cu);
+            p_sBlockWeaknesses = (const CaaDamageType(*)[BLOCK_TYPE_COUNT])Port_ResolveRomData(0x08345b0cu);
+            p_sReformingBlocksTilemapValue = (const ClipdataTilemap(*)[BLOCK_TYPE_COUNT])Port_ResolveRomData(0x08345b38u);
+            p_sBrokenBlocksTimers = (const u8(*)[BLOCK_TYPE_COUNT][13])Port_ResolveRomData(0x08345b64u);
+            p_sBombChainReverseData = (const struct BombChainReverseData(*)[8])Port_ResolveRomData(0x08345c84u);
+            p_sTankBehaviors = (const struct TankBehavior(*)[BEHAVIOR_TANK_AMOUNT])Port_ResolveRomData(0x08345ca4u);
+            p_sHatchBehaviors = (const u16(*)[HATCH_COUNT][2])Port_ResolveRomData(0x08345d04u);
+            p_sBldalphaValuesForClipdata = (const u16(*)[BEHAVIOR_BLDALPHA_AMOUNT])Port_ResolveRomData(0x08345d24u);
+            p_sSubBombChainPositionOffset = (const s8(*)[4][4])Port_ResolveRomData(0x08345d3au);
+            p_sBlockTouchOffsets = (const u8(*)[4][2])Port_ResolveRomData(0x08345d4au);
+            p_sMotherBrainGlassBreakingBaseTilemapValues = (const u16(*)[5])Port_ResolveRomData(0x08345d52u);
+            break;
+        }
         default:
             break;
     }

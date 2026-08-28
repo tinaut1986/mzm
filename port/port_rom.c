@@ -1,6 +1,8 @@
 #include "port_rom.h"
 #include "generated/port_all_rom_init.h"
 #include "port_constructor_init.h"
+#include "structs/game_state.h"
+#include "constants/game_state.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -33,6 +35,47 @@ static PortRomRegion DetectRegion(const u8* data, u32 size) {
         return PORT_ROM_REGION_JP;
     }
     return PORT_ROM_REGION_UNKNOWN;
+}
+
+/*
+ * Force gLanguage into a value the currently-loaded ROM's region actually
+ * has. mzm only region-clamps gLanguage on new-game init (unk_7584c, via
+ * #if REGION_* / INVALID_EU_LANGUAGE); a save shared between region builds
+ * can therefore hand SramRead_All() a perfectly valid gLanguage that is
+ * wrong for this ROM (e.g. LANGUAGE_ENGLISH loaded on a JP ROM), and the
+ * intro that plays right after boot would render with that stale language
+ * until some later screen re-clamps it. Returns 1 if it changed gLanguage.
+ *
+ * Valid sets (see MAKE_ENUM(Language) in constants/game_state.h):
+ *   JP : JAPANESE, HIRAGANA          default JAPANESE
+ *   US : ENGLISH                     default ENGLISH
+ *   EU : ENGLISH..SPANISH            default ENGLISH
+ */
+int Port_ClampLanguageToRegion(void) {
+    s8 lang = (s8)gLanguage;
+    s8 want = lang;
+
+    switch (gRomRegion) {
+        case PORT_ROM_REGION_JP:
+            if (lang != LANGUAGE_JAPANESE && lang != LANGUAGE_HIRAGANA)
+                want = LANGUAGE_JAPANESE;
+            break;
+        case PORT_ROM_REGION_US:
+            if (lang != LANGUAGE_ENGLISH)
+                want = LANGUAGE_ENGLISH;
+            break;
+        case PORT_ROM_REGION_EU:
+            if (lang < LANGUAGE_ENGLISH || lang >= LANGUAGE_COUNT)
+                want = LANGUAGE_ENGLISH;
+            break;
+        default:
+            return 0;
+    }
+
+    if (want == lang)
+        return 0;
+    gLanguage = (Language)want;
+    return 1;
 }
 
 const char* Port_RomRegionLabel(PortRomRegion region) {

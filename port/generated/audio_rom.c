@@ -18,6 +18,18 @@ void PortGen_audio_Init(void) {
             p_sSoundDataEntries = (const struct SoundEntry(*)[SOUND_COUNT])Port_ResolveRomData(0x0808ff4cu);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sDma1ControlPointer = (void* const*)Port_ResolveRomData(0x0808ceecu);
+            p_sDma1ControlValue = (const u32*)Port_ResolveRomData(0x0808cef0u);
+            p_sSoundDataEntries = (const struct SoundEntry(*)[SOUND_COUNT])Port_ResolveRomData(0x0808f2c0u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sDma1ControlPointer = (void* const*)Port_ResolveRomData(0x0808cf48u);
+            p_sDma1ControlValue = (const u32*)Port_ResolveRomData(0x0808cf4cu);
+            p_sSoundDataEntries = (const struct SoundEntry(*)[SOUND_COUNT])Port_ResolveRomData(0x0808f31cu);
+            break;
+        }
         default:
             break;
     }

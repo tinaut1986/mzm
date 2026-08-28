@@ -22,6 +22,24 @@ void PortGen_default_background_data_Init(void) {
             p_sTest_Bg0_0 = (const u8(*)[504])Port_ResolveRomData(0x08365dc4u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sTileset_0_Bg_Gfx = (const u32(*)[949])Port_ResolveRomData(0x08363cf8u);
+            p_sTest_Bg3 = (const u8(*)[896])Port_ResolveRomData(0x08364bccu);
+            p_sBackground_Empty = (const u8(*)[52])Port_ResolveRomData(0x08364f4cu);
+            p_sDoorTransitionTilemap = (const u8(*)[184])Port_ResolveRomData(0x08364f80u);
+            p_sBg3_Empty = (const u8(*)[256])Port_ResolveRomData(0x08365038u);
+            p_sTest_Bg0_0 = (const u8(*)[504])Port_ResolveRomData(0x08365138u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sTileset_0_Bg_Gfx = (const u32(*)[949])Port_ResolveRomData(0x08363d54u);
+            p_sTest_Bg3 = (const u8(*)[896])Port_ResolveRomData(0x08364c28u);
+            p_sBackground_Empty = (const u8(*)[52])Port_ResolveRomData(0x08364fa8u);
+            p_sDoorTransitionTilemap = (const u8(*)[184])Port_ResolveRomData(0x08364fdcu);
+            p_sBg3_Empty = (const u8(*)[256])Port_ResolveRomData(0x08365094u);
+            p_sTest_Bg0_0 = (const u8(*)[504])Port_ResolveRomData(0x08365194u);
+            break;
+        }
         default:
             break;
     }

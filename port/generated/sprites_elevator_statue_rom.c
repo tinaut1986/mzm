@@ -33,6 +33,34 @@ void PortGen_elevator_statue_Init(void) {
             p_sElevatorStatueDebrisOam_Dust = (const struct FrameData(*)[20])Port_ResolveRomData(0x08313784u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sElevatorStatuesGfx = (const u32(*)[1122])Port_ResolveRomData(0x0831059cu);
+            p_sElevatorStatuesPal = (const u16(*)[64])Port_ResolveRomData(0x08311724u);
+            p_sKraidElevatorStatueOam_Idle = (const struct FrameData(*)[2])Port_ResolveRomData(0x08312928u);
+            p_sKraidElevatorStatueOam_Falling = (const struct FrameData(*)[13])Port_ResolveRomData(0x08312938u);
+            p_sElevatorStatueDebrisOam_Kraid = (const struct FrameData(*)[12])Port_ResolveRomData(0x083129a0u);
+            p_sKraidElevatorStatueOam_Fallen = (const struct FrameData(*)[2])Port_ResolveRomData(0x08312a00u);
+            p_sRidleyElevatorStatueOam_Idle = (const struct FrameData(*)[2])Port_ResolveRomData(0x08312a10u);
+            p_sRidleyElevatorStatueOam_Falling = (const struct FrameData(*)[13])Port_ResolveRomData(0x08312a20u);
+            p_sElevatorStatueDebrisOam_Ridley = (const struct FrameData(*)[12])Port_ResolveRomData(0x08312a88u);
+            p_sRidleyElevatorStatueOam_Fallen = (const struct FrameData(*)[2])Port_ResolveRomData(0x08312ae8u);
+            p_sElevatorStatueDebrisOam_Dust = (const struct FrameData(*)[20])Port_ResolveRomData(0x08312af8u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sElevatorStatuesGfx = (const u32(*)[1122])Port_ResolveRomData(0x083105f8u);
+            p_sElevatorStatuesPal = (const u16(*)[64])Port_ResolveRomData(0x08311780u);
+            p_sKraidElevatorStatueOam_Idle = (const struct FrameData(*)[2])Port_ResolveRomData(0x08312984u);
+            p_sKraidElevatorStatueOam_Falling = (const struct FrameData(*)[13])Port_ResolveRomData(0x08312994u);
+            p_sElevatorStatueDebrisOam_Kraid = (const struct FrameData(*)[12])Port_ResolveRomData(0x083129fcu);
+            p_sKraidElevatorStatueOam_Fallen = (const struct FrameData(*)[2])Port_ResolveRomData(0x08312a5cu);
+            p_sRidleyElevatorStatueOam_Idle = (const struct FrameData(*)[2])Port_ResolveRomData(0x08312a6cu);
+            p_sRidleyElevatorStatueOam_Falling = (const struct FrameData(*)[13])Port_ResolveRomData(0x08312a7cu);
+            p_sElevatorStatueDebrisOam_Ridley = (const struct FrameData(*)[12])Port_ResolveRomData(0x08312ae4u);
+            p_sRidleyElevatorStatueOam_Fallen = (const struct FrameData(*)[2])Port_ResolveRomData(0x08312b44u);
+            p_sElevatorStatueDebrisOam_Dust = (const struct FrameData(*)[20])Port_ResolveRomData(0x08312b54u);
+            break;
+        }
         default:
             break;
     }

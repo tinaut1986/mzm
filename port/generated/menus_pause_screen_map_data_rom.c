@@ -23,6 +23,22 @@ void PortGen_pause_screen_map_data_Init(void) {
             p_sMinimapTilesPal = (const u16(*)[5*16])Port_ResolveRomData(0x08412194u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sMinimapTilesGfx = (const u8(*)[5120])Port_ResolveRomData(0x0840e0c4u);
+            p_sPauseScreen_40f4c4 = (const u32(*)[1792])Port_ResolveRomData(0x0840f4c4u);
+            p_sMinimapTilesAreaNamesEnglishGfx = (const u32(*)[79])Port_ResolveRomData(0x084110c4u);
+            p_sMinimapTilesAreaNamesHiraganaGfx = (const u32(*)[88])Port_ResolveRomData(0x08411200u);
+            p_sMinimapTilesPal = (const u16(*)[5*16])Port_ResolveRomData(0x08411360u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sMinimapTilesGfx = (const u8(*)[5120])Port_ResolveRomData(0x0840e120u);
+            p_sPauseScreen_40f4c4 = (const u32(*)[1792])Port_ResolveRomData(0x0840f520u);
+            p_sMinimapTilesAreaNamesEnglishGfx = (const u32(*)[79])Port_ResolveRomData(0x08411120u);
+            p_sMinimapTilesAreaNamesHiraganaGfx = (const u32(*)[88])Port_ResolveRomData(0x0841125cu);
+            p_sMinimapTilesPal = (const u16(*)[5*16])Port_ResolveRomData(0x084113bcu);
+            break;
+        }
         default:
             break;
     }

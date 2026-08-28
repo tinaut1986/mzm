@@ -594,7 +594,7 @@ static void RuinsTestInit(void)
     gSubSpriteData1.health = 0;
     gSubSpriteData1.work1 = 0;
 
-#ifdef MZM_3DS
+#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
     {
         char msg[160];
         __builtin_snprintf(msg, sizeof(msg),
@@ -606,7 +606,7 @@ static void RuinsTestInit(void)
             (unsigned)gCurrentSprite.xPosition);
         Port_DebugLog(msg);
     }
-#endif
+#endif // MZM_3DS && PORT_DEBUG_TOOLS
 
     RuinsTestCalculateDelay(CONVERT_SECONDS(2.f));
 
@@ -1584,7 +1584,7 @@ static void RuinsTestGhostSymbolDelayBeforePlacingAtEndOfFight(void)
  */
 void RuinsTest(void)
 {
-#ifdef MZM_3DS
+#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
     {
         static u16 sLastPose = 0xFFFF;
         if (gCurrentSprite.pose != sLastPose)
@@ -1596,7 +1596,7 @@ void RuinsTest(void)
             sLastPose = gCurrentSprite.pose;
         }
     }
-#endif
+#endif // MZM_3DS && PORT_DEBUG_TOOLS
     switch (gCurrentSprite.pose)
     {
         case SPRITE_POSE_UNINITIALIZED:

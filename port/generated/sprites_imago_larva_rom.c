@@ -102,6 +102,76 @@ void PortGen_imago_larva_Init(void) {
             p_sImagoLarvaPartOam_ShellTakingDamage = (const struct FrameData(*)[5])Port_ResolveRomData(0x082de484u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sImagoLarvaMultiSpriteData_Attacking = (const struct MultiSpriteData(*)[12])Port_ResolveRomData(0x082db0a0u);
+            p_sImagoLarvaMultiSpriteData_Idle = (const struct MultiSpriteData(*)[5])Port_ResolveRomData(0x082db100u);
+            p_sImagoLarvaMultiSpriteData_Retreating = (const struct MultiSpriteData(*)[12])Port_ResolveRomData(0x082db128u);
+            p_sImagoLarvaMultiSpriteData_Dying = (const struct MultiSpriteData(*)[9])Port_ResolveRomData(0x082db188u);
+            p_sImagoLarvaMultiSpriteData_Warning = (const struct MultiSpriteData(*)[10])Port_ResolveRomData(0x082db1d0u);
+            p_sImagoLarvaMultiSpriteData_TakingDamage = (const struct MultiSpriteData(*)[5])Port_ResolveRomData(0x082db220u);
+            p_sImagoLarvaPaletteRows = (const u8(*)[4])Port_ResolveRomData(0x082db248u);
+            p_sImagoLarvaGfx = (const u32(*)[1195])Port_ResolveRomData(0x082db24cu);
+            p_sImagoLarvaPal = (const u16(*)[80])Port_ResolveRomData(0x082dc4f8u);
+            p_sImagoLarvaPartOam_ShellAttacking = (const struct FrameData(*)[12])Port_ResolveRomData(0x082dd428u);
+            p_sImagoLarvaPartOam_ShellIdle = (const struct FrameData(*)[5])Port_ResolveRomData(0x082dd488u);
+            p_sImagoLarvaPartOam_ShellRetreating = (const struct FrameData(*)[12])Port_ResolveRomData(0x082dd4b0u);
+            p_sImagoLarvaPartOam_ShellDying = (const struct FrameData(*)[9])Port_ResolveRomData(0x082dd510u);
+            p_sImagoLarvaPartOam_ClawsAttacking = (const struct FrameData(*)[5])Port_ResolveRomData(0x082dd558u);
+            p_sImagoLarvaPartOam_ClawsIdle = (const struct FrameData(*)[5])Port_ResolveRomData(0x082dd580u);
+            p_sImagoLarvaPartOam_ClawsRetreating = (const struct FrameData(*)[5])Port_ResolveRomData(0x082dd5a8u);
+            p_sImagoLarvaPartOam_ClawsTakingDamage = (const struct FrameData(*)[4])Port_ResolveRomData(0x082dd5d0u);
+            p_sImagoLarvaPartOam_LeftDotAppearing = (const struct FrameData(*)[4])Port_ResolveRomData(0x082dd5f0u);
+            p_sImagoLarvaPartOam_MiddleDotAppearing = (const struct FrameData(*)[4])Port_ResolveRomData(0x082dd610u);
+            p_sImagoLarvaPartOam_RightDotAppearing = (const struct FrameData(*)[4])Port_ResolveRomData(0x082dd630u);
+            p_sImagoLarvaPartOam_LeftDotVisible = (const struct FrameData(*)[2])Port_ResolveRomData(0x082dd650u);
+            p_sImagoLarvaPartOam_MiddleDotVisible = (const struct FrameData(*)[2])Port_ResolveRomData(0x082dd660u);
+            p_sImagoLarvaPartOam_RightDotVisible = (const struct FrameData(*)[2])Port_ResolveRomData(0x082dd670u);
+            p_sImagoLarvaPartOam_LeftDotDisappearing = (const struct FrameData(*)[4])Port_ResolveRomData(0x082dd680u);
+            p_sImagoLarvaPartOam_MiddleDotDisappearing = (const struct FrameData(*)[4])Port_ResolveRomData(0x082dd6a0u);
+            p_sImagoLarvaPartOam_RightDotDisappearing = (const struct FrameData(*)[4])Port_ResolveRomData(0x082dd6c0u);
+            p_sImagoLarvaPartOam_ShellWarning = (const struct FrameData(*)[10])Port_ResolveRomData(0x082dd6e0u);
+            p_sImagoLarvaOam_Idle = (const struct FrameData(*)[9])Port_ResolveRomData(0x082dd730u);
+            p_sImagoLarvaPartOam_ClawsWarningFirstPart = (const struct FrameData(*)[3])Port_ResolveRomData(0x082dd778u);
+            p_sImagoLarvaPartOam_ClawsWarningSecondPart = (const struct FrameData(*)[3])Port_ResolveRomData(0x082dd790u);
+            p_sImagoLarvaOam_Warning = (const struct FrameData(*)[10])Port_ResolveRomData(0x082dd7a8u);
+            p_sImagoLarvaPartOam_ShellTakingDamage = (const struct FrameData(*)[5])Port_ResolveRomData(0x082dd7f8u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sImagoLarvaMultiSpriteData_Attacking = (const struct MultiSpriteData(*)[12])Port_ResolveRomData(0x082db0fcu);
+            p_sImagoLarvaMultiSpriteData_Idle = (const struct MultiSpriteData(*)[5])Port_ResolveRomData(0x082db15cu);
+            p_sImagoLarvaMultiSpriteData_Retreating = (const struct MultiSpriteData(*)[12])Port_ResolveRomData(0x082db184u);
+            p_sImagoLarvaMultiSpriteData_Dying = (const struct MultiSpriteData(*)[9])Port_ResolveRomData(0x082db1e4u);
+            p_sImagoLarvaMultiSpriteData_Warning = (const struct MultiSpriteData(*)[10])Port_ResolveRomData(0x082db22cu);
+            p_sImagoLarvaMultiSpriteData_TakingDamage = (const struct MultiSpriteData(*)[5])Port_ResolveRomData(0x082db27cu);
+            p_sImagoLarvaPaletteRows = (const u8(*)[4])Port_ResolveRomData(0x082db2a4u);
+            p_sImagoLarvaGfx = (const u32(*)[1195])Port_ResolveRomData(0x082db2a8u);
+            p_sImagoLarvaPal = (const u16(*)[80])Port_ResolveRomData(0x082dc554u);
+            p_sImagoLarvaPartOam_ShellAttacking = (const struct FrameData(*)[12])Port_ResolveRomData(0x082dd484u);
+            p_sImagoLarvaPartOam_ShellIdle = (const struct FrameData(*)[5])Port_ResolveRomData(0x082dd4e4u);
+            p_sImagoLarvaPartOam_ShellRetreating = (const struct FrameData(*)[12])Port_ResolveRomData(0x082dd50cu);
+            p_sImagoLarvaPartOam_ShellDying = (const struct FrameData(*)[9])Port_ResolveRomData(0x082dd56cu);
+            p_sImagoLarvaPartOam_ClawsAttacking = (const struct FrameData(*)[5])Port_ResolveRomData(0x082dd5b4u);
+            p_sImagoLarvaPartOam_ClawsIdle = (const struct FrameData(*)[5])Port_ResolveRomData(0x082dd5dcu);
+            p_sImagoLarvaPartOam_ClawsRetreating = (const struct FrameData(*)[5])Port_ResolveRomData(0x082dd604u);
+            p_sImagoLarvaPartOam_ClawsTakingDamage = (const struct FrameData(*)[4])Port_ResolveRomData(0x082dd62cu);
+            p_sImagoLarvaPartOam_LeftDotAppearing = (const struct FrameData(*)[4])Port_ResolveRomData(0x082dd64cu);
+            p_sImagoLarvaPartOam_MiddleDotAppearing = (const struct FrameData(*)[4])Port_ResolveRomData(0x082dd66cu);
+            p_sImagoLarvaPartOam_RightDotAppearing = (const struct FrameData(*)[4])Port_ResolveRomData(0x082dd68cu);
+            p_sImagoLarvaPartOam_LeftDotVisible = (const struct FrameData(*)[2])Port_ResolveRomData(0x082dd6acu);
+            p_sImagoLarvaPartOam_MiddleDotVisible = (const struct FrameData(*)[2])Port_ResolveRomData(0x082dd6bcu);
+            p_sImagoLarvaPartOam_RightDotVisible = (const struct FrameData(*)[2])Port_ResolveRomData(0x082dd6ccu);
+            p_sImagoLarvaPartOam_LeftDotDisappearing = (const struct FrameData(*)[4])Port_ResolveRomData(0x082dd6dcu);
+            p_sImagoLarvaPartOam_MiddleDotDisappearing = (const struct FrameData(*)[4])Port_ResolveRomData(0x082dd6fcu);
+            p_sImagoLarvaPartOam_RightDotDisappearing = (const struct FrameData(*)[4])Port_ResolveRomData(0x082dd71cu);
+            p_sImagoLarvaPartOam_ShellWarning = (const struct FrameData(*)[10])Port_ResolveRomData(0x082dd73cu);
+            p_sImagoLarvaOam_Idle = (const struct FrameData(*)[9])Port_ResolveRomData(0x082dd78cu);
+            p_sImagoLarvaPartOam_ClawsWarningFirstPart = (const struct FrameData(*)[3])Port_ResolveRomData(0x082dd7d4u);
+            p_sImagoLarvaPartOam_ClawsWarningSecondPart = (const struct FrameData(*)[3])Port_ResolveRomData(0x082dd7ecu);
+            p_sImagoLarvaOam_Warning = (const struct FrameData(*)[10])Port_ResolveRomData(0x082dd804u);
+            p_sImagoLarvaPartOam_ShellTakingDamage = (const struct FrameData(*)[5])Port_ResolveRomData(0x082dd854u);
+            break;
+        }
         default:
             break;
     }

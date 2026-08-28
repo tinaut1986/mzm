@@ -15,12 +15,10 @@
 
 __attribute__((weak)) const u16(*p_sEndingImageTextPal)[14*16];
 __attribute__((weak)) const u16(*p_sEndingImageOam_NewRecordEnglish)[OAM_DATA_SIZE(6)];
-#if (defined(REGION_EU))
 __attribute__((weak)) const u16(*p_sEndingImageOam_NewRecordFrench)[OAM_DATA_SIZE(4)];
 __attribute__((weak)) const u16(*p_sEndingImageOam_NewRecordItalian)[OAM_DATA_SIZE(6)];
 __attribute__((weak)) const u16(*p_sEndingImageOam_NewRecordSpanish)[OAM_DATA_SIZE(6)];
 __attribute__((weak)) const u16(*p_sEndingImageOam_NewRecordGerman)[OAM_DATA_SIZE(6)];
-#endif
 __attribute__((weak)) const u16(*p_sCreditsCharactersPal)[3*16];
 __attribute__((weak)) const u16(*p_sCreditsChozoWallPal)[15*16];
 __attribute__((weak)) const u16(*p_sEndingPosingPal)[13*16];
@@ -33,7 +31,6 @@ __attribute__((weak)) const struct EndingImageOam(*p_sEndingImageOam_FullLines_E
 __attribute__((weak)) const struct EndingImageOam(*p_sEndingImageOam_ClearTime_English)[9];
 __attribute__((weak)) const struct EndingImageOam(*p_sEndingImageOam_YourRate_English)[11];
 __attribute__((weak)) const struct EndingImageOam(*p_sEndingImageOam_Collecting_English)[17];
-#if (defined(REGION_EU))
 __attribute__((weak)) const struct EndingImageOam(*p_sEndingImageOam_FullLines_German)[ENDING_IMAGE_LINE_COUNT];
 __attribute__((weak)) const struct EndingImageOam(*p_sEndingImageOam_ClearTime_German)[13];
 __attribute__((weak)) const struct EndingImageOam(*p_sEndingImageOam_Collecting_German)[14];
@@ -47,7 +44,6 @@ __attribute__((weak)) const struct EndingImageOam(*p_sEndingImageOam_Collecting_
 __attribute__((weak)) const struct EndingImageOam(*p_sEndingImageOam_FullLines_Spanish)[ENDING_IMAGE_LINE_COUNT];
 __attribute__((weak)) const struct EndingImageOam(*p_sEndingImageOam_ClearTime_Spanish)[15];
 __attribute__((weak)) const struct EndingImageOam(*p_sEndingImageOam_Collecting_Spanish)[19];
-#endif
 __attribute__((weak)) const struct EndingImageOam(*p_sEndingImageOam_FullLines_Hiragana)[ENDING_IMAGE_LINE_COUNT];
 __attribute__((weak)) const struct EndingImageOam(*p_sEndingImageOam_ClearTime_Hiragana)[6];
 __attribute__((weak)) const struct EndingImageOam(*p_sEndingImageOam_Collecting_Hiragana)[11];
@@ -56,39 +52,25 @@ __attribute__((weak)) const u32* const(*p_sEndingImagesBottomGfxPointers)[ENDING
 __attribute__((weak)) const u32* const(*p_sEndingImagesTopTileTablePointers)[ENDING_IMAGE_COUNT];
 __attribute__((weak)) const u32* const(*p_sEndingImagesHalfTileTablePointers)[ENDING_IMAGE_COUNT];
 __attribute__((weak)) const u16* const(*p_sEndingImagesPalPointers)[ENDING_IMAGE_COUNT];
-#if (defined(REGION_EU))
-__attribute__((weak)) const struct CreditsEntry(*p_sCredits)[308];
-#endif
-#if ((defined(REGION_JP)) && !((defined(REGION_EU))))
-__attribute__((weak)) const struct CreditsEntry(*p_sCredits)[245];
-#endif
-#if (!((defined(REGION_EU)) || (defined(REGION_JP))))
-__attribute__((weak)) const struct CreditsEntry(*p_sCredits)[240];
-#endif
+__attribute__((weak)) const struct CreditsEntry*p_sCredits;
 __attribute__((weak)) const u16* const(*p_sEndingWhitePalPointers)[4];
 __attribute__((weak)) const u8(*p_sEndingImage_54e2dc)[8];
 __attribute__((weak)) const u8(*p_sEndingImageNewRecordPalettes)[12];
-#if (defined(REGION_EU))
 __attribute__((weak)) const u16 * const(*p_sEndingImageOamPointers_NewRecord)[LANGUAGE_COUNT];
-#endif
 __attribute__((weak)) const u32*p_sCreditsCharactersGfx;
 __attribute__((weak)) const u32(*p_sEndingImageTextEnglishGfx)[803];
 __attribute__((weak)) const u32(*p_sEndingImageTextHiraganaGfx)[511];
-#if (defined(REGION_EU))
 __attribute__((weak)) const u32(*p_sEndingImageTextFrenchGfx)[759];
 __attribute__((weak)) const u32(*p_sEndingImageTextGermanGfx)[726];
 __attribute__((weak)) const u32(*p_sEndingImageTextItalianGfx)[883];
 __attribute__((weak)) const u32(*p_sEndingImageTextSpanishGfx)[773];
-#endif
 __attribute__((weak)) const u8(*p_sEndingImageNumbersGfx_Upper)[10*64];
 __attribute__((weak)) const u8(*p_sEndingImageNumbersGfx_Lower)[10*64];
 __attribute__((weak)) const u32(*p_sEndingImageNumbersMiscEnglishGfx)[218];
-#if (defined(REGION_EU))
 __attribute__((weak)) const u32(*p_sEndingImageNumbersMiscGermanGfx)[209];
 __attribute__((weak)) const u32(*p_sEndingImageNumbersMiscFrenchGfx)[217];
 __attribute__((weak)) const u32(*p_sEndingImageNumbersMiscItalianGfx)[208];
 __attribute__((weak)) const u32(*p_sEndingImageNumbersMiscSpanishGfx)[225];
-#endif
 __attribute__((weak)) const u32(*p_sEndingSamusPosingSpaceBackgroundGfx)[2938];
 __attribute__((weak)) const u32(*p_sEndingSamusPosingSpaceBackgroundTileTable)[412];
 __attribute__((weak)) const u32(*p_sEndingLightGfx)[743];
@@ -136,7 +118,6 @@ void PortGen_ending_and_gallery_data_Init(void) {
             p_sEndingImageOam_ClearTime_English = (const struct EndingImageOam(*)[9])Port_ResolveRomData(0x085598a8u);
             p_sEndingImageOam_YourRate_English = (const struct EndingImageOam(*)[11])Port_ResolveRomData(0x08559914u);
             p_sEndingImageOam_Collecting_English = (const struct EndingImageOam(*)[17])Port_ResolveRomData(0x08559998u);
-#if (defined(REGION_EU))
             p_sEndingImageOam_FullLines_German = (const struct EndingImageOam(*)[ENDING_IMAGE_LINE_COUNT])Port_ResolveRomData(0x08559a64u);
             p_sEndingImageOam_ClearTime_German = (const struct EndingImageOam(*)[13])Port_ResolveRomData(0x08559aacu);
             p_sEndingImageOam_Collecting_German = (const struct EndingImageOam(*)[14])Port_ResolveRomData(0x08559b48u);
@@ -150,7 +131,6 @@ void PortGen_ending_and_gallery_data_Init(void) {
             p_sEndingImageOam_FullLines_Spanish = (const struct EndingImageOam(*)[ENDING_IMAGE_LINE_COUNT])Port_ResolveRomData(0x0855a058u);
             p_sEndingImageOam_ClearTime_Spanish = (const struct EndingImageOam(*)[15])Port_ResolveRomData(0x0855a0a0u);
             p_sEndingImageOam_Collecting_Spanish = (const struct EndingImageOam(*)[19])Port_ResolveRomData(0x0855a154u);
-#endif
             p_sEndingImageOam_FullLines_Hiragana = (const struct EndingImageOam(*)[ENDING_IMAGE_LINE_COUNT])Port_ResolveRomData(0x0855a238u);
             p_sEndingImageOam_ClearTime_Hiragana = (const struct EndingImageOam(*)[6])Port_ResolveRomData(0x0855a280u);
             p_sEndingImageOam_Collecting_Hiragana = (const struct EndingImageOam(*)[11])Port_ResolveRomData(0x0855a2c8u);
@@ -159,39 +139,25 @@ void PortGen_ending_and_gallery_data_Init(void) {
             p_sEndingImagesTopTileTablePointers = (const u32* const(*)[ENDING_IMAGE_COUNT])Port_ResolveRomData(0x0855a38cu);
             p_sEndingImagesHalfTileTablePointers = (const u32* const(*)[ENDING_IMAGE_COUNT])Port_ResolveRomData(0x0855a3acu);
             p_sEndingImagesPalPointers = (const u16* const(*)[ENDING_IMAGE_COUNT])Port_ResolveRomData(0x0855a3ccu);
-#if (defined(REGION_EU))
-            p_sCredits = (const struct CreditsEntry(*)[308])Port_ResolveRomData(0x0855a3ecu);
-#endif
-#if ((defined(REGION_JP)) && !((defined(REGION_EU))))
-            p_sCredits = (const struct CreditsEntry(*)[245])Port_ResolveRomData(0x0855a3ecu);
-#endif
-#if (!((defined(REGION_EU)) || (defined(REGION_JP))))
-            p_sCredits = (const struct CreditsEntry(*)[240])Port_ResolveRomData(0x0855a3ecu);
-#endif
+            p_sCredits = (const struct CreditsEntry*)Port_ResolveRomData(0x0855a3ecu);
             p_sEndingWhitePalPointers = (const u16* const(*)[4])Port_ResolveRomData(0x0855cf3cu);
             p_sEndingImage_54e2dc = (const u8(*)[8])Port_ResolveRomData(0x0855cf4cu);
             p_sEndingImageNewRecordPalettes = (const u8(*)[12])Port_ResolveRomData(0x0855cf54u);
-#if (defined(REGION_EU))
             p_sEndingImageOamPointers_NewRecord = (const u16 * const(*)[LANGUAGE_COUNT])Port_ResolveRomData(0x0855cf60u);
-#endif
             p_sCreditsCharactersGfx = (const u32*)Port_ResolveRomData(0x0855cf7cu);
             p_sEndingImageTextEnglishGfx = (const u32(*)[803])Port_ResolveRomData(0x085ae238u);
             p_sEndingImageTextHiraganaGfx = (const u32(*)[511])Port_ResolveRomData(0x085aeec4u);
-#if (defined(REGION_EU))
             p_sEndingImageTextFrenchGfx = (const u32(*)[759])Port_ResolveRomData(0x085af6c0u);
             p_sEndingImageTextGermanGfx = (const u32(*)[726])Port_ResolveRomData(0x085b029cu);
             p_sEndingImageTextItalianGfx = (const u32(*)[883])Port_ResolveRomData(0x085b0df4u);
             p_sEndingImageTextSpanishGfx = (const u32(*)[773])Port_ResolveRomData(0x085b1bc0u);
-#endif
             p_sEndingImageNumbersGfx_Upper = (const u8(*)[10*64])Port_ResolveRomData(0x085b27d4u);
             p_sEndingImageNumbersGfx_Lower = (const u8(*)[10*64])Port_ResolveRomData(0x085b2a54u);
             p_sEndingImageNumbersMiscEnglishGfx = (const u32(*)[218])Port_ResolveRomData(0x085b2cd4u);
-#if (defined(REGION_EU))
             p_sEndingImageNumbersMiscGermanGfx = (const u32(*)[209])Port_ResolveRomData(0x085b303cu);
             p_sEndingImageNumbersMiscFrenchGfx = (const u32(*)[217])Port_ResolveRomData(0x085b3380u);
             p_sEndingImageNumbersMiscItalianGfx = (const u32(*)[208])Port_ResolveRomData(0x085b36e4u);
             p_sEndingImageNumbersMiscSpanishGfx = (const u32(*)[225])Port_ResolveRomData(0x085b3a24u);
-#endif
             p_sEndingSamusPosingSpaceBackgroundGfx = (const u32(*)[2938])Port_ResolveRomData(0x085b3da8u);
             p_sEndingSamusPosingSpaceBackgroundTileTable = (const u32(*)[412])Port_ResolveRomData(0x085b6b90u);
             p_sEndingLightGfx = (const u32(*)[743])Port_ResolveRomData(0x085b7200u);
@@ -221,6 +187,134 @@ void PortGen_ending_and_gallery_data_Init(void) {
             p_sCreditsChozoDrawingGfx = (const u32(*)[4770])Port_ResolveRomData(0x085d6f04u);
             p_sCreditsChozoDrawingTileTable = (const u32(*)[368])Port_ResolveRomData(0x085db98cu);
             p_sUnlockedOptionsTileTable = (const u32(*)[127])Port_ResolveRomData(0x085dbf4cu);
+            break;
+        }
+        case PORT_ROM_REGION_US: {
+            p_sEndingImageTextPal = (const u16(*)[14*16])Port_ResolveRomData(0x08549b44u);
+            p_sEndingImageOam_NewRecordEnglish = (const u16(*)[OAM_DATA_SIZE(6)])Port_ResolveRomData(0x08549eecu);
+            p_sCreditsCharactersPal = (const u16(*)[3*16])Port_ResolveRomData(0x0854a6d4u);
+            p_sCreditsChozoWallPal = (const u16(*)[15*16])Port_ResolveRomData(0x0854a734u);
+            p_sEndingPosingPal = (const u16(*)[13*16])Port_ResolveRomData(0x0854b914u);
+            p_sEndingPosingPal_White1 = (const u16(*)[5*16])Port_ResolveRomData(0x0854bab4u);
+            p_sEndingPosingPal_White2 = (const u16(*)[5*16])Port_ResolveRomData(0x0854bb54u);
+            p_sEndingPosingPal_White3 = (const u16(*)[5*16])Port_ResolveRomData(0x0854bbf4u);
+            p_sEndingPosingPal_White4 = (const u16(*)[5*16])Port_ResolveRomData(0x0854bc94u);
+            p_sUnlockedOptionsPal = (const u16(*)[1*16])Port_ResolveRomData(0x0854bd34u);
+            p_sEndingImageOam_FullLines_English = (const struct EndingImageOam(*)[ENDING_IMAGE_LINE_COUNT])Port_ResolveRomData(0x0854bd54u);
+            p_sEndingImageOam_ClearTime_English = (const struct EndingImageOam(*)[9])Port_ResolveRomData(0x0854bd9cu);
+            p_sEndingImageOam_YourRate_English = (const struct EndingImageOam(*)[11])Port_ResolveRomData(0x0854be08u);
+            p_sEndingImageOam_Collecting_English = (const struct EndingImageOam(*)[17])Port_ResolveRomData(0x0854be8cu);
+            p_sEndingImageOam_FullLines_Hiragana = (const struct EndingImageOam(*)[ENDING_IMAGE_LINE_COUNT])Port_ResolveRomData(0x0854bf58u);
+            p_sEndingImageOam_ClearTime_Hiragana = (const struct EndingImageOam(*)[6])Port_ResolveRomData(0x0854bfa0u);
+            p_sEndingImageOam_Collecting_Hiragana = (const struct EndingImageOam(*)[11])Port_ResolveRomData(0x0854bfe8u);
+            p_sEndingImagesTopGfxPointers = (const u32* const(*)[ENDING_IMAGE_COUNT])Port_ResolveRomData(0x0854c06cu);
+            p_sEndingImagesBottomGfxPointers = (const u32* const(*)[ENDING_IMAGE_COUNT])Port_ResolveRomData(0x0854c08cu);
+            p_sEndingImagesTopTileTablePointers = (const u32* const(*)[ENDING_IMAGE_COUNT])Port_ResolveRomData(0x0854c0acu);
+            p_sEndingImagesHalfTileTablePointers = (const u32* const(*)[ENDING_IMAGE_COUNT])Port_ResolveRomData(0x0854c0ccu);
+            p_sEndingImagesPalPointers = (const u16* const(*)[ENDING_IMAGE_COUNT])Port_ResolveRomData(0x0854c0ecu);
+            p_sCredits = (const struct CreditsEntry*)Port_ResolveRomData(0x0854c10cu);
+            p_sEndingWhitePalPointers = (const u16* const(*)[4])Port_ResolveRomData(0x0854e2ccu);
+            p_sEndingImage_54e2dc = (const u8(*)[8])Port_ResolveRomData(0x0854e2dcu);
+            p_sEndingImageNewRecordPalettes = (const u8(*)[12])Port_ResolveRomData(0x0854e2e4u);
+            p_sCreditsCharactersGfx = (const u32*)Port_ResolveRomData(0x0854e2f0u);
+            p_sEndingImageTextEnglishGfx = (const u32(*)[803])Port_ResolveRomData(0x0859f5a8u);
+            p_sEndingImageTextHiraganaGfx = (const u32(*)[511])Port_ResolveRomData(0x085a0234u);
+            p_sEndingImageNumbersGfx_Upper = (const u8(*)[10*64])Port_ResolveRomData(0x085a0a30u);
+            p_sEndingImageNumbersGfx_Lower = (const u8(*)[10*64])Port_ResolveRomData(0x085a0cb0u);
+            p_sEndingImageNumbersMiscEnglishGfx = (const u32(*)[218])Port_ResolveRomData(0x085a0f30u);
+            p_sEndingSamusPosingSpaceBackgroundGfx = (const u32(*)[2938])Port_ResolveRomData(0x085a1298u);
+            p_sEndingSamusPosingSpaceBackgroundTileTable = (const u32(*)[412])Port_ResolveRomData(0x085a4080u);
+            p_sEndingLightGfx = (const u32(*)[743])Port_ResolveRomData(0x085a46f0u);
+            p_sEndingLightTileTable = (const u32(*)[145])Port_ResolveRomData(0x085a528cu);
+            p_sEndingSamusPosingGfx_1 = (const u32(*)[1481])Port_ResolveRomData(0x085a54d0u);
+            p_sEndingSamusPosingTileTable_1 = (const u32(*)[209])Port_ResolveRomData(0x085a6bf4u);
+            p_sEndingSamusPosingGfx_2 = (const u32(*)[1562])Port_ResolveRomData(0x085a6f38u);
+            p_sEndingSamusPosingTileTable_2 = (const u32(*)[230])Port_ResolveRomData(0x085a87a0u);
+            p_sEndingSamusPosingGfx_3 = (const u32(*)[1712])Port_ResolveRomData(0x085a8b38u);
+            p_sEndingSamusPosingTileTable_3 = (const u32(*)[238])Port_ResolveRomData(0x085aa5f8u);
+            p_sEndingSamusPosingGfx_4 = (const u32(*)[1692])Port_ResolveRomData(0x085aa9b0u);
+            p_sEndingSamusPosingTileTable_4 = (const u32(*)[221])Port_ResolveRomData(0x085ac420u);
+            p_sEndingSamusPosingGfx_5 = (const u32(*)[1279])Port_ResolveRomData(0x085ac794u);
+            p_sEndingSamusPosingTileTable_5 = (const u32(*)[181])Port_ResolveRomData(0x085adb90u);
+            p_sEndingSamusPosingSuitlessGfx = (const u32(*)[1167])Port_ResolveRomData(0x085ade64u);
+            p_sEndingSamusPosingSuitlessTileTable = (const u32(*)[135])Port_ResolveRomData(0x085af0a0u);
+            p_sEndingSamusPosingFullSuitGfx = (const u32(*)[1557])Port_ResolveRomData(0x085af2bcu);
+            p_sEndingSamusPosingFullSuitTileTable = (const u32(*)[226])Port_ResolveRomData(0x085b0b10u);
+            p_sEndingSamusPosingHelmetOffGfx = (const u32(*)[1568])Port_ResolveRomData(0x085b0e98u);
+            p_sEndingSamusPosingHelmetOffTileTable = (const u32(*)[226])Port_ResolveRomData(0x085b2718u);
+            p_sCreditsChozoWallBackgroundGfx = (const u32(*)[7710])Port_ResolveRomData(0x085b2aa0u);
+            p_sCreditsChozoWallBackgroundTileTable = (const u32(*)[551])Port_ResolveRomData(0x085ba318u);
+            p_sCreditsChozoWallBottomGfx = (const u32(*)[3909])Port_ResolveRomData(0x085babb4u);
+            p_sCreditsChozoWallBottomTileTable = (const u32(*)[307])Port_ResolveRomData(0x085be8c8u);
+            p_sCreditsChozoWallBottomZoomedGfx = (const u32(*)[5160])Port_ResolveRomData(0x085bed94u);
+            p_sCreditsChozoWallBottomZoomedTileTable = (const u32(*)[368])Port_ResolveRomData(0x085c3e34u);
+            p_sCreditsChozoDrawingGfx = (const u32(*)[4770])Port_ResolveRomData(0x085c43f4u);
+            p_sCreditsChozoDrawingTileTable = (const u32(*)[368])Port_ResolveRomData(0x085c8e7cu);
+            p_sUnlockedOptionsTileTable = (const u32(*)[127])Port_ResolveRomData(0x085c943cu);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sEndingImageTextPal = (const u16(*)[14*16])Port_ResolveRomData(0x08549ba0u);
+            p_sEndingImageOam_NewRecordEnglish = (const u16(*)[OAM_DATA_SIZE(6)])Port_ResolveRomData(0x08549f48u);
+            p_sCreditsCharactersPal = (const u16(*)[3*16])Port_ResolveRomData(0x0854a730u);
+            p_sCreditsChozoWallPal = (const u16(*)[15*16])Port_ResolveRomData(0x0854a790u);
+            p_sEndingPosingPal = (const u16(*)[13*16])Port_ResolveRomData(0x0854b970u);
+            p_sEndingPosingPal_White1 = (const u16(*)[5*16])Port_ResolveRomData(0x0854bb10u);
+            p_sEndingPosingPal_White2 = (const u16(*)[5*16])Port_ResolveRomData(0x0854bbb0u);
+            p_sEndingPosingPal_White3 = (const u16(*)[5*16])Port_ResolveRomData(0x0854bc50u);
+            p_sEndingPosingPal_White4 = (const u16(*)[5*16])Port_ResolveRomData(0x0854bcf0u);
+            p_sUnlockedOptionsPal = (const u16(*)[1*16])Port_ResolveRomData(0x0854bd90u);
+            p_sEndingImageOam_FullLines_English = (const struct EndingImageOam(*)[ENDING_IMAGE_LINE_COUNT])Port_ResolveRomData(0x0854bdb0u);
+            p_sEndingImageOam_ClearTime_English = (const struct EndingImageOam(*)[9])Port_ResolveRomData(0x0854bdf8u);
+            p_sEndingImageOam_YourRate_English = (const struct EndingImageOam(*)[11])Port_ResolveRomData(0x0854be64u);
+            p_sEndingImageOam_Collecting_English = (const struct EndingImageOam(*)[17])Port_ResolveRomData(0x0854bee8u);
+            p_sEndingImageOam_FullLines_Hiragana = (const struct EndingImageOam(*)[ENDING_IMAGE_LINE_COUNT])Port_ResolveRomData(0x0854bfb4u);
+            p_sEndingImageOam_ClearTime_Hiragana = (const struct EndingImageOam(*)[6])Port_ResolveRomData(0x0854bffcu);
+            p_sEndingImageOam_Collecting_Hiragana = (const struct EndingImageOam(*)[11])Port_ResolveRomData(0x0854c044u);
+            p_sEndingImagesTopGfxPointers = (const u32* const(*)[ENDING_IMAGE_COUNT])Port_ResolveRomData(0x0854c0c8u);
+            p_sEndingImagesBottomGfxPointers = (const u32* const(*)[ENDING_IMAGE_COUNT])Port_ResolveRomData(0x0854c0e8u);
+            p_sEndingImagesTopTileTablePointers = (const u32* const(*)[ENDING_IMAGE_COUNT])Port_ResolveRomData(0x0854c108u);
+            p_sEndingImagesHalfTileTablePointers = (const u32* const(*)[ENDING_IMAGE_COUNT])Port_ResolveRomData(0x0854c128u);
+            p_sEndingImagesPalPointers = (const u16* const(*)[ENDING_IMAGE_COUNT])Port_ResolveRomData(0x0854c148u);
+            p_sCredits = (const struct CreditsEntry*)Port_ResolveRomData(0x0854c168u);
+            p_sEndingWhitePalPointers = (const u16* const(*)[4])Port_ResolveRomData(0x0854e3dcu);
+            p_sEndingImage_54e2dc = (const u8(*)[8])Port_ResolveRomData(0x0854e3ecu);
+            p_sEndingImageNewRecordPalettes = (const u8(*)[12])Port_ResolveRomData(0x0854e3f4u);
+            p_sCreditsCharactersGfx = (const u32*)Port_ResolveRomData(0x0854e400u);
+            p_sEndingImageTextEnglishGfx = (const u32(*)[803])Port_ResolveRomData(0x0859f6b8u);
+            p_sEndingImageTextHiraganaGfx = (const u32(*)[511])Port_ResolveRomData(0x085a0344u);
+            p_sEndingImageNumbersGfx_Upper = (const u8(*)[10*64])Port_ResolveRomData(0x085a0b40u);
+            p_sEndingImageNumbersGfx_Lower = (const u8(*)[10*64])Port_ResolveRomData(0x085a0dc0u);
+            p_sEndingImageNumbersMiscEnglishGfx = (const u32(*)[218])Port_ResolveRomData(0x085a1040u);
+            p_sEndingSamusPosingSpaceBackgroundGfx = (const u32(*)[2938])Port_ResolveRomData(0x085a13a8u);
+            p_sEndingSamusPosingSpaceBackgroundTileTable = (const u32(*)[412])Port_ResolveRomData(0x085a4190u);
+            p_sEndingLightGfx = (const u32(*)[743])Port_ResolveRomData(0x085a4800u);
+            p_sEndingLightTileTable = (const u32(*)[145])Port_ResolveRomData(0x085a539cu);
+            p_sEndingSamusPosingGfx_1 = (const u32(*)[1481])Port_ResolveRomData(0x085a55e0u);
+            p_sEndingSamusPosingTileTable_1 = (const u32(*)[209])Port_ResolveRomData(0x085a6d04u);
+            p_sEndingSamusPosingGfx_2 = (const u32(*)[1562])Port_ResolveRomData(0x085a7048u);
+            p_sEndingSamusPosingTileTable_2 = (const u32(*)[230])Port_ResolveRomData(0x085a88b0u);
+            p_sEndingSamusPosingGfx_3 = (const u32(*)[1712])Port_ResolveRomData(0x085a8c48u);
+            p_sEndingSamusPosingTileTable_3 = (const u32(*)[238])Port_ResolveRomData(0x085aa708u);
+            p_sEndingSamusPosingGfx_4 = (const u32(*)[1692])Port_ResolveRomData(0x085aaac0u);
+            p_sEndingSamusPosingTileTable_4 = (const u32(*)[221])Port_ResolveRomData(0x085ac530u);
+            p_sEndingSamusPosingGfx_5 = (const u32(*)[1279])Port_ResolveRomData(0x085ac8a4u);
+            p_sEndingSamusPosingTileTable_5 = (const u32(*)[181])Port_ResolveRomData(0x085adca0u);
+            p_sEndingSamusPosingSuitlessGfx = (const u32(*)[1167])Port_ResolveRomData(0x085adf74u);
+            p_sEndingSamusPosingSuitlessTileTable = (const u32(*)[135])Port_ResolveRomData(0x085af1b0u);
+            p_sEndingSamusPosingFullSuitGfx = (const u32(*)[1557])Port_ResolveRomData(0x085af3ccu);
+            p_sEndingSamusPosingFullSuitTileTable = (const u32(*)[226])Port_ResolveRomData(0x085b0c20u);
+            p_sEndingSamusPosingHelmetOffGfx = (const u32(*)[1568])Port_ResolveRomData(0x085b0fa8u);
+            p_sEndingSamusPosingHelmetOffTileTable = (const u32(*)[226])Port_ResolveRomData(0x085b2828u);
+            p_sCreditsChozoWallBackgroundGfx = (const u32(*)[7710])Port_ResolveRomData(0x085b2bb0u);
+            p_sCreditsChozoWallBackgroundTileTable = (const u32(*)[551])Port_ResolveRomData(0x085ba428u);
+            p_sCreditsChozoWallBottomGfx = (const u32(*)[3909])Port_ResolveRomData(0x085bacc4u);
+            p_sCreditsChozoWallBottomTileTable = (const u32(*)[307])Port_ResolveRomData(0x085be9d8u);
+            p_sCreditsChozoWallBottomZoomedGfx = (const u32(*)[5160])Port_ResolveRomData(0x085beea4u);
+            p_sCreditsChozoWallBottomZoomedTileTable = (const u32(*)[368])Port_ResolveRomData(0x085c3f44u);
+            p_sCreditsChozoDrawingGfx = (const u32(*)[4770])Port_ResolveRomData(0x085c4504u);
+            p_sCreditsChozoDrawingTileTable = (const u32(*)[368])Port_ResolveRomData(0x085c8f8cu);
+            p_sUnlockedOptionsTileTable = (const u32(*)[127])Port_ResolveRomData(0x085c954cu);
             break;
         }
         default:

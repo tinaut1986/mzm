@@ -77,7 +77,7 @@ struct SpriteData {
     u8 work3;
     u8 freezeTimer;
     SamusStandingOnSpriteStatus standingOnSprite;
-    SpritePropery properties;
+    SpriteProperty properties;
     u8 frozenPaletteRowOffset;
     u8 absolutePaletteRow;
 };

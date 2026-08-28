@@ -23,6 +23,24 @@ void PortGen_morph_ball_launcher_Init(void) {
             p_sMorphBallLauncherPartOam_Energy = (const struct FrameData(*)[9])Port_ResolveRomData(0x082dee04u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sMorphBallLauncherGfx = (const u32(*)[303])Port_ResolveRomData(0x082dd820u);
+            p_sMorphBallLauncherPal = (const u16(*)[16])Port_ResolveRomData(0x082ddcdcu);
+            p_sMorphBallLauncherOam_Idle = (const struct FrameData(*)[5])Port_ResolveRomData(0x082de0f8u);
+            p_sMorphBallLauncherOam_Launching = (const struct FrameData(*)[9])Port_ResolveRomData(0x082de120u);
+            p_sMorphBallLauncherPartOam_Back = (const struct FrameData(*)[2])Port_ResolveRomData(0x082de168u);
+            p_sMorphBallLauncherPartOam_Energy = (const struct FrameData(*)[9])Port_ResolveRomData(0x082de178u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sMorphBallLauncherGfx = (const u32(*)[303])Port_ResolveRomData(0x082dd87cu);
+            p_sMorphBallLauncherPal = (const u16(*)[16])Port_ResolveRomData(0x082ddd38u);
+            p_sMorphBallLauncherOam_Idle = (const struct FrameData(*)[5])Port_ResolveRomData(0x082de154u);
+            p_sMorphBallLauncherOam_Launching = (const struct FrameData(*)[9])Port_ResolveRomData(0x082de17cu);
+            p_sMorphBallLauncherPartOam_Back = (const struct FrameData(*)[2])Port_ResolveRomData(0x082de1c4u);
+            p_sMorphBallLauncherPartOam_Energy = (const struct FrameData(*)[9])Port_ResolveRomData(0x082de1d4u);
+            break;
+        }
         default:
             break;
     }

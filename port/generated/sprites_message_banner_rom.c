@@ -29,6 +29,30 @@ void PortGen_message_banner_Init(void) {
             p_sMessageBannerOam_OneLineStatic = (const struct FrameData(*)[2])Port_ResolveRomData(0x082cc7e8u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sMessageBannerGfx = (const u32(*)[139])Port_ResolveRomData(0x082cb304u);
+            p_sMessageBannerPal = (const u16(*)[32])Port_ResolveRomData(0x082cb530u);
+            p_sSaveYesNoCursorOam_Idle = (const struct FrameData(*)[5])Port_ResolveRomData(0x082cb9e4u);
+            p_sMessageBannerOam_TwoLinesSpawn = (const struct FrameData(*)[11])Port_ResolveRomData(0x082cba0cu);
+            p_sMessageBannerOam_TwoLinesRemoving = (const struct FrameData(*)[11])Port_ResolveRomData(0x082cba64u);
+            p_sMessageBannerOam_TwoLinesStatic = (const struct FrameData(*)[2])Port_ResolveRomData(0x082cbabcu);
+            p_sMessageBannerOam_OneLineSpawn = (const struct FrameData(*)[9])Port_ResolveRomData(0x082cbaccu);
+            p_sMessageBannerOam_OneLineRemoving = (const struct FrameData(*)[9])Port_ResolveRomData(0x082cbb14u);
+            p_sMessageBannerOam_OneLineStatic = (const struct FrameData(*)[2])Port_ResolveRomData(0x082cbb5cu);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sMessageBannerGfx = (const u32(*)[139])Port_ResolveRomData(0x082cb360u);
+            p_sMessageBannerPal = (const u16(*)[32])Port_ResolveRomData(0x082cb58cu);
+            p_sSaveYesNoCursorOam_Idle = (const struct FrameData(*)[5])Port_ResolveRomData(0x082cba40u);
+            p_sMessageBannerOam_TwoLinesSpawn = (const struct FrameData(*)[11])Port_ResolveRomData(0x082cba68u);
+            p_sMessageBannerOam_TwoLinesRemoving = (const struct FrameData(*)[11])Port_ResolveRomData(0x082cbac0u);
+            p_sMessageBannerOam_TwoLinesStatic = (const struct FrameData(*)[2])Port_ResolveRomData(0x082cbb18u);
+            p_sMessageBannerOam_OneLineSpawn = (const struct FrameData(*)[9])Port_ResolveRomData(0x082cbb28u);
+            p_sMessageBannerOam_OneLineRemoving = (const struct FrameData(*)[9])Port_ResolveRomData(0x082cbb70u);
+            p_sMessageBannerOam_OneLineStatic = (const struct FrameData(*)[2])Port_ResolveRomData(0x082cbbb8u);
+            break;
+        }
         default:
             break;
     }

@@ -85,6 +85,84 @@ void PortGen_intro_data_Init(void) {
             p_sIntro_47920c = (const u32(*)[125])Port_ResolveRomData(0x08486d20u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sIntroEmergencyOrderTextOam = (const u16(*)[52])Port_ResolveRomData(0x0845f45cu);
+            p_sIntroExterminateAllTextOam = (const u16(*)[163])Port_ResolveRomData(0x0845f4c4u);
+            p_sIntroDefeatTheTextOam = (const u16(*)[157])Port_ResolveRomData(0x0845f60au);
+            p_sIntroTextMarkerOam = (const u16(*)[10])Port_ResolveRomData(0x0845f744u);
+            p_sIntroShipFlyingTowardsCameraOam_2 = (const u16(*)[28])Port_ResolveRomData(0x0845f77eu);
+            p_sIntroShipFlyingTowardsCameraOam_1 = (const u16(*)[19])Port_ResolveRomData(0x0845f758u);
+            p_sIntroViewOfZebesShipOam = (const u16(*)[13])Port_ResolveRomData(0x0845f7b6u);
+            p_sIntroViewOfZebesHeatOam_2 = (const u16(*)[37])Port_ResolveRomData(0x0845f7d0u);
+            p_sIntroViewOfZebesHeatOam_1 = (const u16(*)[73])Port_ResolveRomData(0x0845f81au);
+            p_sIntroFuzzOam = (const u16(*)[52])Port_ResolveRomData(0x0845f8acu);
+            p_sIntroTextAndShipPal = (const u16(*)[16*6])Port_ResolveRomData(0x0845f914u);
+            p_sIntroPal_45f9d4 = (const u16(*)[16*1])Port_ResolveRomData(0x0845f9d4u);
+            p_sIntroSamusInHerShipPal = (const u16(*)[16*5])Port_ResolveRomData(0x0845f9f4u);
+            p_sIntroViewOfZebesPal = (const u16(*)[16*10])Port_ResolveRomData(0x0845fa94u);
+            p_sIntroMotherBrainPal = (const u16(*)[16*5])Port_ResolveRomData(0x0845fbd4u);
+            p_sIntroFuzzRandomValues_1 = (const u8(*)[64])Port_ResolveRomData(0x0845fc74u);
+            p_sIntroFuzzRandomValues_2 = (const u8(*)[64])Port_ResolveRomData(0x0845fcb4u);
+            p_sTimeAttackPasswordCharacters = (const u8(*)[32])Port_ResolveRomData(0x0845fcf4u);
+            p_sTimeAttackAntiCheatTimes = (const u32(*)[4])Port_ResolveRomData(0x0845fd14u);
+            p_sSpriteXHalfRadius = (const u8(*)[3][4])Port_ResolveRomData(0x0845fd24u);
+            p_sSpriteYHalfRadius = (const u8(*)[3][4])Port_ResolveRomData(0x0845fd30u);
+            p_sIntroEmergencyOrderActions = (const IntroTextAction(*)[16])Port_ResolveRomData(0x0845fd3cu);
+            p_sIntroExterminateAllActions = (const IntroTextAction(*)[52])Port_ResolveRomData(0x0845fd4cu);
+            p_sIntroDefeatTheActions = (const IntroTextAction(*)[50])Port_ResolveRomData(0x0845fd80u);
+            p_sIntroTextAndShipFlyingInGfx = (const u32(*)[1310])Port_ResolveRomData(0x0845fdb4u);
+            p_sIntroSpaceBackgroundGfx = (const u32(*)[3181])Port_ResolveRomData(0x0846122cu);
+            p_sIntroSpaceBackgroundTileTable = (const u32(*)[577])Port_ResolveRomData(0x084643e0u);
+            p_sIntroSamusInHerShipGfx = (const u32(*)[4800])Port_ResolveRomData(0x08464ce4u);
+            p_sIntroSamusInHerShipTileTable = (const u32(*)[418])Port_ResolveRomData(0x084697e4u);
+            p_sIntroSamusShipViewOfZebesGfx = (const u32(*)[1224])Port_ResolveRomData(0x08469e6cu);
+            p_sIntroViewOfZebesGfx = (const u32(*)[2986])Port_ResolveRomData(0x0846b18cu);
+            p_sIntroViewOfZebesTileTable = (const u32(*)[577])Port_ResolveRomData(0x0846e034u);
+            p_sIntroMotherBrainGfx = (const u32(*)[5004])Port_ResolveRomData(0x0846e938u);
+            p_sIntroMotherBrainTileTable = (const u32(*)[577])Port_ResolveRomData(0x08473768u);
+            p_sIntroFuzzGfx = (const u32(*)[5224])Port_ResolveRomData(0x0847406cu);
+            p_sIntro_47920c = (const u32(*)[125])Port_ResolveRomData(0x0847920cu);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sIntroEmergencyOrderTextOam = (const u16(*)[52])Port_ResolveRomData(0x0845f4b8u);
+            p_sIntroExterminateAllTextOam = (const u16(*)[163])Port_ResolveRomData(0x0845f520u);
+            p_sIntroDefeatTheTextOam = (const u16(*)[157])Port_ResolveRomData(0x0845f666u);
+            p_sIntroTextMarkerOam = (const u16(*)[10])Port_ResolveRomData(0x0845f7a0u);
+            p_sIntroShipFlyingTowardsCameraOam_2 = (const u16(*)[28])Port_ResolveRomData(0x0845f7dau);
+            p_sIntroShipFlyingTowardsCameraOam_1 = (const u16(*)[19])Port_ResolveRomData(0x0845f7b4u);
+            p_sIntroViewOfZebesShipOam = (const u16(*)[13])Port_ResolveRomData(0x0845f812u);
+            p_sIntroViewOfZebesHeatOam_2 = (const u16(*)[37])Port_ResolveRomData(0x0845f82cu);
+            p_sIntroViewOfZebesHeatOam_1 = (const u16(*)[73])Port_ResolveRomData(0x0845f876u);
+            p_sIntroFuzzOam = (const u16(*)[52])Port_ResolveRomData(0x0845f908u);
+            p_sIntroTextAndShipPal = (const u16(*)[16*6])Port_ResolveRomData(0x0845f970u);
+            p_sIntroPal_45f9d4 = (const u16(*)[16*1])Port_ResolveRomData(0x0845fa30u);
+            p_sIntroSamusInHerShipPal = (const u16(*)[16*5])Port_ResolveRomData(0x0845fa50u);
+            p_sIntroViewOfZebesPal = (const u16(*)[16*10])Port_ResolveRomData(0x0845faf0u);
+            p_sIntroMotherBrainPal = (const u16(*)[16*5])Port_ResolveRomData(0x0845fc30u);
+            p_sIntroFuzzRandomValues_1 = (const u8(*)[64])Port_ResolveRomData(0x0845fcd0u);
+            p_sIntroFuzzRandomValues_2 = (const u8(*)[64])Port_ResolveRomData(0x0845fd10u);
+            p_sTimeAttackPasswordCharacters = (const u8(*)[32])Port_ResolveRomData(0x0845fd50u);
+            p_sTimeAttackAntiCheatTimes = (const u32(*)[4])Port_ResolveRomData(0x0845fd70u);
+            p_sSpriteXHalfRadius = (const u8(*)[3][4])Port_ResolveRomData(0x0845fd80u);
+            p_sSpriteYHalfRadius = (const u8(*)[3][4])Port_ResolveRomData(0x0845fd8cu);
+            p_sIntroEmergencyOrderActions = (const IntroTextAction(*)[16])Port_ResolveRomData(0x0845fd98u);
+            p_sIntroExterminateAllActions = (const IntroTextAction(*)[52])Port_ResolveRomData(0x0845fda8u);
+            p_sIntroDefeatTheActions = (const IntroTextAction(*)[50])Port_ResolveRomData(0x0845fddcu);
+            p_sIntroTextAndShipFlyingInGfx = (const u32(*)[1310])Port_ResolveRomData(0x0845fe10u);
+            p_sIntroSpaceBackgroundGfx = (const u32(*)[3181])Port_ResolveRomData(0x08461288u);
+            p_sIntroSpaceBackgroundTileTable = (const u32(*)[577])Port_ResolveRomData(0x0846443cu);
+            p_sIntroSamusInHerShipGfx = (const u32(*)[4800])Port_ResolveRomData(0x08464d40u);
+            p_sIntroSamusInHerShipTileTable = (const u32(*)[418])Port_ResolveRomData(0x08469840u);
+            p_sIntroSamusShipViewOfZebesGfx = (const u32(*)[1224])Port_ResolveRomData(0x08469ec8u);
+            p_sIntroViewOfZebesGfx = (const u32(*)[2986])Port_ResolveRomData(0x0846b1e8u);
+            p_sIntroViewOfZebesTileTable = (const u32(*)[577])Port_ResolveRomData(0x0846e090u);
+            p_sIntroMotherBrainGfx = (const u32(*)[5004])Port_ResolveRomData(0x0846e994u);
+            p_sIntroMotherBrainTileTable = (const u32(*)[577])Port_ResolveRomData(0x084737c4u);
+            p_sIntroFuzzGfx = (const u32(*)[5224])Port_ResolveRomData(0x084740c8u);
+            p_sIntro_47920c = (const u32(*)[125])Port_ResolveRomData(0x08479268u);
+            break;
+        }
         default:
             break;
     }

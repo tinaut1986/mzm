@@ -1,3 +1,4 @@
+#include "region.h"
 #include "save_file.h"
 #include "callbacks.h"
 #include "dma.h"
@@ -89,15 +90,28 @@ void SramRead_All(void)
     SramRead_MostRecentSaveFile();
     SramRead_TimeAttack();
 
-#ifdef REGION_EU
-    SramRead_Language();
-#else // !REGION_EU
-    if (SramRead_Language())
+    if (REGION_IS_EU())
     {
-        gLanguage = LANGUAGE_DEFAULT;
+        SramRead_Language();
+    }
+    else if (SramRead_Language())
+    {
+        // The others fall back to the default language and save it back
+        gLanguage = REGION_DEFAULT_LANGUAGE();
         SramWrite_Language();
     }
-#endif // REGION_EU
+
+#ifdef MZM_3DS
+    /* A save shared between region builds can hold a gLanguage that is valid
+     * data but wrong for the loaded ROM's region; the decomp only clamps on
+     * new-game init, so the post-boot intro would use the stale language. */
+    {
+        extern int Port_ClampLanguageToRegion(void);
+        extern void SramWrite_Language(void);
+        if (Port_ClampLanguageToRegion())
+            SramWrite_Language();
+    }
+#endif
 }
 
 /**
@@ -1532,11 +1546,7 @@ void SramWrite_Language(void)
     i = gLanguage;
     if ((u32)i >= LANGUAGE_COUNT)
     {
-#ifdef REGION_EU
-        i = 0;
-#else
-        i = LANGUAGE_DEFAULT;
-#endif // REGION_EU
+        i = REGION_IS_EU() ? 0 : REGION_DEFAULT_LANGUAGE();
     }
 
     pSave->value = i;
@@ -2141,13 +2151,13 @@ void unk_7584c(u8 param_1)
                 gDebugMode = FALSE;            
             }
 
-#if defined(REGION_EU)
-            if (INVALID_EU_LANGUAGE(gLanguage))
-#elif defined(REGION_JP)
-            if (gLanguage > LANGUAGE_HIRAGANA)
-#endif
+            /* Clamp to a language the loaded ROM has. USA has only English, so
+             * it resets unconditionally -- that is what the missing #else did. */
+            if (REGION_IS_EU() ? INVALID_EU_LANGUAGE(gLanguage)
+                : REGION_IS_JP() ? gLanguage > LANGUAGE_HIRAGANA
+                : TRUE)
             {
-                gLanguage = LANGUAGE_DEFAULT;
+                gLanguage = REGION_DEFAULT_LANGUAGE();
             }
 
             gCurrentCutscene = 0;

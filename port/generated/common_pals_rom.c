@@ -22,6 +22,24 @@ void PortGen_common_pals_Init(void) {
             p_sHatchFlashingPal = (const u16(*)[16*16])Port_ResolveRomData(0x085f3474u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sCommonTilesPal = (const u16(*)[1*16])Port_ResolveRomData(0x085dfe20u);
+            p_sDoorTransitionPal = (const u16(*)[15*16])Port_ResolveRomData(0x085dfe40u);
+            p_sCommonTilesMotherShipPal = (const u16(*)[1*16])Port_ResolveRomData(0x085e0020u);
+            p_sDoorTransitionMotherShipPal = (const u16(*)[15*16])Port_ResolveRomData(0x085e0040u);
+            p_sHatchFlashingMotherShipPal = (const u16(*)[16*16])Port_ResolveRomData(0x085e0220u);
+            p_sHatchFlashingPal = (const u16(*)[16*16])Port_ResolveRomData(0x085e0420u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sCommonTilesPal = (const u16(*)[1*16])Port_ResolveRomData(0x085dff30u);
+            p_sDoorTransitionPal = (const u16(*)[15*16])Port_ResolveRomData(0x085dff50u);
+            p_sCommonTilesMotherShipPal = (const u16(*)[1*16])Port_ResolveRomData(0x085e0130u);
+            p_sDoorTransitionMotherShipPal = (const u16(*)[15*16])Port_ResolveRomData(0x085e0150u);
+            p_sHatchFlashingMotherShipPal = (const u16(*)[16*16])Port_ResolveRomData(0x085e0330u);
+            p_sHatchFlashingPal = (const u16(*)[16*16])Port_ResolveRomData(0x085e0530u);
+            break;
+        }
         default:
             break;
     }

@@ -22,9 +22,6 @@
 #include "structs/game_state.h"
 #include "structs/samus.h"
 
-#ifdef MZM_3DS
-#include "port_debug_log.h"
-#endif
 
 /**
  * @brief 5a484 | d8 | Sets the value for a BG block
@@ -507,21 +504,6 @@ void BgClipCheckTouchingTransitionOrTank(void)
 
         // Get item type
         i = sTankBehaviors[BEHAVIOR_TO_TANK(behaviors[j])].itemType;
-
-#ifdef MZM_3DS
-        {
-            char msg[160];
-            __builtin_snprintf(msg, sizeof(msg),
-                "TankTouch: behavior=%u idx=%u itemType=%u explored=%u",
-                (unsigned)behaviors[j],
-                (unsigned)BEHAVIOR_TO_TANK(behaviors[j]),
-                (unsigned)sTankBehaviors[BEHAVIOR_TO_TANK(behaviors[j])].itemType,
-                (unsigned)MinimapCheckIsTileExplored(
-                    xPositions[sBlockTouchOffsets[j][1]],
-                    yPositions[sBlockTouchOffsets[j][0]]));
-            Port_DebugLog(msg);
-        }
-#endif
 
         // Check is an item (hidden tanks not broken aren't tanks yet)
         if (i != ITEM_TYPE_NONE)

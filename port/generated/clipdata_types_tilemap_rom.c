@@ -21,6 +21,22 @@ void PortGen_clipdata_types_tilemap_Init(void) {
             p_sClipdataBehaviorTypes_Test = (const ClipBehavior(*)[CLIPDATA_TEST_COUNT])Port_ResolveRomData(0x0836694cu);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sClipdataBehaviorTypes_Tilemap = (const ClipBehavior(*)[CLIPDATA_TILEMAP_COUNT])Port_ResolveRomData(0x08365330u);
+            p_sClipdataCollisionTypes_Tilemap = (const u8(*)[CLIPDATA_TILEMAP_COUNT])Port_ResolveRomData(0x083654d0u);
+            p_sCommonTilemap = (const u16(*)[832])Port_ResolveRomData(0x083655a0u);
+            p_sClipdataCollisionTypes_Test = (const u8(*)[CLIPDATA_TEST_COUNT])Port_ResolveRomData(0x08365c20u);
+            p_sClipdataBehaviorTypes_Test = (const ClipBehavior(*)[CLIPDATA_TEST_COUNT])Port_ResolveRomData(0x08365cc0u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sClipdataBehaviorTypes_Tilemap = (const ClipBehavior(*)[CLIPDATA_TILEMAP_COUNT])Port_ResolveRomData(0x0836538cu);
+            p_sClipdataCollisionTypes_Tilemap = (const u8(*)[CLIPDATA_TILEMAP_COUNT])Port_ResolveRomData(0x0836552cu);
+            p_sCommonTilemap = (const u16(*)[832])Port_ResolveRomData(0x083655fcu);
+            p_sClipdataCollisionTypes_Test = (const u8(*)[CLIPDATA_TEST_COUNT])Port_ResolveRomData(0x08365c7cu);
+            p_sClipdataBehaviorTypes_Test = (const ClipBehavior(*)[CLIPDATA_TEST_COUNT])Port_ResolveRomData(0x08365d1cu);
+            break;
+        }
         default:
             break;
     }

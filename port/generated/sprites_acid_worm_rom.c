@@ -55,6 +55,56 @@ void PortGen_acid_worm_Init(void) {
             p_sAcidWormOam_SpawnOnTop = (const struct FrameData(*)[24])Port_ResolveRomData(0x082fd014u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sAcidWormSpitCloseYVelocity = (const s16(*)[16])Port_ResolveRomData(0x082fab14u);
+            p_sAcidWormSpitFarYVelocity = (const s16(*)[26])Port_ResolveRomData(0x082fab34u);
+            p_sAcidWormSpitMiddleYVelocity = (const s16(*)[20])Port_ResolveRomData(0x082fab68u);
+            p_sAcidWormSwingingMovement = (const s16(*)[33])Port_ResolveRomData(0x082fab90u);
+            p_sAcidWormHeadRandomXVelocity = (const s16(*)[45])Port_ResolveRomData(0x082fabd2u);
+            p_sAcidWormGfx = (const u32(*)[1000])Port_ResolveRomData(0x082fac2cu);
+            p_sAcidWormPal = (const u16(*)[64])Port_ResolveRomData(0x082fbbccu);
+            p_sAcidWormOam_Idle = (const struct FrameData(*)[5])Port_ResolveRomData(0x082fc110u);
+            p_sAcidWormOam_Moving = (const struct FrameData(*)[3])Port_ResolveRomData(0x082fc138u);
+            p_sAcidWormOam_Spitting = (const struct FrameData(*)[15])Port_ResolveRomData(0x082fc150u);
+            p_sAcidWormOam_MouthClosed = (const struct FrameData(*)[5])Port_ResolveRomData(0x082fc1c8u);
+            p_sAcidWormPartOam_AroundMouth = (const struct FrameData(*)[2])Port_ResolveRomData(0x082fc1f0u);
+            p_sAcidWormPartOam_WeakPoint = (const struct FrameData(*)[9])Port_ResolveRomData(0x082fc200u);
+            p_sAcidWormPartOam_Unused = (const struct FrameData(*)[5])Port_ResolveRomData(0x082fc248u);
+            p_sAcidWormPartOam_BelowWeakPoint = (const struct FrameData(*)[2])Port_ResolveRomData(0x082fc270u);
+            p_sAcidWormPartOam_AboveSegments = (const struct FrameData(*)[2])Port_ResolveRomData(0x082fc280u);
+            p_sAcidWormPartOam_Segment = (const struct FrameData(*)[2])Port_ResolveRomData(0x082fc290u);
+            p_sAcidWormPartOam_Unused2 = (const struct FrameData(*)[5])Port_ResolveRomData(0x082fc2a0u);
+            p_sAcidWormSpitOam_Moving = (const struct FrameData(*)[4])Port_ResolveRomData(0x082fc2c8u);
+            p_sAcidWormSpitOam_Exploding = (const struct FrameData(*)[6])Port_ResolveRomData(0x082fc2e8u);
+            p_sAcidWormOam_Warning = (const struct FrameData(*)[14])Port_ResolveRomData(0x082fc318u);
+            p_sAcidWormOam_SpawnOnTop = (const struct FrameData(*)[24])Port_ResolveRomData(0x082fc388u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sAcidWormSpitCloseYVelocity = (const s16(*)[16])Port_ResolveRomData(0x082fab70u);
+            p_sAcidWormSpitFarYVelocity = (const s16(*)[26])Port_ResolveRomData(0x082fab90u);
+            p_sAcidWormSpitMiddleYVelocity = (const s16(*)[20])Port_ResolveRomData(0x082fabc4u);
+            p_sAcidWormSwingingMovement = (const s16(*)[33])Port_ResolveRomData(0x082fabecu);
+            p_sAcidWormHeadRandomXVelocity = (const s16(*)[45])Port_ResolveRomData(0x082fac2eu);
+            p_sAcidWormGfx = (const u32(*)[1000])Port_ResolveRomData(0x082fac88u);
+            p_sAcidWormPal = (const u16(*)[64])Port_ResolveRomData(0x082fbc28u);
+            p_sAcidWormOam_Idle = (const struct FrameData(*)[5])Port_ResolveRomData(0x082fc16cu);
+            p_sAcidWormOam_Moving = (const struct FrameData(*)[3])Port_ResolveRomData(0x082fc194u);
+            p_sAcidWormOam_Spitting = (const struct FrameData(*)[15])Port_ResolveRomData(0x082fc1acu);
+            p_sAcidWormOam_MouthClosed = (const struct FrameData(*)[5])Port_ResolveRomData(0x082fc224u);
+            p_sAcidWormPartOam_AroundMouth = (const struct FrameData(*)[2])Port_ResolveRomData(0x082fc24cu);
+            p_sAcidWormPartOam_WeakPoint = (const struct FrameData(*)[9])Port_ResolveRomData(0x082fc25cu);
+            p_sAcidWormPartOam_Unused = (const struct FrameData(*)[5])Port_ResolveRomData(0x082fc2a4u);
+            p_sAcidWormPartOam_BelowWeakPoint = (const struct FrameData(*)[2])Port_ResolveRomData(0x082fc2ccu);
+            p_sAcidWormPartOam_AboveSegments = (const struct FrameData(*)[2])Port_ResolveRomData(0x082fc2dcu);
+            p_sAcidWormPartOam_Segment = (const struct FrameData(*)[2])Port_ResolveRomData(0x082fc2ecu);
+            p_sAcidWormPartOam_Unused2 = (const struct FrameData(*)[5])Port_ResolveRomData(0x082fc2fcu);
+            p_sAcidWormSpitOam_Moving = (const struct FrameData(*)[4])Port_ResolveRomData(0x082fc324u);
+            p_sAcidWormSpitOam_Exploding = (const struct FrameData(*)[6])Port_ResolveRomData(0x082fc344u);
+            p_sAcidWormOam_Warning = (const struct FrameData(*)[14])Port_ResolveRomData(0x082fc374u);
+            p_sAcidWormOam_SpawnOnTop = (const struct FrameData(*)[24])Port_ResolveRomData(0x082fc3e4u);
+            break;
+        }
         default:
             break;
     }

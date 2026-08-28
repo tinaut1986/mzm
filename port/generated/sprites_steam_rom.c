@@ -27,6 +27,28 @@ void PortGen_steam_Init(void) {
             p_sSteamDiagonalOam_Small = (const struct FrameData(*)[10])Port_ResolveRomData(0x08319fa8u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sSteamGfx = (const u32(*)[195])Port_ResolveRomData(0x083188ccu);
+            p_sSteamPal = (const u16(*)[16])Port_ResolveRomData(0x08318bd8u);
+            p_sSteamOam_HorizontalLarge = (const struct FrameData(*)[12])Port_ResolveRomData(0x0831915cu);
+            p_sSteamOam_VerticalLarge = (const struct FrameData(*)[12])Port_ResolveRomData(0x083191bcu);
+            p_sSteamOam_HorizontalSmall = (const struct FrameData(*)[10])Port_ResolveRomData(0x0831921cu);
+            p_sSteamOam_VerticalSmall = (const struct FrameData(*)[10])Port_ResolveRomData(0x0831926cu);
+            p_sSteamDiagonalOam_Large = (const struct FrameData(*)[12])Port_ResolveRomData(0x083192bcu);
+            p_sSteamDiagonalOam_Small = (const struct FrameData(*)[10])Port_ResolveRomData(0x0831931cu);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sSteamGfx = (const u32(*)[195])Port_ResolveRomData(0x08318928u);
+            p_sSteamPal = (const u16(*)[16])Port_ResolveRomData(0x08318c34u);
+            p_sSteamOam_HorizontalLarge = (const struct FrameData(*)[12])Port_ResolveRomData(0x083191b8u);
+            p_sSteamOam_VerticalLarge = (const struct FrameData(*)[12])Port_ResolveRomData(0x08319218u);
+            p_sSteamOam_HorizontalSmall = (const struct FrameData(*)[10])Port_ResolveRomData(0x08319278u);
+            p_sSteamOam_VerticalSmall = (const struct FrameData(*)[10])Port_ResolveRomData(0x083192c8u);
+            p_sSteamDiagonalOam_Large = (const struct FrameData(*)[12])Port_ResolveRomData(0x08319318u);
+            p_sSteamDiagonalOam_Small = (const struct FrameData(*)[10])Port_ResolveRomData(0x08319378u);
+            break;
+        }
         default:
             break;
     }

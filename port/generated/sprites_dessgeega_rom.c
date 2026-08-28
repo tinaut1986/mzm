@@ -29,6 +29,30 @@ void PortGen_dessgeega_Init(void) {
             p_sDessGeegaOam_Landing = (const struct FrameData(*)[5])Port_ResolveRomData(0x082d9028u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sDessgeegaHighJumpYVelocity = (const s16(*)[10])Port_ResolveRomData(0x082d7ad4u);
+            p_sDessgeegaLowJumpYVelocity = (const s16(*)[10])Port_ResolveRomData(0x082d7ae8u);
+            p_sDessgeegaGfx = (const u32(*)[270])Port_ResolveRomData(0x082d7afcu);
+            p_sDessgeegaPal = (const u16(*)[16])Port_ResolveRomData(0x082d7f34u);
+            p_sDessGeegaOam_Idle = (const struct FrameData(*)[5])Port_ResolveRomData(0x082d82dcu);
+            p_sDessGeegaOam_Screaming = (const struct FrameData(*)[12])Port_ResolveRomData(0x082d8304u);
+            p_sDessGeegaOam_JumpWarning = (const struct FrameData(*)[4])Port_ResolveRomData(0x082d8364u);
+            p_sDessGeegaOam_Jumping = (const struct FrameData(*)[3])Port_ResolveRomData(0x082d8384u);
+            p_sDessGeegaOam_Landing = (const struct FrameData(*)[5])Port_ResolveRomData(0x082d839cu);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sDessgeegaHighJumpYVelocity = (const s16(*)[10])Port_ResolveRomData(0x082d7b30u);
+            p_sDessgeegaLowJumpYVelocity = (const s16(*)[10])Port_ResolveRomData(0x082d7b44u);
+            p_sDessgeegaGfx = (const u32(*)[270])Port_ResolveRomData(0x082d7b58u);
+            p_sDessgeegaPal = (const u16(*)[16])Port_ResolveRomData(0x082d7f90u);
+            p_sDessGeegaOam_Idle = (const struct FrameData(*)[5])Port_ResolveRomData(0x082d8338u);
+            p_sDessGeegaOam_Screaming = (const struct FrameData(*)[12])Port_ResolveRomData(0x082d8360u);
+            p_sDessGeegaOam_JumpWarning = (const struct FrameData(*)[4])Port_ResolveRomData(0x082d83c0u);
+            p_sDessGeegaOam_Jumping = (const struct FrameData(*)[3])Port_ResolveRomData(0x082d83e0u);
+            p_sDessGeegaOam_Landing = (const struct FrameData(*)[5])Port_ResolveRomData(0x082d83f8u);
+            break;
+        }
         default:
             break;
     }

@@ -20,10 +20,8 @@ extern const u16(*p_sTitleScreenPal)[15*16];
 #define sTitleScreenPal (*p_sTitleScreenPal)
 extern const u16(*p_sTitleScreenPromptPal)[5*16];
 #define sTitleScreenPromptPal (*p_sTitleScreenPromptPal)
-#if (defined(REGION_EU))
 extern const u16(*p_sTitleScreenUnselectedMenuPal)[1*16];
 #define sTitleScreenUnselectedMenuPal (*p_sTitleScreenUnselectedMenuPal)
-#endif
 extern const u32(*p_sTitleScreenTitleGfx)[1095];
 #define sTitleScreenTitleGfx (*p_sTitleScreenTitleGfx)
 extern const u32(*p_sTitleScreenSparklesGfx)[256];
@@ -34,7 +32,6 @@ extern const u32(*p_sTitleScreenSpaceBackgroundDecorationGfx)[797];
 #define sTitleScreenSpaceBackgroundDecorationGfx (*p_sTitleScreenSpaceBackgroundDecorationGfx)
 extern const u32(*p_sTitleScreenSpaceAndGroundBackgroundGfx)[1920];
 #define sTitleScreenSpaceAndGroundBackgroundGfx (*p_sTitleScreenSpaceAndGroundBackgroundGfx)
-#if (defined(REGION_EU))
 extern const u32(*p_sTitleScreenEnglishMenuGfx_Top)[85];
 #define sTitleScreenEnglishMenuGfx_Top (*p_sTitleScreenEnglishMenuGfx_Top)
 extern const u32(*p_sTitleScreenEnglishMenuGfx_Bottom)[72];
@@ -55,7 +52,6 @@ extern const u32(*p_sTitleScreenSpanishMenuGfx_Top)[64];
 #define sTitleScreenSpanishMenuGfx_Top (*p_sTitleScreenSpanishMenuGfx_Top)
 extern const u32(*p_sTitleScreenSpanishMenuGfx_Bottom)[45];
 #define sTitleScreenSpanishMenuGfx_Bottom (*p_sTitleScreenSpanishMenuGfx_Bottom)
-#endif
 extern const u32*p_sTitleScreenTitleTileTable;
 #define sTitleScreenTitleTileTable p_sTitleScreenTitleTileTable
 extern const u32(*p_sTitleScreenSpaceBackgroundTileTable)[702];

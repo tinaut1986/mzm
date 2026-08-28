@@ -31,6 +31,32 @@ void PortGen_unknown_item_block_Init(void) {
             p_sUnknownItemBlockLightOam_Idle = (const struct FrameData(*)[3])Port_ResolveRomData(0x0831b1bcu);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sPlasmaBeamBlockGfx = (const u32(*)[306])Port_ResolveRomData(0x0831936cu);
+            p_sPlasmaBeamBlockPal = (const u16(*)[16])Port_ResolveRomData(0x08319834u);
+            p_sGravityBlockGfx = (const u32(*)[303])Port_ResolveRomData(0x08319854u);
+            p_sGravityBlockPal = (const u16(*)[16])Port_ResolveRomData(0x08319d10u);
+            p_sSpaceJumpBlockGfx = (const u32(*)[297])Port_ResolveRomData(0x08319d30u);
+            p_sSpaceJumpBlockPal = (const u16(*)[16])Port_ResolveRomData(0x0831a1d4u);
+            p_sUnknownItemBlockOam_Idle = (const struct FrameData(*)[2])Port_ResolveRomData(0x0831a490u);
+            p_sUnknownItemBlockOam_Activated = (const struct FrameData(*)[7])Port_ResolveRomData(0x0831a4a0u);
+            p_sUnknownItemBlockOam_Exploding = (const struct FrameData(*)[11])Port_ResolveRomData(0x0831a4d8u);
+            p_sUnknownItemBlockLightOam_Idle = (const struct FrameData(*)[3])Port_ResolveRomData(0x0831a530u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sPlasmaBeamBlockGfx = (const u32(*)[306])Port_ResolveRomData(0x083193c8u);
+            p_sPlasmaBeamBlockPal = (const u16(*)[16])Port_ResolveRomData(0x08319890u);
+            p_sGravityBlockGfx = (const u32(*)[303])Port_ResolveRomData(0x083198b0u);
+            p_sGravityBlockPal = (const u16(*)[16])Port_ResolveRomData(0x08319d6cu);
+            p_sSpaceJumpBlockGfx = (const u32(*)[297])Port_ResolveRomData(0x08319d8cu);
+            p_sSpaceJumpBlockPal = (const u16(*)[16])Port_ResolveRomData(0x0831a230u);
+            p_sUnknownItemBlockOam_Idle = (const struct FrameData(*)[2])Port_ResolveRomData(0x0831a4ecu);
+            p_sUnknownItemBlockOam_Activated = (const struct FrameData(*)[7])Port_ResolveRomData(0x0831a4fcu);
+            p_sUnknownItemBlockOam_Exploding = (const struct FrameData(*)[11])Port_ResolveRomData(0x0831a534u);
+            p_sUnknownItemBlockLightOam_Idle = (const struct FrameData(*)[3])Port_ResolveRomData(0x0831a58cu);
+            break;
+        }
         default:
             break;
     }

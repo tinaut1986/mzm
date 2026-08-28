@@ -16,6 +16,18 @@ void PortGen_animated_tiles_data_Init(void) {
             p_sAnimatedLiquidsGfx = (const u8(*)[12*512])Port_ResolveRomData(0x08766100u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sAnimatedTilesGfx = (const u8(*)[100*128])Port_ResolveRomData(0x0874f8b4u);
+            p_sAnimatedTankGfx = (const u8(*)[4*512])Port_ResolveRomData(0x08752ab4u);
+            p_sAnimatedLiquidsGfx = (const u8(*)[12*512])Port_ResolveRomData(0x087532b4u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sAnimatedTilesGfx = (const u8(*)[100*128])Port_ResolveRomData(0x0874f9c4u);
+            p_sAnimatedTankGfx = (const u8(*)[4*512])Port_ResolveRomData(0x08752bc4u);
+            p_sAnimatedLiquidsGfx = (const u8(*)[12*512])Port_ResolveRomData(0x087533c4u);
+            break;
+        }
         default:
             break;
     }

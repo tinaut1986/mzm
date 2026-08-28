@@ -1016,7 +1016,7 @@ void ConnectionCheckHatchLockEvents(void)
             // Check invert event if before
             if (pLock->type == HATCH_LOCK_EVENT_TYPE_BEFORE)
                 eventCheck ^= TRUE;
-            else if (pLock->type == HATCH_LOCK_EVENT_TYPE_BEFORE_UNLOCKEABLE)
+            else if (pLock->type == HATCH_LOCK_EVENT_TYPE_BEFORE_UNLOCKABLE)
                 eventCheck ^= TRUE;
 
             if (eventCheck)
@@ -1047,9 +1047,9 @@ void ConnectionCheckHatchLockEvents(void)
             gHatchesState.hatchesLockedWithEvent |= hatchesToLock;
         else if (pLock->type == HATCH_LOCK_EVENT_TYPE_BEFORE)
             gHatchesState.hatchesLockedWithEvent |= hatchesToLock;
-        else if (pLock->type == HATCH_LOCK_EVENT_TYPE_AFTER_UNLOCKEABLE)
+        else if (pLock->type == HATCH_LOCK_EVENT_TYPE_AFTER_UNLOCKABLE)
             gHatchesState.hatchesLockedWithEventUnlockable |= hatchesToLock;
-        else if (pLock->type == HATCH_LOCK_EVENT_TYPE_BEFORE_UNLOCKEABLE)
+        else if (pLock->type == HATCH_LOCK_EVENT_TYPE_BEFORE_UNLOCKABLE)
             gHatchesState.hatchesLockedWithEventUnlockable |= hatchesToLock;
     }
 

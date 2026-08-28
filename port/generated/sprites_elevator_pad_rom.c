@@ -19,6 +19,20 @@ void PortGen_elevator_pad_Init(void) {
             p_sElevatorPadOam_Idle = (const struct FrameData(*)[7])Port_ResolveRomData(0x082e1c74u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sElevatorPadGfx = (const u32(*)[136])Port_ResolveRomData(0x082e0d48u);
+            p_sElevatorPadPal = (const u16(*)[16])Port_ResolveRomData(0x082e0f68u);
+            p_sElevatorPadOam_Moving = (const struct FrameData(*)[5])Port_ResolveRomData(0x082e0fc0u);
+            p_sElevatorPadOam_Idle = (const struct FrameData(*)[7])Port_ResolveRomData(0x082e0fe8u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sElevatorPadGfx = (const u32(*)[136])Port_ResolveRomData(0x082e0da4u);
+            p_sElevatorPadPal = (const u16(*)[16])Port_ResolveRomData(0x082e0fc4u);
+            p_sElevatorPadOam_Moving = (const struct FrameData(*)[5])Port_ResolveRomData(0x082e101cu);
+            p_sElevatorPadOam_Idle = (const struct FrameData(*)[7])Port_ResolveRomData(0x082e1044u);
+            break;
+        }
         default:
             break;
     }

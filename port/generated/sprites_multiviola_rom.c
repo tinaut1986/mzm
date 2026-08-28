@@ -17,6 +17,18 @@ void PortGen_multiviola_Init(void) {
             p_sMultiviolaOam_Moving = (const struct FrameData(*)[57])Port_ResolveRomData(0x082d11acu);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sMultiviolaGfx = (const u32(*)[221])Port_ResolveRomData(0x082cfda0u);
+            p_sMultiviolaPal = (const u16(*)[16])Port_ResolveRomData(0x082d0114u);
+            p_sMultiviolaOam_Moving = (const struct FrameData(*)[57])Port_ResolveRomData(0x082d0520u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sMultiviolaGfx = (const u32(*)[221])Port_ResolveRomData(0x082cfdfcu);
+            p_sMultiviolaPal = (const u16(*)[16])Port_ResolveRomData(0x082d0170u);
+            p_sMultiviolaOam_Moving = (const struct FrameData(*)[57])Port_ResolveRomData(0x082d057cu);
+            break;
+        }
         default:
             break;
     }

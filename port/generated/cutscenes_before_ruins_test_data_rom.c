@@ -51,6 +51,52 @@ void PortGen_before_ruins_test_data_Init(void) {
             p_sBeforeRuinsTestSamusCloseUpOutlineTileTable = (const u32(*)[333])Port_ResolveRomData(0x083edbf0u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sBeforeRuinsTestPageData = (const struct CutscenePageData(*)[9])Port_ResolveRomData(0x083ce46cu);
+            p_sBeforeRuinsTestChozoWallSidesPal = (const u16(*)[10*16])Port_ResolveRomData(0x083ce4b4u);
+            p_sBeforeRuinsTestChozoWallPal = (const u16(*)[8*16])Port_ResolveRomData(0x083ce5f4u);
+            p_sBeforeRuinsTestSamusCloseUpPal = (const u16(*)[16*16])Port_ResolveRomData(0x083ce6f4u);
+            p_sBeforeRuinsTestLeftSideOfChozoWallGfx = (const u32(*)[4049])Port_ResolveRomData(0x083ce8f4u);
+            p_sBeforeRuinsTestRightSideOfChozoWallGfx = (const u32(*)[3987])Port_ResolveRomData(0x083d2838u);
+            p_sBeforeRuinsTestChozoWallBackgroundGfx = (const u32(*)[6446])Port_ResolveRomData(0x083d6684u);
+            p_sBeforeRuinsTestYoungSamusAndGreyVoiceGfx = (const u32(*)[1792])Port_ResolveRomData(0x083dcb3cu);
+            p_sBeforeRuinsTestYoungSamusAndGreyVoiceCloseUpGfx = (const u32(*)[3818])Port_ResolveRomData(0x083de73cu);
+            p_sBeforeRuinsTestYoungSamusCloseUpGfx = (const u32(*)[2979])Port_ResolveRomData(0x083e22e4u);
+            p_sBeforeRuinsTestSamusCloseUpGfx = (const u32(*)[5285])Port_ResolveRomData(0x083e5170u);
+            p_sBeforeRuinsTestLeftSideOfChozoWallTileTable = (const u32(*)[368])Port_ResolveRomData(0x083ea404u);
+            p_sBeforeRuinsTestRightSideOfChozoWallTileTable = (const u32(*)[369])Port_ResolveRomData(0x083ea9c4u);
+            p_sBeforeRuinsTestChozoWallBackgroundTileTable = (const u32(*)[551])Port_ResolveRomData(0x083eaf88u);
+            p_sBeforeRuinsTestYoungSamusAndGreyVoiceTileTable = (const u32(*)[185])Port_ResolveRomData(0x083eb824u);
+            p_sBeforeRuinsTestYoungSamusAndGreyVoiceCloseUpTileTable = (const u32(*)[452])Port_ResolveRomData(0x083ebb08u);
+            p_sBeforeRuinsTestYoungSamusCloseUpTileTable = (const u32(*)[368])Port_ResolveRomData(0x083ec218u);
+            p_sBeforeRuinsTestSamusCloseUpEyesClosedTileTable = (const u32(*)[251])Port_ResolveRomData(0x083ec7d8u);
+            p_sBeforeRuinsTestSamusCloseUpEyesOpenedTileTable = (const u32(*)[232])Port_ResolveRomData(0x083ecbc4u);
+            p_sBeforeRuinsTestSamusCloseUpOutlineTileTable = (const u32(*)[333])Port_ResolveRomData(0x083ecf64u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sBeforeRuinsTestPageData = (const struct CutscenePageData(*)[9])Port_ResolveRomData(0x083ce4c8u);
+            p_sBeforeRuinsTestChozoWallSidesPal = (const u16(*)[10*16])Port_ResolveRomData(0x083ce510u);
+            p_sBeforeRuinsTestChozoWallPal = (const u16(*)[8*16])Port_ResolveRomData(0x083ce650u);
+            p_sBeforeRuinsTestSamusCloseUpPal = (const u16(*)[16*16])Port_ResolveRomData(0x083ce750u);
+            p_sBeforeRuinsTestLeftSideOfChozoWallGfx = (const u32(*)[4049])Port_ResolveRomData(0x083ce950u);
+            p_sBeforeRuinsTestRightSideOfChozoWallGfx = (const u32(*)[3987])Port_ResolveRomData(0x083d2894u);
+            p_sBeforeRuinsTestChozoWallBackgroundGfx = (const u32(*)[6446])Port_ResolveRomData(0x083d66e0u);
+            p_sBeforeRuinsTestYoungSamusAndGreyVoiceGfx = (const u32(*)[1792])Port_ResolveRomData(0x083dcb98u);
+            p_sBeforeRuinsTestYoungSamusAndGreyVoiceCloseUpGfx = (const u32(*)[3818])Port_ResolveRomData(0x083de798u);
+            p_sBeforeRuinsTestYoungSamusCloseUpGfx = (const u32(*)[2979])Port_ResolveRomData(0x083e2340u);
+            p_sBeforeRuinsTestSamusCloseUpGfx = (const u32(*)[5285])Port_ResolveRomData(0x083e51ccu);
+            p_sBeforeRuinsTestLeftSideOfChozoWallTileTable = (const u32(*)[368])Port_ResolveRomData(0x083ea460u);
+            p_sBeforeRuinsTestRightSideOfChozoWallTileTable = (const u32(*)[369])Port_ResolveRomData(0x083eaa20u);
+            p_sBeforeRuinsTestChozoWallBackgroundTileTable = (const u32(*)[551])Port_ResolveRomData(0x083eafe4u);
+            p_sBeforeRuinsTestYoungSamusAndGreyVoiceTileTable = (const u32(*)[185])Port_ResolveRomData(0x083eb880u);
+            p_sBeforeRuinsTestYoungSamusAndGreyVoiceCloseUpTileTable = (const u32(*)[452])Port_ResolveRomData(0x083ebb64u);
+            p_sBeforeRuinsTestYoungSamusCloseUpTileTable = (const u32(*)[368])Port_ResolveRomData(0x083ec274u);
+            p_sBeforeRuinsTestSamusCloseUpEyesClosedTileTable = (const u32(*)[251])Port_ResolveRomData(0x083ec834u);
+            p_sBeforeRuinsTestSamusCloseUpEyesOpenedTileTable = (const u32(*)[232])Port_ResolveRomData(0x083ecc20u);
+            p_sBeforeRuinsTestSamusCloseUpOutlineTileTable = (const u32(*)[333])Port_ResolveRomData(0x083ecfc0u);
+            break;
+        }
         default:
             break;
     }

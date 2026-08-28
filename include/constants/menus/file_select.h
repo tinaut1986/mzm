@@ -17,6 +17,30 @@ MAKE_ENUM(u8, FileSelectFadingStage) {
     FILE_SELECT_FADING_STAGE_CHECK_FADE_OUT
 };
 
+/*
+ * EUR renders the file-screen message in ONE stage that loops over up to 8
+ * lines; the other regions use four stages, one per line. The port has to
+ * serve every region from one binary, so it needs both sets of values to
+ * exist at once: LINE doubles as LINE_1, and UPDATE_QUEUE sits after LINE_4.
+ * That moves UPDATE_QUEUE from 3 to 6 for EUR, which is why the EUR path in
+ * FileScreenProcessText assigns it explicitly instead of incrementing (see
+ * the MZM_3DS branch there).
+ *
+ * The GBA build keeps the original per-region numbering so `make check` still
+ * matches; LINE / LINE_1 are aliased so the shared code compiles either way.
+ */
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+MAKE_ENUM(u8, FileScreenProcessTextStage) {
+    FILE_SCREEN_PROCESS_TEXT_STAGE_NONE,
+    FILE_SCREEN_PROCESS_TEXT_STAGE_INIT,
+    FILE_SCREEN_PROCESS_TEXT_STAGE_LINE,
+    FILE_SCREEN_PROCESS_TEXT_STAGE_LINE_2,
+    FILE_SCREEN_PROCESS_TEXT_STAGE_LINE_3,
+    FILE_SCREEN_PROCESS_TEXT_STAGE_LINE_4,
+    FILE_SCREEN_PROCESS_TEXT_STAGE_UPDATE_QUEUE
+};
+#define FILE_SCREEN_PROCESS_TEXT_STAGE_LINE_1 FILE_SCREEN_PROCESS_TEXT_STAGE_LINE
+#else
 MAKE_ENUM(u8, FileScreenProcessTextStage) {
     FILE_SCREEN_PROCESS_TEXT_STAGE_NONE,
     FILE_SCREEN_PROCESS_TEXT_STAGE_INIT,
@@ -30,6 +54,10 @@ MAKE_ENUM(u8, FileScreenProcessTextStage) {
 #endif // REGION_EU
     FILE_SCREEN_PROCESS_TEXT_STAGE_UPDATE_QUEUE
 };
+#ifndef REGION_EU
+#define FILE_SCREEN_PROCESS_TEXT_STAGE_LINE FILE_SCREEN_PROCESS_TEXT_STAGE_LINE_1
+#endif
+#endif
 
 MAKE_ENUM(u8, FileSelectEraseFileStage) {
     FILE_SELECT_ERASE_FILE_STAGE_INIT,

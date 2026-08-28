@@ -1,3 +1,4 @@
+#include "region.h"
 #include "samus.h"
 #include "gba.h"
 #include "block.h" // Necessary
@@ -2828,9 +2829,8 @@ void SamusUpdateHitboxMovingDirection(void)
     pPhysics->touchingTopBlock = FALSE;
     pPhysics->unk_5A = 0;
 
-#ifdef REGION_EU
-    if (pPhysics->standingStatus != STANDING_NOT_IN_CONTROL)
-#endif // REGION_EU
+    // EUR added this guard; the earlier releases update the direction regardless
+    if (!REGION_IS_EU() || pPhysics->standingStatus != STANDING_NOT_IN_CONTROL)
     {
         pPhysics->horizontalMovingDirection = HDMOVING_NONE;
         pPhysics->verticalMovingDirection = VDMOVING_NONE;
@@ -6705,9 +6705,12 @@ SamusPose SamusExecutePoseHandler(struct SamusData* pData)
     pEquipment = &gEquipment;
     pHazard = &gSamusHazardDamage;
 
-#if defined(REGION_EU) || defined(BUGFIX)
+#ifdef BUGFIX
     if (gSubGameMode1 != 0)
-#endif // REGION_EU || BUGFIX
+#else
+    // EUR added this guard (see docs/bugs_and_glitches.md)
+    if (!REGION_IS_EU() || gSubGameMode1 != 0)
+#endif
     {
         // Update hazard damage
         if (SamusTakeHazardDamage(pData, pEquipment, pHazard))
@@ -6735,9 +6738,12 @@ SamusPose SamusExecutePoseHandler(struct SamusData* pData)
     // Update weapon highlight
     if (pEquipment->suitType != SUIT_SUITLESS)
     {
-#if defined(REGION_EU) || defined(BUGFIX)
+#ifdef BUGFIX
         if (pData->pose != SPOSE_DYING)
-#endif // REGION_EU || BUGFIX
+#else
+        // EUR added this guard (see docs/bugs_and_glitches.md)
+        if (!REGION_IS_EU() || pData->pose != SPOSE_DYING)
+#endif
         {
             SamusSetHighlightedWeapon(pData, pWeapon, pEquipment);
         }

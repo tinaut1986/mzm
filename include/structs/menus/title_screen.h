@@ -11,9 +11,10 @@
 
 struct TitleScreenOamTiming {
     u8 stage;
-#ifdef REGION_EU
+    /* EUR-only ("Start Game" / "Language" title menu), but declared in every
+     * region: the u8 sits in what is otherwise alignment padding, so the
+     * struct layout is identical either way. */
     u8 menuOption;
-#endif // REGION_EU
     u16 timer;
 };
 

@@ -408,7 +408,6 @@ extern const u16*p_sEnglishText_Location_Unused17;
 #define sEnglishText_Location_Unused17 p_sEnglishText_Location_Unused17
 extern const u16*p_sEnglishText_Location_Unused18;
 #define sEnglishText_Location_Unused18 p_sEnglishText_Location_Unused18
-#if (defined(REGION_EU))
 extern const u16*p_sGermanText_Message_Dummy;
 #define sGermanText_Message_Dummy p_sGermanText_Message_Dummy
 extern const u16*p_sGermanText_Message_EnergyTankAcquired;
@@ -929,7 +928,6 @@ extern const u16*p_sSpanishText_Location_Unused17;
 #define sSpanishText_Location_Unused17 p_sSpanishText_Location_Unused17
 extern const u16*p_sSpanishText_Location_Unused18;
 #define sSpanishText_Location_Unused18 p_sSpanishText_Location_Unused18
-#endif
 extern const u16*p_sJapaneseText_Description_LongBeam;
 #define sJapaneseText_Description_LongBeam p_sJapaneseText_Description_LongBeam
 extern const u16*p_sJapaneseText_Description_ChargeBeam;
@@ -1302,7 +1300,7 @@ extern const u16*p_sEnglishText_FileScreen_SoundTestUnlock;
 #define sEnglishText_FileScreen_SoundTestUnlock p_sEnglishText_FileScreen_SoundTestUnlock
 extern const u16*p_sEnglishText_FileScreen_NesMetroidUnlock;
 #define sEnglishText_FileScreen_NesMetroidUnlock p_sEnglishText_FileScreen_NesMetroidUnlock
-#if (defined(REGION_EU))
+#if (defined(REGION_EU) || defined(MZM_3DS) || defined(PORT_NATIVE))
 extern const u16*p_sGermanText_Description_LongBeam;
 #define sGermanText_Description_LongBeam p_sGermanText_Description_LongBeam
 extern const u16*p_sGermanText_Description_ChargeBeam;
@@ -1800,7 +1798,7 @@ extern const u16*p_sSpanishText_FileScreen_SoundTestUnlock;
 extern const u16*p_sSpanishText_FileScreen_NesMetroidUnlock;
 #define sSpanishText_FileScreen_NesMetroidUnlock p_sSpanishText_FileScreen_NesMetroidUnlock
 #endif
-#if ((defined(REGION_US_BETA)) && !((defined(REGION_EU))))
+#if ((defined(REGION_US_BETA)) && !((defined(REGION_EU) || defined(MZM_3DS) || defined(PORT_NATIVE))))
 extern const u16*p_sGermanText_Description_LongBeam;
 #define sGermanText_Description_LongBeam p_sGermanText_Description_LongBeam
 extern const u16*p_sGermanText_Description_ChargeBeam;
@@ -2018,7 +2016,7 @@ extern const u16*(*p_sEnglishTextPointers_Story)[STORY_TEXT_COUNT];
 #define sEnglishTextPointers_Story (*p_sEnglishTextPointers_Story)
 extern const u16*(*p_sEnglishTextPointers_FileScreen)[FILE_SCREEN_TEXT_COUNT];
 #define sEnglishTextPointers_FileScreen (*p_sEnglishTextPointers_FileScreen)
-#if (defined(REGION_EU))
+#if (defined(REGION_EU) || defined(MZM_3DS) || defined(PORT_NATIVE))
 extern const u16*(*p_sGermanTextPointers_Description)[DESCRIPTION_TEXT_COUNT];
 #define sGermanTextPointers_Description (*p_sGermanTextPointers_Description)
 extern const u16*(*p_sGermanTextPointers_Story)[STORY_TEXT_COUNT];
@@ -2044,7 +2042,7 @@ extern const u16*(*p_sSpanishTextPointers_Story)[STORY_TEXT_COUNT];
 extern const u16*(*p_sSpanishTextPointers_FileScreen)[FILE_SCREEN_TEXT_COUNT];
 #define sSpanishTextPointers_FileScreen (*p_sSpanishTextPointers_FileScreen)
 #endif
-#if ((defined(REGION_US_BETA)) && !((defined(REGION_EU))))
+#if ((defined(REGION_US_BETA)) && !((defined(REGION_EU) || defined(MZM_3DS) || defined(PORT_NATIVE))))
 extern const u16*(*p_sGermanTextPointers_Description)[DESCRIPTION_TEXT_COUNT-1];
 #define sGermanTextPointers_Description (*p_sGermanTextPointers_Description)
 extern const u16*(*p_sGermanTextPointers_Story)[3];
