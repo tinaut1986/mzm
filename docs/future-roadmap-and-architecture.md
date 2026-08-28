@@ -105,13 +105,26 @@ concreto de la próxima sesión.
 
 ---
 
-### Fase 4: RetroAchievements (`rcheevos`)
+### Fase 4: RetroAchievements (`rcheevos`) (IMPLEMENTADA, PENDIENTE DE PRUEBA EN CONSOLA)
 
-* **Objetivo:** Soporte oficial de logros de RetroAchievements (Game ID: 1394).
+**Estado a 2026-08-28: el cliente escrito a mano se ha sustituido por
+`rcheevos`; ver `docs/3ds-retroachievements-rcheevos-plan.md` para el
+detalle y para lo que falta verificar en hardware real.**
+
+* **Objetivo:** Soporte oficial de logros de RetroAchievements.
 * **Implementación:**
-  * Integrar la librería ligera en C [`rcheevos`](https://github.com/RetroAchievements/rcheevos).
-  * Exponer el callback `rc_peek(uint32_t address)` que lee directamente de `gIwram` y `gEwram`.
-  * Mostrar notificaciones emergentes de logros desbloqueados en la pantalla inferior.
+  * [`rcheevos`](https://github.com/RetroAchievements/rcheevos) vendorizada en
+    `third_party/rcheevos`; el port usa `rc_client`, que se encarga del login,
+    la sesión, la cola de desbloqueos y las reglas de hardcore.
+  * El juego se identifica por el MD5 de la ROM (`gRomData`), así que el
+    servidor resuelve el ID correcto de cada región (EUR / USA / JAP) sin
+    ningún ID fijo en el código.
+  * El callback de memoria traduce las direcciones de RA: EWRAM directo sobre
+    `gEwram` (ya colocado por `ewram_symbols.ld`) e IWRAM a través del mapa
+    generado por `tools/gen_ra_iwram_map.py`, que reconstruye la disposición
+    original de `src/globals1.c` / `globals2.c` y se valida contra las notas
+    de código públicas de RetroAchievements.
+  * Notificaciones emergentes de logros desbloqueados en la pantalla inferior.
 
 ---
 

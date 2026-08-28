@@ -96,22 +96,35 @@ AccessControlInfo:
     GetResourceLimitCurrentValues: 58
     Break: 60
     OutputDebugString: 61
+  # ac:u, http:C, soc:U and ssl:C are what let RetroAchievements reach the
+  # network. Unlike the .3dsx under the Homebrew Launcher, which inherits
+  # broad permissions, an installed title only gets the services listed here:
+  # without them httpcInit fails on the first request and the achievements UI
+  # simply reports "offline" on a perfectly good connection. Do not drop them.
   ServiceAccessControl:
     - APT:U
+    - ac:u
     - cfg:u
     - dsp::DSP
     - fs:USER
     - gsp::Gpu
     - hid:USER
+    - http:C
     - ptm:u
+    - soc:U
+    - ssl:C
 
 SystemControlInfo:
   SaveDataSize: 0KB
   RemasterVersion: 1
   StackSize: 0x40000
   Dependency:
+    ac: 0x0004013000002402
     cfg: 0x0004013000001702
     dsp: 0x0004013000001a02
     gsp: 0x0004013000001c02
     hid: 0x0004013000001d02
+    http: 0x0004013000002902
     ptm: 0x0004013000002202
+    socket: 0x0004013000002e02
+    ssl: 0x0004013000002f02

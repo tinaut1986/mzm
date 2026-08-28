@@ -26,7 +26,7 @@ Three touch tabs (a fourth, `DEBUG`, only exists in debug builds):
 
 ### Other
 
-- **RetroAchievements**: optional login, achievement list with badges, and a hardcore mode. Talks to `retroachievements.org` directly over the console's HTTP service, so it needs a network connection and an account.
+- **RetroAchievements**: optional login, achievement list with badges, and a hardcore mode, built on [rcheevos](https://github.com/RetroAchievements/rcheevos). The game is identified by the ROM's hash, so each region resolves to its own achievement set. Talks to `retroachievements.org` directly over the console's HTTP service, so it needs a network connection and an account.
 - **Native audio** through the decompiled MZM sound engine, output on the 3DS DSP (NDSP).
 - **Console optimization**: New 3DS 804 MHz CPU boost and L2 cache when available, plus frame pacing for Old 3DS and 2DS.
 - Settings and the save file live next to the ROM on the SD card, not inside the app.
