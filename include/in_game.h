@@ -6,9 +6,9 @@
 
 u32 InGameHandler(void);
 void SetVBlankCodeInGame(void);
-#ifdef REGION_EU
+/* EUR calls this from agbmain; the other regions do the same work inside
+ * InGameHandler. Compiled in every region so the port can pick at runtime. */
 void InGameIoWriteRegisters(void);
-#endif // REGION_EU
 void TransferSamusGraphics(u32 updatePalette, struct SamusPhysics* pPhysics);
 void VBlankCodeInGameLoad(void);
 void TransferSamusAndBgGraphics(void);

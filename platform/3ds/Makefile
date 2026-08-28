@@ -124,19 +124,26 @@ endif
 endif
 VERSION ?= $(GIT_VERSION)
 
-# Which retail region's code paths / ROM offsets to compile in. The port
-# still detects the loaded ROM's region at runtime (gRomRegion), but the
-# decomp's `#if REGION_*` structure differences are a compile-time choice,
-# so one binary targets one region. eu = historical default.
-REGION  ?= eu
-ifeq ($(REGION),eu)
+# Which retail region's code paths to compile in.
+#
+# REGION=any (the default) defines no REGION_* macro at all: every region's
+# behaviour is compiled and selected at runtime from gRomRegion (see
+# include/region.h), so ONE binary works with an EUR, USA or JAP ROM.
+#
+# eu/us/jp remain for bisecting a region-specific problem: they pin the
+# decomp's compile-time `#if REGION_*` choices to that region, which also
+# restricts the binary to that region's ROM.
+REGION  ?= any
+ifeq ($(REGION),any)
+  REGION_DEFINE :=
+else ifeq ($(REGION),eu)
   REGION_DEFINE := -DREGION_EU
 else ifeq ($(REGION),us)
   REGION_DEFINE := -DREGION_US
 else ifeq ($(REGION),jp)
   REGION_DEFINE := -DREGION_JP
 else
-  $(error REGION must be one of: eu us jp)
+  $(error REGION must be one of: any eu us jp)
 endif
 
 ARCH    := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
