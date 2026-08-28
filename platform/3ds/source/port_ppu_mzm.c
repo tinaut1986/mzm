@@ -1221,28 +1221,48 @@ void PortPpuMzm_DebugGetAmmoText(char* out, int outSize) {
  * is part of the solid world. Lives here rather than in port_gpu_renderer.c
  * because that file has no access to the GBA-side structs.
  * ------------------------------------------------------------------- */
+/* World pixel shown at screen (0,0). Split out of the probe so the scene
+ * recorder samples its clip grid from the exact same origin -- a recording
+ * whose grid disagreed with the probe would be worse than no recording. */
+static void PortPpuMzm_ScreenOrigin(int* outX, int* outY) {
+    const int kScrollMask = 0x1FF;
+    int bg1Hofs = (int)(gIoMem[0x14] | (gIoMem[0x15] << 8)) & kScrollMask;
+    int bg1Vofs = (int)(gIoMem[0x16] | (gIoMem[0x17] << 8)) & kScrollMask;
+    int camPixelX = (int)gCamera.xPosition / SUB_PIXEL_RATIO;
+    int camPixelY = (int)gCamera.yPosition / SUB_PIXEL_RATIO;
+    *outX = camPixelX + ((((bg1Hofs - camPixelX) & kScrollMask) + 256) & kScrollMask) - 256;
+    *outY = camPixelY + ((((bg1Vofs - camPixelY) & kScrollMask) + 256) & kScrollMask) - 256;
+}
+
 bool PortPpuMzm_ClipIsSolidAtScreen(int screenX, int screenY) {
     if (gMainGameMode != GM_INGAME) return false;
     if (gTilemapAndClipPointers.pClipCollisions == NULL) return false;
 
-    /* Camera position is in sub-pixels, like every world coordinate in this
-     * game. It MUST be truncated to whole pixels before the screen offset is
-     * added, because that is the grid the PPU actually draws on: the BG
-     * scroll registers are whole pixels (floor(camera / SUB_PIXEL_RATIO)),
-     * so a tile drawn at screen pixel p always shows world pixel
-     * (cameraPixel + p) no matter what the camera's sub-pixel remainder is.
+    /* The world position of screen pixel 0 comes from the BG SCROLL
+     * REGISTERS, not from the camera.
      *
-     * Probing at full sub-pixel precision instead -- camera + p * 4 -- adds
-     * that remainder back and can land the probe in the NEXT clip block for
-     * tiles whose center sits within a sub-pixel of a 16px block boundary.
-     * The result was tiles flipping depth plane for a frame while the
-     * camera moved with a non-zero remainder (grabbing a ledge, jumping):
-     * only the tiles near a boundary, and only while moving, which is
-     * exactly how it looked on hardware. */
-    int camPixelX = (int)gCamera.xPosition / SUB_PIXEL_RATIO;
-    int camPixelY = (int)gCamera.yPosition / SUB_PIXEL_RATIO;
-    int worldPixelX = camPixelX + screenX;
-    int worldPixelY = camPixelY + screenY;
+     * gCamera and the scroll registers agree only while the camera is
+     * still. Decoding a recording of a ledge grab (191 samples carrying
+     * both) showed camPixelX - BG1HOFS == 0 always, but camPixelY - BG1VOFS
+     * drifting to as much as -37 whenever the camera moved vertically --
+     * over two 16px clip blocks. Probing with the camera therefore asked
+     * about a block the frame on screen was not showing, and tiles near a
+     * block boundary flipped depth plane for as long as the drift lasted.
+     * An earlier fix here removed the camera's sub-pixel remainder, a real
+     * error but worth less than one pixel; this is the one that mattered.
+     *
+     * The scroll registers are 9 bits, so they only give the position
+     * modulo 512. The camera still resolves WHICH 512px window we are in:
+     * take the congruent value nearest the camera, exact as long as the two
+     * never disagree by more than 256px -- orders of magnitude beyond the
+     * observed drift.
+     *
+     * BG1 is the layer clipdata belongs to, so its registers are the ones
+     * that define the clip grid's alignment. */
+    int originX, originY;
+    PortPpuMzm_ScreenOrigin(&originX, &originY);
+    int worldPixelX = originX + screenX;
+    int worldPixelY = originY + screenY;
     if (worldPixelX < 0 || worldPixelY < 0) return false;
 
     u32 blockX = (u32)worldPixelX / PIXEL_PER_BLOCK;
@@ -1283,7 +1303,7 @@ bool PortPpuMzm_ClipIsSolidAtScreen(int screenX, int screenY) {
 #define PORT_CLIPREC_ROWS 12
 
 void PortPpuMzm_GetClipRecordBlock(uint8_t* out) {
-    /* 16 bytes of scalars, then the grid. */
+    /* 20 bytes of scalars, then the grid. */
     uint16_t* w = (uint16_t*)out;
     w[0] = gCamera.xPosition;
     w[1] = gCamera.yPosition;
@@ -1293,12 +1313,16 @@ void PortPpuMzm_GetClipRecordBlock(uint8_t* out) {
     w[5] = (uint16_t)gBgPointersAndDimensions.clipdataHeight;
     w[6] = (uint16_t)gMainGameMode;
     w[7] = (uint16_t)gSamusData.pose;
+    /* w[8]/w[9]: the origin the grid below was sampled from. */
 
-    uint8_t* grid = out + 16;
-    int camPixelX = (int)gCamera.xPosition / SUB_PIXEL_RATIO;
-    int camPixelY = (int)gCamera.yPosition / SUB_PIXEL_RATIO;
-    int baseBlockX = camPixelX / PIXEL_PER_BLOCK;
-    int baseBlockY = camPixelY / PIXEL_PER_BLOCK;
+    int originX, originY;
+    PortPpuMzm_ScreenOrigin(&originX, &originY);
+    w[8] = (uint16_t)originX;
+    w[9] = (uint16_t)originY;
+
+    uint8_t* grid = out + 20;
+    int baseBlockX = originX / PIXEL_PER_BLOCK;
+    int baseBlockY = originY / PIXEL_PER_BLOCK;
 
     for (int r = 0; r < PORT_CLIPREC_ROWS; ++r) {
         for (int c = 0; c < PORT_CLIPREC_COLS; ++c) {
@@ -1317,5 +1341,5 @@ void PortPpuMzm_GetClipRecordBlock(uint8_t* out) {
 }
 
 int PortPpuMzm_GetClipRecordBlockSize(void) {
-    return 16 + PORT_CLIPREC_COLS * PORT_CLIPREC_ROWS;
+    return 20 + PORT_CLIPREC_COLS * PORT_CLIPREC_ROWS;
 }
