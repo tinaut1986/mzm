@@ -73,9 +73,9 @@ static void EndingImageLoadTextOam(EndingImageTextSet set)
 {
     s32 i;
 
-        /* EUR's table also covers hiragana and falls back to English,
-         * so it is right for every region: German..Spanish can only be
-         * reached with an EUR ROM. */
+    /* EUR's table also covers hiragana and falls back to English, so it is
+     * right for every region: German..Spanish can only be reached with an
+     * EUR ROM. */
     switch (ENDING_DATA.language)
     {
         case LANGUAGE_GERMAN:
@@ -164,9 +164,9 @@ static void EndingImageDisplayLinePermanently(EndingImageLine line)
 {
     s32 i;
 
-        /* EUR's table also covers hiragana and falls back to English,
-         * so it is right for every region: German..Spanish can only be
-         * reached with an EUR ROM. */
+    /* EUR's table also covers hiragana and falls back to English, so it is
+     * right for every region: German..Spanish can only be reached with an
+     * EUR ROM. */
     switch (ENDING_DATA.language)
     {
         case LANGUAGE_GERMAN:
@@ -1437,14 +1437,17 @@ static void EndingImageInit(void)
     }
     else
     {
-        // The others only pick between English and hiragana text
-            if (gLanguage > LANGUAGE_ENGLISH)
-                ENDING_DATA.language = LANGUAGE_ENGLISH;
+        // The others always use the English numbers/misc graphics and only
+        // pick between English and hiragana for the text itself.
+        LZ77UncompVram(sEndingImageNumbersMiscEnglishGfx, VRAM_OBJ);
 
-            if (ENDING_DATA.language == LANGUAGE_HIRAGANA)
-                LZ77UncompVram(sEndingImageTextHiraganaGfx, VRAM_BASE + 0x11000);
-            else
-                LZ77UncompVram(sEndingImageTextEnglishGfx, VRAM_BASE + 0x11000);
+        if (gLanguage > LANGUAGE_ENGLISH)
+            ENDING_DATA.language = LANGUAGE_ENGLISH;
+
+        if (ENDING_DATA.language == LANGUAGE_HIRAGANA)
+            LZ77UncompVram(sEndingImageTextHiraganaGfx, VRAM_BASE + 0x11000);
+        else
+            LZ77UncompVram(sEndingImageTextEnglishGfx, VRAM_BASE + 0x11000);
     }
 
 #ifdef REGION_EU
