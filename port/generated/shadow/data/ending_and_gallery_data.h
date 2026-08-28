@@ -99,18 +99,11 @@ extern const u32* const(*p_sEndingImagesHalfTileTablePointers)[ENDING_IMAGE_COUN
 #define sEndingImagesHalfTileTablePointers (*p_sEndingImagesHalfTileTablePointers)
 extern const u16* const(*p_sEndingImagesPalPointers)[ENDING_IMAGE_COUNT];
 #define sEndingImagesPalPointers (*p_sEndingImagesPalPointers)
-#if (defined(REGION_EU))
-extern const struct CreditsEntry(*p_sCredits)[308];
-#define sCredits (*p_sCredits)
-#endif
-#if ((defined(REGION_JP)) && !((defined(REGION_EU))))
-extern const struct CreditsEntry(*p_sCredits)[245];
-#define sCredits (*p_sCredits)
-#endif
-#if (!((defined(REGION_EU)) || (defined(REGION_JP))))
-extern const struct CreditsEntry(*p_sCredits)[240];
-#define sCredits (*p_sCredits)
-#endif
+/* Region-neutral: the credits array is 308 entries on EUR, 245 on JAP
+ * and 240 on USA, but the game only ever takes a pointer to its first
+ * entry, so the length is not needed. */
+extern const struct CreditsEntry*p_sCredits;
+#define sCredits p_sCredits
 extern const u16* const(*p_sEndingWhitePalPointers)[4];
 #define sEndingWhitePalPointers (*p_sEndingWhitePalPointers)
 extern const u8(*p_sEndingImage_54e2dc)[8];

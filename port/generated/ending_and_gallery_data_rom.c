@@ -52,15 +52,7 @@ __attribute__((weak)) const u32* const(*p_sEndingImagesBottomGfxPointers)[ENDING
 __attribute__((weak)) const u32* const(*p_sEndingImagesTopTileTablePointers)[ENDING_IMAGE_COUNT];
 __attribute__((weak)) const u32* const(*p_sEndingImagesHalfTileTablePointers)[ENDING_IMAGE_COUNT];
 __attribute__((weak)) const u16* const(*p_sEndingImagesPalPointers)[ENDING_IMAGE_COUNT];
-#if (defined(REGION_EU))
-__attribute__((weak)) const struct CreditsEntry(*p_sCredits)[308];
-#endif
-#if ((defined(REGION_JP)) && !((defined(REGION_EU))))
-__attribute__((weak)) const struct CreditsEntry(*p_sCredits)[245];
-#endif
-#if (!((defined(REGION_EU)) || (defined(REGION_JP))))
-__attribute__((weak)) const struct CreditsEntry(*p_sCredits)[240];
-#endif
+__attribute__((weak)) const struct CreditsEntry*p_sCredits;
 __attribute__((weak)) const u16* const(*p_sEndingWhitePalPointers)[4];
 __attribute__((weak)) const u8(*p_sEndingImage_54e2dc)[8];
 __attribute__((weak)) const u8(*p_sEndingImageNewRecordPalettes)[12];
@@ -147,15 +139,7 @@ void PortGen_ending_and_gallery_data_Init(void) {
             p_sEndingImagesTopTileTablePointers = (const u32* const(*)[ENDING_IMAGE_COUNT])Port_ResolveRomData(0x0855a38cu);
             p_sEndingImagesHalfTileTablePointers = (const u32* const(*)[ENDING_IMAGE_COUNT])Port_ResolveRomData(0x0855a3acu);
             p_sEndingImagesPalPointers = (const u16* const(*)[ENDING_IMAGE_COUNT])Port_ResolveRomData(0x0855a3ccu);
-#if (defined(REGION_EU))
-            p_sCredits = (const struct CreditsEntry(*)[308])Port_ResolveRomData(0x0855a3ecu);
-#endif
-#if ((defined(REGION_JP)) && !((defined(REGION_EU))))
-            p_sCredits = (const struct CreditsEntry(*)[245])Port_ResolveRomData(0x0855a3ecu);
-#endif
-#if (!((defined(REGION_EU)) || (defined(REGION_JP))))
-            p_sCredits = (const struct CreditsEntry(*)[240])Port_ResolveRomData(0x0855a3ecu);
-#endif
+            p_sCredits = (const struct CreditsEntry*)Port_ResolveRomData(0x0855a3ecu);
             p_sEndingWhitePalPointers = (const u16* const(*)[4])Port_ResolveRomData(0x0855cf3cu);
             p_sEndingImage_54e2dc = (const u8(*)[8])Port_ResolveRomData(0x0855cf4cu);
             p_sEndingImageNewRecordPalettes = (const u8(*)[12])Port_ResolveRomData(0x0855cf54u);
@@ -228,15 +212,7 @@ void PortGen_ending_and_gallery_data_Init(void) {
             p_sEndingImagesTopTileTablePointers = (const u32* const(*)[ENDING_IMAGE_COUNT])Port_ResolveRomData(0x0854c0acu);
             p_sEndingImagesHalfTileTablePointers = (const u32* const(*)[ENDING_IMAGE_COUNT])Port_ResolveRomData(0x0854c0ccu);
             p_sEndingImagesPalPointers = (const u16* const(*)[ENDING_IMAGE_COUNT])Port_ResolveRomData(0x0854c0ecu);
-#if (defined(REGION_EU))
-            p_sCredits = (const struct CreditsEntry(*)[308])Port_ResolveRomData(0x0854c10cu);
-#endif
-#if ((defined(REGION_JP)) && !((defined(REGION_EU))))
-            p_sCredits = (const struct CreditsEntry(*)[245])Port_ResolveRomData(0x0854c10cu);
-#endif
-#if (!((defined(REGION_EU)) || (defined(REGION_JP))))
-            p_sCredits = (const struct CreditsEntry(*)[240])Port_ResolveRomData(0x0854c10cu);
-#endif
+            p_sCredits = (const struct CreditsEntry*)Port_ResolveRomData(0x0854c10cu);
             p_sEndingWhitePalPointers = (const u16* const(*)[4])Port_ResolveRomData(0x0854e2ccu);
             p_sEndingImage_54e2dc = (const u8(*)[8])Port_ResolveRomData(0x0854e2dcu);
             p_sEndingImageNewRecordPalettes = (const u8(*)[12])Port_ResolveRomData(0x0854e2e4u);
@@ -300,15 +276,7 @@ void PortGen_ending_and_gallery_data_Init(void) {
             p_sEndingImagesTopTileTablePointers = (const u32* const(*)[ENDING_IMAGE_COUNT])Port_ResolveRomData(0x0854c108u);
             p_sEndingImagesHalfTileTablePointers = (const u32* const(*)[ENDING_IMAGE_COUNT])Port_ResolveRomData(0x0854c128u);
             p_sEndingImagesPalPointers = (const u16* const(*)[ENDING_IMAGE_COUNT])Port_ResolveRomData(0x0854c148u);
-#if (defined(REGION_EU))
-            p_sCredits = (const struct CreditsEntry(*)[308])Port_ResolveRomData(0x0854c168u);
-#endif
-#if ((defined(REGION_JP)) && !((defined(REGION_EU))))
-            p_sCredits = (const struct CreditsEntry(*)[245])Port_ResolveRomData(0x0854c168u);
-#endif
-#if (!((defined(REGION_EU)) || (defined(REGION_JP))))
-            p_sCredits = (const struct CreditsEntry(*)[240])Port_ResolveRomData(0x0854c168u);
-#endif
+            p_sCredits = (const struct CreditsEntry*)Port_ResolveRomData(0x0854c168u);
             p_sEndingWhitePalPointers = (const u16* const(*)[4])Port_ResolveRomData(0x0854e3dcu);
             p_sEndingImage_54e2dc = (const u8(*)[8])Port_ResolveRomData(0x0854e3ecu);
             p_sEndingImageNewRecordPalettes = (const u8(*)[12])Port_ResolveRomData(0x0854e3f4u);

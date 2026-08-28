@@ -1,3 +1,4 @@
+#include "region.h"
 #include "cutscenes/story_text_cutscene.h"
 #include "cutscenes/cutscene_utils.h"
 #include "dma.h"
@@ -24,17 +25,22 @@ void Init_sStoryTextPointers(void) {
     sStoryTextPointers[LANGUAGE_JAPANESE] = sJapaneseTextPointers_Story;
     sStoryTextPointers[LANGUAGE_HIRAGANA] = sHiraganaTextPointers_Story;
     sStoryTextPointers[LANGUAGE_ENGLISH] = sEnglishTextPointers_Story;
-#if defined(REGION_EU) ||  defined(REGION_US_BETA)
-    sStoryTextPointers[LANGUAGE_GERMAN] = sGermanTextPointers_Story;
-    sStoryTextPointers[LANGUAGE_FRENCH] = sFrenchTextPointers_Story;
-    sStoryTextPointers[LANGUAGE_ITALIAN] = sItalianTextPointers_Story;
-    sStoryTextPointers[LANGUAGE_SPANISH] = sSpanishTextPointers_Story;
-#else
-    sStoryTextPointers[LANGUAGE_GERMAN] = sEnglishTextPointers_Story;
-    sStoryTextPointers[LANGUAGE_FRENCH] = sEnglishTextPointers_Story;
-    sStoryTextPointers[LANGUAGE_ITALIAN] = sEnglishTextPointers_Story;
-    sStoryTextPointers[LANGUAGE_SPANISH] = sEnglishTextPointers_Story;
-#endif
+    /* Only the EUR ROM has the four extra languages; elsewhere those slots
+     * fall back to English, as the compile-time version did. */
+    if (REGION_IS_EU())
+    {
+        sStoryTextPointers[LANGUAGE_GERMAN] = sGermanTextPointers_Story;
+        sStoryTextPointers[LANGUAGE_FRENCH] = sFrenchTextPointers_Story;
+        sStoryTextPointers[LANGUAGE_ITALIAN] = sItalianTextPointers_Story;
+        sStoryTextPointers[LANGUAGE_SPANISH] = sSpanishTextPointers_Story;
+    }
+    else
+    {
+        sStoryTextPointers[LANGUAGE_GERMAN] = sEnglishTextPointers_Story;
+        sStoryTextPointers[LANGUAGE_FRENCH] = sEnglishTextPointers_Story;
+        sStoryTextPointers[LANGUAGE_ITALIAN] = sEnglishTextPointers_Story;
+        sStoryTextPointers[LANGUAGE_SPANISH] = sEnglishTextPointers_Story;
+    }
 }
 #else
 const u16** sStoryTextPointers[7] = {

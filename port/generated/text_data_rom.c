@@ -650,7 +650,7 @@ __attribute__((weak)) const u16*p_sEnglishText_FileScreen_GalleryUnlock;
 __attribute__((weak)) const u16*p_sEnglishText_FileScreen_TimeAttackRecordUnlock;
 __attribute__((weak)) const u16*p_sEnglishText_FileScreen_SoundTestUnlock;
 __attribute__((weak)) const u16*p_sEnglishText_FileScreen_NesMetroidUnlock;
-#if (defined(REGION_EU))
+#if (defined(REGION_EU) || defined(MZM_3DS) || defined(PORT_NATIVE))
 __attribute__((weak)) const u16*p_sGermanText_Description_LongBeam;
 __attribute__((weak)) const u16*p_sGermanText_Description_ChargeBeam;
 __attribute__((weak)) const u16*p_sGermanText_Description_IceBeam;
@@ -900,7 +900,7 @@ __attribute__((weak)) const u16*p_sSpanishText_FileScreen_TimeAttackRecordUnlock
 __attribute__((weak)) const u16*p_sSpanishText_FileScreen_SoundTestUnlock;
 __attribute__((weak)) const u16*p_sSpanishText_FileScreen_NesMetroidUnlock;
 #endif
-#if ((defined(REGION_US_BETA)) && !((defined(REGION_EU))))
+#if ((defined(REGION_US_BETA)) && !((defined(REGION_EU) || defined(MZM_3DS) || defined(PORT_NATIVE))))
 __attribute__((weak)) const u16*p_sGermanText_Description_LongBeam;
 __attribute__((weak)) const u16*p_sGermanText_Description_ChargeBeam;
 __attribute__((weak)) const u16*p_sGermanText_Description_IceBeam;
@@ -1010,7 +1010,7 @@ __attribute__((weak)) const u16*(*p_sHiraganaTextPointers_FileScreen)[FILE_SCREE
 __attribute__((weak)) const u16*(*p_sEnglishTextPointers_Description)[DESCRIPTION_TEXT_COUNT];
 __attribute__((weak)) const u16*(*p_sEnglishTextPointers_Story)[STORY_TEXT_COUNT];
 __attribute__((weak)) const u16*(*p_sEnglishTextPointers_FileScreen)[FILE_SCREEN_TEXT_COUNT];
-#if (defined(REGION_EU))
+#if (defined(REGION_EU) || defined(MZM_3DS) || defined(PORT_NATIVE))
 __attribute__((weak)) const u16*(*p_sGermanTextPointers_Description)[DESCRIPTION_TEXT_COUNT];
 __attribute__((weak)) const u16*(*p_sGermanTextPointers_Story)[STORY_TEXT_COUNT];
 __attribute__((weak)) const u16*(*p_sGermanTextPointers_FileScreen)[FILE_SCREEN_TEXT_COUNT];
@@ -1024,7 +1024,7 @@ __attribute__((weak)) const u16*(*p_sSpanishTextPointers_Description)[DESCRIPTIO
 __attribute__((weak)) const u16*(*p_sSpanishTextPointers_Story)[STORY_TEXT_COUNT];
 __attribute__((weak)) const u16*(*p_sSpanishTextPointers_FileScreen)[FILE_SCREEN_TEXT_COUNT];
 #endif
-#if ((defined(REGION_US_BETA)) && !((defined(REGION_EU))))
+#if ((defined(REGION_US_BETA)) && !((defined(REGION_EU) || defined(MZM_3DS) || defined(PORT_NATIVE))))
 __attribute__((weak)) const u16*(*p_sGermanTextPointers_Description)[DESCRIPTION_TEXT_COUNT-1];
 __attribute__((weak)) const u16*(*p_sGermanTextPointers_Story)[3];
 __attribute__((weak)) const u16*(*p_sFrenchTextPointers_Description)[DESCRIPTION_TEXT_COUNT-1];
@@ -1680,7 +1680,7 @@ void PortGen_text_data_Init(void) {
             p_sEnglishText_FileScreen_TimeAttackRecordUnlock = (const u16*)Port_ResolveRomData(0x0844af26u);
             p_sEnglishText_FileScreen_SoundTestUnlock = (const u16*)Port_ResolveRomData(0x0844afa2u);
             p_sEnglishText_FileScreen_NesMetroidUnlock = (const u16*)Port_ResolveRomData(0x0844b00cu);
-#if (defined(REGION_EU))
+#if (defined(REGION_EU) || defined(MZM_3DS) || defined(PORT_NATIVE))
             p_sGermanText_Description_LongBeam = (const u16*)Port_ResolveRomData(0x0844b084u);
             p_sGermanText_Description_ChargeBeam = (const u16*)Port_ResolveRomData(0x0844b136u);
             p_sGermanText_Description_IceBeam = (const u16*)Port_ResolveRomData(0x0844b1e4u);
@@ -1930,7 +1930,7 @@ void PortGen_text_data_Init(void) {
             p_sSpanishText_FileScreen_SoundTestUnlock = (const u16*)Port_ResolveRomData(0x08451c20u);
             p_sSpanishText_FileScreen_NesMetroidUnlock = (const u16*)Port_ResolveRomData(0x08451c96u);
 #endif
-#if ((defined(REGION_US_BETA)) && !((defined(REGION_EU))))
+#if ((defined(REGION_US_BETA)) && !((defined(REGION_EU) || defined(MZM_3DS) || defined(PORT_NATIVE))))
             p_sGermanText_Description_LongBeam = (const u16*)Port_ResolveRomData(0x0844b084u);
             p_sGermanText_Description_ChargeBeam = (const u16*)Port_ResolveRomData(0x0844b136u);
             p_sGermanText_Description_IceBeam = (const u16*)Port_ResolveRomData(0x0844b1e4u);
@@ -2040,7 +2040,7 @@ void PortGen_text_data_Init(void) {
             p_sEnglishTextPointers_Description = (const u16*(*)[DESCRIPTION_TEXT_COUNT])Port_ResolveRomData(0x08774c60u);
             p_sEnglishTextPointers_Story = (const u16*(*)[STORY_TEXT_COUNT])Port_ResolveRomData(0x08774cacu);
             p_sEnglishTextPointers_FileScreen = (const u16*(*)[FILE_SCREEN_TEXT_COUNT])Port_ResolveRomData(0x08774cc4u);
-#if (defined(REGION_EU))
+#if (defined(REGION_EU) || defined(MZM_3DS) || defined(PORT_NATIVE))
             p_sGermanTextPointers_Description = (const u16*(*)[DESCRIPTION_TEXT_COUNT])Port_ResolveRomData(0x08774d58u);
             p_sGermanTextPointers_Story = (const u16*(*)[STORY_TEXT_COUNT])Port_ResolveRomData(0x08774da4u);
             p_sGermanTextPointers_FileScreen = (const u16*(*)[FILE_SCREEN_TEXT_COUNT])Port_ResolveRomData(0x08774dbcu);
@@ -2054,7 +2054,7 @@ void PortGen_text_data_Init(void) {
             p_sSpanishTextPointers_Story = (const u16*(*)[STORY_TEXT_COUNT])Port_ResolveRomData(0x0877508cu);
             p_sSpanishTextPointers_FileScreen = (const u16*(*)[FILE_SCREEN_TEXT_COUNT])Port_ResolveRomData(0x087750a4u);
 #endif
-#if ((defined(REGION_US_BETA)) && !((defined(REGION_EU))))
+#if ((defined(REGION_US_BETA)) && !((defined(REGION_EU) || defined(MZM_3DS) || defined(PORT_NATIVE))))
             p_sGermanTextPointers_Description = (const u16*(*)[DESCRIPTION_TEXT_COUNT-1])Port_ResolveRomData(0x08774d58u);
             p_sGermanTextPointers_Story = (const u16*(*)[3])Port_ResolveRomData(0x08774da4u);
             p_sFrenchTextPointers_Description = (const u16*(*)[DESCRIPTION_TEXT_COUNT-1])Port_ResolveRomData(0x08774e50u);
