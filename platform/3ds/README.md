@@ -63,9 +63,7 @@ You can customize the build using Makefile variables and `EXTRA_CFLAGS`:
 | `RENDERER=gpu` *(default)* | Offloads Mode 0 tile and sprite rendering to the 3DS PICA200 GPU (`source/port_gpu_renderer.c`), falling back to CPU scanlines only when needed. |
 | `RENDERER=cpu` | Forces pure CPU scanline rendering (`port/ppu/src/mode1.c`) unconditionally for all frames. Useful for baseline testing and comparison. |
 | `FORCE_OLD3DS=1` | Runs on New 3DS hardware using Old 3DS clock rates, disabling L2 cache and Core 1 worker threads to benchmark Old 3DS / 2DS performance. |
-| `DEBUG_TOOLS=1` | Compiles in the bottom screen's DEBUG -> HERRAMIENTAS menu and every tool behind it (instant-kill, scene recorder, fixture replay, live atlas dump, one-shot screen/state dump, room warp -- see `docs/3ds-debug-tools.md`). Source-level gate, not just runtime-disabled: a plain build has no code path to trigger any of them, not even by accident. This is the "simple debug" build -- no verbose per-frame logging on its own. |
-| `EXTRA_CFLAGS="-DPORT_GPU_RENDERER_DIAG_LOG"` | Enables verbose GPU frame diagnostics and logs reason for CPU fallback. Also turns on the `DEBUG_TOOLS=1` menu automatically (see `source/port_debug_tools.h`). |
-| `EXTRA_CFLAGS="-DPORT_AUDIO_DIAG_LOG"` | Enables audio pipeline diagnostics. Also turns on the `DEBUG_TOOLS=1` menu automatically. |
+| `DEBUG_TOOLS=1` | **The** debug build. Compiles in the bottom screen's DEBUG -> HERRAMIENTAS menu and every tool behind it (instant-kill, scene recorder, live atlas dump, one-shot screen/state dump, room warp, equipment -- see `docs/3ds-debug-tools.md`) *and* the verbose per-frame `PORT_GPU_RENDERER_DIAG_LOG` / `PORT_AUDIO_DIAG_LOG` tracing. Source-level gate, not just runtime-disabled: a plain build has no code path to trigger any of them, not even by accident. Nothing is written to `sdmc:/3ds/mzm-debug.log` until the menu's LOG A SD toggle is switched on, which is why the old "simple vs tracing" build split is gone. |
 
 #### Deployment & Utility Targets:
 - **FTP Upload**: Deploy directly to a console running FBI or an FTP server:

@@ -221,25 +221,27 @@ else ifneq ($(FORCE_OLD3DS),0)
   $(error Unknown FORCE_OLD3DS '$(FORCE_OLD3DS)' -- expected '0' or '1')
 endif
 
-# Compiles in the L+R+<button> debug combos (issue #17's investigation
-# tools: instant-kill, scene recorder, one-shot fixture replay, live atlas
-# dump, one-shot screen/state dump, USER MARK log line -- see
-# docs/3ds-debug-tools.md) -- source-level, not just runtime-gated, so a
-# production build has NO WAY to trigger any of them from a controller, not
-# even by accident. This is the "simple debug" build: on its own it does NOT
-# turn on any of the verbose per-frame *_DIAG_LOG tracing below (those cost
-# real frame rate / SD I/O and are opt-in separately), just the on-demand
-# combos:
+# THE debug build. There is exactly one:
 #   make clean && make DEBUG_TOOLS=1
-# Any of the *_DIAG_LOG flags below also turn this on automatically (see
-# PORT_DEBUG_TOOLS_ACTIVE in source/port_debug_tools.h) -- a session that
-# only asked for GPU or audio tracing still gets the combos for free, no
-# need to also remember this flag.
+# It compiles in the bottom screen's DEBUG -> HERRAMIENTAS menu and every
+# tool behind it (instant-kill, scene recorder, live atlas dump, screen/state
+# dump, USER MARK log line, warp, equipment -- see docs/3ds-debug-tools.md)
+# AND the verbose per-frame *_DIAG_LOG tracing. All of it is source-level
+# absent from a production build, so that build has NO WAY to trigger any of
+# it, not even by accident.
+#
+# There used to be two debug builds -- "simple" (menu only) and "tracing"
+# (EXTRA_CFLAGS=-DPORT_*_DIAG_LOG) -- because tracing meant unconditional SD
+# writes on hot paths, at real cost in frame rate and SD I/O. It no longer
+# does: nothing is written to sdmc:/3ds/mzm-debug.log until the LOG A SD
+# toggle in that menu is switched on (port_debug_log.h), so a debug build
+# that is never asked to log behaves like the old "simple" one, and the
+# split stopped earning its keep.
 # The clean matters: changing flags alone does not invalidate existing
 # objects, which is exactly the stale-.o trap documented in section 6l.
 DEBUG_TOOLS ?= 0
 ifeq ($(DEBUG_TOOLS),1)
-  CFLAGS += -DPORT_DEBUG_TOOLS
+  CFLAGS += -DPORT_DEBUG_TOOLS -DPORT_GPU_RENDERER_DIAG_LOG -DPORT_AUDIO_DIAG_LOG
 else ifneq ($(DEBUG_TOOLS),0)
   $(error Unknown DEBUG_TOOLS '$(DEBUG_TOOLS)' -- expected '0' or '1')
 endif

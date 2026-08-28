@@ -129,6 +129,13 @@ static uint32_t sDebugToolsMsgUntil = 0;
 extern void PortPpuMzm_DebugKillSamus(void);
 extern void Port_GpuRenderer_DumpAtlas(const char* ppmPath, const char* csvPath);
 extern void Port_DebugLog(const char* msg);
+extern void PortStereoDepth_SetSpread(int spread);
+extern int PortStereoDepth_GetSpread(void);
+extern const char* PortStereoDepth_SpreadName(int spread);
+extern void Port_DebugLog_SetEnabled(bool enabled);
+extern bool Port_DebugLog_IsEnabled(void);
+extern void Port_DebugLog_SetBuffered(bool buffered);
+extern bool Port_DebugLog_IsBuffered(void);
 extern void PortPpuMzm_DebugSaveWarpPoint(void);
 extern bool PortPpuMzm_DebugHasWarpPoint(void);
 extern void PortPpuMzm_DebugGetWarpPointInfo(char* out, int outSize);
@@ -2516,11 +2523,11 @@ static void RenderOptionsView(void) {
 #define DBGTOOL_COL_L_X   16
 #define DBGTOOL_COL_R_X   164
 #define DBGTOOL_COL_W     140
-#define DBGTOOL_GRID_Y0   48
-#define DBGTOOL_GRID_PITCH 30
-#define DBGTOOL_CELL_H    26
-#define DBGTOOL_GRID_ROWS 5
-#define DBGTOOL_COUNT     9
+#define DBGTOOL_GRID_Y0   46
+#define DBGTOOL_GRID_PITCH 26
+#define DBGTOOL_CELL_H    24
+#define DBGTOOL_GRID_ROWS 6
+#define DBGTOOL_COUNT     12
 
 #define DBGTOOL_CELL_Y(r) ((float)(DBGTOOL_GRID_Y0 + (r) * DBGTOOL_GRID_PITCH))
 #define DBGTOOL_CELL_X(c) ((float)((c) == 0 ? DBGTOOL_COL_L_X : DBGTOOL_COL_R_X))
@@ -2533,9 +2540,9 @@ static void DrawDebugCell(int index, const char* label, const char* state, uint3
     float y = DBGTOOL_CELL_Y(index >> 1);
     C2D_DrawRectSolid(x, y, 0.9f, (float)DBGTOOL_COL_W, (float)DBGTOOL_CELL_H, C2D_Color32(24, 32, 50, 255));
     C2D_DrawRectSolid(x, y, 0.91f, (float)DBGTOOL_COL_W, 1.0f, C2D_Color32(50, 80, 130, 255));
-    DrawTextMaxWClipped(x + 6.0f, y + 4.0f, 1.0f, label, C2D_Color32(255, 255, 255, 255),
+    DrawTextMaxWClipped(x + 6.0f, y + 2.0f, 1.0f, label, C2D_Color32(255, 255, 255, 255),
                         0.0f, 240.0f, (float)DBGTOOL_COL_W - 12.0f);
-    if (state) DrawText(x + 6.0f, y + 15.0f, 1.0f, state, accent);
+    if (state) DrawText(x + 6.0f, y + 13.0f, 1.0f, state, accent);
 }
 
 /* Index of the grid cell a tap landed on, or -1. */
@@ -2580,15 +2587,15 @@ static int DebugRowHit(int x, int y, int rowCount) {
 }
 
 static void DrawDebugModalFrame(int lang, const char* titleEs, const char* titleEn) {
-    C2D_DrawRectSolid(10.0f, 26.0f, 0.85f, 300.0f, 206.0f, C2D_Color32(10, 14, 24, 250));
-    C2D_DrawRectSolid(10.0f, 26.0f, 0.84f, 300.0f, 206.0f, C2D_Color32(40, 70, 120, 255));
+    C2D_DrawRectSolid(10.0f, 26.0f, 0.85f, 300.0f, 210.0f, C2D_Color32(10, 14, 24, 250));
+    C2D_DrawRectSolid(10.0f, 26.0f, 0.84f, 300.0f, 210.0f, C2D_Color32(40, 70, 120, 255));
     DrawText(20.0f, 32.0f, 1.0f, (lang == 6) ? titleEs : titleEn, C2D_Color32(255, 215, 0, 255));
-    C2D_DrawRectSolid(100.0f, 208.0f, 0.9f, 120.0f, 20.0f, C2D_Color32(20, 70, 130, 255));
-    DrawTextCentered(160.0f, 213.0f, 1.0f, (lang == 6) ? "CERRAR" : "CLOSE", C2D_Color32(255, 255, 255, 255));
+    C2D_DrawRectSolid(100.0f, 214.0f, 0.9f, 120.0f, 20.0f, C2D_Color32(20, 70, 130, 255));
+    DrawTextCentered(160.0f, 219.0f, 1.0f, (lang == 6) ? "CERRAR" : "CLOSE", C2D_Color32(255, 255, 255, 255));
 }
 
 static bool DebugCloseHit(int x, int y) {
-    return (x >= 100 && x <= 220 && y >= 208 && y <= 228);
+    return (x >= 100 && x <= 220 && y >= 214 && y <= 234);
 }
 
 static void RenderDebugToolsModal(int lang) {
@@ -2619,8 +2626,27 @@ static void RenderDebugToolsModal(int lang) {
     DrawDebugCell(8, (lang == 6) ? "REVELAR MAPAS" : "REVEAL MAPS",
                   (lang == 6) ? "REVELAR" : "REVEAL", colMenu);
 
+    /* The two log knobs. Writing to the SD card is off by default even in a
+     * debug build (see port_debug_log.h) -- these are how a session says
+     * "start capturing now" and, for a hang, "stop holding lines in RAM". */
+    const bool logOn = Port_DebugLog_IsEnabled();
+    const bool logBuf = Port_DebugLog_IsBuffered();
+    DrawDebugCell(9, (lang == 6) ? "LOG A SD" : "SD LOGGING",
+                  logOn ? onTxt : offTxt, logOn ? colOn : colAct);
+    DrawDebugCell(10, (lang == 6) ? "LOG EN BUFFER" : "LOG BUFFERING",
+                  logBuf ? onTxt : offTxt, logBuf ? colOn : colAct);
+
+    /* How far apart the world BG layers sit in stereo. Room data composites
+     * several layers into one flat image, so any separation lets a layer's
+     * detail pixels float off the backdrop they are painted on -- see the
+     * preset table in port_stereo_depth.c. Cycles so the tradeoff can be
+     * judged on hardware rather than argued about. */
+    DrawDebugCell(11, (lang == 6) ? "PROFUND. 3D" : "3D DEPTH",
+                  PortStereoDepth_SpreadName(PortStereoDepth_GetSpread()),
+                  C2D_Color32(255, 215, 0, 255));
+
     if (sDebugToolsMsg[0] && sFrameCounter < sDebugToolsMsgUntil) {
-        DrawTextCentered(160.0f, 200.0f, 1.0f, sDebugToolsMsg, C2D_Color32(120, 255, 160, 255));
+        DrawTextCentered(160.0f, 204.0f, 1.0f, sDebugToolsMsg, C2D_Color32(120, 255, 160, 255));
     }
 }
 
@@ -2669,6 +2695,25 @@ static bool HandleDebugToolsModalTouch(int x, int y) {
             sCachedOtherArea = 0xFF;
             DebugToolsSetMsg("MAPAS REVELADOS");
             break;
+        case 9: {
+            const bool on = !Port_DebugLog_IsEnabled();
+            Port_DebugLog_SetEnabled(on);
+            if (on) Port_DebugLog("USER MARK: SD logging enabled");
+            DebugToolsSetMsg(on ? "LOG SD ACTIVADO" : "LOG SD PARADO");
+            break;
+        }
+        case 10: {
+            const bool buf = !Port_DebugLog_IsBuffered();
+            Port_DebugLog_SetBuffered(buf);
+            DebugToolsSetMsg(buf ? "LOG EN BUFFER" : "LOG DIRECTO");
+            break;
+        }
+        case 11: {
+            int next = (PortStereoDepth_GetSpread() + 1) % 3;
+            PortStereoDepth_SetSpread(next);
+            DebugToolsSetMsg(PortStereoDepth_SpreadName(next));
+            break;
+        }
         default:
             break;
     }
