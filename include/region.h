@@ -42,3 +42,25 @@
 #endif
 
 #endif
+
+/*
+ * Several screens hard-code language behaviour per region (JAP checks for
+ * hiragana, the others cannot have it), but the decomp's DEBUG builds already
+ * carry a runtime gLanguage check for the same spots, since DEBUG allows any
+ * language. That DEBUG form is exactly what a one-binary port needs, so define
+ * this to compile it: guards written as
+ *
+ *     #if defined(REGION_LANGUAGE_RUNTIME) || defined(REGION_JP)
+ *
+ * pick the runtime variant on the ports and in DEBUG builds, and keep the
+ * retail per-region behaviour on the GBA build.
+ */
+#if defined(DEBUG) || defined(MZM_3DS) || defined(PORT_NATIVE)
+#define REGION_LANGUAGE_RUNTIME 1
+#endif
+
+/*
+ * Runtime LANGUAGE_DEFAULT: the constant in constants/game_state.h is chosen at
+ * compile time (JAPANESE for JAP, ENGLISH otherwise).
+ */
+#define REGION_DEFAULT_LANGUAGE() (REGION_IS_JP() ? LANGUAGE_JAPANESE : LANGUAGE_ENGLISH)

@@ -2628,11 +2628,12 @@ static void OptionsSetupTiletable(void)
     u16* dst;
 
     // Decomp tile table
-#ifdef REGION_EU
-    CallLZ77UncompWram(sFileSelectMenuTileTable, (void*)sEwramPointer + 0x5100);
-#else // !REGION_EU
-    CallLZ77UncompWram(sFileSelectOptionsTileTable, (void*)sEwramPointer + 0x5100);
-#endif // REGION_EU
+    /* The two tile tables are swapped between EUR and the rest -- see the
+     * mirrored pair in FileSelectInit. */
+    if (REGION_IS_EU())
+        CallLZ77UncompWram(sFileSelectMenuTileTable, (void*)sEwramPointer + 0x5100);
+    else
+        CallLZ77UncompWram(sFileSelectOptionsTileTable, (void*)sEwramPointer + 0x5100);
 
     // Clear all the options
     for (i = 0; i < ARRAY_SIZE(FILE_SELECT_DATA.optionsUnlocked); i++)
@@ -3481,11 +3482,8 @@ static u8 OptionsSoundTestHandler(void)
             FILE_SELECT_DATA.optionsOam[OPTIONS_OAM_SOUND_TEST_PANEL].yPosition =
                 FILE_SELECT_DATA.optionsOam[OPTIONS_OAM_SOUND_TEST_ID].yPosition;
 
-#ifdef REGION_EU
-            FILE_SELECT_DATA.optionsOam[OPTIONS_OAM_SOUND_TEST_PANEL].priority = BGCNT_LOW_MID_PRIORITY;
-#else // !REGION_EU
-            FILE_SELECT_DATA.optionsOam[OPTIONS_OAM_SOUND_TEST_PANEL].priority = BGCNT_LOW_PRIORITY;
-#endif // REGION_EU
+            FILE_SELECT_DATA.optionsOam[OPTIONS_OAM_SOUND_TEST_PANEL].priority =
+                REGION_IS_EU() ? BGCNT_LOW_MID_PRIORITY : BGCNT_LOW_PRIORITY;
             FILE_SELECT_DATA.subMenuStage++;
             break;
 
@@ -3698,11 +3696,8 @@ static u8 OptionsTimeAttackRecordsHandler(void)
             FILE_SELECT_DATA.optionsOam[OPTIONS_OAM_HUGE_PANEL].yPosition = BLOCK_SIZE * 3;
 
             FILE_SELECT_DATA.optionsOam[OPTIONS_OAM_LARGE_PANEL].boundBackground = 0;
-#ifdef REGION_EU
-            FILE_SELECT_DATA.optionsOam[OPTIONS_OAM_LARGE_PANEL].priority = BGCNT_LOW_MID_PRIORITY;
-#else // !REGION_EU
-            FILE_SELECT_DATA.optionsOam[OPTIONS_OAM_LARGE_PANEL].priority = BGCNT_HIGH_MID_PRIORITY;
-#endif // REGION_EU
+            FILE_SELECT_DATA.optionsOam[OPTIONS_OAM_LARGE_PANEL].priority =
+                REGION_IS_EU() ? BGCNT_LOW_MID_PRIORITY : BGCNT_HIGH_MID_PRIORITY;
             FILE_SELECT_DATA.optionsOam[OPTIONS_OAM_LARGE_PANEL].xPosition = BLOCK_SIZE * 4;
             FILE_SELECT_DATA.optionsOam[OPTIONS_OAM_LARGE_PANEL].yPosition = BLOCK_SIZE * 2;
 
@@ -4549,9 +4544,10 @@ u32 FileSelectMenuHandler(void)
 
         case 8:
             unk_75c04(0);
-#ifdef REGION_JP
-            SramWrite_Language();
-#endif // REGION_JP
+
+            // JAP stores the language picked for this file
+            if (REGION_IS_JP())
+                SramWrite_Language();
             return TRUE;
     }
 
@@ -4727,15 +4723,13 @@ static void FileSelectSetLanguage(void)
 
     i = FALSE;
 
-#if defined(REGION_EU)
-    if (INVALID_EU_LANGUAGE(gLanguage))
-#elif defined(REGION_JP)
-    if (gLanguage > LANGUAGE_HIRAGANA)
-#else // !REGION_JP
-    if (gLanguage != LANGUAGE_ENGLISH)
-#endif // REGION_JP
+    /* Which languages the loaded ROM actually has: EUR five, JAP japanese and
+     * hiragana, USA english only. */
+    if (REGION_IS_EU() ? INVALID_EU_LANGUAGE(gLanguage)
+        : REGION_IS_JP() ? gLanguage > LANGUAGE_HIRAGANA
+        : gLanguage != LANGUAGE_ENGLISH)
     {
-        gLanguage = LANGUAGE_DEFAULT;
+        gLanguage = REGION_DEFAULT_LANGUAGE();
         i = TRUE;
     }
 
@@ -4744,12 +4738,16 @@ static void FileSelectSetLanguage(void)
 
     for (i = 0; i < ARRAY_SIZE(gSaveFilesInfo); i++)
     {
-#ifdef REGION_JP
-        if (gSaveFilesInfo[i].language > LANGUAGE_HIRAGANA)
-            gSaveFilesInfo[i].language = LANGUAGE_JAPANESE;
-#else // !REGION_JP
-        gSaveFilesInfo[i].language = gLanguage;
-#endif // REGION_JP
+        if (REGION_IS_JP())
+        {
+            // JAP keeps a per-file language, the others follow gLanguage
+            if (gSaveFilesInfo[i].language > LANGUAGE_HIRAGANA)
+                gSaveFilesInfo[i].language = LANGUAGE_JAPANESE;
+        }
+        else
+        {
+            gSaveFilesInfo[i].language = gLanguage;
+        }
     }
 }
 
@@ -4792,14 +4790,19 @@ static void FileSelectInit(void)
     DmaTransfer(3, sFileSelectIconsPal, PALRAM_OBJ, sizeof(sFileSelectIconsPal), 16);
     SET_BACKDROP_COLOR(COLOR_BLACK);
 
-#ifdef REGION_EU
-    CallLZ77UncompVram(sFileSelectAreaNamesGfx, VRAM_BASE + 0x2400);
-    CallLZ77UncompVram(sFileSelectBgIconsGfx, VRAM_BASE + 0x3800);
-    CallLZ77UncompVram(sFileSelectLargeTextGfxPointers[gLanguage - LANGUAGE_ENGLISH], VRAM_BASE + 0x4800);
-    CallLZ77UncompVram(sFileSelectDifficultyTextGfxPointers[gLanguage - LANGUAGE_ENGLISH], VRAM_BASE + 0x3400);
-#else // !REGION_EU
-    CallLZ77UncompVram(sFileSelectCharactersGfx, VRAM_BASE + 0x400);
-#endif // REGION_EU
+    if (REGION_IS_EU())
+    {
+        // EUR has per-language slot text baked as graphics
+        CallLZ77UncompVram(sFileSelectAreaNamesGfx, VRAM_BASE + 0x2400);
+        CallLZ77UncompVram(sFileSelectBgIconsGfx, VRAM_BASE + 0x3800);
+        CallLZ77UncompVram(sFileSelectLargeTextGfxPointers[gLanguage - LANGUAGE_ENGLISH], VRAM_BASE + 0x4800);
+        CallLZ77UncompVram(sFileSelectDifficultyTextGfxPointers[gLanguage - LANGUAGE_ENGLISH], VRAM_BASE + 0x3400);
+    }
+    else
+    {
+        // The others render it from the character font instead
+        CallLZ77UncompVram(sFileSelectCharactersGfx, VRAM_BASE + 0x400);
+    }
 
     CallLZ77UncompVram(sFileSelectChozoBackgroundGfx, VRAM_BASE + 0x8000);
     CallLZ77UncompVram(sFileSelectObjIconsGfx, VRAM_OBJ);
@@ -4807,25 +4810,24 @@ static void FileSelectInit(void)
     // If not on JP, the translations for "Copy", "Erase", and "Options" are blanked out,
     // and the options menu text graphics are replaced with the appropriate language.
     // Debug allows any language, so it has an extra check.
-#if defined(DEBUG) || !defined(REGION_JP)
-#if defined(DEBUG)
+#if defined(REGION_LANGUAGE_RUNTIME) || !defined(REGION_JP)
+#ifdef REGION_LANGUAGE_RUNTIME
     if (gLanguage >= LANGUAGE_ENGLISH)
-#endif // DEBUG
+#endif // REGION_LANGUAGE_RUNTIME
     {
-#if defined(DEBUG) || !defined(REGION_EU)
-        BitFill(3, 0, VRAM_BASE + 0x400, 0x800, 16);
-#endif // DEBUG || !REGION_EU
+        /* Blank the font area EUR does not use for this. */
+        if (!REGION_IS_EU())
+            BitFill(3, 0, VRAM_BASE + 0x400, 0x800, 16);
         CallLZ77UncompVram(sFileSelectOptionsTextGfxPointers[gLanguage - LANGUAGE_ENGLISH], VRAM_BASE + 0xC00);
     }
-#endif // DEBUG || !REGION_JP
+#endif // REGION_LANGUAGE_RUNTIME || !REGION_JP
 
     CallLZ77UncompVram(sFileSelectChozoBackgroundTileTable, VRAM_BASE + 0xF800);
 
-#ifdef REGION_EU
-    CallLZ77UncompWram(sFileSelectOptionsTileTable, (void*)sEwramPointer + 0x800);
-#else // !REGION_EU
-    CallLZ77UncompWram(sFileSelectMenuTileTable, (void*)sEwramPointer + 0x800);
-#endif // REGION_EU
+    if (REGION_IS_EU())
+        CallLZ77UncompWram(sFileSelectOptionsTileTable, (void*)sEwramPointer + 0x800);
+    else
+        CallLZ77UncompWram(sFileSelectMenuTileTable, (void*)sEwramPointer + 0x800);
     CallLZ77UncompWram(sFileSelect3BigPanelsTileTable, (void*)sEwramPointer + 0x2800);
     CallLZ77UncompWram(sFileSelect1Small2BigPanelsTileTable, (void*)sEwramPointer + 0x1800);
     CallLZ77UncompWram(sFileSelect2Big1SmallPanelsTileTable, (void*)sEwramPointer + 0x2000);
@@ -5179,22 +5181,22 @@ void FileSelectDisplaySaveFileMiscInfo(struct SaveFileInfo* pFile, FileSelectCur
         if (pFile->timeAttack)
         {
             tile = 0x1AF;
-#if defined(DEBUG) || defined(REGION_JP)
+#if defined(REGION_LANGUAGE_RUNTIME) || defined(REGION_JP)
             if (pFile->language == LANGUAGE_HIRAGANA)
                 tile += 5;
-#endif // DEBUG || REGION_JP
+#endif // REGION_LANGUAGE_RUNTIME || REGION_JP
         }
         else
         {
-#if defined(DEBUG) || defined(REGION_JP)
+#if defined(REGION_LANGUAGE_RUNTIME) || defined(REGION_JP)
             tile = pFile->difficulty * 5;
             if (pFile->language == LANGUAGE_HIRAGANA)
                 tile += 0x13D;
             else
                 tile += 0x1A0;
-#else // !(DEBUG || REGION_JP)
+#else // retail JAP-less behaviour
             tile = 0x1A0 + pFile->difficulty * 5;
-#endif // DEBUG || REGION_JP
+#endif // REGION_LANGUAGE_RUNTIME || REGION_JP
         }
 
         for (i = 0; i < 5; i++)
@@ -5220,15 +5222,15 @@ void FileSelectDisplaySaveFileMiscInfo(struct SaveFileInfo* pFile, FileSelectCur
 
     if ((pFile->exists || pFile->introPlayed) && i >= 0 && pFile->corruptionFlag == 0)
     {
-#if defined(DEBUG) || defined(REGION_JP)
+#if defined(REGION_LANGUAGE_RUNTIME) || defined(REGION_JP)
         tile = i * 6;
         if (pFile->language == LANGUAGE_HIRAGANA)
             tile += 0x14C;
         else
             tile += 0x176;
-#else // !(DEBUG || REGION_JP)
+#else // retail JAP-less behaviour
         tile = i * 6 + 0x176;
-#endif // DEBUG || REGION_JP
+#endif // REGION_LANGUAGE_RUNTIME || REGION_JP
 
         for (i = 0; i < 6; i++)
         {
@@ -5503,14 +5505,14 @@ static u8 FileSelectUpdateSubMenu(void)
             else if (result == 2) // 2 = pressed B, go back to title
             {
                 FadeMusic(0);
-#ifdef REGION_JP
-                if (FILE_SELECT_DATA.fileSelectCursorPosition < FILE_SELECT_CURSOR_POSITION_COPY &&
+                // JAP adopts the highlighted file's own language on the way out
+                if (REGION_IS_JP() &&
+                    FILE_SELECT_DATA.fileSelectCursorPosition < FILE_SELECT_CURSOR_POSITION_COPY &&
                     (gSaveFilesInfo[FILE_SELECT_DATA.fileSelectCursorPosition].exists ||
                     gSaveFilesInfo[FILE_SELECT_DATA.fileSelectCursorPosition].introPlayed))
                 {
                     gLanguage = gSaveFilesInfo[FILE_SELECT_DATA.fileSelectCursorPosition].language;
                 }
-#endif // REGION_JP
                 gSubGameMode2 = 3; // Go to title screen
                 return TRUE;
             }
@@ -5589,14 +5591,14 @@ static u8 FileSelectUpdateSubMenu(void)
 
                             // On JP, the language is updated based on whether Japanese or hiragana was chosen.
                             // Debug allows any language, so it has an extra check.
-#if defined(DEBUG) || defined(REGION_JP)
+#if defined(REGION_LANGUAGE_RUNTIME) || defined(REGION_JP)
 #if defined(DEBUG)
                             if (gSaveFilesInfo[gMostRecentSaveFile].language <= LANGUAGE_HIRAGANA)
 #endif // DEBUG
                             {
                                 gSaveFilesInfo[gMostRecentSaveFile].language = FILE_SELECT_DATA.fileSelectCursors.japaneseText;
                             }
-#endif // DEBUG || REGION_JP
+#endif // REGION_LANGUAGE_RUNTIME || REGION_JP
                         }
                     }
                 }
@@ -5749,11 +5751,10 @@ static u8 FileSelectProcessFileSelection(void)
             FILE_SELECT_DATA.dispcnt |= DCNT_BG2;
             FILE_SELECT_DATA.dispcnt |= DCNT_WIN0;
 
-#ifdef REGION_EU
-            WRITE_16(REG_WIN0H, C_16_2_8(40, 200));
-#else // !REGION_EU
-            WRITE_16(REG_WIN0H, C_16_2_8(70, 170));
-#endif // REGION_EU
+            if (REGION_IS_EU())
+                WRITE_16(REG_WIN0H, C_16_2_8(40, 200));
+            else
+                WRITE_16(REG_WIN0H, C_16_2_8(70, 170));
             WRITE_16(REG_WIN0V, C_16_2_8(0, 23));
             WRITE_16(REG_WINOUT, C_16_2_8(0, WIN0_ALL));
             WRITE_8(REG_WININ, C_16_2_8(0, WIN0_ALL_NO_COLOR_EFFECT));
@@ -6083,7 +6084,7 @@ static u8 FileSelectProcessFileSelection(void)
             // (for Japanese/hiragana), but on non-JP the game will start if on a time
             // attack file (since the difficulty menu is skipped). Debug allows any language,
             // so it has an extra check.
-#if defined(DEBUG) || !defined(REGION_JP)
+#if defined(REGION_LANGUAGE_RUNTIME) || !defined(REGION_JP)
 #if defined(DEBUG)
             action = TRUE;
             if (gSaveFilesInfo[FILE_SELECT_DATA.fileSelectCursorPosition].language >= LANGUAGE_ENGLISH)
@@ -6093,19 +6094,19 @@ static u8 FileSelectProcessFileSelection(void)
             }
 
             if (action)
-#endif // DEBUG || !REGION_JP
+#endif // REGION_LANGUAGE_RUNTIME || !REGION_JP
             {
                 unk_7e3fc(6, 0x81);
                 FileSelectUpdateTilemap(TILEMAP_REQUEST_35);
                 FILE_SELECT_DATA.subMenuStage = 20;
             }
-#if defined(DEBUG) || !defined(REGION_JP)
+#if defined(REGION_LANGUAGE_RUNTIME) || !defined(REGION_JP)
             else
             {
                 FILE_SELECT_DATA.unk_3A = 2;
                 FILE_SELECT_DATA.subMenuStage = 34;
             }
-#endif // DEBUG || !REGION_JP
+#endif // REGION_LANGUAGE_RUNTIME || !REGION_JP
             break;
 
         case 19:
@@ -6122,7 +6123,7 @@ static u8 FileSelectProcessFileSelection(void)
         case 21:
             // JP goes to the Japanese/hiragana menu, while non-JP goes to the difficulty menu.
             // Debug allows any language, so it checks the language to decide the next menu.
-#if defined(DEBUG) || defined(REGION_JP)
+#if defined(REGION_LANGUAGE_RUNTIME) || defined(REGION_JP)
 #if defined(DEBUG)
             if (gSaveFilesInfo[FILE_SELECT_DATA.fileSelectCursorPosition].language <= LANGUAGE_HIRAGANA)
 #endif // DEBUG
@@ -6130,15 +6131,15 @@ static u8 FileSelectProcessFileSelection(void)
                 FILE_SELECT_DATA.subMenuStage = 22;
                 FileScreenUpdateMessageInfoIdQueue(0, FILE_SCREEN_MESSAGE_INFO_ID_MESSAGE_OPTION);
             }
-#endif // DEBUG || REGION_JP
-#if defined(DEBUG) || !defined(REGION_JP)
+#endif // REGION_LANGUAGE_RUNTIME || REGION_JP
+#if defined(REGION_LANGUAGE_RUNTIME) || !defined(REGION_JP)
 #if defined(DEBUG)
             else
 #endif // DEBUG
             {
                 FILE_SELECT_DATA.subMenuStage = 28;
             }
-#endif // DEBUG || !REGION_JP
+#endif // REGION_LANGUAGE_RUNTIME || !REGION_JP
 
             if (FILE_SELECT_DATA.fileSelectCursors.completedFileOptions == 2)
             {
@@ -6316,15 +6317,15 @@ static u8 FileSelectProcessFileSelection(void)
                 // When returning from the difficulty menu, JP goes to the Japanese/hiragana menu,
                 // while non-JP goes to the "Start Game" menu. Debug allows any language, so it
                 // checks the language to decide the next menu.
-#if defined(DEBUG) || defined(REGION_JP)
+#if defined(REGION_LANGUAGE_RUNTIME) || defined(REGION_JP)
 #if defined(DEBUG)
                 if (gSaveFilesInfo[FILE_SELECT_DATA.fileSelectCursorPosition].language <= LANGUAGE_HIRAGANA)
 #endif // DEBUG
                 {
                     FILE_SELECT_DATA.subMenuStage = 22;
                 }
-#endif // DEBUG || REGION_JP
-#if defined(DEBUG) || !defined(REGION_JP)
+#endif // REGION_LANGUAGE_RUNTIME || REGION_JP
+#if defined(REGION_LANGUAGE_RUNTIME) || !defined(REGION_JP)
 #if defined(DEBUG)
                 else
 #endif // DEBUG
@@ -6334,7 +6335,7 @@ static u8 FileSelectProcessFileSelection(void)
                     else
                         FILE_SELECT_DATA.subMenuStage = 6;
                 }
-#endif // DEBUG || !REGION_JP
+#endif // REGION_LANGUAGE_RUNTIME || !REGION_JP
             }
             break;
 
