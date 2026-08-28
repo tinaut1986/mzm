@@ -14,6 +14,14 @@
 #include "gba/memory.h"
 #include "structs/bg_clip.h"
 #include "constants/block.h"
+#include "constants/game_state.h"
+#include "structs/game_state.h"
+#include "structs/connection.h"
+#include "structs/minimap.h"
+#include "structs/room.h"
+#include "constants/minimap.h"
+#include "minimap.h"
+#include "macros.h"
 
 #ifdef PORT_GPU_TILE_RENDERER
 #include "port_gpu_renderer.h"
@@ -29,6 +37,7 @@
 #endif
 
 #include <stdbool.h>
+#include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -820,4 +829,368 @@ void PortPpuMzm_GetSamusRecordState(uint32_t* out) {
     out[3] = (uint32_t)gEquipment.suitType;
     out[4] = (uint32_t)gEquipment.suitMiscActivation;
     out[5] = (uint32_t)gSamusPhysics.unk_22;
+}
+
+/* ---------------------------------------------------------------------
+ * Debug warp ("teletransporte")
+ *
+ * Lives here rather than in port_bottom_ui_3ds.c (which owns the menu that
+ * triggers it) for the same reason PortPpuMzm_DebugKillSamus does: that
+ * file includes <3ds.h>, whose u32 typedef conflicts with the GBA port's
+ * own, so it can't touch gSamusData/gCurrentArea/the door tables directly.
+ *
+ * Warps are addressed by (area, DOOR id) rather than by (area, room) plus
+ * raw coordinates. src/room.c's RoomReset derives EVERYTHING from
+ * gLastDoorUsed: gCurrentRoom = pDoor->sourceRoom, and Samus's position
+ * from the door's xStart/yEnd/xExit/yExit -- exactly what a normal door
+ * transition does. Setting a room number and a guessed x/y instead (what
+ * the PORT_LINUX_DIAG_WARP_TO_DEOREM block in src/agbmain.c does, where the
+ * coordinates were hand-tuned for one specific room) would drop Samus
+ * wherever those coordinates happen to land in the new room's geometry --
+ * fine for one known room, useless as a general "jump anywhere" tool.
+ * RoomReset recomputes gCurrentRoom from the door regardless, so the room
+ * number here is only ever advisory/for display.
+ *
+ * The point is persisted to sdmc:/3ds/mzm-warp-point.txt so it survives a
+ * reflash: the whole reason this exists is iterating on a rendering bug
+ * that only shows up in one specific room, where re-walking there after
+ * every new CIA install is the actual cost.
+ * ------------------------------------------------------------------- */
+#define PORT_WARP_POINT_PATH "sdmc:/3ds/mzm-warp-point.txt"
+
+/* Populated by RoomInitDoors (src/room.c). Same extern src/menus/boot_debug.c
+ * uses for the original game's own room/door debug menu. */
+extern const struct Door* sAreaDoorsPointers[AREA_ENTRY_COUNT];
+
+/* Safety cap for the door-table walk below. No real area comes close, but
+ * the table is terminated by a DOOR_TYPE_NONE entry rather than by a count,
+ * so an unexpected table must not turn into an unbounded scan. */
+#define PORT_WARP_MAX_DOORS 128
+
+static bool sWarpPointValid;
+static bool sWarpPending;
+static u8 sWarpArea;
+static u8 sWarpDoor;
+static bool sWarpLoadTried;
+
+/* Selection shown in the menu's manual AREA/DOOR spinner. Starts on
+ * Crateria rather than area 0 purely because that's where the room this
+ * tool was first needed for lives. */
+static u8 sWarpSelArea = AREA_CRATERIA;
+static u8 sWarpSelDoor = 0;
+
+int PortPpuMzm_DebugGetDoorCount(int area) {
+    if (area < 0 || area >= AREA_ENTRY_COUNT) return 0;
+    const struct Door* doors = sAreaDoorsPointers[area];
+    if (doors == NULL) return 0;
+    int n = 0;
+    while (n < PORT_WARP_MAX_DOORS && doors[n].type != DOOR_TYPE_NONE) ++n;
+    return n;
+}
+
+/* Room a given door leads into, or -1 if the door id is out of range. Lets
+ * the menu show "PUERTA 12 -> SALA 8", so a room can be found by stepping
+ * doors without knowing door ids up front. */
+int PortPpuMzm_DebugGetDoorRoom(int area, int door) {
+    if (door < 0 || door >= PortPpuMzm_DebugGetDoorCount(area)) return -1;
+    return (int)sAreaDoorsPointers[area][door].sourceRoom;
+}
+
+static void PortPpuMzm_WarpPointLoad(void) {
+    sWarpLoadTried = true;
+    FILE* f = fopen(PORT_WARP_POINT_PATH, "r");
+    if (!f) return;
+    unsigned a = 0, d = 0;
+    if (fscanf(f, "%u %u", &a, &d) == 2 && a < AREA_ENTRY_COUNT) {
+        sWarpArea = (u8)a;
+        sWarpDoor = (u8)d;
+        sWarpPointValid = true;
+        sWarpSelArea = sWarpArea;
+        sWarpSelDoor = sWarpDoor;
+    }
+    fclose(f);
+}
+
+/* Records the door Samus last came through as the warp target, i.e.
+ * "bring me back to this room". */
+void PortPpuMzm_DebugSaveWarpPoint(void) {
+    sWarpArea = (u8)gCurrentArea;
+    sWarpDoor = gLastDoorUsed;
+    sWarpPointValid = true;
+    sWarpLoadTried = true;
+    sWarpSelArea = sWarpArea;
+    sWarpSelDoor = sWarpDoor;
+
+    FILE* f = fopen(PORT_WARP_POINT_PATH, "w");
+    if (f) {
+        fprintf(f, "%u %u\n", sWarpArea, sWarpDoor);
+        fclose(f);
+    }
+    char msg[96];
+    snprintf(msg, sizeof(msg), "WARP POINT SAVED: area=%u door=%u room=%u",
+             sWarpArea, sWarpDoor, gCurrentRoom);
+    Port_DebugLog(msg);
+}
+
+bool PortPpuMzm_DebugHasWarpPoint(void) {
+    if (!sWarpPointValid && !sWarpLoadTried) PortPpuMzm_WarpPointLoad();
+    return sWarpPointValid;
+}
+
+void PortPpuMzm_DebugGetWarpPointInfo(char* out, int outSize) {
+    if (!out || outSize <= 0) return;
+    if (!PortPpuMzm_DebugHasWarpPoint()) {
+        snprintf(out, (size_t)outSize, "SIN PUNTO GUARDADO");
+        return;
+    }
+    int room = PortPpuMzm_DebugGetDoorRoom(sWarpArea, sWarpDoor);
+    snprintf(out, (size_t)outSize, "AREA %u PUERTA %u -> SALA %d", sWarpArea, sWarpDoor, room);
+}
+
+/* Manual (area, door) spinner state, driven by the menu's arrows. */
+void PortPpuMzm_DebugGetWarpSelection(int* outArea, int* outDoor, int* outRoom) {
+    if (!sWarpLoadTried) PortPpuMzm_WarpPointLoad();
+    if (outArea) *outArea = sWarpSelArea;
+    if (outDoor) *outDoor = sWarpSelDoor;
+    if (outRoom) *outRoom = PortPpuMzm_DebugGetDoorRoom(sWarpSelArea, sWarpSelDoor);
+}
+
+void PortPpuMzm_DebugStepWarpArea(int delta) {
+    int a = (int)sWarpSelArea + delta;
+    if (a < 0) a = AREA_ENTRY_COUNT - 1;
+    if (a >= AREA_ENTRY_COUNT) a = 0;
+    sWarpSelArea = (u8)a;
+    /* A door id valid in the previous area usually isn't in the new one. */
+    if (sWarpSelDoor >= PortPpuMzm_DebugGetDoorCount(sWarpSelArea)) sWarpSelDoor = 0;
+}
+
+void PortPpuMzm_DebugStepWarpDoor(int delta) {
+    int count = PortPpuMzm_DebugGetDoorCount(sWarpSelArea);
+    if (count <= 0) { sWarpSelDoor = 0; return; }
+    int d = (int)sWarpSelDoor + delta;
+    if (d < 0) d = count - 1;
+    if (d >= count) d = 0;
+    sWarpSelDoor = (u8)d;
+}
+
+/* Requests a warp; the jump itself happens in src/agbmain.c's loop. */
+static bool PortPpuMzm_RequestWarpTo(u8 area, u8 door) {
+    if (PortPpuMzm_DebugGetDoorRoom(area, door) < 0) return false;
+    sWarpArea = area;
+    sWarpDoor = door;
+    sWarpPending = true;
+    return true;
+}
+
+bool PortPpuMzm_DebugRequestWarp(void) {
+    if (!PortPpuMzm_DebugHasWarpPoint()) return false;
+    return PortPpuMzm_RequestWarpTo(sWarpArea, sWarpDoor);
+}
+
+bool PortPpuMzm_DebugRequestWarpToSelection(void) {
+    return PortPpuMzm_RequestWarpTo(sWarpSelArea, sWarpSelDoor);
+}
+
+/* Called once per main-loop iteration from src/agbmain.c. Only fires while
+ * really in gameplay (GM_INGAME / SUB_GAME_MODE_PLAYING): applying it during
+ * a menu, a cutscene or a door transition would fight whatever state machine
+ * owns gSubGameMode1 at that moment. The request stays pending until
+ * gameplay is reached, so triggering it from the pause screen warps as soon
+ * as the game resumes instead of being dropped. */
+void PortPpuMzm_DebugApplyPendingWarp(void) {
+    if (!sWarpPending) return;
+    if (gMainGameMode != GM_INGAME || gSubGameMode1 != SUB_GAME_MODE_PLAYING) return;
+
+    gCurrentArea = (Area)sWarpArea;
+    gLastDoorUsed = sWarpDoor;
+    /* Advisory only -- RoomReset overwrites this from the door -- but it
+     * keeps anything reading gCurrentRoom before then consistent. */
+    gCurrentRoom = sAreaDoorsPointers[sWarpArea][sWarpDoor].sourceRoom;
+    gSubGameMode1 = 0; /* re-enter InitAndLoadGenerics -> real RoomLoad */
+    sWarpPending = false;
+
+    char msg[96];
+    snprintf(msg, sizeof(msg), "WARP APPLIED: area=%u door=%u room=%u",
+             sWarpArea, sWarpDoor, gCurrentRoom);
+    Port_DebugLog(msg);
+}
+
+
+/* ---------------------------------------------------------------------
+ * Debug: warp to a minimap tile, reveal every map, edit equipment.
+ *
+ * Same placement rationale as the warp block above: everything here needs
+ * the GBA-side structs that port_bottom_ui_3ds.c (which owns the menus)
+ * cannot include alongside <3ds.h>.
+ * ------------------------------------------------------------------- */
+
+/* Room table, populated by RoomInitRoomEntries (src/room.c). Needed to turn
+ * a door into the minimap tile it sits on. */
+extern const struct RoomEntryRom* sAreaRoomEntryPointers[AREA_ENTRY_COUNT];
+
+/* Minimap tile a door occupies. Same arithmetic as
+ * BootDebugUpdateMapScreenPosition (src/menus/boot_debug.c), which is the
+ * game's own "where on the area map is this door" code: the room's map
+ * origin plus the door's offset within the room, in screens. The constant
+ * 2-block bias is that function's `xOffset`/`yOffset` default -- doors sit
+ * two blocks inside the screen edge. */
+static bool PortPpuMzm_DoorMapTile(int area, int door, int* outX, int* outY) {
+    if (PortPpuMzm_DebugGetDoorRoom(area, door) < 0) return false;
+    const struct Door* pDoor = &sAreaDoorsPointers[area][door];
+    const struct RoomEntryRom* pRoom = &sAreaRoomEntryPointers[area][pDoor->sourceRoom];
+    *outX = (int)pRoom->mapX + ((int)pDoor->xStart - 2) / SCREEN_SIZE_X_BLOCKS;
+    *outY = (int)pRoom->mapY + ((int)pDoor->yStart - 2) / SCREEN_SIZE_Y_BLOCKS;
+    return true;
+}
+
+/* Door whose map tile is nearest to (tileX, tileY), or -1 if the area has
+ * none within `maxDist` tiles. Nearest-match rather than exact because a
+ * room can span several map tiles while its doors only sit on the tiles at
+ * its edges -- tapping the middle of a big room should still work. */
+int PortPpuMzm_DebugFindDoorNearMapTile(int area, int tileX, int tileY, int maxDist) {
+    int best = -1;
+    int bestDist = maxDist * maxDist + 1;
+    int count = PortPpuMzm_DebugGetDoorCount(area);
+    for (int d = 0; d < count; ++d) {
+        int dx, dy;
+        if (!PortPpuMzm_DoorMapTile(area, d, &dx, &dy)) continue;
+        int ddx = dx - tileX;
+        int ddy = dy - tileY;
+        int dist = ddx * ddx + ddy * ddy;
+        if (dist < bestDist) {
+            bestDist = dist;
+            best = d;
+        }
+    }
+    return best;
+}
+
+/* Warps to whatever door is nearest the given map tile. Returns the door id
+ * used, or -1 when the area has nothing close enough. */
+int PortPpuMzm_DebugRequestWarpToMapTile(int area, int tileX, int tileY) {
+    int door = PortPpuMzm_DebugFindDoorNearMapTile(area, tileX, tileY, 6);
+    if (door < 0) return -1;
+    if (!PortPpuMzm_RequestWarpTo((u8)area, (u8)door)) return -1;
+    char msg[96];
+    snprintf(msg, sizeof(msg), "MAP WARP: area=%d tile=%d,%d -> door=%d", area, tileX, tileY, door);
+    Port_DebugLog(msg);
+    return door;
+}
+
+/* Marks every tile of every area as explored, and every area map as
+ * downloaded.
+ *
+ * gVisitedMinimapTiles is the persistent per-area bitfield (one bit per
+ * column, 32 rows) the save file carries; setting it wholesale is what
+ * "explored" means. downloadedMapStatus is the separate per-area
+ * map-station bit that MinimapSetDownloadedTiles checks.
+ *
+ * The current area additionally keeps a decompressed working copy
+ * (gDecompressedMinimapVisitedTiles) that is only rebuilt on an area
+ * transition, so it has to be refreshed by hand here -- with exactly the
+ * sequence MinimapCheckOnTransition uses (copy the raw map over it, then
+ * MinimapSetDownloadedTiles), or the tiles the player is standing among
+ * would stay dark until they walked to another area and back. */
+void PortPpuMzm_DebugRevealAllMaps(void) {
+    /* [area][row]: with USE_EWRAM_SYMBOLS off (this build), structs/minimap.h
+     * defines gVisitedMinimapTiles as a two-dimensional hardcoded-pointer
+     * cast, not the flat one-dimensional symbol the other variant declares. */
+    for (int a = 0; a < MAX_AMOUNT_OF_AREAS; ++a) {
+        for (int row = 0; row < MINIMAP_SIZE; ++row) {
+            gVisitedMinimapTiles[a][row] = 0xFFFFFFFFu;
+        }
+    }
+    gEquipment.downloadedMapStatus = 0xFF;
+
+    memcpy(gDecompressedMinimapVisitedTiles, gDecompressedMinimapData,
+           MINIMAP_SIZE * MINIMAP_SIZE * sizeof(u16));
+    MinimapSetDownloadedTiles(gCurrentArea, gDecompressedMinimapVisitedTiles);
+
+    Port_DebugLog("DEBUG: all maps revealed");
+}
+
+/* ---- Equipment -------------------------------------------------------
+ * Every flag exists twice in gEquipment: the "owned" set (beamBombs /
+ * suitMisc) and the "currently switched on" set (beamBombsActivation /
+ * suitMiscActivation) that the pause screen toggles. A debug toggle has to
+ * move both together, or an item reads as collected but does nothing (or,
+ * worse, as active but not owned).
+ * -------------------------------------------------------------------- */
+void PortPpuMzm_DebugGetEquipment(unsigned* outBeams, unsigned* outMisc) {
+    if (outBeams) *outBeams = gEquipment.beamBombs;
+    if (outMisc) *outMisc = gEquipment.suitMisc;
+}
+
+void PortPpuMzm_DebugToggleBeam(unsigned bit) {
+    if (gEquipment.beamBombs & bit) {
+        gEquipment.beamBombs &= (u8)~bit;
+        gEquipment.beamBombsActivation &= (u8)~bit;
+    } else {
+        gEquipment.beamBombs |= (u8)bit;
+        gEquipment.beamBombsActivation |= (u8)bit;
+    }
+}
+
+void PortPpuMzm_DebugToggleMisc(unsigned bit) {
+    if (gEquipment.suitMisc & bit) {
+        gEquipment.suitMisc &= (u8)~bit;
+        gEquipment.suitMiscActivation &= (u8)~bit;
+    } else {
+        gEquipment.suitMisc |= (u8)bit;
+        gEquipment.suitMiscActivation |= (u8)bit;
+    }
+}
+
+void PortPpuMzm_DebugSetAllEquipment(bool on) {
+    u8 v = on ? 0xFF : 0x00;
+    gEquipment.beamBombs = v;
+    gEquipment.beamBombsActivation = v;
+    gEquipment.suitMisc = v;
+    gEquipment.suitMiscActivation = v;
+    /* suitType tracks which suit sprite Samus wears; keep it consistent with
+     * having/not having the suit upgrades rather than leaving a fully
+     * powered suit on a Samus who now owns nothing. */
+    gEquipment.suitType = on ? SUIT_FULLY_POWERED : SUIT_NORMAL;
+}
+
+/* Ammo/energy. The maxima are the real 100%-run totals for normal
+ * difficulty, not arbitrary big numbers, so a debug-maxed file behaves like
+ * a legitimately completed one. */
+#define PORT_DEBUG_MAX_ENERGY        1299
+#define PORT_DEBUG_MAX_MISSILES      250
+#define PORT_DEBUG_MAX_SUPERS        30
+#define PORT_DEBUG_MAX_POWER_BOMBS   30
+
+void PortPpuMzm_DebugSetAmmo(bool full) {
+    if (full) {
+        gEquipment.maxEnergy = PORT_DEBUG_MAX_ENERGY;
+        gEquipment.maxMissiles = PORT_DEBUG_MAX_MISSILES;
+        gEquipment.maxSuperMissiles = PORT_DEBUG_MAX_SUPERS;
+        gEquipment.maxPowerBombs = PORT_DEBUG_MAX_POWER_BOMBS;
+    } else {
+        gEquipment.maxEnergy = 99;
+        gEquipment.maxMissiles = 0;
+        gEquipment.maxSuperMissiles = 0;
+        gEquipment.maxPowerBombs = 0;
+    }
+    gEquipment.currentEnergy = gEquipment.maxEnergy;
+    gEquipment.currentMissiles = gEquipment.maxMissiles;
+    gEquipment.currentSuperMissiles = gEquipment.maxSuperMissiles;
+    gEquipment.currentPowerBombs = gEquipment.maxPowerBombs;
+}
+
+/* Tops up the current counts without touching the capacities. */
+void PortPpuMzm_DebugRefillAmmo(void) {
+    gEquipment.currentEnergy = gEquipment.maxEnergy;
+    gEquipment.currentMissiles = gEquipment.maxMissiles;
+    gEquipment.currentSuperMissiles = gEquipment.maxSuperMissiles;
+    gEquipment.currentPowerBombs = gEquipment.maxPowerBombs;
+}
+
+void PortPpuMzm_DebugGetAmmoText(char* out, int outSize) {
+    if (!out || outSize <= 0) return;
+    snprintf(out, (size_t)outSize, "E%u/%u M%u S%u P%u",
+             gEquipment.currentEnergy, gEquipment.maxEnergy,
+             gEquipment.maxMissiles, gEquipment.maxSuperMissiles,
+             gEquipment.maxPowerBombs);
 }
