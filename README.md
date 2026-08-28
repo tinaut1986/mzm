@@ -136,7 +136,6 @@ For renderer selection, diagnostics flags and the rest of the build options, see
 
 ## Known issues
 
-- **Saves can fail to persist** in some cases (SRAM ends up as empty slots). Tracked as issue #25.
 - Sound is silent until the DSP firmware is dumped (see Installation).
 - Behavioural differences against the original game are collected in [KNOWN_DIFFERENCES.md](KNOWN_DIFFERENCES.md).
 
