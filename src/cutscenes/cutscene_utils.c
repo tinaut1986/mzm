@@ -1,3 +1,4 @@
+#include "region.h"
 #include "cutscenes/cutscene_utils.h"
 #include "dma.h"
 #include "gba.h"
@@ -469,13 +470,12 @@ void CutsceneInit(void)
     gNextOamSlot = 0;
     ResetFreeOam();
 
-#ifdef REGION_EU
-    if (sCutsceneData[gCurrentCutscene].preBgFading >= COLOR_FADING_SLOW_WHITE)
+    // EUR-only blend setup for the slow fadings
+    if (REGION_IS_EU() && sCutsceneData[gCurrentCutscene].preBgFading >= COLOR_FADING_SLOW_WHITE)
     {
         WRITE_16(REG_BLDCNT, CUTSCENE_DATA.bldcnt = 0xBF);
     }
     else
-#endif // REGION_EU
     {
         WRITE_16(REG_BLDCNT, CUTSCENE_DATA.bldcnt = 0xFF);
     }

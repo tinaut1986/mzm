@@ -1,3 +1,4 @@
+#include "region.h"
 #include "cutscenes/getting_fully_powered_suit.h"
 #include "cutscenes/cutscene_utils.h"
 #include "dma.h"
@@ -336,11 +337,15 @@ static u8 GettingFullyPoweredSuitInit(void)
 {
     s32 i;
 
-#if defined(REGION_EU) || defined(BUGFIX)
+#ifdef BUGFIX
     CutsceneFadeScreenToWhite();
-#else // !(REGION_EU || BUGFIX)
-    CutsceneFadeScreenToBlack();
-#endif // REGION_EU || BUGFIX
+#else
+    // EUR fades to white here, the earlier releases to black
+    if (REGION_IS_EU())
+        CutsceneFadeScreenToWhite();
+    else
+        CutsceneFadeScreenToBlack();
+#endif
 
     // Load palette, in both background and object
     DmaTransfer(3, sGettingFullyPoweredSuitPal, PALRAM_BASE, 11 * PAL_ROW_SIZE, 16);
