@@ -10,10 +10,11 @@ extern "C" {
 
 typedef enum {
     RA_STATUS_DISABLED = 0,
-    RA_STATUS_OFFLINE,
+    RA_STATUS_OFFLINE,      /* the server could not be reached */
     RA_STATUS_CONNECTING,
     RA_STATUS_CONNECTED,
-    RA_STATUS_ERROR
+    RA_STATUS_ERROR,        /* the server answered and rejected the login */
+    RA_STATUS_NO_ACCOUNT    /* nothing to log in with yet */
 } RetroAchievementsStatus;
 
 typedef enum {

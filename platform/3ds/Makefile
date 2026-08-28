@@ -23,6 +23,21 @@ ROOT      := $(abspath $(CURDIR)/../..)
 BUILD     := $(CURDIR)/build
 TARGET    := $(CURDIR)/mzm-3ds
 
+# Give the compiler somewhere to put its temporary files.
+#
+# On Windows the make that ships with devkitPro is a Cygwin build, and it does
+# not pass TMP/TEMP through to recipes -- they arrive empty. devkitARM's gcc is
+# a native Windows binary, so with neither set it falls back to what
+# GetTempPath() returns, which is C:\WINDOWS, and every compile dies with
+# "Cannot create temporary file in C:\WINDOWS\: Permission denied". Pointing
+# them at the build directory fixes it there and changes nothing on Linux or
+# macOS, where the variables are normally unset and gcc would use /tmp.
+ifeq ($(strip $(TMP)),)
+  export TMP  := $(BUILD)/tmp
+  export TEMP := $(BUILD)/tmp
+  $(shell mkdir -p $(BUILD)/tmp)
+endif
+
 APP_TITLE       := Metroid Zero Mission 3DS
 # Recursively expanded (=) so it's resolved at recipe time, once VERSION is known.
 # SMDH text fields have a hard 64-character limit, so the version is truncated
@@ -84,13 +99,25 @@ SRCS_3DS := \
 	$(CURDIR)/source/port_gpu_renderer.c \
 	$(CURDIR)/source/port_mzm_audio_3ds.c \
 	$(CURDIR)/source/port_retroachievements_3ds.c \
+	$(CURDIR)/source/port_ra_iwram_map.c \
 	$(CURDIR)/source/port_ra_badges_data.c
+
+# rcheevos: the official RetroAchievements library, vendored under
+# third_party/rcheevos (see its VERSION.txt for the commit, and for which of
+# its sources are deliberately left out).
+RCHEEVOS := $(ROOT)/third_party/rcheevos
+SRCS_RCHEEVOS := \
+	$(wildcard $(RCHEEVOS)/src/*.c) \
+	$(wildcard $(RCHEEVOS)/src/rapi/*.c) \
+	$(wildcard $(RCHEEVOS)/src/rcheevos/*.c) \
+	$(RCHEEVOS)/src/rhash/md5.c
 
 # Generar objetos
 OBJS_ROOT := $(patsubst $(ROOT)/%.c, $(BUILD)/root/%.o, $(SRCS_ROOT))
 OBJS_ASM  := $(patsubst $(ROOT)/%.s, $(BUILD)/root/%.o, $(SRCS_ASM))
 OBJS_3DS  := $(patsubst $(CURDIR)/%.c, $(BUILD)/3ds/%.o, $(SRCS_3DS))
-C_OBJS    := $(OBJS_ROOT) $(OBJS_ASM) $(OBJS_3DS)
+OBJS_RC   := $(patsubst $(RCHEEVOS)/%.c, $(BUILD)/rcheevos/%.o, $(SRCS_RCHEEVOS))
+C_OBJS    := $(OBJS_ROOT) $(OBJS_ASM) $(OBJS_3DS) $(OBJS_RC)
 DEPS      := $(C_OBJS:.o=.d)
 
 GIT_BRANCH  := $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null)
@@ -233,6 +260,8 @@ INCLUDES := \
 	-I$(ROOT)/port/generated \
 	-I$(ROOT)/port/ppu/include \
 	-I$(CURDIR)/source \
+	-I$(ROOT)/third_party/rcheevos/include \
+	-I$(ROOT)/third_party/rcheevos/src/rhash \
 	-I$(CTRULIB)/include \
 	-I$(PORTLIBS)/include
 
@@ -290,6 +319,21 @@ $(TARGET).elf: $(C_OBJS)
 	@$(LD) $(LDFLAGS) @$(BUILD)/objects.rsp $(LIBS) -o $@
 	@$(NM) -CSn $@ > $(BUILD)/mzm-3ds.lst
 	@echo "Build successful: $(TARGET).elf"
+
+# rcheevos is third-party C89 and compiles clean, so it is built without the
+# decomp's warning suppressions -- those exist for the decomp's code and
+# should not hide anything here -- and without the decomp's defines, which
+# mean nothing to it. -D_3DS is what its rc_compat.h looks for to pick the
+# libctru mutex implementation.
+CFLAGS_RC := -O2 -fomit-frame-pointer -Wall -mword-relocations \
+             -ffunction-sections -fdata-sections -D__3DS__ -D_3DS $(ARCH) $(EXTRA_CFLAGS)
+INCLUDES_RC := -I$(RCHEEVOS)/include -I$(RCHEEVOS)/src -I$(RCHEEVOS)/src/rhash \
+               -I$(CTRULIB)/include
+
+$(BUILD)/rcheevos/%.o: $(RCHEEVOS)/%.c
+	@mkdir -p $(dir $@)
+	@echo "CC $<"
+	@$(CC) -MMD -MP -MF $(@:.o=.d) $(CFLAGS_RC) $(INCLUDES_RC) -c $< -o $@
 
 CFLAGS_GEN := $(patsubst -O2,-O1,$(CFLAGS))
 

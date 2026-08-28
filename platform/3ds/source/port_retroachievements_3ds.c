@@ -1,9 +1,54 @@
+/* RetroAchievements for the 3DS port, on top of rcheevos.
+ *
+ * rcheevos owns everything that used to be hand-written here: the trigger
+ * language, the login and session handling, the unlock queue and the
+ * hardcore rules.  What is left in this file is the three things only the
+ * port can supply -- how to reach the network, where GBA memory really is,
+ * and what an unlock should look like on screen -- plus the accessors the
+ * bottom-screen UI reads.
+ *
+ * Threading: every rc_client call is made from the main thread.  HTTP runs
+ * on a worker thread, but its responses are queued and handed back to
+ * rcheevos from Port_RA_Update, so rc_client callbacks -- including the ones
+ * that fire toasts and rebuild the achievement list -- never run off-thread.
+ */
+
 #include "port_retroachievements_3ds.h"
+#include "port_ra_iwram_map.h"
+
+#include "rc_client.h"
+
 #include <3ds.h>
 #include <citro2d.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "md5.h"
+
+/* The whole ROM is already in memory; the RA hash for a GBA game is just its
+ * MD5, so the game is identified from that rather than from a hardcoded ID
+ * and the server decides which set applies. RetroAchievements currently maps
+ * four ROM hashes onto one game for this title, so the regional dumps share a
+ * set, but nothing here depends on that staying true. See port/port_rom.h. */
+extern unsigned char* gRomData;
+extern unsigned int gRomSize;
+
+extern uint8_t gEwram[0x40000];
+
+#define RA_LOG_PATH   "sdmc:/3ds/Metroid Zero Mission 3DS/retroachievements.log"
+
+/* Server-call queue sizes; see the async section below. */
+#define RA_MAX_PENDING   8
+#define RA_REQUEST_MAX   1024
+#define RA_RESPONSE_MAX  65536
+
+/* RA's flat view of GBA memory: IWRAM first, then EWRAM from 0x8000. */
+#define RA_EWRAM_BASE 0x8000
+#define RA_EWRAM_SIZE 0x40000
+
+static rc_client_t* sClient = NULL;
 
 static bool sRAEnabled = false;
 static bool sRAHardcore = true;
@@ -13,12 +58,6 @@ static char sRAToken[64] = "";
 static RetroAchievementsStatus sRAStatus = RA_STATUS_DISABLED;
 static char sLastStatusMsg[64] = "";
 
-/* Background worker thread for network operations */
-static Thread sNetworkThread = NULL;
-static bool sHttpInitialized = false;
-static char sPendingPassword[64] = "";
-static bool sPendingLogin = false;
-
 /* Active toast notification */
 static struct {
     bool active;
@@ -27,111 +66,113 @@ static struct {
     uint32_t points;
 } sToast = { false, 0, "", 0 };
 
-static void EnsureHttpInit(void) {
-    if (!sHttpInitialized) {
-        Result res = httpcInit(0x20000); /* 128KB shared memory for HTTP */
-        if (R_SUCCEEDED(res)) {
-            sHttpInitialized = true;
-        }
+static void LogLine(const char* fmt, ...) {
+    va_list args;
+    FILE* file = fopen(RA_LOG_PATH, "a");
+    if (!file) {
+        return;
     }
+    va_start(args, fmt);
+    vfprintf(file, fmt, args);
+    va_end(args);
+    fputc('\n', file);
+    fclose(file);
 }
 
-/* Helper to URL-encode special characters in password / username */
-static void UrlEncode(const char* src, char* dst, size_t dstSize) {
-    static const char hex[] = "0123456789ABCDEF";
-    size_t d = 0;
-    while (*src && d + 4 < dstSize) {
-        unsigned char c = (unsigned char)*src++;
-        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
-            c == '-' || c == '_' || c == '.' || c == '~') {
-            dst[d++] = (char)c;
+/* ========================================================================= */
+/* GBA memory                                                                */
+/* ========================================================================= */
+
+/* EWRAM needs no translation: ewram_symbols.ld already places the decomp's
+ * EWRAM globals at their real offsets inside gEwram.  IWRAM does, and the
+ * generated table is what makes an IWRAM address mean anything at all --
+ * see port_ra_iwram_map.h. */
+static const PortRaIwramEntry* FindIwramEntry(uint32_t address) {
+    unsigned int low = 0;
+    unsigned int high = gPortRaIwramMapCount;
+
+    while (low < high) {
+        unsigned int mid = low + (high - low) / 2;
+        const PortRaIwramEntry* entry = &gPortRaIwramMap[mid];
+        if (address < entry->address) {
+            high = mid;
+        } else if (address >= (uint32_t)entry->address + entry->size) {
+            low = mid + 1;
         } else {
-            dst[d++] = '%';
-            dst[d++] = hex[(c >> 4) & 0xF];
-            dst[d++] = hex[c & 0xF];
+            return entry;
         }
     }
-    dst[d] = '\0';
+    return NULL;
 }
 
-/* Minimal MD5 implementation (RFC 1321), used to sign awardachievement requests */
-static void Md5Hex(const char* input, char outHex[33]) {
-    static const uint32_t K[64] = {
-        0xd76aa478,0xe8c7b756,0x242070db,0xc1bdceee,0xf57c0faf,0x4787c62a,0xa8304613,0xfd469501,
-        0x698098d8,0x8b44f7af,0xffff5bb1,0x895cd7be,0x6b901122,0xfd987193,0xa679438e,0x49b40821,
-        0xf61e2562,0xc040b340,0x265e5a51,0xe9b6c7aa,0xd62f105d,0x02441453,0xd8a1e681,0xe7d3fbc8,
-        0x21e1cde6,0xc33707d6,0xf4d50d87,0x455a14ed,0xa9e3e905,0xfcefa3f8,0x676f02d9,0x8d2a4c8a,
-        0xfffa3942,0x8771f681,0x6d9d6122,0xfde5380c,0xa4beea44,0x4bdecfa9,0xf6bb4b60,0xbebfbc70,
-        0x289b7ec6,0xeaa127fa,0xd4ef3085,0x04881d05,0xd9d4d039,0xe6db99e5,0x1fa27cf8,0xc4ac5665,
-        0xf4292244,0x432aff97,0xab9423a7,0xfc93a039,0x655b59c3,0x8f0ccc92,0xffeff47d,0x85845dd1,
-        0x6fa87e4f,0xfe2ce6e0,0xa3014314,0x4e0811a1,0xf7537e82,0xbd3af235,0x2ad7d2bb,0xeb86d391
-    };
-    static const int S[64] = {
-        7,12,17,22, 7,12,17,22, 7,12,17,22, 7,12,17,22,
-        5, 9,14,20, 5, 9,14,20, 5, 9,14,20, 5, 9,14,20,
-        4,11,16,23, 4,11,16,23, 4,11,16,23, 4,11,16,23,
-        6,10,15,21, 6,10,15,21, 6,10,15,21, 6,10,15,21
-    };
+/* Reads are byte at a time on purpose: an rcheevos read can straddle two
+ * variables, and a variable the decomp does not model leaves a hole in the
+ * middle of one.  Stopping at the first byte that is not backed by anything
+ * is what rcheevos expects -- a short read tells it the address is invalid,
+ * which is the honest answer. */
+static uint32_t ReadMemory(uint32_t address, uint8_t* buffer, uint32_t num_bytes, rc_client_t* client) {
+    uint32_t done = 0;
+    (void)client;
 
-    uint32_t a0 = 0x67452301, b0 = 0xefcdab89, c0 = 0x98badcfe, d0 = 0x10325476;
+    while (done < num_bytes) {
+        uint32_t at = address + done;
 
-    size_t msgLen = strlen(input);
-    uint64_t bitLen = (uint64_t)msgLen * 8;
-    size_t paddedLen = ((msgLen + 8) / 64 + 1) * 64;
-    if (paddedLen > 512) paddedLen = 512; /* guard: inputs used here are short */
-    uint8_t buf[512] = { 0 };
-    memcpy(buf, input, msgLen);
-    buf[msgLen] = 0x80;
-    memcpy(buf + paddedLen - 8, &bitLen, 8);
-
-    for (size_t chunk = 0; chunk < paddedLen; chunk += 64) {
-        uint32_t M[16];
-        for (int i = 0; i < 16; ++i) {
-            M[i] = (uint32_t)buf[chunk + i * 4] | ((uint32_t)buf[chunk + i * 4 + 1] << 8) |
-                   ((uint32_t)buf[chunk + i * 4 + 2] << 16) | ((uint32_t)buf[chunk + i * 4 + 3] << 24);
+        if (at >= RA_EWRAM_BASE) {
+            uint32_t offset = at - RA_EWRAM_BASE;
+            if (offset >= RA_EWRAM_SIZE) {
+                break;
+            }
+            buffer[done++] = gEwram[offset];
+            continue;
         }
 
-        uint32_t A = a0, B = b0, C = c0, D = d0;
-        for (int i = 0; i < 64; ++i) {
-            uint32_t F;
-            int g;
-            if (i < 16) { F = (B & C) | (~B & D); g = i; }
-            else if (i < 32) { F = (D & B) | (~D & C); g = (5 * i + 1) % 16; }
-            else if (i < 48) { F = B ^ C ^ D; g = (3 * i + 5) % 16; }
-            else { F = C ^ (B | ~D); g = (7 * i) % 16; }
-
-            F = F + A + K[i] + M[g];
-            A = D; D = C; C = B;
-            B = B + ((F << S[i]) | (F >> (32 - S[i])));
+        const PortRaIwramEntry* entry = FindIwramEntry(at);
+        if (!entry) {
+            break;
         }
-
-        a0 += A; b0 += B; c0 += C; d0 += D;
+        buffer[done++] = ((const uint8_t*)entry->storage)[at - entry->address];
     }
 
-    uint8_t digest[16];
-    uint32_t vals[4] = { a0, b0, c0, d0 };
-    for (int i = 0; i < 4; ++i) {
-        digest[i * 4 + 0] = (uint8_t)(vals[i] & 0xFF);
-        digest[i * 4 + 1] = (uint8_t)((vals[i] >> 8) & 0xFF);
-        digest[i * 4 + 2] = (uint8_t)((vals[i] >> 16) & 0xFF);
-        digest[i * 4 + 3] = (uint8_t)((vals[i] >> 24) & 0xFF);
-    }
-
-    static const char hexDigits[] = "0123456789abcdef";
-    for (int i = 0; i < 16; ++i) {
-        outHex[i * 2] = hexDigits[(digest[i] >> 4) & 0xF];
-        outHex[i * 2 + 1] = hexDigits[digest[i] & 0xF];
-    }
-    outHex[32] = '\0';
+    return done;
 }
 
-/* Extracts just the numeric X.X.X portion from MZM_PORT_VERSION (e.g. "v0.2.2-dev.5+abc123" -> "0.2.2"),
- * since RA's hardcore validation requires the User-Agent version to be purely numeric. */
+/* ========================================================================= */
+/* HTTP                                                                      */
+/* ========================================================================= */
+
+static bool sHttpInitialized = false;
+
+static void EnsureHttpInit(void) {
+    Result res;
+
+    if (sHttpInitialized) {
+        return;
+    }
+
+    res = httpcInit(0x20000); /* 128KB shared memory */
+    if (R_SUCCEEDED(res)) {
+        sHttpInitialized = true;
+        return;
+    }
+
+    /* Worth spelling out, because the usual cause is not the network: an
+     * installed title only gets http:C if cia/mzm3ds.rsf grants it, and
+     * without it this fails on the first request and everything downstream
+     * just looks "offline". Under the Homebrew Launcher the .3dsx inherits
+     * broader permissions and the same code works, which makes it easy to
+     * misread as a CIA-only network fault. */
+    LogLine("httpcInit FAILED: 0x%08lX (is http:C granted in cia/mzm3ds.rsf?)",
+            (unsigned long)res);
+}
+
+/* Extracts just the numeric X.X.X portion from MZM_PORT_VERSION (e.g.
+ * "v0.2.2-dev.5+abc123" -> "0.2.2"): RA's hardcore validation requires the
+ * User-Agent version to be purely numeric. */
 static void GetNumericVersion(char* out, size_t outSize) {
     const char* src = MZM_PORT_VERSION;
-    while (*src && !(*src >= '0' && *src <= '9')) src++;
-
     size_t d = 0;
+
+    while (*src && !(*src >= '0' && *src <= '9')) src++;
     while (*src && d + 1 < outSize && ((*src >= '0' && *src <= '9') || *src == '.')) {
         out[d++] = *src++;
     }
@@ -144,31 +185,43 @@ static void GetNumericVersion(char* out, size_t outSize) {
     }
 }
 
-/* HTTP GET Request Helper */
-static int HttpPerformGet(const char* url, char* outBuf, size_t outSize) {
+/* One HTTP request. Returns the number of body bytes, or a negative value.
+ * post_data being NULL means GET. */
+static int HttpPerformOnce(const char* url, const char* post_data, const char* content_type,
+                           char* outBuf, size_t outSize, int* outStatusCode) {
+    httpcContext context;
+    Result ret;
+    u32 statuscode = 0;
+    u32 totalDownloaded = 0;
+    char versionBuf[16];
+    char userAgent[64];
+
     EnsureHttpInit();
     if (!sHttpInitialized) {
         snprintf(sLastStatusMsg, sizeof(sLastStatusMsg), "HTTPC INIT FAILED");
         return -1;
     }
 
-    httpcContext context;
-    Result ret = httpcOpenContext(&context, HTTPC_METHOD_GET, url, 1);
+    ret = httpcOpenContext(&context, post_data ? HTTPC_METHOD_POST : HTTPC_METHOD_GET, url, 1);
     if (R_FAILED(ret)) {
         snprintf(sLastStatusMsg, sizeof(sLastStatusMsg), "OPEN CTX ERR: 0x%08lX", (unsigned long)ret);
         return -2;
     }
 
-    /* Disable SSL certificate verification */
     httpcSetSSLOpt(&context, SSLCOPT_DisableVerify);
     httpcSetKeepAlive(&context, HTTPC_KEEPALIVE_DISABLED);
-    char versionBuf[16];
+
     GetNumericVersion(versionBuf, sizeof(versionBuf));
-    char userAgent[48];
     snprintf(userAgent, sizeof(userAgent), "MZM3DS/%s (Nintendo 3DS)", versionBuf);
     httpcAddRequestHeaderField(&context, "User-Agent", userAgent);
     httpcAddRequestHeaderField(&context, "Accept", "*/*");
     httpcAddRequestHeaderField(&context, "Connection", "close");
+
+    if (post_data) {
+        httpcAddRequestHeaderField(&context, "Content-Type",
+                                   content_type ? content_type : "application/x-www-form-urlencoded");
+        httpcAddPostDataRaw(&context, (u32*)(void*)post_data, (u32)strlen(post_data));
+    }
 
     ret = httpcBeginRequest(&context);
     if (R_FAILED(ret)) {
@@ -177,566 +230,667 @@ static int HttpPerformGet(const char* url, char* outBuf, size_t outSize) {
         return -3;
     }
 
-    u32 statuscode = 0;
-    ret = httpcGetResponseStatusCodeTimeout(&context, &statuscode, 15000000000ULL); /* 15s timeout */
+    ret = httpcGetResponseStatusCodeTimeout(&context, &statuscode, 15000000000ULL); /* 15s */
     if (R_FAILED(ret) && statuscode == 0) {
         snprintf(sLastStatusMsg, sizeof(sLastStatusMsg), "RESP ERR: 0x%08lX", (unsigned long)ret);
         httpcCloseContext(&context);
         return -4;
     }
-    if (statuscode != 200 && statuscode != 302 && statuscode != 0) {
-        snprintf(sLastStatusMsg, sizeof(sLastStatusMsg), "HTTP CODE: %lu", (unsigned long)statuscode);
-        httpcCloseContext(&context);
-        return (int)statuscode;
+    if (outStatusCode) {
+        *outStatusCode = (int)statuscode;
     }
 
-    u32 contentSize = 0;
-    httpcGetDownloadSizeState(&context, NULL, &contentSize);
-
-    u32 totalDownloaded = 0;
-    if (contentSize > 0 && contentSize < outSize) {
-        ret = httpcDownloadData(&context, (u8*)outBuf, contentSize, &totalDownloaded);
-        if (totalDownloaded == 0) totalDownloaded = contentSize;
-    } else {
-        u32 curDown = 0;
-        do {
-            u32 chunk = 256;
-            if (totalDownloaded + chunk >= outSize) {
-                chunk = (u32)(outSize - 1 - totalDownloaded);
-                if (chunk == 0) break;
-            }
-            ret = httpcReceiveData(&context, (u8*)outBuf + totalDownloaded, chunk);
-            httpcGetDownloadSizeState(&context, &curDown, NULL);
-            if (curDown > totalDownloaded) {
-                totalDownloaded = curDown;
-            }
-            if (ret == (Result)HTTPC_RESULTCODE_DOWNLOADPENDING) {
-                svcSleepThread(5000000ULL);
-                ret = 0;
-            }
-        } while (ret == 0 && totalDownloaded < outSize - 1);
-    }
+    /* The download loop from devkitPro's own network/http_post example:
+     * httpcDownloadData reports how much it wrote and returns
+     * DOWNLOADPENDING while more remains.
+     *
+     * The previous version drove this from httpcGetDownloadSizeState's
+     * "downloaded size" instead, which does not track what has been read out
+     * of the context, so every response came back as zero bytes -- the server
+     * answered 200 with a perfectly good body and rcheevos was handed
+     * nothing, reporting "No response" and, in the end, "offline".
+     *
+     * The body must also be drained completely: httpcCloseContext hangs on a
+     * context with content still pending. */
+    do {
+        u32 readsize = 0;
+        u32 space = (u32)(outSize - 1) - totalDownloaded;
+        if (space == 0) {
+            break;
+        }
+        ret = httpcDownloadData(&context, (u8*)outBuf + totalDownloaded, space, &readsize);
+        totalDownloaded += readsize;
+    } while (ret == (Result)HTTPC_RESULTCODE_DOWNLOADPENDING);
 
     outBuf[totalDownloaded] = '\0';
     httpcCloseContext(&context);
 
+    /* An empty body is a failed read, not an answer.
+     *
+     * This console returns a 200 with nothing behind it for every HTTPS
+     * request to retroachievements.org -- the download fails with 0xD8A0A016
+     * inside the HTTP module -- while the identical request over plain HTTP
+     * returns the full body. The hand-written client reported that as an
+     * error, which is what let its HTTP fallback take over; reporting it as
+     * "success, zero bytes" instead meant the fallback never ran and rcheevos
+     * was handed an empty response.
+     *
+     * RetroAchievements always answers with a body, so treating a missing one
+     * as a transport failure costs nothing. */
     if (totalDownloaded == 0) {
-        snprintf(sLastStatusMsg, sizeof(sLastStatusMsg), "EMPTY (CODE %lu, 0x%08lX)", (unsigned long)statuscode, (unsigned long)ret);
+        snprintf(sLastStatusMsg, sizeof(sLastStatusMsg), "EMPTY (CODE %lu, 0x%08lX)",
+                 (unsigned long)statuscode, (unsigned long)ret);
         return -5;
     }
+
     return (int)totalDownloaded;
 }
 
-#define MAX_RA_ACHIEVEMENTS 128
-static RetroAchievementItem sAchievements[MAX_RA_ACHIEVEMENTS];
-static uint32_t sAchievementCount = 0;
+/* Same request, but falling back to plain HTTP when TLS fails.
+ *
+ * The console's TLS stack is old enough that the handshake with
+ * retroachievements.org is regularly rejected outright, so an HTTPS-only
+ * client reports "offline" on a network that works fine. The hand-written
+ * client this module replaced retried over HTTP for exactly that reason;
+ * rcheevos always builds https:// URLs, so the retry has to live here.
+ *
+ * Only transport failures fall back. An HTTP status code -- including a 4xx
+ * -- means the server was reached and answered, and rcheevos is entitled to
+ * see that answer as-is.
+ *
+ * Once the fallback has worked the session sticks to HTTP. A rejected
+ * handshake costs a timeout, and paying it again on every request would make
+ * loading the game and syncing unlocks crawl. */
+static bool sTlsUnusable = false;
 
-/* Helper to unescape JSON string values in place */
-static void JsonUnescape(char* str) {
-    char* src = str;
-    char* dst = str;
-    while (*src) {
-        if (*src == '\\' && *(src + 1)) {
-            src++;
-            if (*src == '\"') *dst++ = '\"';
-            else if (*src == '\\') *dst++ = '\\';
-            else if (*src == '/') *dst++ = '/';
-            else if (*src == 'n') *dst++ = ' ';
-            else if (*src == 'r') *dst++ = ' ';
-            else if (*src == 't') *dst++ = ' ';
-            else *dst++ = *src;
-            src++;
-        } else {
-            *dst++ = *src++;
+static int HttpPerform(const char* url, const char* post_data, const char* content_type,
+                       char* outBuf, size_t outSize, int* outStatusCode) {
+    static const char kHttps[] = "https://";
+    static const char kHttp[] = "http://";
+    char plainUrl[RA_REQUEST_MAX];
+    bool isHttps = (strncmp(url, kHttps, sizeof(kHttps) - 1) == 0);
+    int result;
+
+    if (isHttps) {
+        /* Built by hand rather than with snprintf("%s"): the length is
+         * bounded here, where it is obvious, instead of trusting a caller
+         * the compiler cannot see through. */
+        const char* rest = url + sizeof(kHttps) - 1;
+        size_t restLen = strlen(rest);
+        if (restLen > sizeof(plainUrl) - sizeof(kHttp)) {
+            restLen = sizeof(plainUrl) - sizeof(kHttp);
+        }
+        memcpy(plainUrl, kHttp, sizeof(kHttp) - 1);
+        memcpy(plainUrl + sizeof(kHttp) - 1, rest, restLen);
+        plainUrl[sizeof(kHttp) - 1 + restLen] = '\0';
+        if (sTlsUnusable) {
+            return HttpPerformOnce(plainUrl, post_data, content_type, outBuf, outSize, outStatusCode);
         }
     }
-    *dst = '\0';
+
+    result = HttpPerformOnce(url, post_data, content_type, outBuf, outSize, outStatusCode);
+    if (result >= 0 || !isHttps) {
+        return result;
+    }
+
+    LogLine("HTTPS FAILED (%d, %s); retrying over HTTP", result, sLastStatusMsg);
+    result = HttpPerformOnce(plainUrl, post_data, content_type, outBuf, outSize, outStatusCode);
+    if (result >= 0) {
+        LogLine("HTTP WORKS; using it for the rest of this session");
+        sTlsUnusable = true;
+    }
+    return result;
 }
 
-/* Helper to extract a JSON string field value: "Key":"Value" */
-static bool JsonGetStringField(const char* jsonStart, const char* jsonEnd, const char* key, char* out, size_t outSize) {
-    char searchKey[64];
-    snprintf(searchKey, sizeof(searchKey), "\"%s\":\"", key);
-    const char* p = strstr(jsonStart, searchKey);
-    if (!p || p >= jsonEnd) return false;
-    p += strlen(searchKey);
+/* ========================================================================= */
+/* Async server calls                                                        */
+/* ========================================================================= */
 
-    const char* end = p;
-    while (end < jsonEnd && *end != '\0') {
-        if (*end == '\"' && *(end - 1) != '\\') break;
-        end++;
-    }
-    if (end >= jsonEnd) return false;
+/* rcheevos hands us a request and a callback to invoke with the response.
+ * The request is copied onto a queue, a worker thread performs it, and the
+ * finished response goes on a second queue that Port_RA_Update drains on the
+ * main thread.  Nothing inside rcheevos is ever touched from the worker. */
 
-    size_t len = end - p;
-    if (len >= outSize) len = outSize - 1;
-    memcpy(out, p, len);
-    out[len] = '\0';
-    JsonUnescape(out);
-    return true;
-}
-
-/* Helper to extract a JSON integer field value: "Key":123 */
-static bool JsonGetIntField(const char* jsonStart, const char* jsonEnd, const char* key, uint32_t* outVal) {
-    char searchKey[64];
-    snprintf(searchKey, sizeof(searchKey), "\"%s\":", key);
-    const char* p = strstr(jsonStart, searchKey);
-    if (!p || p >= jsonEnd) return false;
-    p += strlen(searchKey);
-    while (*p == ' ' && p < jsonEnd) p++;
-
-    if (p >= jsonEnd) return false;
-    *outVal = (uint32_t)strtoul(p, NULL, 10);
-    return true;
-}
-
-/* Parse dynamic achievements list from RetroAchievements PatchData JSON */
-static void ParsePatchAchievements(const char* json) {
-    if (!json) return;
-    const char* achStart = strstr(json, "\"Achievements\":");
-    if (!achStart) achStart = strstr(json, "\"Achievements\" :");
-    if (!achStart) return;
-
-    const char* openBracket = strchr(achStart, '[');
-    if (!openBracket) return;
-
-    sAchievementCount = 0;
-    const char* cur = openBracket + 1;
-
-    while (*cur && sAchievementCount < MAX_RA_ACHIEVEMENTS) {
-        const char* objStart = strchr(cur, '{');
-        if (!objStart) break;
-
-        /* Find matching closing brace */
-        const char* objEnd = objStart + 1;
-        int depth = 1;
-        while (*objEnd && depth > 0) {
-            if (*objEnd == '{') depth++;
-            else if (*objEnd == '}') depth--;
-            objEnd++;
-        }
-        if (depth != 0) break;
-
-        uint32_t aid = 0;
-        uint32_t flags = 0;
-        if (JsonGetIntField(objStart, objEnd, "ID", &aid) &&
-            JsonGetIntField(objStart, objEnd, "Flags", &flags)) {
-            /* Flags: 3 = Core Official Set, 5 = Unofficial */
-            if (aid > 0 && aid < 100000000 && flags == 3) {
-                RetroAchievementItem* item = &sAchievements[sAchievementCount];
-                item->id = aid;
-                item->unlocked = false;
-                item->hardcoreUnlocked = false;
-                item->unlockTime = 0;
-
-                JsonGetStringField(objStart, objEnd, "Title", item->title, sizeof(item->title));
-                JsonGetStringField(objStart, objEnd, "Description", item->description, sizeof(item->description));
-                JsonGetStringField(objStart, objEnd, "BadgeName", item->badgeName, sizeof(item->badgeName));
-                JsonGetIntField(objStart, objEnd, "Points", &item->points);
-                char typeStr[32] = { 0 };
-                JsonGetStringField(objStart, objEnd, "Type", typeStr, sizeof(typeStr));
-                if (strcmp(typeStr, "progression") == 0) {
-                    item->type = RA_ACH_TYPE_PROGRESSION;
-                } else if (strcmp(typeStr, "win_condition") == 0) {
-                    item->type = RA_ACH_TYPE_WIN_CONDITION;
-                } else if (strcmp(typeStr, "missable") == 0) {
-                    item->type = RA_ACH_TYPE_MISSABLE;
-                } else {
-                    item->type = RA_ACH_TYPE_STANDARD;
-                }
-
-                /* RA Option: Parse MemAddr condition string */
-                JsonGetStringField(objStart, objEnd, "MemAddr", item->memAddr, sizeof(item->memAddr));
-
-                sAchievementCount++;
-            }
-        }
-        cur = objEnd;
-    }
-}
-
-/* Download and cache full official patch definitions from RetroAchievements (r=patch) */
-static void FetchGamePatch(void) {
-    if (sRAUsername[0] == '\0' || sRAToken[0] == '\0') return;
-
-    char encUser[128] = { 0 };
-    char encTok[128] = { 0 };
-    UrlEncode(sRAUsername, encUser, sizeof(encUser));
-    UrlEncode(sRAToken, encTok, sizeof(encTok));
-
-    char url[768];
-    static char sPatchBuf[65536];
-    snprintf(url, sizeof(url), "https://retroachievements.org/dorequest.php?r=patch&g=534&u=%s&t=%s",
-             encUser, encTok);
-
-    int res = HttpPerformGet(url, sPatchBuf, sizeof(sPatchBuf));
-    if (res <= 0) {
-        snprintf(url, sizeof(url), "http://retroachievements.org/dorequest.php?r=patch&g=534&u=%s&t=%s",
-                 encUser, encTok);
-        res = HttpPerformGet(url, sPatchBuf, sizeof(sPatchBuf));
-    }
-
-    if (res > 0 && strstr(sPatchBuf, "\"Success\":true") != NULL) {
-        ParsePatchAchievements(sPatchBuf);
-
-        /* Save cache to SD */
-        FILE* cacheFile = fopen("sdmc:/3ds/Metroid Zero Mission 3DS/ra_cache_534.json", "wb");
-        if (cacheFile) {
-            fwrite(sPatchBuf, 1, res, cacheFile);
-            fclose(cacheFile);
-        }
-    } else {
-        /* Fallback: load previous cached definitions from SD if offline */
-        FILE* cacheFile = fopen("sdmc:/3ds/Metroid Zero Mission 3DS/ra_cache_534.json", "rb");
-        if (cacheFile) {
-            size_t bytes = fread(sPatchBuf, 1, sizeof(sPatchBuf) - 1, cacheFile);
-            sPatchBuf[bytes] = '\0';
-            fclose(cacheFile);
-            ParsePatchAchievements(sPatchBuf);
-        }
-    }
-}
-
-/* Helper to check if a numeric achievement ID exists in a JSON array string like "[5760,5761,5762]" */
-static bool JsonArrayContainsId(const char* jsonArray, uint32_t id) {
-    if (!jsonArray) return false;
-    char idStr[16];
-    snprintf(idStr, sizeof(idStr), "%lu", (unsigned long)id);
-    size_t idLen = strlen(idStr);
-
-    const char* p = jsonArray;
-    while ((p = strstr(p, idStr)) != NULL) {
-        char prev = (p == jsonArray) ? '\0' : *(p - 1);
-        char next = *(p + idLen);
-        bool validPrev = (prev == '[' || prev == ',' || prev == ' ' || prev == ':');
-        bool validNext = (next == ']' || next == ',' || next == ' ' || next == '\0' || next == '}');
-        if (validPrev && validNext) {
-            return true;
-        }
-        p += idLen;
-    }
-    return false;
-}
-
-/* Helper to fetch unlocked achievements from RetroAchievements (Game ID 534) */
-static void FetchUserUnlocks(void) {
-    if (sRAUsername[0] == '\0' || sRAToken[0] == '\0') return;
-
-    /* 1. Ensure latest patch definitions are loaded first */
-    if (sAchievementCount == 0) {
-        FetchGamePatch();
-    }
-
-    char encUser[128] = { 0 };
-    char encTok[128] = { 0 };
-    UrlEncode(sRAUsername, encUser, sizeof(encUser));
-    UrlEncode(sRAToken, encTok, sizeof(encTok));
-
-    char url[768];
-    char softBuf[4096] = { 0 };
-    char hardBuf[4096] = { 0 };
-
-    /* 2. Fetch Softcore unlocks */
-    snprintf(url, sizeof(url), "https://retroachievements.org/dorequest.php?r=unlocks&u=%s&t=%s&g=534",
-             encUser, encTok);
-    int resSoft = HttpPerformGet(url, softBuf, sizeof(softBuf));
-    if (resSoft <= 0) {
-        snprintf(url, sizeof(url), "http://retroachievements.org/dorequest.php?r=unlocks&u=%s&t=%s&g=534",
-                 encUser, encTok);
-        resSoft = HttpPerformGet(url, softBuf, sizeof(softBuf));
-    }
-
-    /* 3. Fetch Hardcore unlocks (h=1) */
-    snprintf(url, sizeof(url), "https://retroachievements.org/dorequest.php?r=unlocks&u=%s&t=%s&g=534&h=1",
-             encUser, encTok);
-    int resHard = HttpPerformGet(url, hardBuf, sizeof(hardBuf));
-    if (resHard <= 0) {
-        snprintf(url, sizeof(url), "http://retroachievements.org/dorequest.php?r=unlocks&u=%s&t=%s&g=534&h=1",
-                 encUser, encTok);
-        resHard = HttpPerformGet(url, hardBuf, sizeof(hardBuf));
-    }
-
-    FILE* logFile = fopen("sdmc:/3ds/Metroid Zero Mission 3DS/retroachievements.log", "a");
-    if (logFile) {
-        fprintf(logFile, "UNLOCKS SYNC: TotalAchievements=%lu, SoftcoreRes=%d, HardcoreRes=%d\n",
-                (unsigned long)sAchievementCount, resSoft, resHard);
-        fprintf(logFile, "SOFTCORE JSON: %s\n", softBuf);
-        fprintf(logFile, "HARDCORE JSON: %s\n\n", hardBuf);
-        fclose(logFile);
-    }
-
-    const char* softArr = (resSoft > 0) ? strstr(softBuf, "\"UserUnlocks\":") : NULL;
-    const char* hardArr = (resHard > 0) ? strstr(hardBuf, "\"UserUnlocks\":") : NULL;
-
-    for (size_t i = 0; i < sAchievementCount; ++i) {
-        uint32_t aid = sAchievements[i].id;
-        bool isSoft = JsonArrayContainsId(softArr, aid);
-        bool isHard = JsonArrayContainsId(hardArr, aid);
-
-        sAchievements[i].unlocked = isSoft || isHard;
-        sAchievements[i].hardcoreUnlocked = isHard;
-    }
-}
-
-/* Background unlock queue */
-#define MAX_UNLOCK_QUEUE 16
 typedef struct {
-    uint32_t achId;
-    bool hardcore;
-} PendingUnlock;
-static PendingUnlock sUnlockQueue[MAX_UNLOCK_QUEUE];
-static int sUnlockQueueCount = 0;
-static LightLock sUnlockQueueLock;
-static bool sLockInitialized = false;
+    char url[RA_REQUEST_MAX];
+    char post_data[RA_REQUEST_MAX];
+    char content_type[64];
+    bool has_post;
 
-static void QueueUnlockId(uint32_t achId, bool hardcore) {
-    if (!sLockInitialized) {
-        LightLock_Init(&sUnlockQueueLock);
-        sLockInitialized = true;
-    }
-    LightLock_Lock(&sUnlockQueueLock);
-    if (sUnlockQueueCount < MAX_UNLOCK_QUEUE) {
-        /* Avoid duplicate entries */
-        for (int i = 0; i < sUnlockQueueCount; ++i) {
-            if (sUnlockQueue[i].achId == achId) {
-                LightLock_Unlock(&sUnlockQueueLock);
-                return;
-            }
-        }
-        sUnlockQueue[sUnlockQueueCount].achId = achId;
-        sUnlockQueue[sUnlockQueueCount].hardcore = hardcore;
-        sUnlockQueueCount++;
-    }
-    LightLock_Unlock(&sUnlockQueueLock);
-}
+    rc_client_server_callback_t callback;
+    void* callback_data;
 
-/* Award achievement network thread */
-static void RA_AwardThread(void* arg) {
+    /* Filled in by the worker. */
+    char* body;
+    int body_length;
+    int http_status_code;
+} RaServerCall;
+
+static RaServerCall sPending[RA_MAX_PENDING];
+static int sPendingCount = 0;
+static RaServerCall sCompleted[RA_MAX_PENDING];
+static int sCompletedCount = 0;
+
+/* One shared response buffer: the worker handles a single request at a time,
+ * and a completed call's body is copied out before the next one starts. */
+static char sResponseBuf[RA_RESPONSE_MAX];
+
+static LightLock sQueueLock;
+static Thread sWorkerThread = NULL;
+static bool sWorkerRunning = false;
+static volatile bool sWorkerStop = false;
+
+static void ServerCallWorker(void* arg) {
     (void)arg;
-    for (;;) {
-        uint32_t toAward = 0;
-        bool toAwardHardcore = false;
-        bool haveItem = false;
-        if (!sLockInitialized) {
-            LightLock_Init(&sUnlockQueueLock);
-            sLockInitialized = true;
-        }
-        LightLock_Lock(&sUnlockQueueLock);
-        if (sUnlockQueueCount > 0) {
-            toAward = sUnlockQueue[0].achId;
-            toAwardHardcore = sUnlockQueue[0].hardcore;
-            haveItem = true;
-            for (int i = 1; i < sUnlockQueueCount; ++i) {
-                sUnlockQueue[i - 1] = sUnlockQueue[i];
-            }
-            sUnlockQueueCount--;
-        }
-        LightLock_Unlock(&sUnlockQueueLock);
 
-        if (!haveItem) {
-            svcSleepThread(50000000ULL); /* Sleep 50ms */
+    while (!sWorkerStop) {
+        RaServerCall call;
+        bool have = false;
+
+        LightLock_Lock(&sQueueLock);
+        if (sPendingCount > 0 && sCompletedCount < RA_MAX_PENDING) {
+            call = sPending[0];
+            memmove(&sPending[0], &sPending[1], (size_t)(sPendingCount - 1) * sizeof(sPending[0]));
+            sPendingCount--;
+            have = true;
+        }
+        LightLock_Unlock(&sQueueLock);
+
+        if (!have) {
+            svcSleepThread(20000000ULL); /* 20ms */
             continue;
         }
 
-        if (sRAUsername[0] != '\0' && sRAToken[0] != '\0') {
-            char encUser[128] = { 0 };
-            char encTok[128] = { 0 };
-            UrlEncode(sRAUsername, encUser, sizeof(encUser));
-            UrlEncode(sRAToken, encTok, sizeof(encTok));
+        int status = 0;
+        int length = HttpPerform(call.url, call.has_post ? call.post_data : NULL,
+                                 call.has_post ? call.content_type : NULL,
+                                 sResponseBuf, sizeof(sResponseBuf), &status);
 
-            /* Signature required by the server to trust the hardcore flag:
-             * v = md5(achievementId + username + hardcore + achievementId) */
-            char signInput[256];
-            snprintf(signInput, sizeof(signInput), "%lu%s%d%lu",
-                     (unsigned long)toAward, sRAUsername, toAwardHardcore ? 1 : 0, (unsigned long)toAward);
-            char signHex[33];
-            Md5Hex(signInput, signHex);
-
-            char url[768];
-            char respBuf[1024] = { 0 };
-            snprintf(url, sizeof(url),
-                     "https://retroachievements.org/dorequest.php?r=awardachievement&u=%s&t=%s&a=%lu&h=%d&v=%s",
-                     encUser, encTok, (unsigned long)toAward, toAwardHardcore ? 1 : 0, signHex);
-
-            int res = HttpPerformGet(url, respBuf, sizeof(respBuf));
-            if (res <= 0) {
-                snprintf(url, sizeof(url),
-                         "http://retroachievements.org/dorequest.php?r=awardachievement&u=%s&t=%s&a=%lu&h=%d&v=%s",
-                         encUser, encTok, (unsigned long)toAward, toAwardHardcore ? 1 : 0, signHex);
-                res = HttpPerformGet(url, respBuf, sizeof(respBuf));
-            }
-
-            FILE* logFile = fopen("sdmc:/3ds/Metroid Zero Mission 3DS/retroachievements.log", "a");
-            if (logFile) {
-                fprintf(logFile, "AWARD ATTEMPT: AchID=%lu, Hardcore=%d, Res=%d, Resp='%s'\n\n",
-                        (unsigned long)toAward, toAwardHardcore ? 1 : 0, res, respBuf);
-                fclose(logFile);
-            }
-        }
-    }
-}
-
-static bool sAwardThreadStarted = false;
-static void EnsureAwardThread(void) {
-    if (!sAwardThreadStarted) {
-        s32 prio = 0x32;
-        threadCreate(RA_AwardThread, NULL, 32 * 1024, prio, -1, true);
-        sAwardThreadStarted = true;
-    }
-}
-
-/* Background Async Login Worker */
-static void RA_NetworkLoginThread(void* arg) {
-    (void)arg;
-    sRAStatus = RA_STATUS_CONNECTING;
-    snprintf(sLastStatusMsg, sizeof(sLastStatusMsg), "CONNECTING TO RA...");
-
-    char url[768];
-    char respBuf[2048] = { 0 };
-
-    if (sPendingLogin && sPendingPassword[0] != '\0') {
-        char encUser[128] = { 0 };
-        char encPass[128] = { 0 };
-        UrlEncode(sRAUsername, encUser, sizeof(encUser));
-        UrlEncode(sPendingPassword, encPass, sizeof(encPass));
-        memset(sPendingPassword, 0, sizeof(sPendingPassword));
-        sPendingLogin = false;
-
-        /* Try HTTPS first; if certificate or cipher fails, try HTTP */
-        snprintf(url, sizeof(url), "https://retroachievements.org/dorequest.php?r=login&u=%s&p=%s",
-                 encUser, encPass);
-
-        int res = HttpPerformGet(url, respBuf, sizeof(respBuf));
-        if (res <= 0) {
-            /* Fallback to http if TLS handshake was rejected by modern TLS cipher suite */
-            snprintf(url, sizeof(url), "http://retroachievements.org/dorequest.php?r=login&u=%s&p=%s",
-                     encUser, encPass);
-            res = HttpPerformGet(url, respBuf, sizeof(respBuf));
-        }
-
-        FILE* logFile = fopen("sdmc:/3ds/Metroid Zero Mission 3DS/retroachievements.log", "a");
-        if (logFile) {
-            fprintf(logFile, "LOGIN ATTEMPT: User='%s', HttpResult=%d, LastMsg='%s'\n", encUser, res, sLastStatusMsg);
-            fprintf(logFile, "RESPONSE (len=%lu): '%s'\n\n", (unsigned long)strlen(respBuf), respBuf);
-            fclose(logFile);
-        }
-
-        if (res > 0) {
-            /* Parse JSON response: {"Success":true,"User":"...","Token":"..."} or {"Success":false,"Error":"..."} */
-            if (strstr(respBuf, "\"Success\":true") != NULL || strstr(respBuf, "\"Success\": true") != NULL) {
-                char* tokPtr = strstr(respBuf, "\"Token\":\"");
-                if (tokPtr) {
-                    tokPtr += 9;
-                    char* endPtr = strchr(tokPtr, '\"');
-                    if (endPtr) {
-                        size_t len = endPtr - tokPtr;
-                        if (len < sizeof(sRAToken)) {
-                            memcpy(sRAToken, tokPtr, len);
-                            sRAToken[len] = '\0';
-                        }
-                    }
-                }
-                sRAStatus = RA_STATUS_CONNECTED;
-                snprintf(sLastStatusMsg, sizeof(sLastStatusMsg), "LOGIN OK (TOKEN RECEIVED)");
-                extern void Port_Config_Save(void);
-                Port_Config_Save();
-
-                /* Sync user unlocked achievements */
-                FetchUserUnlocks();
-            } else {
-                sRAStatus = RA_STATUS_ERROR;
-                sRAToken[0] = '\0';
-                /* Extract server error message if present */
-                char* errPtr = strstr(respBuf, "\"Error\":\"");
-                if (errPtr) {
-                    errPtr += 9;
-                    char* endErr = strchr(errPtr, '\"');
-                    if (endErr) {
-                        size_t elen = endErr - errPtr;
-                        if (elen > 40) elen = 40;
-                        memcpy(sLastStatusMsg, errPtr, elen);
-                        sLastStatusMsg[elen] = '\0';
-                    } else {
-                        snprintf(sLastStatusMsg, sizeof(sLastStatusMsg), "SERVER: INVALID CREDENTIALS");
-                    }
-                } else {
-                    snprintf(sLastStatusMsg, sizeof(sLastStatusMsg), "SERVER: %s", (respBuf[0] != '\0') ? respBuf : "NO DATA");
-                    sLastStatusMsg[45] = '\0';
-                }
-            }
+        if (length < 0) {
+            /* Let rcheevos decide whether to retry: it treats a client error
+             * as "the request never reached the server", which is exactly
+             * what a failed handshake or a missing network is. */
+            call.body = NULL;
+            call.body_length = 0;
+            call.http_status_code = RC_API_SERVER_RESPONSE_RETRYABLE_CLIENT_ERROR;
         } else {
+            call.body = sResponseBuf;
+            call.body_length = length;
+            call.http_status_code = status;
+        }
+
+        /* Only the part of the URL before '?' is logged: the query string
+         * carries the token, and on a login it carries the password. */
+        LogLine("REQ %.*s -> http %d, %d bytes",
+                (int)strcspn(call.url, "?"), call.url, call.http_status_code, length);
+
+        /* On an error the body says why, and an error body carries no
+         * token -- unlike a successful login's, which is never logged. */
+        if (length > 0 && (call.http_status_code < 200 || call.http_status_code >= 300)) {
+            LogLine("  body: %.200s", sResponseBuf);
+        }
+
+        LightLock_Lock(&sQueueLock);
+        sCompleted[sCompletedCount++] = call;
+        LightLock_Unlock(&sQueueLock);
+
+        /* The body lives in the shared buffer until the main thread has
+         * copied it out, so wait for the queue to drain before taking the
+         * next request. */
+        for (;;) {
+            bool drained;
+            LightLock_Lock(&sQueueLock);
+            drained = (sCompletedCount == 0);
+            LightLock_Unlock(&sQueueLock);
+            if (drained || sWorkerStop) {
+                break;
+            }
+            svcSleepThread(5000000ULL); /* 5ms */
+        }
+    }
+}
+
+static void EnsureWorkerThread(void) {
+    if (sWorkerRunning) {
+        return;
+    }
+    LightLock_Init(&sQueueLock);
+    sWorkerStop = false;
+    sWorkerThread = threadCreate(ServerCallWorker, NULL, 32 * 1024, 0x31, -1, false);
+    sWorkerRunning = (sWorkerThread != NULL);
+}
+
+static void ServerCall(const rc_api_request_t* request, rc_client_server_callback_t callback,
+                       void* callback_data, rc_client_t* client) {
+    RaServerCall call;
+    bool queued = false;
+    (void)client;
+
+    EnsureWorkerThread();
+
+    memset(&call, 0, sizeof(call));
+    snprintf(call.url, sizeof(call.url), "%s", request->url ? request->url : "");
+    if (request->post_data && request->post_data[0]) {
+        call.has_post = true;
+        snprintf(call.post_data, sizeof(call.post_data), "%s", request->post_data);
+        snprintf(call.content_type, sizeof(call.content_type), "%s",
+                 request->content_type ? request->content_type : "application/x-www-form-urlencoded");
+    }
+    call.callback = callback;
+    call.callback_data = callback_data;
+
+    LightLock_Lock(&sQueueLock);
+    if (sPendingCount < RA_MAX_PENDING) {
+        sPending[sPendingCount++] = call;
+        queued = true;
+    }
+    LightLock_Unlock(&sQueueLock);
+
+    if (!queued) {
+        /* The queue only fills if the network has stalled badly. Report it as
+         * a retryable failure rather than dropping the request on the floor,
+         * which would leave rcheevos waiting for a response forever. */
+        rc_api_server_response_t response;
+        memset(&response, 0, sizeof(response));
+        response.http_status_code = RC_API_SERVER_RESPONSE_RETRYABLE_CLIENT_ERROR;
+        callback(&response, callback_data);
+    }
+}
+
+/* Hands finished responses back to rcheevos on the main thread. */
+static void DrainServerResponses(void) {
+    for (;;) {
+        RaServerCall call;
+        static char body[RA_RESPONSE_MAX];
+        bool have = false;
+
+        LightLock_Lock(&sQueueLock);
+        if (sCompletedCount > 0) {
+            call = sCompleted[0];
+            if (call.body) {
+                int length = call.body_length;
+                if (length > (int)sizeof(body) - 1) {
+                    length = (int)sizeof(body) - 1;
+                }
+                memcpy(body, call.body, (size_t)length);
+                body[length] = '\0';
+                call.body = body;
+                call.body_length = length;
+            }
+            memmove(&sCompleted[0], &sCompleted[1],
+                    (size_t)(sCompletedCount - 1) * sizeof(sCompleted[0]));
+            sCompletedCount--;
+            have = true;
+        }
+        LightLock_Unlock(&sQueueLock);
+
+        if (!have) {
+            return;
+        }
+
+        rc_api_server_response_t response;
+        memset(&response, 0, sizeof(response));
+        response.body = call.body;
+        response.body_length = (size_t)call.body_length;
+        response.http_status_code = call.http_status_code;
+        call.callback(&response, call.callback_data);
+    }
+}
+
+/* ========================================================================= */
+/* Achievement list for the bottom-screen UI                                 */
+/* ========================================================================= */
+
+/* Sized for the core set plus its subsets: the server returns every set the
+ * game has in one response and rcheevos activates all of them, so this is not
+ * just the 62 achievements of the base set. */
+#define MAX_RA_ACHIEVEMENTS 256
+static RetroAchievementItem sAchievements[MAX_RA_ACHIEVEMENTS];
+static uint32_t sAchievementCount = 0;
+
+static RetroAchievementType TranslateType(uint8_t type) {
+    switch (type) {
+        case RC_CLIENT_ACHIEVEMENT_TYPE_PROGRESSION: return RA_ACH_TYPE_PROGRESSION;
+        case RC_CLIENT_ACHIEVEMENT_TYPE_WIN:         return RA_ACH_TYPE_WIN_CONDITION;
+        case RC_CLIENT_ACHIEVEMENT_TYPE_MISSABLE:    return RA_ACH_TYPE_MISSABLE;
+        default:                                     return RA_ACH_TYPE_STANDARD;
+    }
+}
+
+/* Snapshots rcheevos' achievement list into the flat array the UI reads.
+ * Called whenever something could have changed it -- a game load, an unlock,
+ * a hardcore toggle -- rather than every frame, since it allocates. */
+static void RefreshAchievementList(void) {
+    rc_client_achievement_list_t* list;
+    uint32_t bucket;
+
+    if (!sClient) {
+        sAchievementCount = 0;
+        return;
+    }
+
+    list = rc_client_create_achievement_list(sClient, RC_CLIENT_ACHIEVEMENT_CATEGORY_CORE,
+                                             RC_CLIENT_ACHIEVEMENT_LIST_GROUPING_LOCK_STATE);
+    if (!list) {
+        sAchievementCount = 0;
+        return;
+    }
+
+    sAchievementCount = 0;
+    for (bucket = 0; bucket < list->num_buckets; ++bucket) {
+        const rc_client_achievement_bucket_t* group = &list->buckets[bucket];
+        uint32_t index;
+
+        for (index = 0; index < group->num_achievements; ++index) {
+            const rc_client_achievement_t* source = group->achievements[index];
+            RetroAchievementItem* item;
+
+            if (sAchievementCount >= MAX_RA_ACHIEVEMENTS) {
+                /* Only the list the UI shows is capped -- rcheevos still
+                 * evaluates and unlocks every achievement it loaded -- but
+                 * say so rather than quietly showing a short list. */
+                LogLine("ACHIEVEMENT LIST TRUNCATED AT %d; raise MAX_RA_ACHIEVEMENTS",
+                        MAX_RA_ACHIEVEMENTS);
+                break;
+            }
+            item = &sAchievements[sAchievementCount++];
+
+            item->id = source->id;
+            snprintf(item->title, sizeof(item->title), "%s", source->title ? source->title : "");
+            snprintf(item->description, sizeof(item->description), "%s",
+                     source->description ? source->description : "");
+            snprintf(item->badgeName, sizeof(item->badgeName), "%s", source->badge_name);
+            /* The trigger expression is rcheevos' business now; the UI only
+             * ever displayed it, and nothing reads it. */
+            item->memAddr[0] = '\0';
+            item->points = source->points;
+            item->type = TranslateType(source->type);
+            item->unlocked = (source->unlocked != RC_CLIENT_ACHIEVEMENT_UNLOCKED_NONE);
+            item->hardcoreUnlocked =
+                (source->unlocked & RC_CLIENT_ACHIEVEMENT_UNLOCKED_HARDCORE) != 0;
+            item->unlockTime = (uint32_t)source->unlock_time;
+        }
+    }
+
+    rc_client_destroy_achievement_list(list);
+}
+
+/* ========================================================================= */
+/* Events                                                                    */
+/* ========================================================================= */
+
+static void ShowUnlockToast(const rc_client_achievement_t* achievement) {
+    sToast.active = true;
+    sToast.timer = 180; /* 3 seconds at 60fps */
+    snprintf(sToast.title, sizeof(sToast.title), "%s",
+             achievement->title ? achievement->title : "");
+    sToast.points = achievement->points;
+}
+
+static void EventHandler(const rc_client_event_t* event, rc_client_t* client) {
+    (void)client;
+
+    switch (event->type) {
+        case RC_CLIENT_EVENT_ACHIEVEMENT_TRIGGERED:
+            LogLine("UNLOCKED: %lu '%s' (+%lu)",
+                    (unsigned long)event->achievement->id,
+                    event->achievement->title ? event->achievement->title : "",
+                    (unsigned long)event->achievement->points);
+            ShowUnlockToast(event->achievement);
+            RefreshAchievementList();
+            break;
+
+        case RC_CLIENT_EVENT_GAME_COMPLETED:
+        case RC_CLIENT_EVENT_SUBSET_COMPLETED:
+            RefreshAchievementList();
+            break;
+
+        case RC_CLIENT_EVENT_SERVER_ERROR:
+            snprintf(sLastStatusMsg, sizeof(sLastStatusMsg), "%s",
+                     event->server_error->error_message ? event->server_error->error_message
+                                                        : "SERVER ERROR");
+            LogLine("SERVER ERROR (%s): %s", event->server_error->api,
+                    event->server_error->error_message ? event->server_error->error_message : "");
+            break;
+
+        case RC_CLIENT_EVENT_RESET:
+            /* Hardcore was turned on mid-session and rcheevos wants the game
+             * restarted. The only path that enables it -- OPTIONS -> hardcore
+             * -- already restarts the game on confirmation, so there is
+             * nothing to do but record it if it ever fires from elsewhere. */
+            LogLine("RESET REQUESTED (hardcore enabled)");
+            break;
+
+        case RC_CLIENT_EVENT_DISCONNECTED:
             sRAStatus = RA_STATUS_OFFLINE;
-        }
-    } else if (sRAToken[0] != '\0' && sRAUsername[0] != '\0') {
-        /* Validate existing token */
-        char encUser[128] = { 0 };
-        char encTok[128] = { 0 };
-        UrlEncode(sRAUsername, encUser, sizeof(encUser));
-        UrlEncode(sRAToken, encTok, sizeof(encTok));
+            snprintf(sLastStatusMsg, sizeof(sLastStatusMsg), "OFFLINE, UNLOCKS PENDING");
+            break;
 
-        snprintf(url, sizeof(url), "https://retroachievements.org/dorequest.php?r=login&u=%s&t=%s",
-                 encUser, encTok);
-        int res = HttpPerformGet(url, respBuf, sizeof(respBuf));
-        if (res <= 0) {
-            snprintf(url, sizeof(url), "http://retroachievements.org/dorequest.php?r=login&u=%s&t=%s",
-                     encUser, encTok);
-            res = HttpPerformGet(url, respBuf, sizeof(respBuf));
-        }
-
-        if (res > 0 && (strstr(respBuf, "\"Success\":true") != NULL || strstr(respBuf, "\"Success\": true") != NULL)) {
+        case RC_CLIENT_EVENT_RECONNECTED:
             sRAStatus = RA_STATUS_CONNECTED;
-            snprintf(sLastStatusMsg, sizeof(sLastStatusMsg), "CONNECTED");
-            FetchUserUnlocks();
-        } else {
-            sRAStatus = RA_STATUS_OFFLINE;
-            snprintf(sLastStatusMsg, sizeof(sLastStatusMsg), "OFFLINE / UNREACHABLE");
-        }
-    } else {
-        sRAStatus = RA_STATUS_OFFLINE;
-        snprintf(sLastStatusMsg, sizeof(sLastStatusMsg), "NO CREDENTIALS SET");
+            snprintf(sLastStatusMsg, sizeof(sLastStatusMsg), "RECONNECTED");
+            break;
+
+        default:
+            break;
     }
 }
 
-static void TriggerBackgroundValidation(void) {
-    if (!sRAEnabled) {
-        sRAStatus = RA_STATUS_DISABLED;
+/* ========================================================================= */
+/* Login and game identification                                             */
+/* ========================================================================= */
+
+/* The ROM's MD5, computed once.
+ *
+ * This is the whole 8MB cartridge, which is far too expensive to redo
+ * casually -- hashing it per frame is by itself enough to drop the game from
+ * 60 FPS to single digits. The ROM does not change while the game runs. */
+static char sRomHash[33] = "";
+
+static const char* RomHash(void) {
+    md5_state_t state;
+    md5_byte_t digest[16];
+    static const char hexDigits[] = "0123456789abcdef";
+    int i;
+
+    if (sRomHash[0] != '\0') {
+        return sRomHash;
+    }
+    if (!gRomData || !gRomSize) {
+        return NULL;
+    }
+
+    md5_init(&state);
+    md5_append(&state, (const md5_byte_t*)gRomData, (int)gRomSize);
+    md5_finish(&state, digest);
+
+    for (i = 0; i < 16; ++i) {
+        sRomHash[i * 2] = hexDigits[(digest[i] >> 4) & 0xF];
+        sRomHash[i * 2 + 1] = hexDigits[digest[i] & 0xF];
+    }
+    sRomHash[32] = '\0';
+
+    LogLine("ROM IDENTIFIED: md5=%s size=%lu", sRomHash, (unsigned long)gRomSize);
+    return sRomHash;
+}
+
+/* Guards against starting a second load while one is still in flight, and
+ * paces the retries after a failure.
+ *
+ * Without this the per-frame "is the game loaded yet?" check kept starting
+ * fresh loads, each aborting the last with RC_ABORTED ("the requested game is
+ * no longer active") and pulling the 40KB achievement set down again. The
+ * load could never finish, and the console spent every frame on it. */
+static bool sLoadInFlight = false;
+static int sLoadRetryDelay = 0;
+static int sLoadAttempts = 0;
+
+#define RA_LOAD_RETRY_FRAMES 600 /* 10s at 60fps */
+#define RA_LOAD_MAX_ATTEMPTS 5
+
+static void LoadGameCallback(int result, const char* error_message, rc_client_t* client, void* userdata) {
+    (void)client;
+    (void)userdata;
+
+    sLoadInFlight = false;
+    sLoadRetryDelay = RA_LOAD_RETRY_FRAMES;
+
+    if (result == RC_OK) {
+        const rc_client_game_t* game = rc_client_get_game_info(sClient);
+        RefreshAchievementList();
+        snprintf(sLastStatusMsg, sizeof(sLastStatusMsg), "GAME %lu, %lu ACHIEVEMENTS",
+                 (unsigned long)(game ? game->id : 0), (unsigned long)sAchievementCount);
+        LogLine("GAME LOADED: id=%lu title='%s' hash=%s achievements=%lu",
+                (unsigned long)(game ? game->id : 0),
+                (game && game->title) ? game->title : "",
+                (game && game->hash) ? game->hash : "",
+                (unsigned long)sAchievementCount);
+    } else if (result == RC_NO_GAME_LOADED) {
+        /* The hash resolved to no game: an unrecognised ROM, not an error,
+         * and retrying will not change the answer. */
+        sLoadAttempts = RA_LOAD_MAX_ATTEMPTS;
+        snprintf(sLastStatusMsg, sizeof(sLastStatusMsg), "ROM NOT RECOGNISED BY RA");
+        LogLine("GAME LOAD: hash not recognised");
+    } else {
+        snprintf(sLastStatusMsg, sizeof(sLastStatusMsg), "%s", error_message ? error_message : "LOAD FAILED");
+        LogLine("GAME LOAD FAILED (%d): %s", result, error_message ? error_message : "");
+    }
+}
+
+static void BeginLoadGame(void) {
+    const char* hash;
+
+    if (!sClient || sLoadInFlight || rc_client_is_game_loaded(sClient)) {
+        return;
+    }
+    if (sLoadRetryDelay > 0 || sLoadAttempts >= RA_LOAD_MAX_ATTEMPTS) {
+        return;
+    }
+
+    hash = RomHash();
+    if (!hash) {
+        return; /* the ROM is not mapped yet */
+    }
+
+    sLoadInFlight = true;
+    sLoadAttempts++;
+    rc_client_begin_load_game(sClient, hash, LoadGameCallback, NULL);
+}
+
+static void LoginCallback(int result, const char* error_message, rc_client_t* client, void* userdata) {
+    (void)client;
+    (void)userdata;
+
+    if (result != RC_OK) {
+        sRAStatus = (result == RC_INVALID_CREDENTIALS || result == RC_EXPIRED_TOKEN)
+                        ? RA_STATUS_ERROR : RA_STATUS_OFFLINE;
+        snprintf(sLastStatusMsg, sizeof(sLastStatusMsg), "%s", error_message ? error_message : "LOGIN FAILED");
+        LogLine("LOGIN FAILED (%d): %s", result, error_message ? error_message : "");
+        return;
+    }
+
+    const rc_client_user_t* user = rc_client_get_user_info(sClient);
+    if (user) {
+        snprintf(sRAUsername, sizeof(sRAUsername), "%s", user->username ? user->username : "");
+        snprintf(sRAToken, sizeof(sRAToken), "%s", user->token ? user->token : "");
+        /* Persist the token so the next launch logs in without a password. */
+        extern void Port_Config_Save(void);
+        Port_Config_Save();
+    }
+
+    sRAStatus = RA_STATUS_CONNECTED;
+    snprintf(sLastStatusMsg, sizeof(sLastStatusMsg), "CONNECTED");
+    LogLine("LOGIN OK: %s", sRAUsername);
+
+    /* A fresh session deserves a fresh set of load attempts. */
+    sLoadAttempts = 0;
+    sLoadRetryDelay = 0;
+
+    BeginLoadGame();
+}
+
+static void BeginLogin(const char* password) {
+    if (!sClient) {
+        sRAStatus = RA_STATUS_ERROR;
+        snprintf(sLastStatusMsg, sizeof(sLastStatusMsg), "RA CLIENT NOT READY");
         return;
     }
     if (sRAUsername[0] == '\0') {
-        sRAStatus = RA_STATUS_OFFLINE;
+        sRAStatus = RA_STATUS_NO_ACCOUNT;
+        snprintf(sLastStatusMsg, sizeof(sLastStatusMsg), "NO USERNAME SET");
         return;
     }
 
     sRAStatus = RA_STATUS_CONNECTING;
-    s32 prio = 0x31;
-    sNetworkThread = threadCreate(RA_NetworkLoginThread, NULL, 32 * 1024, prio, -1, true);
+    snprintf(sLastStatusMsg, sizeof(sLastStatusMsg), "CONNECTING TO RA...");
+
+    if (password && password[0]) {
+        rc_client_begin_login_with_password(sClient, sRAUsername, password, LoginCallback, NULL);
+    } else if (sRAToken[0]) {
+        rc_client_begin_login_with_token(sClient, sRAUsername, sRAToken, LoginCallback, NULL);
+    } else {
+        sRAStatus = RA_STATUS_NO_ACCOUNT;
+        snprintf(sLastStatusMsg, sizeof(sLastStatusMsg), "NO PASSWORD OR TOKEN; USE LOGIN");
+    }
+}
+
+/* ========================================================================= */
+/* Lifecycle                                                                 */
+/* ========================================================================= */
+
+static void ClientLog(const char* message, const rc_client_t* client) {
+    (void)client;
+    LogLine("rcheevos: %s", message);
 }
 
 void Port_RA_Init(void) {
-    /* Always load last known cached achievement list from SD */
-    if (sAchievementCount == 0) {
-        FILE* cacheFile = fopen("sdmc:/3ds/Metroid Zero Mission 3DS/ra_cache_534.json", "rb");
-        if (cacheFile) {
-            static char sInitBuf[65536];
-            size_t bytes = fread(sInitBuf, 1, sizeof(sInitBuf) - 1, cacheFile);
-            sInitBuf[bytes] = '\0';
-            fclose(cacheFile);
-            ParsePatchAchievements(sInitBuf);
-        }
+    if (sClient) {
+        return;
     }
 
-    EnsureAwardThread();
+    /* Stamped so the log identifies the build that wrote it: diagnosing this
+     * module from the log is otherwise guesswork about whether the console is
+     * even running the version being discussed. */
+    LogLine("--- Port_RA_Init, mzm 3DS %s ---", MZM_PORT_VERSION);
+
+    EnsureWorkerThread();
+
+    sClient = rc_client_create(ReadMemory, ServerCall);
+    if (!sClient) {
+        sRAStatus = RA_STATUS_ERROR;
+        snprintf(sLastStatusMsg, sizeof(sLastStatusMsg), "RCHEEVOS INIT FAILED");
+        return;
+    }
+
+    rc_client_set_event_handler(sClient, EventHandler);
+    rc_client_set_hardcore_enabled(sClient, sRAHardcore ? 1 : 0);
+    rc_client_enable_logging(sClient, RC_CLIENT_LOG_LEVEL_WARN, ClientLog);
 
     if (sRAEnabled && sRAUsername[0] != '\0' && sRAToken[0] != '\0') {
-        TriggerBackgroundValidation();
-    } else if (sRAEnabled && sRAUsername[0] != '\0') {
-        sRAStatus = RA_STATUS_OFFLINE;
+        BeginLogin(NULL);
+    } else if (sRAEnabled) {
+        sRAStatus = RA_STATUS_NO_ACCOUNT;
+        snprintf(sLastStatusMsg, sizeof(sLastStatusMsg), "NO SAVED LOGIN; USE LOGIN");
     } else {
         sRAStatus = RA_STATUS_DISABLED;
     }
 }
 
 void Port_RA_Shutdown(void) {
+    /* Stop the worker before destroying the client: a request in flight is
+     * holding an rc_client callback pointer. */
+    sWorkerStop = true;
+    if (sWorkerThread) {
+        threadJoin(sWorkerThread, U64_MAX);
+        threadFree(sWorkerThread);
+        sWorkerThread = NULL;
+        sWorkerRunning = false;
+    }
+
+    if (sClient) {
+        rc_client_destroy(sClient);
+        sClient = NULL;
+    }
     if (sHttpInitialized) {
         httpcExit();
         sHttpInitialized = false;
@@ -744,6 +898,18 @@ void Port_RA_Shutdown(void) {
 }
 
 void Port_RA_Update(void) {
+    DrainServerResponses();
+
+    if (sLoadRetryDelay > 0) {
+        --sLoadRetryDelay;
+    }
+
+    if (sClient) {
+        /* Keeps the session alive and retries pending unlocks while the game
+         * itself is not running frames. */
+        rc_client_idle(sClient);
+    }
+
     if (sToast.active) {
         if (sToast.timer > 0) {
             --sToast.timer;
@@ -753,378 +919,69 @@ void Port_RA_Update(void) {
     }
 }
 
-/* ========================================================================= */
-/* MEMORY TRIGGER EVALUATION ENGINE (Direct C Symbol & GBA Memory Mapper)    */
-/* ========================================================================= */
-
-#pragma pack(push, 1)
-struct RawEquipment {
-    uint16_t maxEnergy;
-    uint16_t maxMissiles;
-    uint8_t maxSuperMissiles;
-    uint8_t maxPowerBombs;
-    uint16_t currentEnergy;
-    uint16_t currentMissiles;
-    uint8_t currentSuperMissiles;
-    uint8_t currentPowerBombs;
-    uint8_t beamBombs;
-    uint8_t beamBombsActivation;
-    uint8_t suitMisc;
-    uint8_t suitMiscActivation;
-    uint8_t downloadedMapStatus;
-    uint8_t lowHealth;
-    uint8_t suitType;
-    uint8_t grabbedByMetroid;
-};
-#pragma pack(pop)
-
-extern struct RawEquipment gEquipment;
-extern uint8_t gCurrentArea;
-extern uint8_t gCurrentRoom;
-extern int16_t gMainGameMode;
-extern uint8_t gDifficulty;
-extern uint8_t gMinimapX;
-extern uint8_t gMinimapY;
-extern uint8_t gDemoState;
-extern uint8_t gEventsTriggered[];
-extern uint8_t gEwram[0x40000];
-
-static struct RawEquipment sPrevEquipment;
-static uint8_t sPrevArea = 0;
-static uint8_t sPrevRoom = 0;
-static int16_t sPrevGameMode = 0;
-static uint8_t sPrevDifficulty = 0;
-static uint8_t sPrevDemoState = 0;
-static uint8_t sPrevEwram[0x40000];
-static bool sHasPrevRam = false;
-
-/* Read a value from GBA memory address */
-static uint32_t ReadRamValue(uint32_t addr, char sizePrefix, bool readDelta) {
-    uint32_t val = 0;
-
-    /* 1. Direct variable mappings based on exact GBA IWRAM offsets in Metroid Zero Mission */
-    if (addr >= 0x1530 && addr <= 0x1550) {
-        /* Equipment struct at 0x03001530 */
-        const uint8_t* eqBytes = readDelta ? (const uint8_t*)&sPrevEquipment : (const uint8_t*)&gEquipment;
-        uint32_t off = addr - 0x1530;
-        if (off < sizeof(struct RawEquipment)) {
-            val = eqBytes[off];
-            if (sizePrefix == ' ' || sizePrefix == 'W') {
-                if (off + 1 < sizeof(struct RawEquipment)) {
-                    val |= ((uint32_t)eqBytes[off + 1] << 8);
-                }
-            }
-        }
-    } else if (addr == 0x0054) {
-        val = readDelta ? sPrevArea : gCurrentArea;
-    } else if (addr == 0x0055) {
-        val = readDelta ? sPrevRoom : gCurrentRoom;
-    } else if (addr == 0x002c) {
-        val = readDelta ? sPrevDifficulty : gDifficulty;
-    } else if (addr == 0x0c70) {
-        val = readDelta ? sPrevGameMode : gMainGameMode;
-    } else if (addr == 0x0058) {
-        val = gMinimapX;
-    } else if (addr == 0x0059) {
-        val = gMinimapY;
-    } else if (addr == 0x43fe9 || (addr >= 0x8000 && addr == 0x43fe9)) {
-        /* Demo state / Demo in progress flag (0x0203bfe9) */
-        val = readDelta ? (sPrevDemoState != 0 ? 77 : 0) : (gDemoState != 0 ? 77 : 0);
-    } else if (addr >= 0x3fe00 && addr < 0x3ff00) {
-        /* Events triggered buffer (0x02037e00 in GBA EWRAM) */
-        uint32_t evOff = addr - 0x3fe00;
-        if (evOff < 32) {
-            val = gEventsTriggered[evOff];
-        }
-    } else {
-        /* General EWRAM fallback: RA GBA EWRAM is offset by 0x8000 */
-        const uint8_t* ram = readDelta ? sPrevEwram : gEwram;
-        uint32_t offset = (addr >= 0x8000) ? (addr - 0x8000) : addr;
-        if (offset < 0x40000) {
-            val = ram[offset];
-            if ((sizePrefix == ' ' || sizePrefix == 'W') && offset + 1 < 0x40000) {
-                val |= ((uint32_t)ram[offset + 1] << 8);
-            }
-        }
-    }
-
-    /* Bitwise extractions */
-    switch (sizePrefix) {
-        case 'L': return val & 0x0F;
-        case 'U': return (val >> 4) & 0x0F;
-        case 'M': return (val >> 0) & 1;
-        case 'N': return (val >> 1) & 1;
-        case 'O': return (val >> 2) & 1;
-        case 'P': return (val >> 3) & 1;
-        case 'Q': return (val >> 4) & 1;
-        case 'R': return (val >> 5) & 1;
-        case 'S': return (val >> 6) & 1;
-        case 'T': return (val >> 7) & 1;
-        default: return val;
-    }
-}
-
-/* Parse a single operand (e.g., 0xH000054, d0xS00153e, 100, 0x12) */
-static const char* ParseOperand(const char* p, uint32_t* outVal) {
-    bool isDelta = false;
-    if (*p == 'd' || *p == 'D') {
-        isDelta = true;
-        p++;
-    }
-
-    if (p[0] == '0' && (p[1] == 'x' || p[1] == 'X')) {
-        p += 2;
-        char sizePrefix = 'H';
-        if (*p >= 'A' && *p <= 'Z' && *p != 'A' && *p != 'B' && *p != 'C' && *p != 'D' && *p != 'E' && *p != 'F') {
-            sizePrefix = *p++;
-        } else if (*p == ' ') {
-            sizePrefix = *p++;
-        }
-
-        char* endP = NULL;
-        uint32_t addr = (uint32_t)strtoul(p, &endP, 16);
-        p = endP;
-        *outVal = ReadRamValue(addr, sizePrefix, isDelta);
-    } else {
-        char* endP = NULL;
-        *outVal = (uint32_t)strtoul(p, &endP, 10);
-        p = endP;
-    }
-    return p;
-}
-
-/* Evaluate a single condition in the format: [Flag:]Operand Operator Operand [.Hits.] */
-static bool EvaluateSingleCondition(const char* condStr, char* outFlag, uint32_t* outAddVal) {
-    const char* p = condStr;
-    char flag = '\0';
-    if (p[0] != '\0' && p[1] == ':') {
-        flag = p[0];
-        p += 2;
-    }
-    if (outFlag) *outFlag = flag;
-
-    uint32_t leftVal = 0;
-    p = ParseOperand(p, &leftVal);
-
-    /* Read operator */
-    char op[3] = { 0 };
-    int opLen = 0;
-    while (*p == '=' || *p == '!' || *p == '<' || *p == '>' || *p == '<' || *p == '>') {
-        if (opLen < 2) op[opLen++] = *p;
-        p++;
-    }
-
-    uint32_t rightVal = 0;
-    p = ParseOperand(p, &rightVal);
-
-    bool result = false;
-    if (strcmp(op, "=") == 0 || strcmp(op, "==") == 0) {
-        result = (leftVal == rightVal);
-    } else if (strcmp(op, "!=") == 0) {
-        result = (leftVal != rightVal);
-    } else if (strcmp(op, "<") == 0) {
-        result = (leftVal < rightVal);
-    } else if (strcmp(op, "<=") == 0) {
-        result = (leftVal <= rightVal);
-    } else if (strcmp(op, ">") == 0) {
-        result = (leftVal > rightVal);
-    } else if (strcmp(op, ">=") == 0) {
-        result = (leftVal >= rightVal);
-    }
-
-    if (flag == 'A' && outAddVal) {
-        *outAddVal += leftVal;
-    }
-
-    return result;
-}
-
-/* Evaluates a single condition group (separated by '_') */
-static bool EvaluateConditionGroup(const char* groupStr) {
-    char buf[512];
-    strncpy(buf, groupStr, sizeof(buf) - 1);
-    buf[sizeof(buf) - 1] = '\0';
-
-    char* saveptr = NULL;
-    char* token = strtok_r(buf, "_", &saveptr);
-    uint32_t accumulatedSum = 0;
-    bool hasReset = false;
-    bool resetTriggered = false;
-
-    while (token != NULL) {
-        char flag = '\0';
-        bool condPassed = EvaluateSingleCondition(token, &flag, &accumulatedSum);
-
-        if (flag == 'R') {
-            hasReset = true;
-            if (condPassed) {
-                resetTriggered = true;
-            }
-        } else if (flag == 'A') {
-            /* AddSource: accumulated in accumulatedSum */
-        } else if (!condPassed) {
-            return false;
-        }
-
-        token = strtok_r(NULL, "_", &saveptr);
-    }
-
-    if (hasReset && resetTriggered) {
-        return false;
-    }
-
-    return true;
-}
-
-/* Full trigger evaluation with Alt Groups support (standalone 'S' separator) */
-static bool EvaluateTriggerExpression(const char* memAddr) {
-    if (!memAddr || memAddr[0] == '\0') return false;
-
-    /* Check if expression contains Alt Groups (e.g. CoreGroup S AltGroup1 S AltGroup2) */
-    /* An Alt Group separator in RA is an uppercase 'S' that is NOT part of a hex token (like 0xS or d0xS) */
-    char fullExpr[512];
-    strncpy(fullExpr, memAddr, sizeof(fullExpr) - 1);
-    fullExpr[sizeof(fullExpr) - 1] = '\0';
-
-    char* groups[16];
-    int groupCount = 0;
-    groups[groupCount++] = fullExpr;
-
-    for (char* p = fullExpr; *p != '\0'; ++p) {
-        if (*p == 'S') {
-            bool isPrefix = false;
-            if (p > fullExpr && *(p - 1) == 'x') isPrefix = true;
-            if (p > fullExpr + 1 && *(p - 2) == '0' && *(p - 1) == 'x') isPrefix = true;
-
-            if (!isPrefix) {
-                *p = '\0';
-                if (groupCount < 16) {
-                    groups[groupCount++] = p + 1;
-                }
-            }
-        }
-    }
-
-    /* First group is Core Group */
-    if (!EvaluateConditionGroup(groups[0])) {
-        return false;
-    }
-
-    /* If no Alt Groups exist, Core Group passing is sufficient */
-    if (groupCount == 1) {
-        return true;
-    }
-
-    /* If Alt Groups exist, at least one Alt Group must pass */
-    for (int i = 1; i < groupCount; ++i) {
-        if (EvaluateConditionGroup(groups[i])) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-void Port_RA_TriggerUnlock(uint32_t achIndex) {
-    if (achIndex >= sAchievementCount) return;
-    RetroAchievementItem* item = &sAchievements[achIndex];
-
-    if (item->unlocked && (!sRAHardcore || item->hardcoreUnlocked)) {
-        return; /* Already unlocked */
-    }
-
-    item->unlocked = true;
-    bool hardcoreNow = sRAHardcore;
-    if (hardcoreNow) {
-        item->hardcoreUnlocked = true;
-    }
-
-    FILE* logFile = fopen("sdmc:/3ds/Metroid Zero Mission 3DS/retroachievements.log", "a");
-    if (logFile) {
-        fprintf(logFile, "TRIGGER FIRED! AchID=%lu, Title='%s', Points=%lu\n",
-                (unsigned long)item->id, item->title, (unsigned long)item->points);
-        fclose(logFile);
-    }
-
-    /* Trigger visual popup toast */
-    sToast.active = true;
-    sToast.timer = 180; /* 3 seconds at 60fps */
-    strncpy(sToast.title, item->title, sizeof(sToast.title) - 1);
-    sToast.points = item->points;
-
-    /* Queue network award request */
-    QueueUnlockId(item->id, hardcoreNow);
-}
-
 void Port_RA_EvaluateTriggers(void) {
-    if (!sRAEnabled || sAchievementCount == 0) return;
-
-    if (!sHasPrevRam) {
-        memcpy(&sPrevEquipment, &gEquipment, sizeof(sPrevEquipment));
-        sPrevArea = gCurrentArea;
-        sPrevRoom = gCurrentRoom;
-        sPrevGameMode = gMainGameMode;
-        sPrevDifficulty = gDifficulty;
-        sPrevDemoState = gDemoState;
-        memcpy(sPrevEwram, gEwram, sizeof(gEwram));
-        sHasPrevRam = true;
+    if (!sClient || !sRAEnabled) {
         return;
     }
 
-    for (uint32_t i = 0; i < sAchievementCount; ++i) {
-        RetroAchievementItem* item = &sAchievements[i];
-        if (item->unlocked && (!sRAHardcore || item->hardcoreUnlocked)) {
-            continue;
-        }
-
-        if (EvaluateTriggerExpression(item->memAddr)) {
-            Port_RA_TriggerUnlock(i);
-        }
+    /* The ROM is not mapped yet when Port_RA_Init runs, so the game is
+     * identified on the first frame that has one. */
+    if (!rc_client_is_game_loaded(sClient) && sRAStatus == RA_STATUS_CONNECTED) {
+        BeginLoadGame();
     }
 
-    /* Update previous frame snapshot */
-    memcpy(&sPrevEquipment, &gEquipment, sizeof(sPrevEquipment));
-    sPrevArea = gCurrentArea;
-    sPrevRoom = gCurrentRoom;
-    sPrevGameMode = gMainGameMode;
-    sPrevDifficulty = gDifficulty;
-    sPrevDemoState = gDemoState;
-    memcpy(sPrevEwram, gEwram, sizeof(gEwram));
+    rc_client_do_frame(sClient);
 }
 
+/* ========================================================================= */
+/* Settings and status, read by the bottom-screen UI                         */
+/* ========================================================================= */
+
 bool Port_RA_IsEnabled(void) { return sRAEnabled; }
+
 void Port_RA_SetEnabled(bool enabled) {
     sRAEnabled = enabled;
-    if (sRAEnabled) {
-        if (sRAUsername[0] != '\0' && sRAToken[0] != '\0') {
-            TriggerBackgroundValidation();
-        } else {
-            sRAStatus = RA_STATUS_OFFLINE;
-        }
-    } else {
+    if (!enabled) {
         sRAStatus = RA_STATUS_DISABLED;
+        return;
+    }
+    if (sRAUsername[0] != '\0' && sRAToken[0] != '\0') {
+        BeginLogin(NULL);
+    } else {
+        /* Turning achievements on is not logging in. Without a saved token
+         * there is nothing to connect with, and calling that "offline" sends
+         * people hunting for a network fault that does not exist. */
+        sRAStatus = RA_STATUS_NO_ACCOUNT;
+        snprintf(sLastStatusMsg, sizeof(sLastStatusMsg), "NOT LOGGED IN; USE LOGIN");
     }
 }
 
 bool Port_RA_IsHardcore(void) { return sRAHardcore; }
-void Port_RA_SetHardcore(bool hardcore) { sRAHardcore = hardcore; }
+
+void Port_RA_SetHardcore(bool hardcore) {
+    sRAHardcore = hardcore;
+    if (sClient) {
+        rc_client_set_hardcore_enabled(sClient, hardcore ? 1 : 0);
+        RefreshAchievementList();
+    }
+}
 
 bool Port_RA_GetNotificationSound(void) { return sRANotifSound; }
 void Port_RA_SetNotificationSound(bool sound) { sRANotifSound = sound; }
 
 const char* Port_RA_GetUsername(void) { return sRAUsername; }
+
 void Port_RA_SetUsername(const char* username) {
     if (username) {
-        strncpy(sRAUsername, username, sizeof(sRAUsername) - 1);
-        sRAUsername[sizeof(sRAUsername) - 1] = '\0';
+        snprintf(sRAUsername, sizeof(sRAUsername), "%s", username);
     }
 }
 
 const char* Port_RA_GetToken(void) { return sRAToken; }
+
 void Port_RA_SetToken(const char* token) {
     if (token) {
-        strncpy(sRAToken, token, sizeof(sRAToken) - 1);
-        sRAToken[sizeof(sRAToken) - 1] = '\0';
+        snprintf(sRAToken, sizeof(sRAToken), "%s", token);
     }
 }
 
@@ -1132,35 +989,30 @@ void Port_RA_PromptLogin(void) {
     SwkbdState swkbd;
     char inputUser[64] = { 0 };
     char inputPass[64] = { 0 };
+    SwkbdButton btn;
 
-    /* 1. Prompt Username */
     swkbdInit(&swkbd, SWKBD_TYPE_NORMAL, 2, -1);
     swkbdSetHintText(&swkbd, "Enter RetroAchievements Username");
     if (sRAUsername[0] != '\0') {
         swkbdSetInitialText(&swkbd, sRAUsername);
     }
-    SwkbdButton btn = swkbdInputText(&swkbd, inputUser, sizeof(inputUser));
+    btn = swkbdInputText(&swkbd, inputUser, sizeof(inputUser));
     if (btn != SWKBD_BUTTON_CONFIRM || inputUser[0] == '\0') {
-        return; /* User canceled */
+        return;
     }
 
-    /* 2. Prompt Password (masked keyboard) */
     swkbdInit(&swkbd, SWKBD_TYPE_NORMAL, 2, -1);
     swkbdSetPasswordMode(&swkbd, SWKBD_PASSWORD_HIDE_DELAY);
     swkbdSetHintText(&swkbd, "Enter RetroAchievements Password");
     btn = swkbdInputText(&swkbd, inputPass, sizeof(inputPass));
     if (btn != SWKBD_BUTTON_CONFIRM || inputPass[0] == '\0') {
-        return; /* User canceled password -> do not log in */
+        return;
     }
 
-    /* Store username & password for background thread */
     Port_RA_SetUsername(inputUser);
-    strncpy(sPendingPassword, inputPass, sizeof(sPendingPassword) - 1);
-    sPendingPassword[sizeof(sPendingPassword) - 1] = '\0';
-    sPendingLogin = true;
-
     sRAEnabled = true;
-    TriggerBackgroundValidation();
+    BeginLogin(inputPass);
+    memset(inputPass, 0, sizeof(inputPass));
 }
 
 RetroAchievementsStatus Port_RA_GetStatus(void) { return sRAStatus; }
@@ -1177,6 +1029,7 @@ const char* Port_RA_GetStatusString(int lang) {
             case RA_STATUS_CONNECTING: return "CONECTANDO...";
             case RA_STATUS_CONNECTED: return "CONECTADO";
             case RA_STATUS_ERROR: return "ERROR DE LOGIN";
+            case RA_STATUS_NO_ACCOUNT: return "SIN CUENTA";
         }
     }
     switch (sRAStatus) {
@@ -1185,51 +1038,47 @@ const char* Port_RA_GetStatusString(int lang) {
         case RA_STATUS_CONNECTING: return "CONNECTING...";
         case RA_STATUS_CONNECTED: return "CONNECTED";
         case RA_STATUS_ERROR: return "LOGIN ERROR";
+        case RA_STATUS_NO_ACCOUNT: return "NOT LOGGED IN";
     }
     return "UNKNOWN";
 }
 
-uint32_t Port_RA_GetAchievementCount(void) {
-    return sAchievementCount;
-}
+uint32_t Port_RA_GetAchievementCount(void) { return sAchievementCount; }
 
 uint32_t Port_RA_GetUnlockedCount(void) {
-    uint32_t c = 0;
-    for (size_t i = 0; i < sAchievementCount; ++i) {
-        if (sAchievements[i].unlocked) ++c;
+    uint32_t count = 0;
+    for (uint32_t i = 0; i < sAchievementCount; ++i) {
+        if (sAchievements[i].unlocked) ++count;
     }
-    return c;
+    return count;
 }
 
 uint32_t Port_RA_GetHardcoreUnlockedCount(void) {
-    uint32_t c = 0;
-    for (size_t i = 0; i < sAchievementCount; ++i) {
-        if (sAchievements[i].hardcoreUnlocked) ++c;
+    uint32_t count = 0;
+    for (uint32_t i = 0; i < sAchievementCount; ++i) {
+        if (sAchievements[i].hardcoreUnlocked) ++count;
     }
-    return c;
+    return count;
 }
 
 uint32_t Port_RA_GetTotalPoints(void) {
-    uint32_t p = 0;
-    for (size_t i = 0; i < sAchievementCount; ++i) {
-        p += sAchievements[i].points;
+    uint32_t points = 0;
+    for (uint32_t i = 0; i < sAchievementCount; ++i) {
+        points += sAchievements[i].points;
     }
-    return p;
+    return points;
 }
 
 uint32_t Port_RA_GetUnlockedPoints(void) {
-    uint32_t p = 0;
-    for (size_t i = 0; i < sAchievementCount; ++i) {
-        if (sAchievements[i].unlocked) p += sAchievements[i].points;
+    uint32_t points = 0;
+    for (uint32_t i = 0; i < sAchievementCount; ++i) {
+        if (sAchievements[i].unlocked) points += sAchievements[i].points;
     }
-    return p;
+    return points;
 }
 
 const RetroAchievementItem* Port_RA_GetAchievement(uint32_t index) {
-    if (index < sAchievementCount) {
-        return &sAchievements[index];
-    }
-    return NULL;
+    return (index < sAchievementCount) ? &sAchievements[index] : NULL;
 }
 
 /* Toast Graphic & Text Drawing */
