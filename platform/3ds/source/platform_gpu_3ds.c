@@ -893,10 +893,11 @@ void PlatformGpu3DS_RecordTick(void) {
     if (stats.processingTime < 0.0f) procX100 = 0;
 
     uint32_t header[2 + 6 + 8]; /* magic, frame counter, 6 Samus words, perf */
-    /* 'MZM3': sample now carries a clip/camera block after VRAM. Magic
-     * bumped so an older parser fails loudly instead of walking off the end
-     * of every sample. */
-    header[0] = 0x334D5A4Du;
+    /* 'MZM4': the clip/camera block after VRAM now also carries the area
+     * and room number, which a tile correction has to be keyed to. Magic
+     * bumped, as with 'MZM3' before it, so an older parser fails loudly
+     * instead of walking off the end of every sample. */
+    header[0] = 0x344D5A4Du;
     header[1] = sRecFrameCounter;
     PortPpuMzm_GetSamusRecordState(&header[2]);
     header[8]  = frameUs;
