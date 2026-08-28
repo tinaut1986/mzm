@@ -855,6 +855,8 @@ void PlatformGpu3DS_RecordTick(void) {
     extern u16 gOamMem[0x400 / 2];
     extern u8 gVram[0x18000];
     extern void PortPpuMzm_GetSamusRecordState(uint32_t* out);
+    extern void PortPpuMzm_GetClipRecordBlock(uint8_t* out);
+    extern int PortPpuMzm_GetClipRecordBlockSize(void);
 
     /* Perf extension (issue #20): header grew from 32 to 64 bytes, magic
      * bumped 'MZMR' -> 'MZM2' so old parsers fail loudly instead of
@@ -891,7 +893,10 @@ void PlatformGpu3DS_RecordTick(void) {
     if (stats.processingTime < 0.0f) procX100 = 0;
 
     uint32_t header[2 + 6 + 8]; /* magic, frame counter, 6 Samus words, perf */
-    header[0] = 0x324D5A4Du;   /* 'MZM2' */
+    /* 'MZM3': sample now carries a clip/camera block after VRAM. Magic
+     * bumped so an older parser fails loudly instead of walking off the end
+     * of every sample. */
+    header[0] = 0x334D5A4Du;
     header[1] = sRecFrameCounter;
     PortPpuMzm_GetSamusRecordState(&header[2]);
     header[8]  = frameUs;
@@ -909,6 +914,17 @@ void PlatformGpu3DS_RecordTick(void) {
     fwrite(gObjPltt, 1, sizeof(gObjPltt), sRecFile);
     fwrite(gOamMem, 1, sizeof(gOamMem), sRecFile);
     fwrite(gVram, 1, sizeof(gVram), sRecFile);
+
+    /* Clip/camera block -- see PortPpuMzm_GetClipRecordBlock. Small (220
+     * bytes against the sample's ~99KB), so it costs nothing next to VRAM. */
+    {
+        uint8_t clipBlock[256];
+        int clipSize = PortPpuMzm_GetClipRecordBlockSize();
+        if (clipSize > (int)sizeof(clipBlock)) clipSize = (int)sizeof(clipBlock);
+        memset(clipBlock, 0, sizeof(clipBlock));
+        PortPpuMzm_GetClipRecordBlock(clipBlock);
+        fwrite(clipBlock, 1, (size_t)clipSize, sRecFile);
+    }
 
     /* sRecSampleCount was already incremented above, so sample #1 (the
      * first one written this recording) always gets a screenshot too. File
