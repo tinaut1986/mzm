@@ -61,6 +61,36 @@ void PortGen_io_transfer_data_Init(void) {
             p_sErrorString_SioStop = (const u8(*)[20])Port_ResolveRomData(0x085ec23cu);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sIoTransferInfo_Empty = (const struct IoTransferInfo*)Port_ResolveRomData(0x085d914cu);
+            p_sPlayer4String = (const u8(*)[4])Port_ResolveRomData(0x085d9164u);
+            p_sPlayer3String = (const u8(*)[4])Port_ResolveRomData(0x085d9168u);
+            p_sPlayer2String = (const u8(*)[4])Port_ResolveRomData(0x085d916cu);
+            p_sPlayer1String = (const u8(*)[4])Port_ResolveRomData(0x085d9170u);
+            p_sErrorString_IdOver = (const u8(*)[16])Port_ResolveRomData(0x085d9174u);
+            p_sErrorString_ChecksumError = (const u8(*)[20])Port_ResolveRomData(0x085d9184u);
+            p_sErrorString_HardwareError = (const u8(*)[20])Port_ResolveRomData(0x085d9198u);
+            p_sErrorString_SendOverflow = (const u8(*)[20])Port_ResolveRomData(0x085d91acu);
+            p_sErrorString_ReceiveOverflow = (const u8(*)[20])Port_ResolveRomData(0x085d91c0u);
+            p_sErrorString_SioInternal = (const u8(*)[20])Port_ResolveRomData(0x085d91d4u);
+            p_sErrorString_SioStop = (const u8(*)[20])Port_ResolveRomData(0x085d91e8u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sIoTransferInfo_Empty = (const struct IoTransferInfo*)Port_ResolveRomData(0x085d925cu);
+            p_sPlayer4String = (const u8(*)[4])Port_ResolveRomData(0x085d9274u);
+            p_sPlayer3String = (const u8(*)[4])Port_ResolveRomData(0x085d9278u);
+            p_sPlayer2String = (const u8(*)[4])Port_ResolveRomData(0x085d927cu);
+            p_sPlayer1String = (const u8(*)[4])Port_ResolveRomData(0x085d9280u);
+            p_sErrorString_IdOver = (const u8(*)[16])Port_ResolveRomData(0x085d9284u);
+            p_sErrorString_ChecksumError = (const u8(*)[20])Port_ResolveRomData(0x085d9294u);
+            p_sErrorString_HardwareError = (const u8(*)[20])Port_ResolveRomData(0x085d92a8u);
+            p_sErrorString_SendOverflow = (const u8(*)[20])Port_ResolveRomData(0x085d92bcu);
+            p_sErrorString_ReceiveOverflow = (const u8(*)[20])Port_ResolveRomData(0x085d92d0u);
+            p_sErrorString_SioInternal = (const u8(*)[20])Port_ResolveRomData(0x085d92e4u);
+            p_sErrorString_SioStop = (const u8(*)[20])Port_ResolveRomData(0x085d92f8u);
+            break;
+        }
         default:
             break;
     }

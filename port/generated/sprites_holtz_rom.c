@@ -30,6 +30,30 @@ void PortGen_holtz_Init(void) {
             p_sHoltzOam_BonkingOnCeiling = (const struct FrameData(*)[10])Port_ResolveRomData(0x082f2268u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sHoltzIdleYVelocity = (const s16(*)[65])Port_ResolveRomData(0x082f0f10u);
+            p_sHoltzGfx = (const u32(*)[200])Port_ResolveRomData(0x082f0f94u);
+            p_sHoltzPal = (const u16(*)[16])Port_ResolveRomData(0x082f12b4u);
+            p_sHoltzOam_Idle = (const struct FrameData(*)[5])Port_ResolveRomData(0x082f14ecu);
+            p_sHoltzOam_Warning = (const struct FrameData(*)[10])Port_ResolveRomData(0x082f1514u);
+            p_sHoltzOam_GoingDown = (const struct FrameData(*)[3])Port_ResolveRomData(0x082f1564u);
+            p_sHoltzOam_IdleAware = (const struct FrameData(*)[4])Port_ResolveRomData(0x082f157cu);
+            p_sHoltzOam_GoingUp = (const struct FrameData(*)[8])Port_ResolveRomData(0x082f159cu);
+            p_sHoltzOam_BonkingOnCeiling = (const struct FrameData(*)[10])Port_ResolveRomData(0x082f15dcu);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sHoltzIdleYVelocity = (const s16(*)[65])Port_ResolveRomData(0x082f0f6cu);
+            p_sHoltzGfx = (const u32(*)[200])Port_ResolveRomData(0x082f0ff0u);
+            p_sHoltzPal = (const u16(*)[16])Port_ResolveRomData(0x082f1310u);
+            p_sHoltzOam_Idle = (const struct FrameData(*)[5])Port_ResolveRomData(0x082f1548u);
+            p_sHoltzOam_Warning = (const struct FrameData(*)[10])Port_ResolveRomData(0x082f1570u);
+            p_sHoltzOam_GoingDown = (const struct FrameData(*)[3])Port_ResolveRomData(0x082f15c0u);
+            p_sHoltzOam_IdleAware = (const struct FrameData(*)[4])Port_ResolveRomData(0x082f15d8u);
+            p_sHoltzOam_GoingUp = (const struct FrameData(*)[8])Port_ResolveRomData(0x082f15f8u);
+            p_sHoltzOam_BonkingOnCeiling = (const struct FrameData(*)[10])Port_ResolveRomData(0x082f1638u);
+            break;
+        }
         default:
             break;
     }

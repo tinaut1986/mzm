@@ -23,6 +23,24 @@ void PortGen_geron_Init(void) {
             p_sGeronOam_Shaking = (const struct FrameData(*)[37])Port_ResolveRomData(0x08309fd4u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sGeronGfx = (const u32(*)[711])Port_ResolveRomData(0x0830767cu);
+            p_sGeronPal = (const u16(*)[48])Port_ResolveRomData(0x08308198u);
+            p_sGeronOam_Idle = (const struct FrameData(*)[11])Port_ResolveRomData(0x083091e0u);
+            p_sGeronOam_Destroyed = (const struct FrameData(*)[2])Port_ResolveRomData(0x08309238u);
+            p_sGeronOam_GettingDestroyed = (const struct FrameData(*)[32])Port_ResolveRomData(0x08309248u);
+            p_sGeronOam_Shaking = (const struct FrameData(*)[37])Port_ResolveRomData(0x08309348u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sGeronGfx = (const u32(*)[711])Port_ResolveRomData(0x083076d8u);
+            p_sGeronPal = (const u16(*)[48])Port_ResolveRomData(0x083081f4u);
+            p_sGeronOam_Idle = (const struct FrameData(*)[11])Port_ResolveRomData(0x0830923cu);
+            p_sGeronOam_Destroyed = (const struct FrameData(*)[2])Port_ResolveRomData(0x08309294u);
+            p_sGeronOam_GettingDestroyed = (const struct FrameData(*)[32])Port_ResolveRomData(0x083092a4u);
+            p_sGeronOam_Shaking = (const struct FrameData(*)[37])Port_ResolveRomData(0x083093a4u);
+            break;
+        }
         default:
             break;
     }

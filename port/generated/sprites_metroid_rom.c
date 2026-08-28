@@ -32,6 +32,32 @@ void PortGen_metroid_Init(void) {
             p_sMetroidOam_Spawning = (const struct FrameData(*)[3])Port_ResolveRomData(0x082ee9acu);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sMetroidSpawningYMovement = (const s16(*)[65])Port_ResolveRomData(0x082ecb60u);
+            p_sMetroidSpawningXMovement = (const s16(*)[81])Port_ResolveRomData(0x082ecbe2u);
+            p_sMetroidGfx = (const u32(*)[793])Port_ResolveRomData(0x082ecc84u);
+            p_sMetroidPal = (const u16(*)[80])Port_ResolveRomData(0x082ed8e8u);
+            p_sMetroidPal_SamusGrabbed = (const u16(*)[80])Port_ResolveRomData(0x082ed988u);
+            p_sMetroidOam_Moving_Frame10 = (const u16(*)[OAM_DATA_SIZE(6)])Port_ResolveRomData(0x082edaf8u);
+            p_sMetroidShellOam_Idle = (const struct FrameData(*)[3])Port_ResolveRomData(0x082edc08u);
+            p_sMetroidOam_Moving = (const struct FrameData(*)[17])Port_ResolveRomData(0x082edc20u);
+            p_sMetroidOam_SamusGrabbed = (const struct FrameData(*)[15])Port_ResolveRomData(0x082edca8u);
+            p_sMetroidOam_Spawning = (const struct FrameData(*)[3])Port_ResolveRomData(0x082edd20u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sMetroidSpawningYMovement = (const s16(*)[65])Port_ResolveRomData(0x082ecbbcu);
+            p_sMetroidSpawningXMovement = (const s16(*)[81])Port_ResolveRomData(0x082ecc3eu);
+            p_sMetroidGfx = (const u32(*)[793])Port_ResolveRomData(0x082ecce0u);
+            p_sMetroidPal = (const u16(*)[80])Port_ResolveRomData(0x082ed944u);
+            p_sMetroidPal_SamusGrabbed = (const u16(*)[80])Port_ResolveRomData(0x082ed9e4u);
+            p_sMetroidOam_Moving_Frame10 = (const u16(*)[OAM_DATA_SIZE(6)])Port_ResolveRomData(0x082edb54u);
+            p_sMetroidShellOam_Idle = (const struct FrameData(*)[3])Port_ResolveRomData(0x082edc64u);
+            p_sMetroidOam_Moving = (const struct FrameData(*)[17])Port_ResolveRomData(0x082edc7cu);
+            p_sMetroidOam_SamusGrabbed = (const struct FrameData(*)[15])Port_ResolveRomData(0x082edd04u);
+            p_sMetroidOam_Spawning = (const struct FrameData(*)[3])Port_ResolveRomData(0x082edd7cu);
+            break;
+        }
         default:
             break;
     }

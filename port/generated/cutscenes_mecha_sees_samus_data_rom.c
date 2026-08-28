@@ -28,6 +28,28 @@ void PortGen_mecha_sees_samus_data_Init(void) {
             p_sMechaSeesSamusCoverMetalTileTable = (const u32(*)[368])Port_ResolveRomData(0x083c6abcu);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sMechaRidleySeesSamusPagesData = (const struct CutscenePageData(*)[1])Port_ResolveRomData(0x083c0948u);
+            p_sMechaSeesSamusCutsceneOam = (const struct OamArray(*)[5])Port_ResolveRomData(0x083c0950u);
+            p_sMechaSeesSamusOam_FocusingEye = (const struct FrameData(*)[4])Port_ResolveRomData(0x083c0dbcu);
+            p_sMechaSeesSamusOam_OpeningEye = (const struct FrameData(*)[4])Port_ResolveRomData(0x083c0ddcu);
+            p_sMechaSeesSamusMetalGfx = (const u32(*)[2382])Port_ResolveRomData(0x083c0dfcu);
+            p_sMechaSeesSamusCoverEyeGfx = (const u32(*)[2671])Port_ResolveRomData(0x083c3334u);
+            p_sMechaSeesSamusPal = (const u16(*)[10*16])Port_ResolveRomData(0x083c5cf0u);
+            p_sMechaSeesSamusCoverMetalTileTable = (const u32(*)[368])Port_ResolveRomData(0x083c5e30u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sMechaRidleySeesSamusPagesData = (const struct CutscenePageData(*)[1])Port_ResolveRomData(0x083c09a4u);
+            p_sMechaSeesSamusCutsceneOam = (const struct OamArray(*)[5])Port_ResolveRomData(0x083c09acu);
+            p_sMechaSeesSamusOam_FocusingEye = (const struct FrameData(*)[4])Port_ResolveRomData(0x083c0e18u);
+            p_sMechaSeesSamusOam_OpeningEye = (const struct FrameData(*)[4])Port_ResolveRomData(0x083c0e38u);
+            p_sMechaSeesSamusMetalGfx = (const u32(*)[2382])Port_ResolveRomData(0x083c0e58u);
+            p_sMechaSeesSamusCoverEyeGfx = (const u32(*)[2671])Port_ResolveRomData(0x083c3390u);
+            p_sMechaSeesSamusPal = (const u16(*)[10*16])Port_ResolveRomData(0x083c5d4cu);
+            p_sMechaSeesSamusCoverMetalTileTable = (const u32(*)[368])Port_ResolveRomData(0x083c5e8cu);
+            break;
+        }
         default:
             break;
     }

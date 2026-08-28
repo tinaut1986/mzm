@@ -18,6 +18,18 @@ void PortGen_space_pirate_carrying_power_bomb_Init(void) {
             p_sFakePowerBombOam_Idle = (const struct FrameData(*)[5])Port_ResolveRomData(0x0831d3f8u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sFakePowerBombGfx = (const u32(*)[115])Port_ResolveRomData(0x0831c560u);
+            p_sFakePowerBombPal = (const u16(*)[16])Port_ResolveRomData(0x0831c72cu);
+            p_sFakePowerBombOam_Idle = (const struct FrameData(*)[5])Port_ResolveRomData(0x0831c76cu);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sFakePowerBombGfx = (const u32(*)[115])Port_ResolveRomData(0x0831c5bcu);
+            p_sFakePowerBombPal = (const u16(*)[16])Port_ResolveRomData(0x0831c788u);
+            p_sFakePowerBombOam_Idle = (const struct FrameData(*)[5])Port_ResolveRomData(0x0831c7c8u);
+            break;
+        }
         default:
             break;
     }

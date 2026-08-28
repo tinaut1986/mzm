@@ -41,6 +41,42 @@ void PortGen_skree_Init(void) {
             p_sSkreeExplosionOam_GoingUp = (const struct FrameData(*)[4])Port_ResolveRomData(0x082ce270u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sSkreeFallingSpeed = (const s16(*)[8])Port_ResolveRomData(0x082cca7cu);
+            p_sSkreeGreenGfx = (const u32(*)[264])Port_ResolveRomData(0x082cca8cu);
+            p_sSkreeGreenPal = (const u16(*)[16])Port_ResolveRomData(0x082cceacu);
+            p_sSkreeBlueGfx = (const u32(*)[264])Port_ResolveRomData(0x082cceccu);
+            p_sSkreeBluePal = (const u16(*)[16])Port_ResolveRomData(0x082cd2ecu);
+            p_sSkreeOam_Idle = (const struct FrameData(*)[5])Port_ResolveRomData(0x082cd474u);
+            p_sSkreeOam_Spinning = (const struct FrameData(*)[6])Port_ResolveRomData(0x082cd49cu);
+            p_sSkreeOam_GoingDown = (const struct FrameData(*)[5])Port_ResolveRomData(0x082cd4ccu);
+            p_sSkreeOam_Crashing = (const struct FrameData(*)[5])Port_ResolveRomData(0x082cd4f4u);
+            p_sSkreeOam_CrashingUnused = (const struct FrameData(*)[5])Port_ResolveRomData(0x082cd51cu);
+            p_sSkreeOam_CrashingUnused2 = (const struct FrameData(*)[6])Port_ResolveRomData(0x082cd544u);
+            p_sSkreeOam_CrashingUnused3 = (const struct FrameData(*)[5])Port_ResolveRomData(0x082cd574u);
+            p_sSkreeOam_CrashingUnused4 = (const struct FrameData(*)[5])Port_ResolveRomData(0x082cd59cu);
+            p_sSkreeExplosionOam_GoingDown = (const struct FrameData(*)[4])Port_ResolveRomData(0x082cd5c4u);
+            p_sSkreeExplosionOam_GoingUp = (const struct FrameData(*)[4])Port_ResolveRomData(0x082cd5e4u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sSkreeFallingSpeed = (const s16(*)[8])Port_ResolveRomData(0x082ccad8u);
+            p_sSkreeGreenGfx = (const u32(*)[264])Port_ResolveRomData(0x082ccae8u);
+            p_sSkreeGreenPal = (const u16(*)[16])Port_ResolveRomData(0x082ccf08u);
+            p_sSkreeBlueGfx = (const u32(*)[264])Port_ResolveRomData(0x082ccf28u);
+            p_sSkreeBluePal = (const u16(*)[16])Port_ResolveRomData(0x082cd348u);
+            p_sSkreeOam_Idle = (const struct FrameData(*)[5])Port_ResolveRomData(0x082cd4d0u);
+            p_sSkreeOam_Spinning = (const struct FrameData(*)[6])Port_ResolveRomData(0x082cd4f8u);
+            p_sSkreeOam_GoingDown = (const struct FrameData(*)[5])Port_ResolveRomData(0x082cd528u);
+            p_sSkreeOam_Crashing = (const struct FrameData(*)[5])Port_ResolveRomData(0x082cd550u);
+            p_sSkreeOam_CrashingUnused = (const struct FrameData(*)[5])Port_ResolveRomData(0x082cd578u);
+            p_sSkreeOam_CrashingUnused2 = (const struct FrameData(*)[6])Port_ResolveRomData(0x082cd5a0u);
+            p_sSkreeOam_CrashingUnused3 = (const struct FrameData(*)[5])Port_ResolveRomData(0x082cd5d0u);
+            p_sSkreeOam_CrashingUnused4 = (const struct FrameData(*)[5])Port_ResolveRomData(0x082cd5f8u);
+            p_sSkreeExplosionOam_GoingDown = (const struct FrameData(*)[4])Port_ResolveRomData(0x082cd620u);
+            p_sSkreeExplosionOam_GoingUp = (const struct FrameData(*)[4])Port_ResolveRomData(0x082cd640u);
+            break;
+        }
         default:
             break;
     }

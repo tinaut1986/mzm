@@ -1,3 +1,4 @@
+#include "region.h"
 #include "menus/erase_sram.h"
 #include "macros.h"
 #include "callbacks.h"
@@ -403,15 +404,14 @@ static void EraseSramInit(void)
     ERASE_SRAM_DATA.language = gLanguage;
     // This code sets the language to the region's default if the language is invalid for that region.
     // Debug allows any language, US allows any European language, and JP allows Japanese or hiragana.
-#if defined(DEBUG)
+#ifdef DEBUG
     if (ERASE_SRAM_DATA.language >= LANGUAGE_COUNT)
-#elif defined(REGION_JP)
-    if (ERASE_SRAM_DATA.language > LANGUAGE_HIRAGANA)
-#else // !(DEBUG || REGION_JP)
-    if (INVALID_EU_LANGUAGE(ERASE_SRAM_DATA.language))
+#else
+    if (REGION_IS_JP() ? ERASE_SRAM_DATA.language > LANGUAGE_HIRAGANA
+        : INVALID_EU_LANGUAGE(ERASE_SRAM_DATA.language))
 #endif
     {
-        ERASE_SRAM_DATA.language = LANGUAGE_DEFAULT;
+        ERASE_SRAM_DATA.language = REGION_DEFAULT_LANGUAGE();
     }
 
     while (READ_16(REG_VCOUNT) >= 21 && READ_16(REG_VCOUNT) <= SCREEN_SIZE_Y);

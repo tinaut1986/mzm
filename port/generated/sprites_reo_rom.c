@@ -37,6 +37,38 @@ void PortGen_reo_Init(void) {
             p_sReoOam_Moving_Unused = (const struct FrameData(*)[5])Port_ResolveRomData(0x082cf068u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sReoIdleYMovement = (const s16(*)[65])Port_ResolveRomData(0x082cd604u);
+            p_sReoIdleXMovement = (const s16(*)[81])Port_ResolveRomData(0x082cd686u);
+            p_sReoGreenWingsGfx = (const u32(*)[277])Port_ResolveRomData(0x082cd728u);
+            p_sReoGreenWingsPal = (const u16(*)[16])Port_ResolveRomData(0x082cdb7cu);
+            p_sReoPurpleWingsGfx = (const u32(*)[277])Port_ResolveRomData(0x082cdb9cu);
+            p_sReoPurpleWingsPal = (const u16(*)[16])Port_ResolveRomData(0x082cdff0u);
+            p_sReoOam_Unused1 = (const struct FrameData(*)[5])Port_ResolveRomData(0x082ce1ecu);
+            p_sReoOam_Idle = (const struct FrameData(*)[5])Port_ResolveRomData(0x082ce214u);
+            p_sReoOam_Idle_Unused = (const struct FrameData(*)[9])Port_ResolveRomData(0x082ce23cu);
+            p_sReoOam_Moving = (const struct FrameData(*)[13])Port_ResolveRomData(0x082ce284u);
+            p_sReoOam_Unused2 = (const struct FrameData(*)[21])Port_ResolveRomData(0x082ce2ecu);
+            p_sReoOam_Unused3 = (const struct FrameData(*)[9])Port_ResolveRomData(0x082ce394u);
+            p_sReoOam_Moving_Unused = (const struct FrameData(*)[5])Port_ResolveRomData(0x082ce3dcu);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sReoIdleYMovement = (const s16(*)[65])Port_ResolveRomData(0x082cd660u);
+            p_sReoIdleXMovement = (const s16(*)[81])Port_ResolveRomData(0x082cd6e2u);
+            p_sReoGreenWingsGfx = (const u32(*)[277])Port_ResolveRomData(0x082cd784u);
+            p_sReoGreenWingsPal = (const u16(*)[16])Port_ResolveRomData(0x082cdbd8u);
+            p_sReoPurpleWingsGfx = (const u32(*)[277])Port_ResolveRomData(0x082cdbf8u);
+            p_sReoPurpleWingsPal = (const u16(*)[16])Port_ResolveRomData(0x082ce04cu);
+            p_sReoOam_Unused1 = (const struct FrameData(*)[5])Port_ResolveRomData(0x082ce248u);
+            p_sReoOam_Idle = (const struct FrameData(*)[5])Port_ResolveRomData(0x082ce270u);
+            p_sReoOam_Idle_Unused = (const struct FrameData(*)[9])Port_ResolveRomData(0x082ce298u);
+            p_sReoOam_Moving = (const struct FrameData(*)[13])Port_ResolveRomData(0x082ce2e0u);
+            p_sReoOam_Unused2 = (const struct FrameData(*)[21])Port_ResolveRomData(0x082ce348u);
+            p_sReoOam_Unused3 = (const struct FrameData(*)[9])Port_ResolveRomData(0x082ce3f0u);
+            p_sReoOam_Moving_Unused = (const struct FrameData(*)[5])Port_ResolveRomData(0x082ce438u);
+            break;
+        }
         default:
             break;
     }

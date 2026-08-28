@@ -1,4 +1,5 @@
 #include "menus/file_select.h"
+#include "region.h"
 #include "dma.h"
 #include "oam_id.h"
 #include "macros.h"
@@ -26,6 +27,7 @@
 #include "constants/game_state.h"
 #include "constants/menus/file_select.h"
 #include "constants/menus/pause_screen.h"
+#include "menus/pause_screen.h"  /* CHECK_MAINTAINED_INPUT */
 
 #include "structs/audio.h"
 #include "structs/cable_link.h"
@@ -93,26 +95,35 @@ static s8 sSaveFileAreasId[12] = {
 
 #ifdef MZM_3DS
 static const u32* sFileSelectOptionsTextGfxPointers[LANGUAGE_COUNT - LANGUAGE_ENGLISH];
-#ifdef REGION_EU
+/* EUR-only tables, but declared in every region: the symbols behind them
+ * resolve to NULL when the loaded ROM has no such asset, and they are only
+ * read behind a REGION_IS_EU() test. */
 static const u32* sFileSelectLargeTextGfxPointers[LANGUAGE_COUNT - LANGUAGE_ENGLISH];
 static const u32* sFileSelectDifficultyTextGfxPointers[LANGUAGE_COUNT - LANGUAGE_ENGLISH];
-#endif
 
 void Init_sFileSelectTextGfxPointers(void) {
     sFileSelectOptionsTextGfxPointers[LANGUAGE_ENGLISH - LANGUAGE_ENGLISH] = sFileSelectOptionsTextEnglishGfx;
-#if defined(DEBUG) || defined(REGION_EU)
-    sFileSelectOptionsTextGfxPointers[LANGUAGE_GERMAN - LANGUAGE_ENGLISH] = sFileSelectOptionsTextGermanGfx;
-    sFileSelectOptionsTextGfxPointers[LANGUAGE_FRENCH - LANGUAGE_ENGLISH] = sFileSelectOptionsTextFrenchGfx;
-    sFileSelectOptionsTextGfxPointers[LANGUAGE_ITALIAN - LANGUAGE_ENGLISH] = sFileSelectOptionsTextItalianGfx;
-    sFileSelectOptionsTextGfxPointers[LANGUAGE_SPANISH - LANGUAGE_ENGLISH] = sFileSelectOptionsTextSpanishGfx;
+#ifdef DEBUG
+    if (TRUE)
 #else
-    sFileSelectOptionsTextGfxPointers[LANGUAGE_GERMAN - LANGUAGE_ENGLISH] = sFileSelectOptionsTextEnglishGfx;
-    sFileSelectOptionsTextGfxPointers[LANGUAGE_FRENCH - LANGUAGE_ENGLISH] = sFileSelectOptionsTextEnglishGfx;
-    sFileSelectOptionsTextGfxPointers[LANGUAGE_ITALIAN - LANGUAGE_ENGLISH] = sFileSelectOptionsTextEnglishGfx;
-    sFileSelectOptionsTextGfxPointers[LANGUAGE_SPANISH - LANGUAGE_ENGLISH] = sFileSelectOptionsTextEnglishGfx;
+    /* Only the EUR ROM has the four extra languages; elsewhere every slot
+     * falls back to English, exactly as the compile-time version did. */
+    if (REGION_IS_EU())
 #endif
+    {
+        sFileSelectOptionsTextGfxPointers[LANGUAGE_GERMAN - LANGUAGE_ENGLISH] = sFileSelectOptionsTextGermanGfx;
+        sFileSelectOptionsTextGfxPointers[LANGUAGE_FRENCH - LANGUAGE_ENGLISH] = sFileSelectOptionsTextFrenchGfx;
+        sFileSelectOptionsTextGfxPointers[LANGUAGE_ITALIAN - LANGUAGE_ENGLISH] = sFileSelectOptionsTextItalianGfx;
+        sFileSelectOptionsTextGfxPointers[LANGUAGE_SPANISH - LANGUAGE_ENGLISH] = sFileSelectOptionsTextSpanishGfx;
+    }
+    else
+    {
+        sFileSelectOptionsTextGfxPointers[LANGUAGE_GERMAN - LANGUAGE_ENGLISH] = sFileSelectOptionsTextEnglishGfx;
+        sFileSelectOptionsTextGfxPointers[LANGUAGE_FRENCH - LANGUAGE_ENGLISH] = sFileSelectOptionsTextEnglishGfx;
+        sFileSelectOptionsTextGfxPointers[LANGUAGE_ITALIAN - LANGUAGE_ENGLISH] = sFileSelectOptionsTextEnglishGfx;
+        sFileSelectOptionsTextGfxPointers[LANGUAGE_SPANISH - LANGUAGE_ENGLISH] = sFileSelectOptionsTextEnglishGfx;
+    }
 
-#ifdef REGION_EU
     sFileSelectLargeTextGfxPointers[LANGUAGE_ENGLISH - LANGUAGE_ENGLISH] = sFileSelectLargeTextEnglishGfx;
     sFileSelectLargeTextGfxPointers[LANGUAGE_GERMAN - LANGUAGE_ENGLISH] = sFileSelectLargeTextGermanGfx;
     sFileSelectLargeTextGfxPointers[LANGUAGE_FRENCH - LANGUAGE_ENGLISH] = sFileSelectLargeTextFrenchGfx;
@@ -124,7 +135,6 @@ void Init_sFileSelectTextGfxPointers(void) {
     sFileSelectDifficultyTextGfxPointers[LANGUAGE_FRENCH - LANGUAGE_ENGLISH] = sFileSelectDifficultyTextFrenchGfx;
     sFileSelectDifficultyTextGfxPointers[LANGUAGE_ITALIAN - LANGUAGE_ENGLISH] = sFileSelectDifficultyTextItalianGfx;
     sFileSelectDifficultyTextGfxPointers[LANGUAGE_SPANISH - LANGUAGE_ENGLISH] = sFileSelectDifficultyTextSpanishGfx;
-#endif
 }
 #else
 static const u32* sFileSelectOptionsTextGfxPointers[LANGUAGE_COUNT - LANGUAGE_ENGLISH] = {
@@ -917,15 +927,13 @@ static void OptionsUpdateStereoOam(StereoUpdateFlags flags)
         FILE_SELECT_DATA.optionsOam[OPTIONS_OAM_SOUND_TEST_RIGHT_ARROW].xPosition = FILE_SELECT_DATA.optionsOam[OPTIONS_OAM_SOUND_TEST_ID].xPosition;
         FILE_SELECT_DATA.optionsOam[OPTIONS_OAM_SOUND_TEST_RIGHT_ARROW].yPosition = FILE_SELECT_DATA.optionsOam[OPTIONS_OAM_SOUND_TEST_ID].yPosition;
 
-#ifdef REGION_EU
-        FILE_SELECT_DATA.optionsOam[OPTIONS_OAM_SOUND_TEST_ID].priority = BGCNT_LOW_MID_PRIORITY;
-        FILE_SELECT_DATA.optionsOam[OPTIONS_OAM_SOUND_TEST_LEFT_ARROW].priority = BGCNT_LOW_MID_PRIORITY;
-        FILE_SELECT_DATA.optionsOam[OPTIONS_OAM_SOUND_TEST_RIGHT_ARROW].priority = BGCNT_LOW_MID_PRIORITY;
-#else // !REGION_EU
-        FILE_SELECT_DATA.optionsOam[OPTIONS_OAM_SOUND_TEST_ID].priority = BGCNT_LOW_PRIORITY;
-        FILE_SELECT_DATA.optionsOam[OPTIONS_OAM_SOUND_TEST_LEFT_ARROW].priority = BGCNT_LOW_PRIORITY;
-        FILE_SELECT_DATA.optionsOam[OPTIONS_OAM_SOUND_TEST_RIGHT_ARROW].priority = BGCNT_LOW_PRIORITY;
-#endif // REGION_EU
+        {
+            u8 priority = REGION_IS_EU() ? BGCNT_LOW_MID_PRIORITY : BGCNT_LOW_PRIORITY;
+
+            FILE_SELECT_DATA.optionsOam[OPTIONS_OAM_SOUND_TEST_ID].priority = priority;
+            FILE_SELECT_DATA.optionsOam[OPTIONS_OAM_SOUND_TEST_LEFT_ARROW].priority = priority;
+            FILE_SELECT_DATA.optionsOam[OPTIONS_OAM_SOUND_TEST_RIGHT_ARROW].priority = priority;
+        }
     }
 }
 
@@ -945,10 +953,8 @@ static void FileScreenProcessText(void)
     u8 newIdQueue[2];
     u32* dst;
     s32 var_0;
-#ifdef REGION_EU
     s32 i;
     u32 flag;
-#endif // REGION_EU
 
     switch (FILE_SELECT_DATA.processTextStage)
     {
@@ -967,109 +973,124 @@ static void FileScreenProcessText(void)
             if (sFileScreenMessagesInfo[FILE_SELECT_DATA.messageInfoIdQueue[0]][1] == 3 ||
                 sFileScreenMessagesInfo[FILE_SELECT_DATA.messageInfoIdQueue[0]][1] == 1)
             {
-#ifdef REGION_EU
                 BitFill(3, (u16)var_0, sFileSelect_760bdc[sFileScreenMessagesInfo[FILE_SELECT_DATA.messageInfoIdQueue[0]][1]], 0x1000, 16);
-#else // !REGION_EU
-                DMA3_FILL_16(var_0, sFileSelect_760bdc[sFileScreenMessagesInfo[FILE_SELECT_DATA.messageInfoIdQueue[0]][1]], 0x1000);
-#endif // REGION_EU
             }
             else if (sFileScreenMessagesInfo[FILE_SELECT_DATA.messageInfoIdQueue[0]][1] == 2)
             {
-#ifdef REGION_EU
+                /* Same clears, different tilemap offsets per region -- not
+                 * interchangeable, unlike the BitFill/DMA3_FILL pairs
+                 * elsewhere in the codebase. */
                 BitFill(3, (u16)var_0, sFileSelect_760bdc[sFileScreenMessagesInfo[FILE_SELECT_DATA.messageInfoIdQueue[0]][1]], 0x200, 16);
-                BitFill(3, (u16)var_0, sFileSelect_760bdc[sFileScreenMessagesInfo[FILE_SELECT_DATA.messageInfoIdQueue[0]][1]] + 0x100, 0x200, 16);
-                BitFill(3, (u16)var_0, sFileSelect_760bdc[sFileScreenMessagesInfo[FILE_SELECT_DATA.messageInfoIdQueue[0]][1]] + 0x180, 0x800, 16);
-#else // !REGION_EU
-                DMA3_FILL_16(var_0, sFileSelect_760bdc[sFileScreenMessagesInfo[FILE_SELECT_DATA.messageInfoIdQueue[0]][1]], 0x200);
-                DMA3_FILL_16(var_0, sFileSelect_760bdc[sFileScreenMessagesInfo[FILE_SELECT_DATA.messageInfoIdQueue[0]][1]] + 0x400, 0x200);
-                DMA3_FILL_16(var_0, sFileSelect_760bdc[sFileScreenMessagesInfo[FILE_SELECT_DATA.messageInfoIdQueue[0]][1]] + 0x600, 0x800);
-#endif // REGION_EU
+
+                if (REGION_IS_EU())
+                {
+                    BitFill(3, (u16)var_0, sFileSelect_760bdc[sFileScreenMessagesInfo[FILE_SELECT_DATA.messageInfoIdQueue[0]][1]] + 0x100, 0x200, 16);
+                    BitFill(3, (u16)var_0, sFileSelect_760bdc[sFileScreenMessagesInfo[FILE_SELECT_DATA.messageInfoIdQueue[0]][1]] + 0x180, 0x800, 16);
+                }
+                else
+                {
+                    BitFill(3, (u16)var_0, sFileSelect_760bdc[sFileScreenMessagesInfo[FILE_SELECT_DATA.messageInfoIdQueue[0]][1]] + 0x400, 0x200, 16);
+                    BitFill(3, (u16)var_0, sFileSelect_760bdc[sFileScreenMessagesInfo[FILE_SELECT_DATA.messageInfoIdQueue[0]][1]] + 0x600, 0x800, 16);
+                }
             }
             else
             {
-#ifdef REGION_EU
                 BitFill(3, (u16)var_0, sFileSelect_760bdc[sFileScreenMessagesInfo[FILE_SELECT_DATA.messageInfoIdQueue[0]][1]], 0x800, 16);
-#else // !REGION_EU
-                DMA3_FILL_16(var_0, sFileSelect_760bdc[sFileScreenMessagesInfo[FILE_SELECT_DATA.messageInfoIdQueue[0]][1]], 0x800);
-#endif // REGION_EU
 
                 if (sFileScreenMessagesInfo[FILE_SELECT_DATA.messageInfoIdQueue[0]][2] == 3)
                 {
-#ifdef REGION_EU
-                    BitFill(3, (u16)var_0, sFileSelect_760bdc[sFileScreenMessagesInfo[FILE_SELECT_DATA.messageInfoIdQueue[0]][1]] + 0x200, 0x200, 16);
-                    BitFill(3, (u16)var_0, sFileSelect_760bdc[sFileScreenMessagesInfo[FILE_SELECT_DATA.messageInfoIdQueue[0]][1]] + 0x300, 0x200, 16);
-#else // !REGION_EU
-                    DMA3_FILL_16(var_0, sFileSelect_760bdc[sFileScreenMessagesInfo[FILE_SELECT_DATA.messageInfoIdQueue[0]][1]] + 0x800, 0x200);
-                    DMA3_FILL_16(var_0, sFileSelect_760bdc[sFileScreenMessagesInfo[FILE_SELECT_DATA.messageInfoIdQueue[0]][1]] + 0xC00, 0x200);
-#endif // REGION_EU
+                    if (REGION_IS_EU())
+                    {
+                        BitFill(3, (u16)var_0, sFileSelect_760bdc[sFileScreenMessagesInfo[FILE_SELECT_DATA.messageInfoIdQueue[0]][1]] + 0x200, 0x200, 16);
+                        BitFill(3, (u16)var_0, sFileSelect_760bdc[sFileScreenMessagesInfo[FILE_SELECT_DATA.messageInfoIdQueue[0]][1]] + 0x300, 0x200, 16);
+                    }
+                    else
+                    {
+                        BitFill(3, (u16)var_0, sFileSelect_760bdc[sFileScreenMessagesInfo[FILE_SELECT_DATA.messageInfoIdQueue[0]][1]] + 0x800, 0x200, 16);
+                        BitFill(3, (u16)var_0, sFileSelect_760bdc[sFileScreenMessagesInfo[FILE_SELECT_DATA.messageInfoIdQueue[0]][1]] + 0xC00, 0x200, 16);
+                    }
                 }
             }
 
             FILE_SELECT_DATA.processTextStage++;
             break;
 
-#ifdef REGION_EU
+        /* EUR draws the whole message in this one stage, looping over up
+         * to 8 lines; the other regions come back here once per line,
+         * with the current line held in processTextStage (LINE_1..LINE_4).
+         * LINE and LINE_1 are the same value, so one label serves both --
+         * see the enum in constants/menus/file_select.h. */
         case FILE_SCREEN_PROCESS_TEXT_STAGE_LINE:
-            i = 8;
-
-            if (gCurrentMessage.line > 3 || gCurrentMessage.messageEnded)
-            {
-                i = 0;
-            }
-            else
-            {
-                dst = sFileSelect_760bdc[sFileScreenMessagesInfo[FILE_SELECT_DATA.messageInfoIdQueue[0]][1]];
-
-                if (gCurrentMessage.line & 2)
-                    dst += 0x200;
-    
-                if (gCurrentMessage.line & 1)
-                {
-                    dst += 0x80;
-                
-                    if (sFileScreenMessagesInfo[FILE_SELECT_DATA.messageInfoIdQueue[0]][1] == 2)
-                        dst += 0x100;
-                }
-            }
-
-            if (i == 0)
-            {
-                gCurrentMessage.stage = 3;
-                break;
-            }
-
-            while (i != 0)
-            {
-                var_0 = TextProcessCurrentMessage(&gCurrentMessage, sFileScreenTextPointers[gLanguage][sFileScreenMessagesInfo[FILE_SELECT_DATA.messageInfoIdQueue[0]][0]], dst);
-
-                switch (var_0)
-                {
-                    case TEXT_STATE_ENDED:
-                        FILE_SELECT_DATA.processTextStage++;
-
-                    case TEXT_STATE_NEW_LINE:
-                        gCurrentMessage.indent = 0;
-                        flag = TRUE;
-                        break;
-
-                    default:
-                        flag = FALSE;
-                }
-                if (flag)
-                    break;
-                
-                if (gCurrentMessage.line > 3)
-                    break;
-
-                i--;
-            }
-            break;
-
-#else // !REGION_EU
-        case FILE_SCREEN_PROCESS_TEXT_STAGE_LINE_1:
+#if !defined(REGION_EU) || defined(MZM_3DS) || defined(PORT_NATIVE)
         case FILE_SCREEN_PROCESS_TEXT_STAGE_LINE_2:
         case FILE_SCREEN_PROCESS_TEXT_STAGE_LINE_3:
         case FILE_SCREEN_PROCESS_TEXT_STAGE_LINE_4:
+#endif
+            if (REGION_IS_EU())
+            {
+                i = 8;
+
+                if (gCurrentMessage.line > 3 || gCurrentMessage.messageEnded)
+                {
+                    i = 0;
+                }
+                else
+                {
+                    dst = sFileSelect_760bdc[sFileScreenMessagesInfo[FILE_SELECT_DATA.messageInfoIdQueue[0]][1]];
+
+                    if (gCurrentMessage.line & 2)
+                        dst += 0x200;
+    
+                    if (gCurrentMessage.line & 1)
+                    {
+                        dst += 0x80;
+                
+                        if (sFileScreenMessagesInfo[FILE_SELECT_DATA.messageInfoIdQueue[0]][1] == 2)
+                            dst += 0x100;
+                    }
+                }
+
+                if (i == 0)
+                {
+                    gCurrentMessage.stage = 3;
+                    break;
+                }
+
+                while (i != 0)
+                {
+                    var_0 = TextProcessCurrentMessage(&gCurrentMessage, sFileScreenTextPointers[gLanguage][sFileScreenMessagesInfo[FILE_SELECT_DATA.messageInfoIdQueue[0]][0]], dst);
+
+                    switch (var_0)
+                    {
+                        case TEXT_STATE_ENDED:
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+                            /* UPDATE_QUEUE stops being LINE + 1 once the per-line
+                             * stages share the enum -- see constants/menus/file_select.h. */
+                            FILE_SELECT_DATA.processTextStage = FILE_SCREEN_PROCESS_TEXT_STAGE_UPDATE_QUEUE;
+#else
+                            FILE_SELECT_DATA.processTextStage++;
+#endif
+
+                        case TEXT_STATE_NEW_LINE:
+                            gCurrentMessage.indent = 0;
+                            flag = TRUE;
+                            break;
+
+                        default:
+                            flag = FALSE;
+                    }
+                    if (flag)
+                        break;
+                
+                    if (gCurrentMessage.line > 3)
+                        break;
+
+                    i--;
+                }
+                break;
+
+            }
+
             dst = sFileSelect_760bdc[sFileScreenMessagesInfo[FILE_SELECT_DATA.messageInfoIdQueue[0]][1]];
 
             var_0 = FILE_SELECT_DATA.processTextStage - FILE_SCREEN_PROCESS_TEXT_STAGE_LINE_1;
@@ -1105,7 +1126,6 @@ static void FileScreenProcessText(void)
                 }
             }
             break;
-#endif // REGION_EU
 
         case FILE_SCREEN_PROCESS_TEXT_STAGE_UPDATE_QUEUE:
             FILE_SELECT_DATA.messageInfoIdQueue[0] = UCHAR_MAX;
@@ -2608,11 +2628,12 @@ static void OptionsSetupTiletable(void)
     u16* dst;
 
     // Decomp tile table
-#ifdef REGION_EU
-    CallLZ77UncompWram(sFileSelectMenuTileTable, (void*)sEwramPointer + 0x5100);
-#else // !REGION_EU
-    CallLZ77UncompWram(sFileSelectOptionsTileTable, (void*)sEwramPointer + 0x5100);
-#endif // REGION_EU
+    /* The two tile tables are swapped between EUR and the rest -- see the
+     * mirrored pair in FileSelectInit. */
+    if (REGION_IS_EU())
+        CallLZ77UncompWram(sFileSelectMenuTileTable, (void*)sEwramPointer + 0x5100);
+    else
+        CallLZ77UncompWram(sFileSelectOptionsTileTable, (void*)sEwramPointer + 0x5100);
 
     // Clear all the options
     for (i = 0; i < ARRAY_SIZE(FILE_SELECT_DATA.optionsUnlocked); i++)
@@ -3126,11 +3147,7 @@ static u8 OptionsHandler(void)
             break;
 
         case 2:
-#ifdef REGION_EU
-            CheckForMaintainedInput(MAINTAINED_INPUT_SPEED_FAST);
-#else // !REGION_EU
-            CheckForMaintainedInput();
-#endif // REGION_EU
+            CHECK_MAINTAINED_INPUT(MAINTAINED_INPUT_SPEED_FAST);
 
             if (!gChangedInput)
                 break;
@@ -3465,11 +3482,8 @@ static u8 OptionsSoundTestHandler(void)
             FILE_SELECT_DATA.optionsOam[OPTIONS_OAM_SOUND_TEST_PANEL].yPosition =
                 FILE_SELECT_DATA.optionsOam[OPTIONS_OAM_SOUND_TEST_ID].yPosition;
 
-#ifdef REGION_EU
-            FILE_SELECT_DATA.optionsOam[OPTIONS_OAM_SOUND_TEST_PANEL].priority = BGCNT_LOW_MID_PRIORITY;
-#else // !REGION_EU
-            FILE_SELECT_DATA.optionsOam[OPTIONS_OAM_SOUND_TEST_PANEL].priority = BGCNT_LOW_PRIORITY;
-#endif // REGION_EU
+            FILE_SELECT_DATA.optionsOam[OPTIONS_OAM_SOUND_TEST_PANEL].priority =
+                REGION_IS_EU() ? BGCNT_LOW_MID_PRIORITY : BGCNT_LOW_PRIORITY;
             FILE_SELECT_DATA.subMenuStage++;
             break;
 
@@ -3682,11 +3696,8 @@ static u8 OptionsTimeAttackRecordsHandler(void)
             FILE_SELECT_DATA.optionsOam[OPTIONS_OAM_HUGE_PANEL].yPosition = BLOCK_SIZE * 3;
 
             FILE_SELECT_DATA.optionsOam[OPTIONS_OAM_LARGE_PANEL].boundBackground = 0;
-#ifdef REGION_EU
-            FILE_SELECT_DATA.optionsOam[OPTIONS_OAM_LARGE_PANEL].priority = BGCNT_LOW_MID_PRIORITY;
-#else // !REGION_EU
-            FILE_SELECT_DATA.optionsOam[OPTIONS_OAM_LARGE_PANEL].priority = BGCNT_HIGH_MID_PRIORITY;
-#endif // REGION_EU
+            FILE_SELECT_DATA.optionsOam[OPTIONS_OAM_LARGE_PANEL].priority =
+                REGION_IS_EU() ? BGCNT_LOW_MID_PRIORITY : BGCNT_HIGH_MID_PRIORITY;
             FILE_SELECT_DATA.optionsOam[OPTIONS_OAM_LARGE_PANEL].xPosition = BLOCK_SIZE * 4;
             FILE_SELECT_DATA.optionsOam[OPTIONS_OAM_LARGE_PANEL].yPosition = BLOCK_SIZE * 2;
 
@@ -4533,9 +4544,10 @@ u32 FileSelectMenuHandler(void)
 
         case 8:
             unk_75c04(0);
-#ifdef REGION_JP
-            SramWrite_Language();
-#endif // REGION_JP
+
+            // JAP stores the language picked for this file
+            if (REGION_IS_JP())
+                SramWrite_Language();
             return TRUE;
     }
 
@@ -4711,15 +4723,13 @@ static void FileSelectSetLanguage(void)
 
     i = FALSE;
 
-#if defined(REGION_EU)
-    if (INVALID_EU_LANGUAGE(gLanguage))
-#elif defined(REGION_JP)
-    if (gLanguage > LANGUAGE_HIRAGANA)
-#else // !REGION_JP
-    if (gLanguage != LANGUAGE_ENGLISH)
-#endif // REGION_JP
+    /* Which languages the loaded ROM actually has: EUR five, JAP japanese and
+     * hiragana, USA english only. */
+    if (REGION_IS_EU() ? INVALID_EU_LANGUAGE(gLanguage)
+        : REGION_IS_JP() ? gLanguage > LANGUAGE_HIRAGANA
+        : gLanguage != LANGUAGE_ENGLISH)
     {
-        gLanguage = LANGUAGE_DEFAULT;
+        gLanguage = REGION_DEFAULT_LANGUAGE();
         i = TRUE;
     }
 
@@ -4728,12 +4738,16 @@ static void FileSelectSetLanguage(void)
 
     for (i = 0; i < ARRAY_SIZE(gSaveFilesInfo); i++)
     {
-#ifdef REGION_JP
-        if (gSaveFilesInfo[i].language > LANGUAGE_HIRAGANA)
-            gSaveFilesInfo[i].language = LANGUAGE_JAPANESE;
-#else // !REGION_JP
-        gSaveFilesInfo[i].language = gLanguage;
-#endif // REGION_JP
+        if (REGION_IS_JP())
+        {
+            // JAP keeps a per-file language, the others follow gLanguage
+            if (gSaveFilesInfo[i].language > LANGUAGE_HIRAGANA)
+                gSaveFilesInfo[i].language = LANGUAGE_JAPANESE;
+        }
+        else
+        {
+            gSaveFilesInfo[i].language = gLanguage;
+        }
     }
 }
 
@@ -4776,14 +4790,19 @@ static void FileSelectInit(void)
     DmaTransfer(3, sFileSelectIconsPal, PALRAM_OBJ, sizeof(sFileSelectIconsPal), 16);
     SET_BACKDROP_COLOR(COLOR_BLACK);
 
-#ifdef REGION_EU
-    CallLZ77UncompVram(sFileSelectAreaNamesGfx, VRAM_BASE + 0x2400);
-    CallLZ77UncompVram(sFileSelectBgIconsGfx, VRAM_BASE + 0x3800);
-    CallLZ77UncompVram(sFileSelectLargeTextGfxPointers[gLanguage - LANGUAGE_ENGLISH], VRAM_BASE + 0x4800);
-    CallLZ77UncompVram(sFileSelectDifficultyTextGfxPointers[gLanguage - LANGUAGE_ENGLISH], VRAM_BASE + 0x3400);
-#else // !REGION_EU
-    CallLZ77UncompVram(sFileSelectCharactersGfx, VRAM_BASE + 0x400);
-#endif // REGION_EU
+    if (REGION_IS_EU())
+    {
+        // EUR has per-language slot text baked as graphics
+        CallLZ77UncompVram(sFileSelectAreaNamesGfx, VRAM_BASE + 0x2400);
+        CallLZ77UncompVram(sFileSelectBgIconsGfx, VRAM_BASE + 0x3800);
+        CallLZ77UncompVram(sFileSelectLargeTextGfxPointers[gLanguage - LANGUAGE_ENGLISH], VRAM_BASE + 0x4800);
+        CallLZ77UncompVram(sFileSelectDifficultyTextGfxPointers[gLanguage - LANGUAGE_ENGLISH], VRAM_BASE + 0x3400);
+    }
+    else
+    {
+        // The others render it from the character font instead
+        CallLZ77UncompVram(sFileSelectCharactersGfx, VRAM_BASE + 0x400);
+    }
 
     CallLZ77UncompVram(sFileSelectChozoBackgroundGfx, VRAM_BASE + 0x8000);
     CallLZ77UncompVram(sFileSelectObjIconsGfx, VRAM_OBJ);
@@ -4791,25 +4810,24 @@ static void FileSelectInit(void)
     // If not on JP, the translations for "Copy", "Erase", and "Options" are blanked out,
     // and the options menu text graphics are replaced with the appropriate language.
     // Debug allows any language, so it has an extra check.
-#if defined(DEBUG) || !defined(REGION_JP)
-#if defined(DEBUG)
+#if defined(REGION_LANGUAGE_RUNTIME) || !defined(REGION_JP)
+#ifdef REGION_LANGUAGE_RUNTIME
     if (gLanguage >= LANGUAGE_ENGLISH)
-#endif // DEBUG
+#endif // REGION_LANGUAGE_RUNTIME
     {
-#if defined(DEBUG) || !defined(REGION_EU)
-        BitFill(3, 0, VRAM_BASE + 0x400, 0x800, 16);
-#endif // DEBUG || !REGION_EU
+        /* Blank the font area EUR does not use for this. */
+        if (!REGION_IS_EU())
+            BitFill(3, 0, VRAM_BASE + 0x400, 0x800, 16);
         CallLZ77UncompVram(sFileSelectOptionsTextGfxPointers[gLanguage - LANGUAGE_ENGLISH], VRAM_BASE + 0xC00);
     }
-#endif // DEBUG || !REGION_JP
+#endif // REGION_LANGUAGE_RUNTIME || !REGION_JP
 
     CallLZ77UncompVram(sFileSelectChozoBackgroundTileTable, VRAM_BASE + 0xF800);
 
-#ifdef REGION_EU
-    CallLZ77UncompWram(sFileSelectOptionsTileTable, (void*)sEwramPointer + 0x800);
-#else // !REGION_EU
-    CallLZ77UncompWram(sFileSelectMenuTileTable, (void*)sEwramPointer + 0x800);
-#endif // REGION_EU
+    if (REGION_IS_EU())
+        CallLZ77UncompWram(sFileSelectOptionsTileTable, (void*)sEwramPointer + 0x800);
+    else
+        CallLZ77UncompWram(sFileSelectMenuTileTable, (void*)sEwramPointer + 0x800);
     CallLZ77UncompWram(sFileSelect3BigPanelsTileTable, (void*)sEwramPointer + 0x2800);
     CallLZ77UncompWram(sFileSelect1Small2BigPanelsTileTable, (void*)sEwramPointer + 0x1800);
     CallLZ77UncompWram(sFileSelect2Big1SmallPanelsTileTable, (void*)sEwramPointer + 0x2000);
@@ -5163,22 +5181,22 @@ void FileSelectDisplaySaveFileMiscInfo(struct SaveFileInfo* pFile, FileSelectCur
         if (pFile->timeAttack)
         {
             tile = 0x1AF;
-#if defined(DEBUG) || defined(REGION_JP)
+#if defined(REGION_LANGUAGE_RUNTIME) || defined(REGION_JP)
             if (pFile->language == LANGUAGE_HIRAGANA)
                 tile += 5;
-#endif // DEBUG || REGION_JP
+#endif // REGION_LANGUAGE_RUNTIME || REGION_JP
         }
         else
         {
-#if defined(DEBUG) || defined(REGION_JP)
+#if defined(REGION_LANGUAGE_RUNTIME) || defined(REGION_JP)
             tile = pFile->difficulty * 5;
             if (pFile->language == LANGUAGE_HIRAGANA)
                 tile += 0x13D;
             else
                 tile += 0x1A0;
-#else // !(DEBUG || REGION_JP)
+#else // retail JAP-less behaviour
             tile = 0x1A0 + pFile->difficulty * 5;
-#endif // DEBUG || REGION_JP
+#endif // REGION_LANGUAGE_RUNTIME || REGION_JP
         }
 
         for (i = 0; i < 5; i++)
@@ -5204,15 +5222,15 @@ void FileSelectDisplaySaveFileMiscInfo(struct SaveFileInfo* pFile, FileSelectCur
 
     if ((pFile->exists || pFile->introPlayed) && i >= 0 && pFile->corruptionFlag == 0)
     {
-#if defined(DEBUG) || defined(REGION_JP)
+#if defined(REGION_LANGUAGE_RUNTIME) || defined(REGION_JP)
         tile = i * 6;
         if (pFile->language == LANGUAGE_HIRAGANA)
             tile += 0x14C;
         else
             tile += 0x176;
-#else // !(DEBUG || REGION_JP)
+#else // retail JAP-less behaviour
         tile = i * 6 + 0x176;
-#endif // DEBUG || REGION_JP
+#endif // REGION_LANGUAGE_RUNTIME || REGION_JP
 
         for (i = 0; i < 6; i++)
         {
@@ -5403,11 +5421,7 @@ static u8 FileSelectUpdateSubMenu(void)
     {
         case FILE_SELECT_SUB_MENU_MAIN:
             result = 0;
-#ifdef REGION_EU
-            CheckForMaintainedInput(MAINTAINED_INPUT_SPEED_FAST);
-#else // !REGION_EU
-            CheckForMaintainedInput();
-#endif // REGION_EU
+            CHECK_MAINTAINED_INPUT(MAINTAINED_INPUT_SPEED_FAST);
 
             if (gChangedInput)
             {
@@ -5491,14 +5505,14 @@ static u8 FileSelectUpdateSubMenu(void)
             else if (result == 2) // 2 = pressed B, go back to title
             {
                 FadeMusic(0);
-#ifdef REGION_JP
-                if (FILE_SELECT_DATA.fileSelectCursorPosition < FILE_SELECT_CURSOR_POSITION_COPY &&
+                // JAP adopts the highlighted file's own language on the way out
+                if (REGION_IS_JP() &&
+                    FILE_SELECT_DATA.fileSelectCursorPosition < FILE_SELECT_CURSOR_POSITION_COPY &&
                     (gSaveFilesInfo[FILE_SELECT_DATA.fileSelectCursorPosition].exists ||
                     gSaveFilesInfo[FILE_SELECT_DATA.fileSelectCursorPosition].introPlayed))
                 {
                     gLanguage = gSaveFilesInfo[FILE_SELECT_DATA.fileSelectCursorPosition].language;
                 }
-#endif // REGION_JP
                 gSubGameMode2 = 3; // Go to title screen
                 return TRUE;
             }
@@ -5577,14 +5591,14 @@ static u8 FileSelectUpdateSubMenu(void)
 
                             // On JP, the language is updated based on whether Japanese or hiragana was chosen.
                             // Debug allows any language, so it has an extra check.
-#if defined(DEBUG) || defined(REGION_JP)
-#if defined(DEBUG)
+#if defined(REGION_LANGUAGE_RUNTIME) || defined(REGION_JP)
+#ifdef REGION_LANGUAGE_RUNTIME
                             if (gSaveFilesInfo[gMostRecentSaveFile].language <= LANGUAGE_HIRAGANA)
-#endif // DEBUG
+#endif // REGION_LANGUAGE_RUNTIME
                             {
                                 gSaveFilesInfo[gMostRecentSaveFile].language = FILE_SELECT_DATA.fileSelectCursors.japaneseText;
                             }
-#endif // DEBUG || REGION_JP
+#endif // REGION_LANGUAGE_RUNTIME || REGION_JP
                         }
                     }
                 }
@@ -5710,7 +5724,7 @@ static u8 FileSelectProcessFileSelection(void)
     leaving = FALSE;
     FILE_SELECT_DATA.subMenuTimer++;
 
-#ifdef MZM_3DS
+#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
     {
         static u8 sLastStage = 0xFF;
         if (FILE_SELECT_DATA.subMenuStage != sLastStage) {
@@ -5721,7 +5735,7 @@ static u8 FileSelectProcessFileSelection(void)
             sLastStage = FILE_SELECT_DATA.subMenuStage;
         }
     }
-#endif
+#endif // MZM_3DS && PORT_DEBUG_TOOLS
 
     switch (FILE_SELECT_DATA.subMenuStage)
     {
@@ -5737,11 +5751,10 @@ static u8 FileSelectProcessFileSelection(void)
             FILE_SELECT_DATA.dispcnt |= DCNT_BG2;
             FILE_SELECT_DATA.dispcnt |= DCNT_WIN0;
 
-#ifdef REGION_EU
-            WRITE_16(REG_WIN0H, C_16_2_8(40, 200));
-#else // !REGION_EU
-            WRITE_16(REG_WIN0H, C_16_2_8(70, 170));
-#endif // REGION_EU
+            if (REGION_IS_EU())
+                WRITE_16(REG_WIN0H, C_16_2_8(40, 200));
+            else
+                WRITE_16(REG_WIN0H, C_16_2_8(70, 170));
             WRITE_16(REG_WIN0V, C_16_2_8(0, 23));
             WRITE_16(REG_WINOUT, C_16_2_8(0, WIN0_ALL));
             WRITE_8(REG_WININ, C_16_2_8(0, WIN0_ALL_NO_COLOR_EFFECT));
@@ -6071,29 +6084,29 @@ static u8 FileSelectProcessFileSelection(void)
             // (for Japanese/hiragana), but on non-JP the game will start if on a time
             // attack file (since the difficulty menu is skipped). Debug allows any language,
             // so it has an extra check.
-#if defined(DEBUG) || !defined(REGION_JP)
-#if defined(DEBUG)
+#if defined(REGION_LANGUAGE_RUNTIME) || !defined(REGION_JP)
+#ifdef REGION_LANGUAGE_RUNTIME
             action = TRUE;
             if (gSaveFilesInfo[FILE_SELECT_DATA.fileSelectCursorPosition].language >= LANGUAGE_ENGLISH)
-#endif // DEBUG
+#endif // REGION_LANGUAGE_RUNTIME
             {
                 action = FILE_SELECT_DATA.fileSelectCursors.completedFileOptions != 2;
             }
 
             if (action)
-#endif // DEBUG || !REGION_JP
+#endif // REGION_LANGUAGE_RUNTIME || !REGION_JP
             {
                 unk_7e3fc(6, 0x81);
                 FileSelectUpdateTilemap(TILEMAP_REQUEST_35);
                 FILE_SELECT_DATA.subMenuStage = 20;
             }
-#if defined(DEBUG) || !defined(REGION_JP)
+#if defined(REGION_LANGUAGE_RUNTIME) || !defined(REGION_JP)
             else
             {
                 FILE_SELECT_DATA.unk_3A = 2;
                 FILE_SELECT_DATA.subMenuStage = 34;
             }
-#endif // DEBUG || !REGION_JP
+#endif // REGION_LANGUAGE_RUNTIME || !REGION_JP
             break;
 
         case 19:
@@ -6110,23 +6123,23 @@ static u8 FileSelectProcessFileSelection(void)
         case 21:
             // JP goes to the Japanese/hiragana menu, while non-JP goes to the difficulty menu.
             // Debug allows any language, so it checks the language to decide the next menu.
-#if defined(DEBUG) || defined(REGION_JP)
-#if defined(DEBUG)
+#if defined(REGION_LANGUAGE_RUNTIME) || defined(REGION_JP)
+#ifdef REGION_LANGUAGE_RUNTIME
             if (gSaveFilesInfo[FILE_SELECT_DATA.fileSelectCursorPosition].language <= LANGUAGE_HIRAGANA)
-#endif // DEBUG
+#endif // REGION_LANGUAGE_RUNTIME
             {
                 FILE_SELECT_DATA.subMenuStage = 22;
                 FileScreenUpdateMessageInfoIdQueue(0, FILE_SCREEN_MESSAGE_INFO_ID_MESSAGE_OPTION);
             }
-#endif // DEBUG || REGION_JP
-#if defined(DEBUG) || !defined(REGION_JP)
-#if defined(DEBUG)
+#endif // REGION_LANGUAGE_RUNTIME || REGION_JP
+#if defined(REGION_LANGUAGE_RUNTIME) || !defined(REGION_JP)
+#ifdef REGION_LANGUAGE_RUNTIME
             else
-#endif // DEBUG
+#endif // REGION_LANGUAGE_RUNTIME
             {
                 FILE_SELECT_DATA.subMenuStage = 28;
             }
-#endif // DEBUG || !REGION_JP
+#endif // REGION_LANGUAGE_RUNTIME || !REGION_JP
 
             if (FILE_SELECT_DATA.fileSelectCursors.completedFileOptions == 2)
             {
@@ -6304,25 +6317,25 @@ static u8 FileSelectProcessFileSelection(void)
                 // When returning from the difficulty menu, JP goes to the Japanese/hiragana menu,
                 // while non-JP goes to the "Start Game" menu. Debug allows any language, so it
                 // checks the language to decide the next menu.
-#if defined(DEBUG) || defined(REGION_JP)
-#if defined(DEBUG)
+#if defined(REGION_LANGUAGE_RUNTIME) || defined(REGION_JP)
+#ifdef REGION_LANGUAGE_RUNTIME
                 if (gSaveFilesInfo[FILE_SELECT_DATA.fileSelectCursorPosition].language <= LANGUAGE_HIRAGANA)
-#endif // DEBUG
+#endif // REGION_LANGUAGE_RUNTIME
                 {
                     FILE_SELECT_DATA.subMenuStage = 22;
                 }
-#endif // DEBUG || REGION_JP
-#if defined(DEBUG) || !defined(REGION_JP)
-#if defined(DEBUG)
+#endif // REGION_LANGUAGE_RUNTIME || REGION_JP
+#if defined(REGION_LANGUAGE_RUNTIME) || !defined(REGION_JP)
+#ifdef REGION_LANGUAGE_RUNTIME
                 else
-#endif // DEBUG
+#endif // REGION_LANGUAGE_RUNTIME
                 {
                     if (gSaveFilesInfo[FILE_SELECT_DATA.fileSelectCursorPosition].exists)
                         FILE_SELECT_DATA.subMenuStage = 8;
                     else
                         FILE_SELECT_DATA.subMenuStage = 6;
                 }
-#endif // DEBUG || !REGION_JP
+#endif // REGION_LANGUAGE_RUNTIME || !REGION_JP
             }
             break;
 

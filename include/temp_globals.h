@@ -28,9 +28,11 @@ struct InGameData {
 };
 
 union NonGameplayRam {
-#ifdef REGION_EU
+    /* EUR-only screen, but always a member: it is far from the largest member,
+     * so the union's size and every other member's layout are unchanged. The
+     * non-EU regions reuse the same bytes through CutsceneData (bldcnt and
+     * dispcnt line up) -- see SoftResetInit. */
     struct LanguageSelectData languageSelect;
-#endif // REGION_EU
     struct IntroData intro;
     struct TitleScreenData titleScreen;
     struct FileSelectData fileSelect;

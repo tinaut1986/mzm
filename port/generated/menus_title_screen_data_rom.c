@@ -10,15 +10,12 @@
 
 __attribute__((weak)) const u16(*p_sTitleScreenPal)[15*16];
 __attribute__((weak)) const u16(*p_sTitleScreenPromptPal)[5*16];
-#if (defined(REGION_EU))
 __attribute__((weak)) const u16(*p_sTitleScreenUnselectedMenuPal)[1*16];
-#endif
 __attribute__((weak)) const u32(*p_sTitleScreenTitleGfx)[1095];
 __attribute__((weak)) const u32(*p_sTitleScreenSparklesGfx)[256];
 __attribute__((weak)) const u32(*p_sTitleScreenSpaceBackgroundGfx)[3203];
 __attribute__((weak)) const u32(*p_sTitleScreenSpaceBackgroundDecorationGfx)[797];
 __attribute__((weak)) const u32(*p_sTitleScreenSpaceAndGroundBackgroundGfx)[1920];
-#if (defined(REGION_EU))
 __attribute__((weak)) const u32(*p_sTitleScreenEnglishMenuGfx_Top)[85];
 __attribute__((weak)) const u32(*p_sTitleScreenEnglishMenuGfx_Bottom)[72];
 __attribute__((weak)) const u32(*p_sTitleScreenGermanMenuGfx_Top)[89];
@@ -29,7 +26,6 @@ __attribute__((weak)) const u32(*p_sTitleScreenItalianMenuGfx_Top)[79];
 __attribute__((weak)) const u32(*p_sTitleScreenItalianMenuGfx_Bottom)[62];
 __attribute__((weak)) const u32(*p_sTitleScreenSpanishMenuGfx_Top)[64];
 __attribute__((weak)) const u32(*p_sTitleScreenSpanishMenuGfx_Bottom)[45];
-#endif
 __attribute__((weak)) const u32*p_sTitleScreenTitleTileTable;
 __attribute__((weak)) const u32(*p_sTitleScreenSpaceBackgroundTileTable)[702];
 __attribute__((weak)) const u8(*p_sTitleScreenRomInfoPosition)[4];
@@ -47,15 +43,12 @@ void PortGen_title_screen_data_Init(void) {
         case PORT_ROM_REGION_EU: {
             p_sTitleScreenPal = (const u16(*)[15*16])Port_ResolveRomData(0x08451d0cu);
             p_sTitleScreenPromptPal = (const u16(*)[5*16])Port_ResolveRomData(0x08451eecu);
-#if (defined(REGION_EU))
             p_sTitleScreenUnselectedMenuPal = (const u16(*)[1*16])Port_ResolveRomData(0x08451f8cu);
-#endif
             p_sTitleScreenTitleGfx = (const u32(*)[1095])Port_ResolveRomData(0x084520a4u);
             p_sTitleScreenSparklesGfx = (const u32(*)[256])Port_ResolveRomData(0x084531c0u);
             p_sTitleScreenSpaceBackgroundGfx = (const u32(*)[3203])Port_ResolveRomData(0x084535c0u);
             p_sTitleScreenSpaceBackgroundDecorationGfx = (const u32(*)[797])Port_ResolveRomData(0x084567ccu);
             p_sTitleScreenSpaceAndGroundBackgroundGfx = (const u32(*)[1920])Port_ResolveRomData(0x08457440u);
-#if (defined(REGION_EU))
             p_sTitleScreenEnglishMenuGfx_Top = (const u32(*)[85])Port_ResolveRomData(0x08459240u);
             p_sTitleScreenEnglishMenuGfx_Bottom = (const u32(*)[72])Port_ResolveRomData(0x08459394u);
             p_sTitleScreenGermanMenuGfx_Top = (const u32(*)[89])Port_ResolveRomData(0x084594b4u);
@@ -66,7 +59,6 @@ void PortGen_title_screen_data_Init(void) {
             p_sTitleScreenItalianMenuGfx_Bottom = (const u32(*)[62])Port_ResolveRomData(0x08459a58u);
             p_sTitleScreenSpanishMenuGfx_Top = (const u32(*)[64])Port_ResolveRomData(0x08459b50u);
             p_sTitleScreenSpanishMenuGfx_Bottom = (const u32(*)[45])Port_ResolveRomData(0x08459c50u);
-#endif
             p_sTitleScreenTitleTileTable = (const u32*)Port_ResolveRomData(0x08459d04u);
             p_sTitleScreenSpaceBackgroundTileTable = (const u32(*)[702])Port_ResolveRomData(0x0845a048u);
             p_sTitleScreenRomInfoPosition = (const u8(*)[4])Port_ResolveRomData(0x0845ab40u);
@@ -75,6 +67,48 @@ void PortGen_title_screen_data_Init(void) {
             p_sTitleScreenTopSparkleBaseOam = (const struct MenuOamData*)Port_ResolveRomData(0x0845ab68u);
             p_sTitleScreenBottomSparkleBaseOam = (const struct MenuOamData*)Port_ResolveRomData(0x0845ab78u);
             p_sTitleScreenOam = (const struct OamArray(*)[TITLE_SCREEN_OAM_ID_COUNT])Port_ResolveRomData(0x0845ab88u);
+            break;
+        }
+        case PORT_ROM_REGION_US: {
+            p_sTitleScreenPal = (const u16(*)[15*16])Port_ResolveRomData(0x08446d68u);
+            p_sTitleScreenPromptPal = (const u16(*)[5*16])Port_ResolveRomData(0x08446f48u);
+            p_sTitleScreenTitleGfx = (const u32(*)[1095])Port_ResolveRomData(0x084470e0u);
+            p_sTitleScreenSparklesGfx = (const u32(*)[256])Port_ResolveRomData(0x084481fcu);
+            p_sTitleScreenSpaceBackgroundGfx = (const u32(*)[3203])Port_ResolveRomData(0x084485fcu);
+            p_sTitleScreenSpaceBackgroundDecorationGfx = (const u32(*)[797])Port_ResolveRomData(0x0844b808u);
+            p_sTitleScreenSpaceAndGroundBackgroundGfx = (const u32(*)[1920])Port_ResolveRomData(0x0844c47cu);
+            p_sTitleScreenTitleTileTable = (const u32*)Port_ResolveRomData(0x0844e27cu);
+            p_sTitleScreenSpaceBackgroundTileTable = (const u32(*)[702])Port_ResolveRomData(0x0844e598u);
+            p_sTitleScreenRomInfoPosition = (const u8(*)[4])Port_ResolveRomData(0x0844f090u);
+            p_sTitleScreenRomInfoTime = (const u8(*)[12])Port_ResolveRomData(0x0844f094u);
+            p_sTitleScreenPageData = (const struct TitleScreenPageData(*)[2])Port_ResolveRomData(0x0844f0acu);
+            p_sTitleScreenTopSparkleBaseOam = (const struct MenuOamData*)Port_ResolveRomData(0x0844f0c4u);
+            p_sTitleScreenBottomSparkleBaseOam = (const struct MenuOamData*)Port_ResolveRomData(0x0844f0d4u);
+            p_sTitleScreenOam = (const struct OamArray(*)[TITLE_SCREEN_OAM_ID_COUNT])Port_ResolveRomData(0x0844f0e4u);
+            p_sTitleScreenRomInfoRegionUSA = (const u8(*)[4])Port_ResolveRomData(0x0844f0a0u);
+            p_sTitleScreenRomInfoRegionEUR = (const u8(*)[4])Port_ResolveRomData(0x0844f0a4u);
+            p_sTitleScreenRomInfoRegionJPN = (const u8(*)[4])Port_ResolveRomData(0x0844f0a8u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sTitleScreenPal = (const u16(*)[15*16])Port_ResolveRomData(0x08446dc4u);
+            p_sTitleScreenPromptPal = (const u16(*)[5*16])Port_ResolveRomData(0x08446fa4u);
+            p_sTitleScreenTitleGfx = (const u32(*)[1095])Port_ResolveRomData(0x0844713cu);
+            p_sTitleScreenSparklesGfx = (const u32(*)[256])Port_ResolveRomData(0x08448258u);
+            p_sTitleScreenSpaceBackgroundGfx = (const u32(*)[3203])Port_ResolveRomData(0x08448658u);
+            p_sTitleScreenSpaceBackgroundDecorationGfx = (const u32(*)[797])Port_ResolveRomData(0x0844b864u);
+            p_sTitleScreenSpaceAndGroundBackgroundGfx = (const u32(*)[1920])Port_ResolveRomData(0x0844c4d8u);
+            p_sTitleScreenTitleTileTable = (const u32*)Port_ResolveRomData(0x0844e2d8u);
+            p_sTitleScreenSpaceBackgroundTileTable = (const u32(*)[702])Port_ResolveRomData(0x0844e5f4u);
+            p_sTitleScreenRomInfoPosition = (const u8(*)[4])Port_ResolveRomData(0x0844f0ecu);
+            p_sTitleScreenRomInfoTime = (const u8(*)[12])Port_ResolveRomData(0x0844f0f0u);
+            p_sTitleScreenPageData = (const struct TitleScreenPageData(*)[2])Port_ResolveRomData(0x0844f108u);
+            p_sTitleScreenTopSparkleBaseOam = (const struct MenuOamData*)Port_ResolveRomData(0x0844f120u);
+            p_sTitleScreenBottomSparkleBaseOam = (const struct MenuOamData*)Port_ResolveRomData(0x0844f130u);
+            p_sTitleScreenOam = (const struct OamArray(*)[TITLE_SCREEN_OAM_ID_COUNT])Port_ResolveRomData(0x0844f140u);
+            p_sTitleScreenRomInfoRegionUSA = (const u8(*)[4])Port_ResolveRomData(0x0844f0fcu);
+            p_sTitleScreenRomInfoRegionEUR = (const u8(*)[4])Port_ResolveRomData(0x0844f100u);
+            p_sTitleScreenRomInfoRegionJPN = (const u8(*)[4])Port_ResolveRomData(0x0844f104u);
             break;
         }
         default:

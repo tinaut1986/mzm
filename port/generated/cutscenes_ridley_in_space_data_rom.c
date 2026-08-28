@@ -85,6 +85,84 @@ void PortGen_ridley_in_space_data_Init(void) {
             p_sRidleyInSpaceSpaceBackgroundTileTable = (const u32(*)[577])Port_ResolveRomData(0x083a08b8u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sRidleyInSpaceScrollingInfo = (const struct CutsceneScrollingInfo(*)[2])Port_ResolveRomData(0x08386f60u);
+            p_sRidleyInSpacePageData = (const struct CutscenePageData(*)[6])Port_ResolveRomData(0x08386f70u);
+            p_sRidleyInSpacePaletteData = (const struct CutscenePaletteData*)Port_ResolveRomData(0x08386fa0u);
+            p_sRidleyInSpaceRedAlertPaletteRows = (const u8(*)[10])Port_ResolveRomData(0x08386fa4u);
+            p_sRidleyInSpaceOam_MotherShipLeavingBack_Frame0 = (const u16(*)[7])Port_ResolveRomData(0x0839d7f8u);
+            p_sRidleyInSpaceOam_MotherShipLeavingFront_Frame0 = (const u16(*)[13])Port_ResolveRomData(0x0839d806u);
+            p_sRidleyInSpaceOam_LeftBlueShip_Frame0 = (const u16(*)[4])Port_ResolveRomData(0x0839d764u);
+            p_sRidleyInSpaceOam_RightBlueShip_Frame0 = (const u16(*)[4])Port_ResolveRomData(0x0839d76cu);
+            p_sRidleyInSpaceOam_MotherShip_Frame0 = (const u16(*)[25])Port_ResolveRomData(0x0839d774u);
+            p_sRidleyInSpaceOam_ViewOfShipParticle_Frame0 = (const u16(*)[4])Port_ResolveRomData(0x0839d838u);
+            p_sRidleyInSpaceOam_ShipLeavingParticle_Frame2 = (const u16(*)[4])Port_ResolveRomData(0x0839d830u);
+            p_sRidleyInSpaceOam_ViewOfShipParticleSecond_Frame0 = (const u16(*)[4])Port_ResolveRomData(0x0839d828u);
+            p_sRidleyInSpaceOam_ShipLeavingParticleSecond_Frame0 = (const u16(*)[4])Port_ResolveRomData(0x0839d840u);
+            p_sRidleyInSpaceOam_39d7e8 = (const struct FrameData(*)[2])Port_ResolveRomData(0x0839d7e8u);
+            p_sRidleyInSpaceOam_ShipLeavingParticle = (const struct FrameData(*)[5])Port_ResolveRomData(0x0839d860u);
+            p_sRidleyInSpaceOam_ShipLeavingParticleSecond = (const struct FrameData(*)[5])Port_ResolveRomData(0x0839d888u);
+            p_sRidleyInSpaceCutsceneOam = (const struct OamArray(*)[RIDLEY_IN_SPACE_OAM_ID_COUNT])Port_ResolveRomData(0x08387030u);
+            p_sRidleyInSpaceShipsGfx = (const u32(*)[1565])Port_ResolveRomData(0x08387088u);
+            p_sRidleyInSpaceRidleySittingGfx = (const u32(*)[3848])Port_ResolveRomData(0x083888fcu);
+            p_sRidleyInSpaceShipInteriorGfx = (const u32(*)[4391])Port_ResolveRomData(0x0838c51cu);
+            p_sRidleyInSpaceRidleySuspiciousGfx = (const u32(*)[1961])Port_ResolveRomData(0x083909b8u);
+            p_sRidleyInSpaceShipInterior2Gfx = (const u32(*)[4235])Port_ResolveRomData(0x0839285cu);
+            p_sRidleyInSpaceMotherShipLeavingGfx = (const u32(*)[1497])Port_ResolveRomData(0x08396a88u);
+            p_sRidleyInSpaceSpaceBackgroundGfx = (const u32(*)[5470])Port_ResolveRomData(0x083981ecu);
+            p_sRidleyInSpaceShipsPal = (const u16(*)[3*16])Port_ResolveRomData(0x0839d8b0u);
+            p_sRidleyInSpace_39d910_Pal = (const u16(*)[6*16])Port_ResolveRomData(0x0839d910u);
+            p_sRidleyInSpaceRedAlertPal = (const u16(*)[6*16])Port_ResolveRomData(0x0839d9d0u);
+            p_sRidleyInSpaceShipInteriorPal = (const u16(*)[15*16])Port_ResolveRomData(0x0839da90u);
+            p_sRidleyInSpace_39dc70_Pal = (const u16(*)[3*16])Port_ResolveRomData(0x0839dc70u);
+            p_sRidleyInSpaceSpaceBackgroundPal = (const u16(*)[5*16])Port_ResolveRomData(0x0839dcd0u);
+            p_sRidleyInSpaceRidleySittingTileTable = (const u32(*)[449])Port_ResolveRomData(0x0839dd70u);
+            p_sRidleyInSpaceShipInteriorTileTable = (const u32(*)[559])Port_ResolveRomData(0x0839e474u);
+            p_sRidleyInSpaceRidleySuspiciousEyesOpenTileTable = (const u32(*)[287])Port_ResolveRomData(0x0839ed30u);
+            p_sRidleyInSpaceRidleySuspiciousEyesSquintedTileTable = (const u32(*)[287])Port_ResolveRomData(0x0839f1acu);
+            p_sRidleyInSpaceShipInteriorTileTable2 = (const u32(*)[385])Port_ResolveRomData(0x0839f628u);
+            p_sRidleyInSpaceSpaceBackgroundTileTable = (const u32(*)[577])Port_ResolveRomData(0x0839fc2cu);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sRidleyInSpaceScrollingInfo = (const struct CutsceneScrollingInfo(*)[2])Port_ResolveRomData(0x08386fbcu);
+            p_sRidleyInSpacePageData = (const struct CutscenePageData(*)[6])Port_ResolveRomData(0x08386fccu);
+            p_sRidleyInSpacePaletteData = (const struct CutscenePaletteData*)Port_ResolveRomData(0x08386ffcu);
+            p_sRidleyInSpaceRedAlertPaletteRows = (const u8(*)[10])Port_ResolveRomData(0x08387000u);
+            p_sRidleyInSpaceOam_MotherShipLeavingBack_Frame0 = (const u16(*)[7])Port_ResolveRomData(0x0839d854u);
+            p_sRidleyInSpaceOam_MotherShipLeavingFront_Frame0 = (const u16(*)[13])Port_ResolveRomData(0x0839d862u);
+            p_sRidleyInSpaceOam_LeftBlueShip_Frame0 = (const u16(*)[4])Port_ResolveRomData(0x0839d7c0u);
+            p_sRidleyInSpaceOam_RightBlueShip_Frame0 = (const u16(*)[4])Port_ResolveRomData(0x0839d7c8u);
+            p_sRidleyInSpaceOam_MotherShip_Frame0 = (const u16(*)[25])Port_ResolveRomData(0x0839d7d0u);
+            p_sRidleyInSpaceOam_ViewOfShipParticle_Frame0 = (const u16(*)[4])Port_ResolveRomData(0x0839d894u);
+            p_sRidleyInSpaceOam_ShipLeavingParticle_Frame2 = (const u16(*)[4])Port_ResolveRomData(0x0839d88cu);
+            p_sRidleyInSpaceOam_ViewOfShipParticleSecond_Frame0 = (const u16(*)[4])Port_ResolveRomData(0x0839d884u);
+            p_sRidleyInSpaceOam_ShipLeavingParticleSecond_Frame0 = (const u16(*)[4])Port_ResolveRomData(0x0839d89cu);
+            p_sRidleyInSpaceOam_39d7e8 = (const struct FrameData(*)[2])Port_ResolveRomData(0x0839d844u);
+            p_sRidleyInSpaceOam_ShipLeavingParticle = (const struct FrameData(*)[5])Port_ResolveRomData(0x0839d8bcu);
+            p_sRidleyInSpaceOam_ShipLeavingParticleSecond = (const struct FrameData(*)[5])Port_ResolveRomData(0x0839d8e4u);
+            p_sRidleyInSpaceCutsceneOam = (const struct OamArray(*)[RIDLEY_IN_SPACE_OAM_ID_COUNT])Port_ResolveRomData(0x0838708cu);
+            p_sRidleyInSpaceShipsGfx = (const u32(*)[1565])Port_ResolveRomData(0x083870e4u);
+            p_sRidleyInSpaceRidleySittingGfx = (const u32(*)[3848])Port_ResolveRomData(0x08388958u);
+            p_sRidleyInSpaceShipInteriorGfx = (const u32(*)[4391])Port_ResolveRomData(0x0838c578u);
+            p_sRidleyInSpaceRidleySuspiciousGfx = (const u32(*)[1961])Port_ResolveRomData(0x08390a14u);
+            p_sRidleyInSpaceShipInterior2Gfx = (const u32(*)[4235])Port_ResolveRomData(0x083928b8u);
+            p_sRidleyInSpaceMotherShipLeavingGfx = (const u32(*)[1497])Port_ResolveRomData(0x08396ae4u);
+            p_sRidleyInSpaceSpaceBackgroundGfx = (const u32(*)[5470])Port_ResolveRomData(0x08398248u);
+            p_sRidleyInSpaceShipsPal = (const u16(*)[3*16])Port_ResolveRomData(0x0839d90cu);
+            p_sRidleyInSpace_39d910_Pal = (const u16(*)[6*16])Port_ResolveRomData(0x0839d96cu);
+            p_sRidleyInSpaceRedAlertPal = (const u16(*)[6*16])Port_ResolveRomData(0x0839da2cu);
+            p_sRidleyInSpaceShipInteriorPal = (const u16(*)[15*16])Port_ResolveRomData(0x0839daecu);
+            p_sRidleyInSpace_39dc70_Pal = (const u16(*)[3*16])Port_ResolveRomData(0x0839dcccu);
+            p_sRidleyInSpaceSpaceBackgroundPal = (const u16(*)[5*16])Port_ResolveRomData(0x0839dd2cu);
+            p_sRidleyInSpaceRidleySittingTileTable = (const u32(*)[449])Port_ResolveRomData(0x0839ddccu);
+            p_sRidleyInSpaceShipInteriorTileTable = (const u32(*)[559])Port_ResolveRomData(0x0839e4d0u);
+            p_sRidleyInSpaceRidleySuspiciousEyesOpenTileTable = (const u32(*)[287])Port_ResolveRomData(0x0839ed8cu);
+            p_sRidleyInSpaceRidleySuspiciousEyesSquintedTileTable = (const u32(*)[287])Port_ResolveRomData(0x0839f208u);
+            p_sRidleyInSpaceShipInteriorTileTable2 = (const u32(*)[385])Port_ResolveRomData(0x0839f684u);
+            p_sRidleyInSpaceSpaceBackgroundTileTable = (const u32(*)[577])Port_ResolveRomData(0x0839fc88u);
+            break;
+        }
         default:
             break;
     }

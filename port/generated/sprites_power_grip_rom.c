@@ -19,6 +19,20 @@ void PortGen_power_grip_Init(void) {
             p_sPowerGripGlowOam_Idle = (const struct FrameData(*)[15])Port_ResolveRomData(0x082b3dc0u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sPowerGripGfx = (const u32(*)[279])Port_ResolveRomData(0x082b2c00u);
+            p_sPowerGripPal = (const u16(*)[32])Port_ResolveRomData(0x082b305cu);
+            p_sPowerGripOam_Idle = (const struct FrameData(*)[5])Port_ResolveRomData(0x082b310cu);
+            p_sPowerGripGlowOam_Idle = (const struct FrameData(*)[15])Port_ResolveRomData(0x082b3134u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sPowerGripGfx = (const u32(*)[279])Port_ResolveRomData(0x082b2c5cu);
+            p_sPowerGripPal = (const u16(*)[32])Port_ResolveRomData(0x082b30b8u);
+            p_sPowerGripOam_Idle = (const struct FrameData(*)[5])Port_ResolveRomData(0x082b3168u);
+            p_sPowerGripGlowOam_Idle = (const struct FrameData(*)[15])Port_ResolveRomData(0x082b3190u);
+            break;
+        }
         default:
             break;
     }

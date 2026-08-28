@@ -90,6 +90,66 @@ void PortGen_imago_cocoon_Init(void) {
             p_sDefeatedImagoCocoonOam = (const struct FrameData(*)[9])Port_ResolveRomData(0x082e198cu);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sImagoCocoonMultiSpriteData_Idle = (const struct MultiSpriteData(*)[5])Port_ResolveRomData(0x082de418u);
+            p_sImagoCocoonMultiSpriteData_Dying = (const struct MultiSpriteData(*)[10])Port_ResolveRomData(0x082de440u);
+            p_sImagoCocoon_ArrayUnused1 = (const s16(*)[36])Port_ResolveRomData(0x082de490u);
+            p_sImagoCocoon_ArrayUnused2 = (const s16(*)[48])Port_ResolveRomData(0x082de4d8u);
+            p_sImagoCocoonGfx = (const u32(*)[1758])Port_ResolveRomData(0x082de538u);
+            p_sImagoCocoonPal = (const u16(*)[96])Port_ResolveRomData(0x082e00b0u);
+            p_sImagoCocoonOam_CeilingVineMotionless = (const struct FrameData(*)[5])Port_ResolveRomData(0x082e09b0u);
+            p_sImagoCocoonOam_CeilingVineMoving = (const struct FrameData(*)[10])Port_ResolveRomData(0x082e09d8u);
+            p_sImagoCocoonOam_CeilingVineBroken = (const struct FrameData(*)[2])Port_ResolveRomData(0x082e0a28u);
+            p_sImagoCocoonOam_DecorativeVinesLeft = (const struct FrameData(*)[6])Port_ResolveRomData(0x082e0a38u);
+            p_sImagoCocoonOam_DecorativeVinesRight = (const struct FrameData(*)[6])Port_ResolveRomData(0x082e0a68u);
+            p_sImagoCocoonVineOam_LeftMiddle = (const struct FrameData(*)[5])Port_ResolveRomData(0x082e0a98u);
+            p_sImagoCocoonVineOam_RightMiddle = (const struct FrameData(*)[5])Port_ResolveRomData(0x082e0ac0u);
+            p_sImagoCocoonVineOam_LeftRight = (const struct FrameData(*)[5])Port_ResolveRomData(0x082e0ae8u);
+            p_sImagoCocoonVineOam_RightRight = (const struct FrameData(*)[5])Port_ResolveRomData(0x082e0b10u);
+            p_sImagoCocoonVineOam_LeftLeft = (const struct FrameData(*)[5])Port_ResolveRomData(0x082e0b38u);
+            p_sImagoCocoonVineOam_RightLeft = (const struct FrameData(*)[5])Port_ResolveRomData(0x082e0b60u);
+            p_sImagoCocoonOam_Idle = (const struct FrameData(*)[5])Port_ResolveRomData(0x082e0b88u);
+            p_sImagoCocoonOam_2e0bb0 = (const struct FrameData(*)[2])Port_ResolveRomData(0x082e0bb0u);
+            p_sImagoCocoonOam_Static = (const struct FrameData(*)[2])Port_ResolveRomData(0x082e0bc0u);
+            p_sImagoCocoonSporeOam_Spawning = (const struct FrameData(*)[5])Port_ResolveRomData(0x082e0bd0u);
+            p_sImagoCocoonSporeOam_Nest = (const struct FrameData(*)[4])Port_ResolveRomData(0x082e0bf8u);
+            p_sImagoCocoonSporeOam_Moving = (const struct FrameData(*)[4])Port_ResolveRomData(0x082e0c18u);
+            p_sImagoCocoonSporeOam_Exploding = (const struct FrameData(*)[5])Port_ResolveRomData(0x082e0c38u);
+            p_sWingedRipperOam_Moving = (const struct FrameData(*)[10])Port_ResolveRomData(0x082e0c60u);
+            p_sWingedRipperOam_TurningAround = (const struct FrameData(*)[10])Port_ResolveRomData(0x082e0cb0u);
+            p_sDefeatedImagoCocoonOam = (const struct FrameData(*)[9])Port_ResolveRomData(0x082e0d00u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sImagoCocoonMultiSpriteData_Idle = (const struct MultiSpriteData(*)[5])Port_ResolveRomData(0x082de474u);
+            p_sImagoCocoonMultiSpriteData_Dying = (const struct MultiSpriteData(*)[10])Port_ResolveRomData(0x082de49cu);
+            p_sImagoCocoon_ArrayUnused1 = (const s16(*)[36])Port_ResolveRomData(0x082de4ecu);
+            p_sImagoCocoon_ArrayUnused2 = (const s16(*)[48])Port_ResolveRomData(0x082de534u);
+            p_sImagoCocoonGfx = (const u32(*)[1758])Port_ResolveRomData(0x082de594u);
+            p_sImagoCocoonPal = (const u16(*)[96])Port_ResolveRomData(0x082e010cu);
+            p_sImagoCocoonOam_CeilingVineMotionless = (const struct FrameData(*)[5])Port_ResolveRomData(0x082e0a0cu);
+            p_sImagoCocoonOam_CeilingVineMoving = (const struct FrameData(*)[10])Port_ResolveRomData(0x082e0a34u);
+            p_sImagoCocoonOam_CeilingVineBroken = (const struct FrameData(*)[2])Port_ResolveRomData(0x082e0a84u);
+            p_sImagoCocoonOam_DecorativeVinesLeft = (const struct FrameData(*)[6])Port_ResolveRomData(0x082e0a94u);
+            p_sImagoCocoonOam_DecorativeVinesRight = (const struct FrameData(*)[6])Port_ResolveRomData(0x082e0ac4u);
+            p_sImagoCocoonVineOam_LeftMiddle = (const struct FrameData(*)[5])Port_ResolveRomData(0x082e0af4u);
+            p_sImagoCocoonVineOam_RightMiddle = (const struct FrameData(*)[5])Port_ResolveRomData(0x082e0b1cu);
+            p_sImagoCocoonVineOam_LeftRight = (const struct FrameData(*)[5])Port_ResolveRomData(0x082e0b44u);
+            p_sImagoCocoonVineOam_RightRight = (const struct FrameData(*)[5])Port_ResolveRomData(0x082e0b6cu);
+            p_sImagoCocoonVineOam_LeftLeft = (const struct FrameData(*)[5])Port_ResolveRomData(0x082e0b94u);
+            p_sImagoCocoonVineOam_RightLeft = (const struct FrameData(*)[5])Port_ResolveRomData(0x082e0bbcu);
+            p_sImagoCocoonOam_Idle = (const struct FrameData(*)[5])Port_ResolveRomData(0x082e0be4u);
+            p_sImagoCocoonOam_2e0bb0 = (const struct FrameData(*)[2])Port_ResolveRomData(0x082e0c0cu);
+            p_sImagoCocoonOam_Static = (const struct FrameData(*)[2])Port_ResolveRomData(0x082e0c1cu);
+            p_sImagoCocoonSporeOam_Spawning = (const struct FrameData(*)[5])Port_ResolveRomData(0x082e0c2cu);
+            p_sImagoCocoonSporeOam_Nest = (const struct FrameData(*)[4])Port_ResolveRomData(0x082e0c54u);
+            p_sImagoCocoonSporeOam_Moving = (const struct FrameData(*)[4])Port_ResolveRomData(0x082e0c74u);
+            p_sImagoCocoonSporeOam_Exploding = (const struct FrameData(*)[5])Port_ResolveRomData(0x082e0c94u);
+            p_sWingedRipperOam_Moving = (const struct FrameData(*)[10])Port_ResolveRomData(0x082e0cbcu);
+            p_sWingedRipperOam_TurningAround = (const struct FrameData(*)[10])Port_ResolveRomData(0x082e0d0cu);
+            p_sDefeatedImagoCocoonOam = (const struct FrameData(*)[9])Port_ResolveRomData(0x082e0d5cu);
+            break;
+        }
         default:
             break;
     }

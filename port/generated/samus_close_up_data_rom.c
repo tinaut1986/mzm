@@ -24,6 +24,26 @@ void PortGen_samus_close_up_data_Init(void) {
             p_sSamusCloseUpEyesTiletable = (const u32(*)[98])Port_ResolveRomData(0x0836c8b0u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sSamusCloseUpPal = (const u16(*)[6*16])Port_ResolveRomData(0x08367924u);
+            p_sSamusCloseUpGfx = (const u32(*)[2319])Port_ResolveRomData(0x083679e4u);
+            p_sSamusCloseUpEyesGfx_1 = (const u32(*)[80])Port_ResolveRomData(0x08369e20u);
+            p_sSamusCloseUpEyesGfx_2 = (const u32(*)[80])Port_ResolveRomData(0x08369f60u);
+            p_sSamusCloseUpEyesGfx_3 = (const u32(*)[1376])Port_ResolveRomData(0x0836a0a0u);
+            p_sSamusCloseUpBackgroundMap = (const u32(*)[385])Port_ResolveRomData(0x0836b620u);
+            p_sSamusCloseUpEyesTiletable = (const u32(*)[98])Port_ResolveRomData(0x0836bc24u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sSamusCloseUpPal = (const u16(*)[6*16])Port_ResolveRomData(0x08367980u);
+            p_sSamusCloseUpGfx = (const u32(*)[2319])Port_ResolveRomData(0x08367a40u);
+            p_sSamusCloseUpEyesGfx_1 = (const u32(*)[80])Port_ResolveRomData(0x08369e7cu);
+            p_sSamusCloseUpEyesGfx_2 = (const u32(*)[80])Port_ResolveRomData(0x08369fbcu);
+            p_sSamusCloseUpEyesGfx_3 = (const u32(*)[1376])Port_ResolveRomData(0x0836a0fcu);
+            p_sSamusCloseUpBackgroundMap = (const u32(*)[385])Port_ResolveRomData(0x0836b67cu);
+            p_sSamusCloseUpEyesTiletable = (const u32(*)[98])Port_ResolveRomData(0x0836bc80u);
+            break;
+        }
         default:
             break;
     }

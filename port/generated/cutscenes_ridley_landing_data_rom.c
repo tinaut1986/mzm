@@ -85,6 +85,84 @@ void PortGen_ridley_landing_data_Init(void) {
             p_sRidleyLandingRidleyFlyingBackgroundTileTable = (const u32(*)[368])Port_ResolveRomData(0x083b63c4u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sRidleyLandingPageData = (const struct CutscenePageData(*)[5])Port_ResolveRomData(0x083a0530u);
+            p_sRidleyLandingScrollingInfo = (const struct CutsceneScrollingInfo(*)[3])Port_ResolveRomData(0x083a0558u);
+            p_sRidleyLandingOam_ShipBottomPart_Frame0 = (const u16(*)[13])Port_ResolveRomData(0x083a062cu);
+            p_sRidleyLandingOam_ShipMiddlePart_Frame0 = (const u16(*)[13])Port_ResolveRomData(0x083a0646u);
+            p_sRidleyLandingOam_ShipTopPart_Frame0 = (const u16(*)[7])Port_ResolveRomData(0x083a0660u);
+            p_sRidleyLandingOam_Ridley_Frame0 = (const u16(*)[7])Port_ResolveRomData(0x083a091cu);
+            p_sRidleyLandingOam_ShipInSpace = (const struct FrameData(*)[2])Port_ResolveRomData(0x083a061cu);
+            p_sRidleyLandingOam_SmokeParticles = (const struct FrameData(*)[7])Port_ResolveRomData(0x083a08e4u);
+            p_sRidleyLandingOam_Rocks = (const struct FrameData(*)[5])Port_ResolveRomData(0x083a09acu);
+            p_sRidleyLandingCutsceneOam = (const struct OamArray(*)[RIDLEY_LANDING_OAM_ID_COUNT])Port_ResolveRomData(0x083a05b0u);
+            p_sCutscene_3a09d4_Pal = (const u16(*)[9*16])Port_ResolveRomData(0x083a09d4u);
+            p_sCutsceneZebesPal = (const u16(*)[13*16])Port_ResolveRomData(0x083a0af4u);
+            p_sCutsceneMotherShipPal = (const u16(*)[5*16])Port_ResolveRomData(0x083a0c94u);
+            p_sRidleyLandingRidleyAndRocksPal = (const u16(*)[2*16])Port_ResolveRomData(0x083a0d34u);
+            p_sRidleyLandingSkyBackgroundPal = (const u16(*)[5*16])Port_ResolveRomData(0x083a0d74u);
+            p_sRidleyLandingZebesBackgroundGfx = (const u32(*)[3167])Port_ResolveRomData(0x083a0e14u);
+            p_sRidleyLandingMotherShipGfx_1 = (const u32(*)[38])Port_ResolveRomData(0x083a3f90u);
+            p_sRidleyLandingMotherShipGfx_2 = (const u32(*)[59])Port_ResolveRomData(0x083a4028u);
+            p_sRidleyLandingMotherShipGfx_3 = (const u32(*)[65])Port_ResolveRomData(0x083a4114u);
+            p_sRidleyLandingMotherShipGfx_4 = (const u32(*)[88])Port_ResolveRomData(0x083a4218u);
+            p_sRidleyLandingMotherShipGfx_5 = (const u32(*)[90])Port_ResolveRomData(0x083a4378u);
+            p_sRidleyLandingMotherShipGfx_6 = (const u32(*)[97])Port_ResolveRomData(0x083a44e0u);
+            p_sRidleyLandingMotherShipGfx_7 = (const u32(*)[75])Port_ResolveRomData(0x083a4664u);
+            p_sRidleyLandingMotherShipGfx_8 = (const u32(*)[40])Port_ResolveRomData(0x083a4790u);
+            p_sRidleyLandingMotherShipGfx_9 = (const u32(*)[18])Port_ResolveRomData(0x083a4830u);
+            p_sCutsceneZebesMotherShipBackgroundGfx = (const u32(*)[5067])Port_ResolveRomData(0x083a4878u);
+            p_sCutsceneZebesGroundGfx = (const u32(*)[477])Port_ResolveRomData(0x083a97a4u);
+            p_sCutsceneZebesRockyBackgroundGfx = (const u32(*)[1514])Port_ResolveRomData(0x083a9f18u);
+            p_sCutsceneMotherShipEscapeShipParticlesGfx = (const u32(*)[2955])Port_ResolveRomData(0x083ab6c0u);
+            p_sRidleyLandingRidleyAndRockShadowGfx = (const u32(*)[2788])Port_ResolveRomData(0x083ae4ecu);
+            p_sRidleyLandingRidleyFlyingBackgroundGfx = (const u32(*)[2970])Port_ResolveRomData(0x083b107cu);
+            p_sRidleyLandingZebesBackgroundTileTable = (const u32(*)[545])Port_ResolveRomData(0x083b3ee4u);
+            p_sCutsceneZebesMotherShipBackgroundTileTable = (const u32(*)[640])Port_ResolveRomData(0x083b4768u);
+            p_sCutscene_3b5168_TileTable = (const u32(*)[261])Port_ResolveRomData(0x083b5168u);
+            p_sCutsceneZebesGroundTileTable = (const u32(*)[111])Port_ResolveRomData(0x083b557cu);
+            p_sRidleyLandingRidleyFlyingBackgroundTileTable = (const u32(*)[368])Port_ResolveRomData(0x083b5738u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sRidleyLandingPageData = (const struct CutscenePageData(*)[5])Port_ResolveRomData(0x083a058cu);
+            p_sRidleyLandingScrollingInfo = (const struct CutsceneScrollingInfo(*)[3])Port_ResolveRomData(0x083a05b4u);
+            p_sRidleyLandingOam_ShipBottomPart_Frame0 = (const u16(*)[13])Port_ResolveRomData(0x083a0688u);
+            p_sRidleyLandingOam_ShipMiddlePart_Frame0 = (const u16(*)[13])Port_ResolveRomData(0x083a06a2u);
+            p_sRidleyLandingOam_ShipTopPart_Frame0 = (const u16(*)[7])Port_ResolveRomData(0x083a06bcu);
+            p_sRidleyLandingOam_Ridley_Frame0 = (const u16(*)[7])Port_ResolveRomData(0x083a0978u);
+            p_sRidleyLandingOam_ShipInSpace = (const struct FrameData(*)[2])Port_ResolveRomData(0x083a0678u);
+            p_sRidleyLandingOam_SmokeParticles = (const struct FrameData(*)[7])Port_ResolveRomData(0x083a0940u);
+            p_sRidleyLandingOam_Rocks = (const struct FrameData(*)[5])Port_ResolveRomData(0x083a0a08u);
+            p_sRidleyLandingCutsceneOam = (const struct OamArray(*)[RIDLEY_LANDING_OAM_ID_COUNT])Port_ResolveRomData(0x083a060cu);
+            p_sCutscene_3a09d4_Pal = (const u16(*)[9*16])Port_ResolveRomData(0x083a0a30u);
+            p_sCutsceneZebesPal = (const u16(*)[13*16])Port_ResolveRomData(0x083a0b50u);
+            p_sCutsceneMotherShipPal = (const u16(*)[5*16])Port_ResolveRomData(0x083a0cf0u);
+            p_sRidleyLandingRidleyAndRocksPal = (const u16(*)[2*16])Port_ResolveRomData(0x083a0d90u);
+            p_sRidleyLandingSkyBackgroundPal = (const u16(*)[5*16])Port_ResolveRomData(0x083a0dd0u);
+            p_sRidleyLandingZebesBackgroundGfx = (const u32(*)[3167])Port_ResolveRomData(0x083a0e70u);
+            p_sRidleyLandingMotherShipGfx_1 = (const u32(*)[38])Port_ResolveRomData(0x083a3fecu);
+            p_sRidleyLandingMotherShipGfx_2 = (const u32(*)[59])Port_ResolveRomData(0x083a4084u);
+            p_sRidleyLandingMotherShipGfx_3 = (const u32(*)[65])Port_ResolveRomData(0x083a4170u);
+            p_sRidleyLandingMotherShipGfx_4 = (const u32(*)[88])Port_ResolveRomData(0x083a4274u);
+            p_sRidleyLandingMotherShipGfx_5 = (const u32(*)[90])Port_ResolveRomData(0x083a43d4u);
+            p_sRidleyLandingMotherShipGfx_6 = (const u32(*)[97])Port_ResolveRomData(0x083a453cu);
+            p_sRidleyLandingMotherShipGfx_7 = (const u32(*)[75])Port_ResolveRomData(0x083a46c0u);
+            p_sRidleyLandingMotherShipGfx_8 = (const u32(*)[40])Port_ResolveRomData(0x083a47ecu);
+            p_sRidleyLandingMotherShipGfx_9 = (const u32(*)[18])Port_ResolveRomData(0x083a488cu);
+            p_sCutsceneZebesMotherShipBackgroundGfx = (const u32(*)[5067])Port_ResolveRomData(0x083a48d4u);
+            p_sCutsceneZebesGroundGfx = (const u32(*)[477])Port_ResolveRomData(0x083a9800u);
+            p_sCutsceneZebesRockyBackgroundGfx = (const u32(*)[1514])Port_ResolveRomData(0x083a9f74u);
+            p_sCutsceneMotherShipEscapeShipParticlesGfx = (const u32(*)[2955])Port_ResolveRomData(0x083ab71cu);
+            p_sRidleyLandingRidleyAndRockShadowGfx = (const u32(*)[2788])Port_ResolveRomData(0x083ae548u);
+            p_sRidleyLandingRidleyFlyingBackgroundGfx = (const u32(*)[2970])Port_ResolveRomData(0x083b10d8u);
+            p_sRidleyLandingZebesBackgroundTileTable = (const u32(*)[545])Port_ResolveRomData(0x083b3f40u);
+            p_sCutsceneZebesMotherShipBackgroundTileTable = (const u32(*)[640])Port_ResolveRomData(0x083b47c4u);
+            p_sCutscene_3b5168_TileTable = (const u32(*)[261])Port_ResolveRomData(0x083b51c4u);
+            p_sCutsceneZebesGroundTileTable = (const u32(*)[111])Port_ResolveRomData(0x083b55d8u);
+            p_sRidleyLandingRidleyFlyingBackgroundTileTable = (const u32(*)[368])Port_ResolveRomData(0x083b5794u);
+            break;
+        }
         default:
             break;
     }

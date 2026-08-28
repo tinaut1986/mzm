@@ -32,6 +32,32 @@ void PortGen_worker_robot_Init(void) {
             p_sWorkerRobotOam_WakingUp = (const struct FrameData(*)[9])Port_ResolveRomData(0x082e8898u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sWorkerRobotGfx = (const u32(*)[376])Port_ResolveRomData(0x082e70e8u);
+            p_sWorkerRobotPal = (const u16(*)[32])Port_ResolveRomData(0x082e76c8u);
+            p_sWorkerRobotOam_Walking = (const struct FrameData(*)[9])Port_ResolveRomData(0x082e7ae4u);
+            p_sWorkerRobotOam_WalkingBackwards = (const struct FrameData(*)[9])Port_ResolveRomData(0x082e7b2cu);
+            p_sWorkerRobotOam_Standing = (const struct FrameData(*)[2])Port_ResolveRomData(0x082e7b74u);
+            p_sWorkerRobotOam_BackToSleep = (const struct FrameData(*)[9])Port_ResolveRomData(0x082e7b84u);
+            p_sWorkerRobotOam_Sleeping = (const struct FrameData(*)[2])Port_ResolveRomData(0x082e7bccu);
+            p_sWorkerRobotOam_GoingToSleep = (const struct FrameData(*)[3])Port_ResolveRomData(0x082e7bdcu);
+            p_sWorkerRobotOam_TurningAround = (const struct FrameData(*)[3])Port_ResolveRomData(0x082e7bf4u);
+            p_sWorkerRobotOam_WakingUp = (const struct FrameData(*)[9])Port_ResolveRomData(0x082e7c0cu);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sWorkerRobotGfx = (const u32(*)[376])Port_ResolveRomData(0x082e7144u);
+            p_sWorkerRobotPal = (const u16(*)[32])Port_ResolveRomData(0x082e7724u);
+            p_sWorkerRobotOam_Walking = (const struct FrameData(*)[9])Port_ResolveRomData(0x082e7b40u);
+            p_sWorkerRobotOam_WalkingBackwards = (const struct FrameData(*)[9])Port_ResolveRomData(0x082e7b88u);
+            p_sWorkerRobotOam_Standing = (const struct FrameData(*)[2])Port_ResolveRomData(0x082e7bd0u);
+            p_sWorkerRobotOam_BackToSleep = (const struct FrameData(*)[9])Port_ResolveRomData(0x082e7be0u);
+            p_sWorkerRobotOam_Sleeping = (const struct FrameData(*)[2])Port_ResolveRomData(0x082e7c28u);
+            p_sWorkerRobotOam_GoingToSleep = (const struct FrameData(*)[3])Port_ResolveRomData(0x082e7c38u);
+            p_sWorkerRobotOam_TurningAround = (const struct FrameData(*)[3])Port_ResolveRomData(0x082e7c50u);
+            p_sWorkerRobotOam_WakingUp = (const struct FrameData(*)[9])Port_ResolveRomData(0x082e7c68u);
+            break;
+        }
         default:
             break;
     }

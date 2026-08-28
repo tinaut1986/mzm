@@ -25,27 +25,27 @@ void InitializeGame(void)
     DMA3_FILL_32(0, EWRAM_BASE, EWRAM_SIZE);
     DMA3_FILL_32(0, IWRAM_BASE, IWRAM_SIZE - 0x200);
 
-#ifdef MZM_3DS
+#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
     Port_DebugLog("InitializeGame: before ClearGfxRam");
-#endif
+#endif // MZM_3DS && PORT_DEBUG_TOOLS
     ClearGfxRam();
-#ifdef MZM_3DS
+#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
     Port_DebugLog("InitializeGame: before LoadInterruptCode");
-#endif
+#endif // MZM_3DS && PORT_DEBUG_TOOLS
     LoadInterruptCode();
-#ifdef MZM_3DS
+#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
     Port_DebugLog("InitializeGame: before CallbackSetVblank");
-#endif
+#endif // MZM_3DS && PORT_DEBUG_TOOLS
     CallbackSetVblank(SoftResetVBlankCallback);
-#ifdef MZM_3DS
+#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
     Port_DebugLog("InitializeGame: before SramRead_All");
-#endif
+#endif // MZM_3DS && PORT_DEBUG_TOOLS
     SramRead_All();
-#ifdef MZM_3DS
+#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
     Port_DebugLog("InitializeGame: before InitializeAudio");
-#endif
+#endif // MZM_3DS && PORT_DEBUG_TOOLS
     InitializeAudio();
-#ifdef MZM_3DS
+#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
     Port_DebugLog("InitializeGame: after InitializeAudio");
     {
         extern struct TrackVariables gTrack0Variables[12];
@@ -56,7 +56,7 @@ void InitializeGame(void)
             (void*)gTrackData0.pVariables, (void*)gTrack0Variables, (void*)gTrack0Variables[0].pRawData);
         Port_DebugLog(msg);
     }
-#endif
+#endif // MZM_3DS && PORT_DEBUG_TOOLS
 #ifdef BUGFIX
     SramRead_SoundMode();
     FileSelectApplyStereo();

@@ -33,6 +33,34 @@ void PortGen_zoomer_Init(void) {
             p_sZoomerOam_WalkingOnRightSlope = (const struct FrameData(*)[5])Port_ResolveRomData(0x082c57ecu);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sZoomerGfx = (const u32(*)[379])Port_ResolveRomData(0x082c4194u);
+            p_sZoomerPal = (const u16(*)[32])Port_ResolveRomData(0x082c4780u);
+            p_sZoomerOam_Falling = (const struct FrameData(*)[5])Port_ResolveRomData(0x082c4a40u);
+            p_sZoomerOam_OnGround = (const struct FrameData(*)[5])Port_ResolveRomData(0x082c4a68u);
+            p_sZoomerOam_TurningEdgeLeft = (const struct FrameData(*)[4])Port_ResolveRomData(0x082c4a90u);
+            p_sZoomerOam_TurningEdgeRight = (const struct FrameData(*)[4])Port_ResolveRomData(0x082c4ab0u);
+            p_sZoomerOam_OnWall = (const struct FrameData(*)[5])Port_ResolveRomData(0x082c4ad0u);
+            p_sZoomerOam_TurningCornerRight = (const struct FrameData(*)[4])Port_ResolveRomData(0x082c4af8u);
+            p_sZoomerOam_TurningCornerLeft = (const struct FrameData(*)[4])Port_ResolveRomData(0x082c4b18u);
+            p_sZoomerOam_WalkingOnLeftSlope = (const struct FrameData(*)[5])Port_ResolveRomData(0x082c4b38u);
+            p_sZoomerOam_WalkingOnRightSlope = (const struct FrameData(*)[5])Port_ResolveRomData(0x082c4b60u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sZoomerGfx = (const u32(*)[379])Port_ResolveRomData(0x082c41f0u);
+            p_sZoomerPal = (const u16(*)[32])Port_ResolveRomData(0x082c47dcu);
+            p_sZoomerOam_Falling = (const struct FrameData(*)[5])Port_ResolveRomData(0x082c4a9cu);
+            p_sZoomerOam_OnGround = (const struct FrameData(*)[5])Port_ResolveRomData(0x082c4ac4u);
+            p_sZoomerOam_TurningEdgeLeft = (const struct FrameData(*)[4])Port_ResolveRomData(0x082c4aecu);
+            p_sZoomerOam_TurningEdgeRight = (const struct FrameData(*)[4])Port_ResolveRomData(0x082c4b0cu);
+            p_sZoomerOam_OnWall = (const struct FrameData(*)[5])Port_ResolveRomData(0x082c4b2cu);
+            p_sZoomerOam_TurningCornerRight = (const struct FrameData(*)[4])Port_ResolveRomData(0x082c4b54u);
+            p_sZoomerOam_TurningCornerLeft = (const struct FrameData(*)[4])Port_ResolveRomData(0x082c4b74u);
+            p_sZoomerOam_WalkingOnLeftSlope = (const struct FrameData(*)[5])Port_ResolveRomData(0x082c4b94u);
+            p_sZoomerOam_WalkingOnRightSlope = (const struct FrameData(*)[5])Port_ResolveRomData(0x082c4bbcu);
+            break;
+        }
         default:
             break;
     }

@@ -23,6 +23,24 @@ void PortGen_security_gate_Init(void) {
             p_sSecurityGateOam_Opening = (const struct FrameData(*)[18])Port_ResolveRomData(0x082e7844u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sSecurityGateGfx = (const u32(*)[122])Port_ResolveRomData(0x082e6750u);
+            p_sSecurityGatePal = (const u16(*)[16])Port_ResolveRomData(0x082e6938u);
+            p_sSecurityGateOam_Opened = (const struct FrameData(*)[2])Port_ResolveRomData(0x082e6af8u);
+            p_sSecurityGateOam_Closing = (const struct FrameData(*)[18])Port_ResolveRomData(0x082e6b08u);
+            p_sSecurityGateOam_Closed = (const struct FrameData(*)[4])Port_ResolveRomData(0x082e6b98u);
+            p_sSecurityGateOam_Opening = (const struct FrameData(*)[18])Port_ResolveRomData(0x082e6bb8u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sSecurityGateGfx = (const u32(*)[122])Port_ResolveRomData(0x082e67acu);
+            p_sSecurityGatePal = (const u16(*)[16])Port_ResolveRomData(0x082e6994u);
+            p_sSecurityGateOam_Opened = (const struct FrameData(*)[2])Port_ResolveRomData(0x082e6b54u);
+            p_sSecurityGateOam_Closing = (const struct FrameData(*)[18])Port_ResolveRomData(0x082e6b64u);
+            p_sSecurityGateOam_Closed = (const struct FrameData(*)[4])Port_ResolveRomData(0x082e6bf4u);
+            p_sSecurityGateOam_Opening = (const struct FrameData(*)[18])Port_ResolveRomData(0x082e6c14u);
+            break;
+        }
         default:
             break;
     }

@@ -63,6 +63,62 @@ void PortGen_mother_brain_close_up_data_Init(void) {
             p_sMotherBrainCloseUpTankViewPal = (const u16(*)[8*16])Port_ResolveRomData(0x08387aecu);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sMotherBrainCloseUpPageData = (const struct CutscenePageData(*)[5])Port_ResolveRomData(0x08375d20u);
+            p_sMotherBrainCloseUpScreenShakeInfo = (const struct CutsceneScreenShakeInfo*)Port_ResolveRomData(0x08375d48u);
+            p_sMotherBrainCloseUpCutsceneOam = (const struct OamArray(*)[MOTHER_BRAIN_CLOSE_UP_OAM_ID_COUNT])Port_ResolveRomData(0x08375d4cu);
+            p_sMotherBrainCloseUpOam_Bubble = (const struct FrameData(*)[6])Port_ResolveRomData(0x08375ea0u);
+            p_sMotherBrainCloseUpOam_EyeOpening = (const struct FrameData(*)[11])Port_ResolveRomData(0x08375e48u);
+            p_sMotherBrainCloseUpOam_EyeOpened = (const struct FrameData(*)[4])Port_ResolveRomData(0x08376044u);
+            p_sMotherBrainCloseUpOam_ElevatorAnimation = (const struct FrameData(*)[4])Port_ResolveRomData(0x08376064u);
+            p_sMotherBrainCloseUpPal = (const u16(*)[6*16])Port_ResolveRomData(0x08376084u);
+            p_sMotherBrainCloseUpBackgroundPal = (const u16(*)[5*16])Port_ResolveRomData(0x08376144u);
+            p_sMotherBrainCloseUpSamusPal = (const u16(*)[5*16])Port_ResolveRomData(0x083761e4u);
+            p_sMotherBrainCloseUpSamusVariaPal = (const u16(*)[5*16])Port_ResolveRomData(0x08376284u);
+            p_sMotherBrainCloseUpEyePal = (const u16(*)[2*16])Port_ResolveRomData(0x08376324u);
+            p_sMotherBrainCloseUpBigEyePal = (const u16(*)[2*16])Port_ResolveRomData(0x08376364u);
+            p_sMotherBrainCloseUpMotherBrainGfx = (const u32(*)[2722])Port_ResolveRomData(0x083763a4u);
+            p_sMotherBrainCloseUpBackgroundGfx = (const u32(*)[2422])Port_ResolveRomData(0x08378e2cu);
+            p_sMotherBrainCloseUpSamusGfx = (const u32(*)[2999])Port_ResolveRomData(0x0837b404u);
+            p_sMotherBrainCloseUpEyeGfx = (const u32(*)[1134])Port_ResolveRomData(0x0837e2e0u);
+            p_sMotherBrainCloseUpBigEyeGfx = (const u32(*)[2309])Port_ResolveRomData(0x0837f498u);
+            p_sMotherBrainCloseUpMotherBrainTileTable = (const u32(*)[369])Port_ResolveRomData(0x083818acu);
+            p_sMotherBrainCloseUpBackgroundTileTable = (const u32(*)[369])Port_ResolveRomData(0x08381e70u);
+            p_sMotherBrainCloseUpSamusTileTable = (const u32(*)[368])Port_ResolveRomData(0x08382434u);
+            p_sMotherBrainCloseUpGlassTileTable = (const u32(*)[67])Port_ResolveRomData(0x083829f4u);
+            p_sMotherBrainCloseUpTankViewGfx = (const u32(*)[3944])Port_ResolveRomData(0x08382b00u);
+            p_sMotherBrainCloseUpTankViewTileTable = (const u32(*)[368])Port_ResolveRomData(0x083868a0u);
+            p_sMotherBrainCloseUpTankViewPal = (const u16(*)[8*16])Port_ResolveRomData(0x08386e60u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sMotherBrainCloseUpPageData = (const struct CutscenePageData(*)[5])Port_ResolveRomData(0x08375d7cu);
+            p_sMotherBrainCloseUpScreenShakeInfo = (const struct CutsceneScreenShakeInfo*)Port_ResolveRomData(0x08375da4u);
+            p_sMotherBrainCloseUpCutsceneOam = (const struct OamArray(*)[MOTHER_BRAIN_CLOSE_UP_OAM_ID_COUNT])Port_ResolveRomData(0x08375da8u);
+            p_sMotherBrainCloseUpOam_Bubble = (const struct FrameData(*)[6])Port_ResolveRomData(0x08375efcu);
+            p_sMotherBrainCloseUpOam_EyeOpening = (const struct FrameData(*)[11])Port_ResolveRomData(0x08375ea4u);
+            p_sMotherBrainCloseUpOam_EyeOpened = (const struct FrameData(*)[4])Port_ResolveRomData(0x083760a0u);
+            p_sMotherBrainCloseUpOam_ElevatorAnimation = (const struct FrameData(*)[4])Port_ResolveRomData(0x083760c0u);
+            p_sMotherBrainCloseUpPal = (const u16(*)[6*16])Port_ResolveRomData(0x083760e0u);
+            p_sMotherBrainCloseUpBackgroundPal = (const u16(*)[5*16])Port_ResolveRomData(0x083761a0u);
+            p_sMotherBrainCloseUpSamusPal = (const u16(*)[5*16])Port_ResolveRomData(0x08376240u);
+            p_sMotherBrainCloseUpSamusVariaPal = (const u16(*)[5*16])Port_ResolveRomData(0x083762e0u);
+            p_sMotherBrainCloseUpEyePal = (const u16(*)[2*16])Port_ResolveRomData(0x08376380u);
+            p_sMotherBrainCloseUpBigEyePal = (const u16(*)[2*16])Port_ResolveRomData(0x083763c0u);
+            p_sMotherBrainCloseUpMotherBrainGfx = (const u32(*)[2722])Port_ResolveRomData(0x08376400u);
+            p_sMotherBrainCloseUpBackgroundGfx = (const u32(*)[2422])Port_ResolveRomData(0x08378e88u);
+            p_sMotherBrainCloseUpSamusGfx = (const u32(*)[2999])Port_ResolveRomData(0x0837b460u);
+            p_sMotherBrainCloseUpEyeGfx = (const u32(*)[1134])Port_ResolveRomData(0x0837e33cu);
+            p_sMotherBrainCloseUpBigEyeGfx = (const u32(*)[2309])Port_ResolveRomData(0x0837f4f4u);
+            p_sMotherBrainCloseUpMotherBrainTileTable = (const u32(*)[369])Port_ResolveRomData(0x08381908u);
+            p_sMotherBrainCloseUpBackgroundTileTable = (const u32(*)[369])Port_ResolveRomData(0x08381eccu);
+            p_sMotherBrainCloseUpSamusTileTable = (const u32(*)[368])Port_ResolveRomData(0x08382490u);
+            p_sMotherBrainCloseUpGlassTileTable = (const u32(*)[67])Port_ResolveRomData(0x08382a50u);
+            p_sMotherBrainCloseUpTankViewGfx = (const u32(*)[3944])Port_ResolveRomData(0x08382b5cu);
+            p_sMotherBrainCloseUpTankViewTileTable = (const u32(*)[368])Port_ResolveRomData(0x083868fcu);
+            p_sMotherBrainCloseUpTankViewPal = (const u16(*)[8*16])Port_ResolveRomData(0x08386ebcu);
+            break;
+        }
         default:
             break;
     }

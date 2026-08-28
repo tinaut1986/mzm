@@ -14,6 +14,14 @@ void PortGen_fusion_gallery_data_Init(void) {
             p_sFusionGalleryData = (const struct FusionGalleryImageEntry(*)[NUMBER_OF_FUSION_GALLERY_IMAGES])Port_ResolveRomData(0x084cf3f8u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sFusionGalleryData = (const struct FusionGalleryImageEntry(*)[NUMBER_OF_FUSION_GALLERY_IMAGES])Port_ResolveRomData(0x084c18e4u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sFusionGalleryData = (const struct FusionGalleryImageEntry(*)[NUMBER_OF_FUSION_GALLERY_IMAGES])Port_ResolveRomData(0x084c1940u);
+            break;
+        }
         default:
             break;
     }

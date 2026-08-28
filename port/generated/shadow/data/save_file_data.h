@@ -12,15 +12,9 @@
 #include "structs/save_file.h"
 
 #define SAVE_FILE_DATA_H
-#if (defined(REGION_EU))
 #define SAVE_FILE_GAME_VER_TEXT sEurVer_Text
-#endif
-#if ((defined(REGION_JP)) && !((defined(REGION_EU))))
 #define SAVE_FILE_GAME_VER_TEXT sJpnVer_Text
-#endif
-#if (!((defined(REGION_EU)) || (defined(REGION_JP))))
 #define SAVE_FILE_GAME_VER_TEXT sUsaVer_Text
-#endif
 
 extern const u8(*p_sMetZeroSramCheck_Text)[SRAM_TEXT_SIZE];
 #define sMetZeroSramCheck_Text (*p_sMetZeroSramCheck_Text)

@@ -23,6 +23,24 @@ void PortGen_gamet_Init(void) {
             p_sGametOam_Moving = (const struct FrameData(*)[5])Port_ResolveRomData(0x082e73b4u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sGametBlueGfx = (const u32(*)[168])Port_ResolveRomData(0x082e6108u);
+            p_sGametBluePal = (const u16(*)[16])Port_ResolveRomData(0x082e63a8u);
+            p_sGametRedGfx = (const u32(*)[168])Port_ResolveRomData(0x082e63c8u);
+            p_sGametRedPal = (const u16(*)[16])Port_ResolveRomData(0x082e6668u);
+            p_sGametOam_Idle = (const struct FrameData(*)[5])Port_ResolveRomData(0x082e6700u);
+            p_sGametOam_Moving = (const struct FrameData(*)[5])Port_ResolveRomData(0x082e6728u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sGametBlueGfx = (const u32(*)[168])Port_ResolveRomData(0x082e6164u);
+            p_sGametBluePal = (const u16(*)[16])Port_ResolveRomData(0x082e6404u);
+            p_sGametRedGfx = (const u32(*)[168])Port_ResolveRomData(0x082e6424u);
+            p_sGametRedPal = (const u16(*)[16])Port_ResolveRomData(0x082e66c4u);
+            p_sGametOam_Idle = (const struct FrameData(*)[5])Port_ResolveRomData(0x082e675cu);
+            p_sGametOam_Moving = (const struct FrameData(*)[5])Port_ResolveRomData(0x082e6784u);
+            break;
+        }
         default:
             break;
     }

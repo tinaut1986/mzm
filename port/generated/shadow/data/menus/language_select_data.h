@@ -14,7 +14,6 @@
 
 #define LANGUAGE_SELECT_DATA_H
 
-#if (defined(REGION_EU))
 extern const u16(*p_sLanguageSelectBgPal)[16*16];
 #define sLanguageSelectBgPal (*p_sLanguageSelectBgPal)
 extern const u32(*p_sLanguageSelectGfx)[145];
@@ -29,7 +28,6 @@ extern const u16(*p_sLanguageSelectLanguageTileTableOffsets)[LANGUAGE_COUNT-LANG
 #define sLanguageSelectLanguageTileTableOffsets (*p_sLanguageSelectLanguageTileTableOffsets)
 extern const u8(*p_sLanguageTextAnimationPaletteRows)[14];
 #define sLanguageTextAnimationPaletteRows (*p_sLanguageTextAnimationPaletteRows)
-#endif
 
 void PortGen_language_select_data_Init(void);
 

@@ -47,6 +47,46 @@ void PortGen_ridley_spawn_data_Init(void) {
             p_sRidleySpawnSamusFaceTileTable = (const u32(*)[189])Port_ResolveRomData(0x083c12e0u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sRidleySpawnOam_RidleyFlying_Frame0 = (const u16(*)[13])Port_ResolveRomData(0x083b5dc8u);
+            p_sRidleySpawnOam_RidleyScreaming_Frame0 = (const u16(*)[13])Port_ResolveRomData(0x083b5de2u);
+            p_sRidleySpawnOam_RidleyFlyingReflection_Frame0 = (const u16(*)[22])Port_ResolveRomData(0x083b5d8au);
+            p_sRidleySpawnPageData = (const struct CutscenePageData(*)[4])Port_ResolveRomData(0x083b5cf8u);
+            p_sRidleySpawnOam = (const struct OamArray(*)[RIDLEY_SPAWN_OAM_ID_COUNT])Port_ResolveRomData(0x083b5d48u);
+            p_sRidleySpawnOam_Samus = (const struct FrameData(*)[2])Port_ResolveRomData(0x083b5db8u);
+            p_sRidleySpawnSamusPal = (const u16(*)[3*16])Port_ResolveRomData(0x083b5e14u);
+            p_sRidleySpawnSamusVariaPal = (const u16(*)[3*16])Port_ResolveRomData(0x083b5e74u);
+            p_sRidleySpawnBackgroundPal = (const u16(*)[13*16])Port_ResolveRomData(0x083b5ed4u);
+            p_sRidleySpawnRidleyScreamingPal = (const u16(*)[1*16])Port_ResolveRomData(0x083b6074u);
+            p_sRidleySpawnBackgroundGfx = (const u32(*)[2830])Port_ResolveRomData(0x083b6094u);
+            p_sRidleySpawnSamusAndRidleyGfx = (const u32(*)[2215])Port_ResolveRomData(0x083b8cccu);
+            p_sRidleySpawnSamusHelmetFaceGfx = (const u32(*)[3164])Port_ResolveRomData(0x083baf68u);
+            p_sRidleySpawnScreamingGfx = (const u32(*)[1663])Port_ResolveRomData(0x083be0d8u);
+            p_sRidleySpawnBackgroundTileTable = (const u32(*)[368])Port_ResolveRomData(0x083bfad4u);
+            p_sRidleySpawnSamusHelmetTileTable = (const u32(*)[368])Port_ResolveRomData(0x083c0094u);
+            p_sRidleySpawnSamusFaceTileTable = (const u32(*)[189])Port_ResolveRomData(0x083c0654u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sRidleySpawnOam_RidleyFlying_Frame0 = (const u16(*)[13])Port_ResolveRomData(0x083b5e24u);
+            p_sRidleySpawnOam_RidleyScreaming_Frame0 = (const u16(*)[13])Port_ResolveRomData(0x083b5e3eu);
+            p_sRidleySpawnOam_RidleyFlyingReflection_Frame0 = (const u16(*)[22])Port_ResolveRomData(0x083b5de6u);
+            p_sRidleySpawnPageData = (const struct CutscenePageData(*)[4])Port_ResolveRomData(0x083b5d54u);
+            p_sRidleySpawnOam = (const struct OamArray(*)[RIDLEY_SPAWN_OAM_ID_COUNT])Port_ResolveRomData(0x083b5da4u);
+            p_sRidleySpawnOam_Samus = (const struct FrameData(*)[2])Port_ResolveRomData(0x083b5e14u);
+            p_sRidleySpawnSamusPal = (const u16(*)[3*16])Port_ResolveRomData(0x083b5e70u);
+            p_sRidleySpawnSamusVariaPal = (const u16(*)[3*16])Port_ResolveRomData(0x083b5ed0u);
+            p_sRidleySpawnBackgroundPal = (const u16(*)[13*16])Port_ResolveRomData(0x083b5f30u);
+            p_sRidleySpawnRidleyScreamingPal = (const u16(*)[1*16])Port_ResolveRomData(0x083b60d0u);
+            p_sRidleySpawnBackgroundGfx = (const u32(*)[2830])Port_ResolveRomData(0x083b60f0u);
+            p_sRidleySpawnSamusAndRidleyGfx = (const u32(*)[2215])Port_ResolveRomData(0x083b8d28u);
+            p_sRidleySpawnSamusHelmetFaceGfx = (const u32(*)[3164])Port_ResolveRomData(0x083bafc4u);
+            p_sRidleySpawnScreamingGfx = (const u32(*)[1663])Port_ResolveRomData(0x083be134u);
+            p_sRidleySpawnBackgroundTileTable = (const u32(*)[368])Port_ResolveRomData(0x083bfb30u);
+            p_sRidleySpawnSamusHelmetTileTable = (const u32(*)[368])Port_ResolveRomData(0x083c00f0u);
+            p_sRidleySpawnSamusFaceTileTable = (const u32(*)[189])Port_ResolveRomData(0x083c06b0u);
+            break;
+        }
         default:
             break;
     }

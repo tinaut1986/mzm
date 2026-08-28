@@ -1,3 +1,4 @@
+#include "region.h"
 #include "cutscenes/cutscene_utils.h"
 #include "dma.h"
 #include "gba.h"
@@ -262,14 +263,14 @@ u8 CutsceneHandler(void)
     switch (gSubGameModeStage)
     {
         case CUTSCENE_STAGE_STARTING:
-#ifdef MZM_3DS
+#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
             {
                 extern void Port_DebugLog(const char* msg);
                 char _msg[96];
                 __builtin_snprintf(_msg, sizeof(_msg), "CutsceneHandler STARTING: gCurrentCutscene=%u", (unsigned)gCurrentCutscene);
                 Port_DebugLog(_msg);
             }
-#endif
+#endif // MZM_3DS && PORT_DEBUG_TOOLS
             // Set dummy empty vblank
             CallbackSetVblank(CutsceneLoadingVBlank);
 
@@ -453,14 +454,14 @@ void CutsceneInit(void)
     u8 temp;
 #endif // DEBUG
 
-#ifdef MZM_3DS
+#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
     {
         extern void Port_DebugLog(const char* msg);
         char _msg[128];
         __builtin_snprintf(_msg, sizeof(_msg), "CutsceneInit: gCurrentCutscene=%u", (unsigned)gCurrentCutscene);
         Port_DebugLog(_msg);
     }
-#endif
+#endif // MZM_3DS && PORT_DEBUG_TOOLS
 
     CallbackSetVblank(CutsceneLoadingVBlank);
     BitFill(3, 0, &gNonGameplayRam, sizeof(union NonGameplayRam), 32);
@@ -469,13 +470,12 @@ void CutsceneInit(void)
     gNextOamSlot = 0;
     ResetFreeOam();
 
-#ifdef REGION_EU
-    if (sCutsceneData[gCurrentCutscene].preBgFading >= COLOR_FADING_SLOW_WHITE)
+    // EUR-only blend setup for the slow fadings
+    if (REGION_IS_EU() && sCutsceneData[gCurrentCutscene].preBgFading >= COLOR_FADING_SLOW_WHITE)
     {
         WRITE_16(REG_BLDCNT, CUTSCENE_DATA.bldcnt = 0xBF);
     }
     else
-#endif // REGION_EU
     {
         WRITE_16(REG_BLDCNT, CUTSCENE_DATA.bldcnt = 0xFF);
     }

@@ -377,6 +377,37 @@ void Platform3DS_PollKeysIntoGba(void) {
         }
     }
 
+    /* Alternative soft-reset combo: L+R+START+SELECT on the physical pad, on
+     * top of the game's own A+B+START+SELECT (SOFT_RESET_KEYS in
+     * src/soft_reset_input.c, the retail GBA combo). Checked on the raw
+     * hardware state, so it works whatever the buttons are remapped to, and
+     * implemented by injecting the four keys the game already looks for --
+     * that way it goes through SoftResetCheck() and keeps honouring
+     * gDisableSoftReset instead of forcing a mode switch from outside. */
+    if ((held3ds & KEY_L) && (held3ds & KEY_R) && (held3ds & KEY_START) && (held3ds & KEY_SELECT)) {
+        gbaKeys |= (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3); /* A | B | SELECT | START */
+    }
+
+    /* Reset trace (issue: a reset reportedly happens on L+R+X in a build with
+     * no debug combos compiled in). Logs once per transition into "the game
+     * can see the soft-reset combo", with the raw 3DS button bits, so the log
+     * distinguishes a real key-combo reset from one coming through the bottom
+     * screen's RESTART button (Port_DebugLog in TriggerGameRestart) or from
+     * neither -- which would point at a crash/other path instead. */
+    {
+        static bool sResetComboWasSeen = false;
+        const uint16_t resetBits = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3);
+        const bool comboSeen = (gbaKeys & resetBits) == resetBits;
+        if (comboSeen && !sResetComboWasSeen) {
+            char msg[96];
+            __builtin_snprintf(msg, sizeof(msg),
+                "RESET TRACE: soft-reset combo visible to game, raw3ds=0x%08X gba=0x%04X",
+                (unsigned)held3ds, (unsigned)gbaKeys);
+            Port_DebugLog(msg);
+        }
+        sResetComboWasSeen = comboSeen;
+    }
+
     gba_write16(MZM_REG_KEY_INPUT, (uint16_t)(~gbaKeys & MZM_KEY_MASK));
 
     if (held3ds & KEY_TOUCH) {

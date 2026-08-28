@@ -35,6 +35,36 @@ void PortGen_baristute_Init(void) {
             p_sBaristuteOam_WalkingExtremelyFast = (const struct FrameData(*)[7])Port_ResolveRomData(0x083111f0u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sBaristuteFallingYVelocity = (const s16(*)[8])Port_ResolveRomData(0x0830f53cu);
+            p_sBaristuteJumpingYVelocity = (const s16(*)[10])Port_ResolveRomData(0x0830f54cu);
+            p_sBaristuteGfx = (const u32(*)[596])Port_ResolveRomData(0x0830f560u);
+            p_sBaristutePal = (const u16(*)[80])Port_ResolveRomData(0x0830feb0u);
+            p_sBaristuteOam_Idle = (const struct FrameData(*)[5])Port_ResolveRomData(0x0831043cu);
+            p_sBaristuteOam_Warning = (const struct FrameData(*)[4])Port_ResolveRomData(0x08310464u);
+            p_sBaristuteOam_Jumping = (const struct FrameData(*)[3])Port_ResolveRomData(0x08310484u);
+            p_sBaristuteOam_Landing = (const struct FrameData(*)[4])Port_ResolveRomData(0x0831049cu);
+            p_sBaristuteOam_WalkingSlow = (const struct FrameData(*)[7])Port_ResolveRomData(0x083104bcu);
+            p_sBaristuteOam_WalkingFast = (const struct FrameData(*)[7])Port_ResolveRomData(0x083104f4u);
+            p_sBaristuteOam_WalkingVeryFast = (const struct FrameData(*)[7])Port_ResolveRomData(0x0831052cu);
+            p_sBaristuteOam_WalkingExtremelyFast = (const struct FrameData(*)[7])Port_ResolveRomData(0x08310564u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sBaristuteFallingYVelocity = (const s16(*)[8])Port_ResolveRomData(0x0830f598u);
+            p_sBaristuteJumpingYVelocity = (const s16(*)[10])Port_ResolveRomData(0x0830f5a8u);
+            p_sBaristuteGfx = (const u32(*)[596])Port_ResolveRomData(0x0830f5bcu);
+            p_sBaristutePal = (const u16(*)[80])Port_ResolveRomData(0x0830ff0cu);
+            p_sBaristuteOam_Idle = (const struct FrameData(*)[5])Port_ResolveRomData(0x08310498u);
+            p_sBaristuteOam_Warning = (const struct FrameData(*)[4])Port_ResolveRomData(0x083104c0u);
+            p_sBaristuteOam_Jumping = (const struct FrameData(*)[3])Port_ResolveRomData(0x083104e0u);
+            p_sBaristuteOam_Landing = (const struct FrameData(*)[4])Port_ResolveRomData(0x083104f8u);
+            p_sBaristuteOam_WalkingSlow = (const struct FrameData(*)[7])Port_ResolveRomData(0x08310518u);
+            p_sBaristuteOam_WalkingFast = (const struct FrameData(*)[7])Port_ResolveRomData(0x08310550u);
+            p_sBaristuteOam_WalkingVeryFast = (const struct FrameData(*)[7])Port_ResolveRomData(0x08310588u);
+            p_sBaristuteOam_WalkingExtremelyFast = (const struct FrameData(*)[7])Port_ResolveRomData(0x083105c0u);
+            break;
+        }
         default:
             break;
     }

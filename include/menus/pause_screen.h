@@ -45,10 +45,21 @@ s32 PauseScreenStatusScreenInit(void);
 s32 PauseScreenQuitStatusScreen(void);
 s32 PauseScreenEasySleepInit(void);
 s32 PauseScreenQuitEasySleep(void);
-#ifdef REGION_EU
+/*
+ * EUR picks between a fast and a slow key-repeat table, so its version takes
+ * a speed; USA/JAP only have the fast table and take no argument. The ports
+ * serve every region from one binary, so there the speed is always a
+ * parameter and the table choice happens at runtime.
+ *
+ * Call it through CHECK_MAINTAINED_INPUT() to stay region-neutral: on the
+ * GBA USA/JAP build the argument is discarded, everywhere else it is passed.
+ */
+#if defined(MZM_3DS) || defined(PORT_NATIVE) || defined(REGION_EU)
 void CheckForMaintainedInput(MaintainedInputSpeed speed);
-#else // !REGION_EU
+#define CHECK_MAINTAINED_INPUT(speed) CheckForMaintainedInput(speed)
+#else
 void CheckForMaintainedInput(void);
-#endif // REGION_EU
+#define CHECK_MAINTAINED_INPUT(speed) ((void)(speed), CheckForMaintainedInput())
+#endif
 
 #endif /* PAUSE_SCREEN_MENU_H */

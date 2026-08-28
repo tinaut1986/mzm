@@ -1,3 +1,4 @@
+#include "region.h"
 #include "minimap.h"
 #include "dma.h"
 #include "gba.h"
@@ -454,10 +455,10 @@ void MinimapDraw(void)
         tile = *tmp & 0x3ff;
         } while(0);
         
-#ifndef REGION_EU
+        /* Hiragana only ever comes from a JAP ROM, so the language test alone
+         * gives every region its retail behaviour. */
         if (gLanguage == LANGUAGE_HIRAGANA && tile > MINIMAP_TILE_BACKGROUND)
             tile += 0x20;
-#endif // !REGION_EU
 
         tile <<= 5;
         sMinimapTilesCopyGfxFunctionPointers[flip](dst, &tile, palette);

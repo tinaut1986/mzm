@@ -35,14 +35,28 @@ static int HasGbaExtension(const char* name) {
            tolower((unsigned char)ext[3]) == 'a';
 }
 
-static int RomIsSupported(const char* path) {
+/* Region priority when several supported ROMs are present in APP_DIR.
+ * Lower rank wins. EU first: it is the reference build the port's
+ * generated offset tables are byte-matched against (US/JP offset tables
+ * land in Step B of multiregion-wip/PLAN.md). Could become an on-screen
+ * picker later; a fixed order keeps FindRom deterministic for now. */
+static int RomRegionRank(const char* gameCode) {
+    if (memcmp(gameCode, "BMXP", 4) == 0) return 0; /* Europe */
+    if (memcmp(gameCode, "BMXE", 4) == 0) return 1; /* USA    */
+    if (memcmp(gameCode, "BMXJ", 4) == 0) return 2; /* Japan  */
+    return -1;
+}
+
+/* Reads the 4-byte GBA game code at header offset 0xAC. Returns the
+ * region rank (>= 0) for a supported ROM, or -1 for anything else. */
+static int RomRegionRankOfFile(const char* path) {
     char gameCode[4];
     FILE* file = fopen(path, "rb");
-    if (!file) return 0;
-    int ok = fseek(file, 0xAC, SEEK_SET) == 0 && fread(gameCode, 1, sizeof(gameCode), file) == sizeof(gameCode) &&
-             (memcmp(gameCode, "BMXE", sizeof(gameCode)) == 0 || memcmp(gameCode, "BMXP", sizeof(gameCode)) == 0);
+    if (!file) return -1;
+    int ok = fseek(file, 0xAC, SEEK_SET) == 0 &&
+             fread(gameCode, 1, sizeof(gameCode), file) == sizeof(gameCode);
     fclose(file);
-    return ok;
+    return ok ? RomRegionRank(gameCode) : -1;
 }
 
 static int FindRom(char* out, size_t outSize) {
@@ -50,6 +64,10 @@ static int FindRom(char* out, size_t outSize) {
     if (!dir) return 0;
 
     int foundGba = 0;
+    int bestRank = -1;
+    char bestName[ROM_PATH_SIZE];
+    bestName[0] = '\0';
+
     struct dirent* entry;
     while ((entry = readdir(dir)) != NULL) {
         if (entry->d_name[0] == '.') continue;
@@ -58,13 +76,26 @@ static int FindRom(char* out, size_t outSize) {
         struct stat info;
         if (stat(entry->d_name, &info) != 0 || !S_ISREG(info.st_mode)) continue;
         foundGba = 1;
-        if (!RomIsSupported(entry->d_name)) continue;
-        snprintf(out, outSize, "%s", entry->d_name);
-        closedir(dir);
-        return 1;
+
+        int rank = RomRegionRankOfFile(entry->d_name);
+        if (rank < 0) continue;
+
+        /* Deterministic selection independent of readdir() order: the
+         * highest-priority region, and within one region the
+         * lexicographically-smallest filename. */
+        if (bestRank < 0 || rank < bestRank ||
+            (rank == bestRank && strcmp(entry->d_name, bestName) < 0)) {
+            bestRank = rank;
+            snprintf(bestName, sizeof(bestName), "%s", entry->d_name);
+        }
     }
 
     closedir(dir);
+
+    if (bestRank >= 0) {
+        snprintf(out, outSize, "%s", bestName);
+        return 1;
+    }
     return foundGba ? -1 : 0;
 }
 
@@ -98,15 +129,17 @@ int main(int argc, char** argv) {
         if (romResult < 0) {
             snprintf(message, sizeof(message),
                      "None of the .gba files in:\n%s\n"
-                     "is a supported USA (BMXE) or Europe (BMXP) ROM.\n\n"
-                     "Expected SHA-1:\nUSA: 5de8536afe1f0078ee6fe1089f890e8c7aa0a6e8\n"
-                     "Europe: 0fd107445a42e6f3a3e5ce8c865f412583179903",
+                     "is a supported Europe (BMXP), USA (BMXE) or Japan (BMXJ) ROM.\n\n"
+                     "Expected SHA-1:\nEurope: 0fd107445a42e6f3a3e5ce8c865f412583179903\n"
+                     "USA: 5de8536afe1f0078ee6fe1089f890e8c7aa0a6e8\n"
+                     "Japan: 096f07685a3dc9286e71aa0b761f233b5efa2fcd",
                      APP_DIR);
         } else {
             snprintf(message, sizeof(message),
-                     "Copy your clean USA or Europe ROM to:\n%s\n\nAny .gba filename is accepted.\n\n"
-                     "Expected SHA-1:\nUSA: 5de8536afe1f0078ee6fe1089f890e8c7aa0a6e8\n"
-                     "Europe: 0fd107445a42e6f3a3e5ce8c865f412583179903",
+                     "Copy your clean Europe, USA or Japan ROM to:\n%s\n\nAny .gba filename is accepted.\n\n"
+                     "Expected SHA-1:\nEurope: 0fd107445a42e6f3a3e5ce8c865f412583179903\n"
+                     "USA: 5de8536afe1f0078ee6fe1089f890e8c7aa0a6e8\n"
+                     "Japan: 096f07685a3dc9286e71aa0b761f233b5efa2fcd",
                      APP_DIR);
         }
         Platform3DS_ShowFatal(romResult < 0 ? "Unsupported ROM" : "ROM not found", message);

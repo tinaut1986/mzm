@@ -23,6 +23,24 @@ void PortGen_glass_tube_Init(void) {
             p_sGlassTubeOam_Broken = (const struct FrameData(*)[2])Port_ResolveRomData(0x0830e2f0u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sGlassTubeGfx = (const u32(*)[514])Port_ResolveRomData(0x0830b218u);
+            p_sGlassTubePal = (const u16(*)[80])Port_ResolveRomData(0x0830ba20u);
+            p_sGlassTubeOam_Intact = (const struct FrameData(*)[2])Port_ResolveRomData(0x0830d55cu);
+            p_sGlassTubeOam_Cracking = (const struct FrameData(*)[12])Port_ResolveRomData(0x0830d56cu);
+            p_sGlassTubeOam_Breaking = (const struct FrameData(*)[19])Port_ResolveRomData(0x0830d5ccu);
+            p_sGlassTubeOam_Broken = (const struct FrameData(*)[2])Port_ResolveRomData(0x0830d664u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sGlassTubeGfx = (const u32(*)[514])Port_ResolveRomData(0x0830b274u);
+            p_sGlassTubePal = (const u16(*)[80])Port_ResolveRomData(0x0830ba7cu);
+            p_sGlassTubeOam_Intact = (const struct FrameData(*)[2])Port_ResolveRomData(0x0830d5b8u);
+            p_sGlassTubeOam_Cracking = (const struct FrameData(*)[12])Port_ResolveRomData(0x0830d5c8u);
+            p_sGlassTubeOam_Breaking = (const struct FrameData(*)[19])Port_ResolveRomData(0x0830d628u);
+            p_sGlassTubeOam_Broken = (const struct FrameData(*)[2])Port_ResolveRomData(0x0830d6c0u);
+            break;
+        }
         default:
             break;
     }

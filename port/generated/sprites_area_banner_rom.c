@@ -29,6 +29,30 @@ void PortGen_area_banner_Init(void) {
             p_sAreaBannerOam_RemovingBottom = (const struct FrameData(*)[8])Port_ResolveRomData(0x082f8f90u);
             break;
         }
+        case PORT_ROM_REGION_US: {
+            p_sAreaBannerGfx = (const u32(*)[65])Port_ResolveRomData(0x082f7c90u);
+            p_sAreaBannerPal = (const u16(*)[16])Port_ResolveRomData(0x082f7d94u);
+            p_sAreaBannerLocationTextPal = (const u16(*)[16])Port_ResolveRomData(0x082f7db4u);
+            p_sAreaBannerOam_StaticMiddle = (const struct FrameData(*)[2])Port_ResolveRomData(0x082f8214u);
+            p_sAreaBannerOam_SpawnMiddle = (const struct FrameData(*)[9])Port_ResolveRomData(0x082f8224u);
+            p_sAreaBannerOam_RemovingMiddle = (const struct FrameData(*)[9])Port_ResolveRomData(0x082f826cu);
+            p_sAreaBannerOam_StaticBottom = (const struct FrameData(*)[2])Port_ResolveRomData(0x082f82b4u);
+            p_sAreaBannerOam_SpawnBottom = (const struct FrameData(*)[8])Port_ResolveRomData(0x082f82c4u);
+            p_sAreaBannerOam_RemovingBottom = (const struct FrameData(*)[8])Port_ResolveRomData(0x082f8304u);
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
+            p_sAreaBannerGfx = (const u32(*)[65])Port_ResolveRomData(0x082f7cecu);
+            p_sAreaBannerPal = (const u16(*)[16])Port_ResolveRomData(0x082f7df0u);
+            p_sAreaBannerLocationTextPal = (const u16(*)[16])Port_ResolveRomData(0x082f7e10u);
+            p_sAreaBannerOam_StaticMiddle = (const struct FrameData(*)[2])Port_ResolveRomData(0x082f8270u);
+            p_sAreaBannerOam_SpawnMiddle = (const struct FrameData(*)[9])Port_ResolveRomData(0x082f8280u);
+            p_sAreaBannerOam_RemovingMiddle = (const struct FrameData(*)[9])Port_ResolveRomData(0x082f82c8u);
+            p_sAreaBannerOam_StaticBottom = (const struct FrameData(*)[2])Port_ResolveRomData(0x082f8310u);
+            p_sAreaBannerOam_SpawnBottom = (const struct FrameData(*)[8])Port_ResolveRomData(0x082f8320u);
+            p_sAreaBannerOam_RemovingBottom = (const struct FrameData(*)[8])Port_ResolveRomData(0x082f8360u);
+            break;
+        }
         default:
             break;
     }

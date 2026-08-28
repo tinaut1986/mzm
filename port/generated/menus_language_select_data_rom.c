@@ -6,7 +6,6 @@
 
 #define LANGUAGE_SELECT_DATA_H
 
-#if (defined(REGION_EU))
 __attribute__((weak)) const u16(*p_sLanguageSelectBgPal)[16*16];
 __attribute__((weak)) const u32(*p_sLanguageSelectGfx)[145];
 __attribute__((weak)) const u32(*p_sLanguageSelectTileTable)[95];
@@ -14,12 +13,10 @@ __attribute__((weak)) const struct LanguageColorAnimation*p_sInitialLanguageColo
 __attribute__((weak)) const u8(*p_sLanguageSelectGameModeSub1Values)[3];
 __attribute__((weak)) const u16(*p_sLanguageSelectLanguageTileTableOffsets)[LANGUAGE_COUNT-LANGUAGE_ENGLISH];
 __attribute__((weak)) const u8(*p_sLanguageTextAnimationPaletteRows)[14];
-#endif
 
 void PortGen_language_select_data_Init(void) {
     switch (gRomRegion) {
         case PORT_ROM_REGION_EU: {
-#if (defined(REGION_EU))
             p_sLanguageSelectBgPal = (const u16(*)[16*16])Port_ResolveRomData(0x0846c990u);
             p_sLanguageSelectGfx = (const u32(*)[145])Port_ResolveRomData(0x0846cb90u);
             p_sLanguageSelectTileTable = (const u32(*)[95])Port_ResolveRomData(0x0846cdd4u);
@@ -27,7 +24,12 @@ void PortGen_language_select_data_Init(void) {
             p_sLanguageSelectGameModeSub1Values = (const u8(*)[3])Port_ResolveRomData(0x0846cf54u);
             p_sLanguageSelectLanguageTileTableOffsets = (const u16(*)[LANGUAGE_COUNT-LANGUAGE_ENGLISH])Port_ResolveRomData(0x0846cf58u);
             p_sLanguageTextAnimationPaletteRows = (const u8(*)[14])Port_ResolveRomData(0x0846cf62u);
-#endif
+            break;
+        }
+        case PORT_ROM_REGION_US: {
+            break;
+        }
+        case PORT_ROM_REGION_JP: {
             break;
         }
         default:
