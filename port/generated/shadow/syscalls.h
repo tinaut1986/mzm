@@ -1,5 +1,5 @@
 /* Shadow copy of include/syscalls.h for the 3DS port -- hand-maintained
- * (unlike port/generated/shadow/data/*.h, this isn't produced by
+ * (unlike the port/generated/shadow/data/ headers, this isn't produced by
  * tools/gen_port_rom_offsets.py), so re-diff against the original after any
  * upstream change to include/syscalls.h. Only the SYSCALL macro differs:
  * see port/port_bios.c for why `swi` can't be used as-is on 3DS and what

@@ -5,13 +5,13 @@
 /*
  * ROM loading and GBA-address resolution for the native (3DS) port.
  *
- * Unlike the GBA build (which compiles src/data/*.c directly into the
- * binary via extracted/*.inc), the native port does NOT bake copyrighted
- * assets into the distributed binary. Instead, the user supplies their own
- * legally-dumped ROM at runtime; this file loads it into gRomData and
- * resolves GBA ROM addresses (0x08000000+) to native pointers into that
+ * Unlike the GBA build (which compiles the src/data/ C files directly into
+ * the binary via the extracted/ includes), the native port does NOT bake
+ * copyrighted assets into the distributed binary. Instead, the user supplies
+ * their own legally-dumped ROM at runtime; this file loads it into gRomData
+ * and resolves GBA ROM addresses (0x08000000+) to native pointers into that
  * buffer. The per-symbol offset tables that make this work for every
- * src/data/*.c symbol are generated from the matching build's .map file —
+ * src/data/ symbol are generated from the matching build's .map file —
  * see tools/gen_port_rom_offsets.py and docs/3ds-port-rom-loading.md.
  */
 

@@ -67,12 +67,12 @@ static inline void* gba_MemPtr(uint32_t addr) {
         return ptr;
 #if defined(__GNUC__)
     void* caller = __builtin_return_address(0);
-    fprintf(stderr, "FATAL: gba_MemPtr: invalid address 0x%08X (called from %p)\n", addr, caller);
+    fprintf(stderr, "FATAL: gba_MemPtr: invalid address 0x%08lX (called from %p)\n", (unsigned long)addr, caller);
 #elif defined(_MSC_VER)
     void* caller = _ReturnAddress();
-    fprintf(stderr, "FATAL: gba_MemPtr: invalid address 0x%08X (called from %p)\n", addr, caller);
+    fprintf(stderr, "FATAL: gba_MemPtr: invalid address 0x%08lX (called from %p)\n", (unsigned long)addr, caller);
 #else
-    fprintf(stderr, "FATAL: gba_MemPtr: invalid address 0x%08X\n", addr);
+    fprintf(stderr, "FATAL: gba_MemPtr: invalid address 0x%08lX\n", (unsigned long)addr);
 #endif
     fflush(stderr);
 #ifdef MZM_3DS
@@ -83,7 +83,7 @@ static inline void* gba_MemPtr(uint32_t addr) {
     {
         extern void Port_DebugLog(const char* msg);
         char msg[128];
-        __builtin_snprintf(msg, sizeof(msg), "FATAL: gba_MemPtr: invalid address 0x%08X (called from %p)", addr, __builtin_return_address(0));
+        __builtin_snprintf(msg, sizeof(msg), "FATAL: gba_MemPtr: invalid address 0x%08lX (called from %p)", (unsigned long)addr, __builtin_return_address(0));
         Port_DebugLog(msg);
     }
 #endif

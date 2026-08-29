@@ -38,7 +38,7 @@ void gba_write8(uint32_t addr, uint8_t v) {
         return;
     }
 
-    printf("gba_write8: unimplemented for address 0x%08X\n", addr);
+    printf("gba_write8: unimplemented for address 0x%08lX\n", (unsigned long)addr);
 }
 
 u8 gba_read8(uint32_t addr) {
@@ -59,7 +59,7 @@ u8 gba_read8(uint32_t addr) {
         return gRomData[addr - 0x08000000u];
     }
 
-    printf("gba_read8: unimplemented for address 0x%08X\n", addr);
+    printf("gba_read8: unimplemented for address 0x%08lX\n", (unsigned long)addr);
     return 0;
 }
 
@@ -107,7 +107,7 @@ void gba_write16(uint32_t addr, uint16_t v) {
         gSramMem[off + 1] = (v >> 8) & 0xFF;
         return;
     }
-    printf("gba_write16: unimplemented for address 0x%08X\n", addr);
+    printf("gba_write16: unimplemented for address 0x%08lX\n", (unsigned long)addr);
 }
 
 u16 gba_read16(uint32_t addr) {
@@ -149,7 +149,7 @@ u16 gba_read16(uint32_t addr) {
         }
     }
 
-    printf("gba_read16: unimplemented for address 0x%08X\n", addr);
+    printf("gba_read16: unimplemented for address 0x%08lX\n", (unsigned long)addr);
     return 0;
 }
 
@@ -216,7 +216,7 @@ void gba_write32(uint32_t addr, uint32_t v) {
         gSramMem[off + 3] = (v >> 24) & 0xFF;
         return;
     }
-    printf("gba_write32: unimplemented for address 0x%08X\n", addr);
+    printf("gba_write32: unimplemented for address 0x%08lX\n", (unsigned long)addr);
 }
 
 u32 gba_read32(uint32_t addr) {
@@ -255,7 +255,7 @@ u32 gba_read32(uint32_t addr) {
         }
     }
 
-    printf("gba_read32: unimplemented for address 0x%08X\n", addr);
+    printf("gba_read32: unimplemented for address 0x%08lX\n", (unsigned long)addr);
     return 0;
 }
 
