@@ -93,6 +93,48 @@ extern void Port_GpuRenderer_GetLastFrameStats(int* outItems, int* outObjItems, 
 static PortBottomTab sCurrentTab = BOTTOM_TAB_MAP;
 static uint32_t sFrameCounter = 0;
 
+/* Bottom-screen redraw throttle.
+ *
+ * Every view here is rasterised from scratch each call: the 5x7 bitmap font
+ * and DrawAuthenticMapTile both emit one C2D_DrawRectSolid per pixel run,
+ * so a text-heavy DEBUG view or a zoomed-out MAP view is several thousand
+ * immediate-mode quads assembled on the main thread every frame. With the
+ * game frame already sitting on the 16.6ms vsync edge that was enough to
+ * push it over -- MAP at 1X measured ~30fps, at 3X (far fewer cells on
+ * screen) a full 60. None of this content needs 60Hz: redraw it at ~20Hz
+ * and reuse the persistent render target on the frames in between. A
+ * genuine change (tab switch, zoom, pan, any touch) forces the next frame
+ * to redraw immediately via Port_BottomUI_MarkDirty so interaction still
+ * feels instant. */
+#define PORT_BOTTOM_UI_REDRAW_INTERVAL 3 /* frames; 3 -> ~20Hz at 60fps */
+static bool sBottomUiDirty = true;
+static uint32_t sBottomUiRedrawThrottle = 0;
+
+void Port_BottomUI_MarkDirty(void) { sBottomUiDirty = true; }
+
+/* Called once per frame (even on frames the UI is not redrawn) so time-based
+ * state keeps advancing: the blink counter and the RA session pump. */
+void Port_BottomUI_FrameTick(void) {
+    extern void Port_RA_Update(void); /* port_retroachievements_3ds.h, included below */
+    ++sFrameCounter;
+    Port_RA_Update();
+}
+
+/* Whether Port_BottomUI_Render should run this frame. Has the side effect of
+ * advancing the throttle, so call exactly once per frame. */
+bool Port_BottomUI_WantsRedraw(void) {
+    if (sBottomUiDirty) {
+        sBottomUiDirty = false;
+        sBottomUiRedrawThrottle = 0;
+        return true;
+    }
+    if (++sBottomUiRedrawThrottle >= PORT_BOTTOM_UI_REDRAW_INTERVAL) {
+        sBottomUiRedrawThrottle = 0;
+        return true;
+    }
+    return false;
+}
+
 /* Modals & Overlays */
 static bool sShowRemapModal = false;
 static int sRemapSelectButtonIdx = -1; /* >= 0 when action picker popup is open */
@@ -217,13 +259,13 @@ static bool sIsDragging = false;
 static bool sIsTouchDragging = false;
 
 int Port_BottomUI_GetZoom(void) { return sZoomLevel; }
-void Port_BottomUI_SetZoom(int zoom) { if (zoom >= 0 && zoom <= 2) sZoomLevel = zoom; }
+void Port_BottomUI_SetZoom(int zoom) { if (zoom >= 0 && zoom <= 2) { sZoomLevel = zoom; Port_BottomUI_MarkDirty(); } }
 
 int Port_BottomUI_GetViewArea(void) { return (int)sViewArea; }
-void Port_BottomUI_SetViewArea(int area) { if (area >= 0 && area <= 6) sViewArea = (uint8_t)area; }
+void Port_BottomUI_SetViewArea(int area) { if (area >= 0 && area <= 6) { sViewArea = (uint8_t)area; Port_BottomUI_MarkDirty(); } }
 
 bool Port_BottomUI_GetFollowSamus(void) { return sFollowSamus; }
-void Port_BottomUI_SetFollowSamus(bool follow) { sFollowSamus = follow; }
+void Port_BottomUI_SetFollowSamus(bool follow) { sFollowSamus = follow; Port_BottomUI_MarkDirty(); }
 
 static const char* GetAspectRatioDisplayName(int lang);
 static const char* GetDisplayStyleDisplayName(int lang);
@@ -563,6 +605,7 @@ void Port_BottomUI_Init(void) {
 void Port_BottomUI_SetTab(PortBottomTab tab) {
     if (tab < BOTTOM_TAB_COUNT) {
         sCurrentTab = tab;
+        Port_BottomUI_MarkDirty();
     }
 }
 
@@ -587,6 +630,10 @@ static bool GetActiveChozoTarget(uint8_t* outArea, uint8_t* outX, uint8_t* outY)
 extern void Port_Config_Save(void);
 
 void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
+    /* Any stylus contact can move something (pan, button, modal); redraw the
+     * next frame instead of waiting for the throttle. */
+    Port_BottomUI_MarkDirty();
+
     /* 4-Tab Top Navigation Bar (Y: 2 to 24) */
     if (y >= 2 && y <= 24) {
         if (isNewTap) {
@@ -3094,7 +3141,8 @@ static void RenderDebugView(void) {
 }
 
 void Port_BottomUI_Render(void) {
-    ++sFrameCounter;
+    /* sFrameCounter is advanced by Port_BottomUI_FrameTick every frame, not
+     * here -- this function is throttled (see Port_BottomUI_WantsRedraw). */
 
     /* Background clear for UI — blinks during low health to catch attention.
      * Blink pattern: 14 frames ON (warning color), 14 frames dimmed.
@@ -3138,8 +3186,8 @@ void Port_BottomUI_Render(void) {
             break;
     }
 
-    /* Update and render RetroAchievements toast if active */
-    Port_RA_Update();
+    /* RA session pump runs every frame in Port_BottomUI_FrameTick; here we
+     * only draw the toast (if one is active) onto this frame's target. */
     Port_RA_RenderToastOverlay();
 
     /* L+R+START scene recorder indicator (platform_gpu_3ds.c) -- drawn last,

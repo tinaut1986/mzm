@@ -539,7 +539,20 @@ bool PlatformGpu3DS_EndBottom(const uint32_t* pixels, bool changed) {
         }
     }
 #endif
-    if (!sOld3DSProfile || changed || !sBottomTargetValid) {
+    /* `changed` is always true from the callers and is no longer the redraw
+     * signal: the bottom UI owns its own cadence now. It advances per-frame
+     * state every frame, but the actual rasterise (several thousand
+     * immediate-mode quads for a text/map view -- enough to tip the game
+     * frame past the vsync budget) only runs on a ~20Hz throttle, or
+     * immediately after any interaction. The persistent render target is
+     * scanned out unchanged on the frames in between. */
+    (void)changed;
+    extern void Port_BottomUI_FrameTick(void);
+    extern bool Port_BottomUI_WantsRedraw(void);
+    Port_BottomUI_FrameTick();
+    const bool redrawBottom = Port_BottomUI_WantsRedraw();
+
+    if (redrawBottom || !sBottomTargetValid) {
         C2D_TargetClear(sBottomTarget, C2D_Color32(0, 0, 0, 255));
         C2D_SceneBegin(sBottomTarget);
         PlatformGpu3DS_ResetSolidTexEnv();

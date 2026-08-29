@@ -29,6 +29,20 @@ void Port_BottomUI_HandleTouchDrag(int touchX, int touchY, bool isNewTap);
 void Port_BottomUI_TouchReleased(void);
 void Port_BottomUI_Render(void);
 
+/* Advance per-frame state (blink counter, RA session pump). Call every frame,
+ * even when the UI itself is not redrawn this frame. */
+void Port_BottomUI_FrameTick(void);
+
+/* Whether Port_BottomUI_Render needs to run this frame. The bottom screen is
+ * otherwise redrawn on a throttle (see PORT_BOTTOM_UI_REDRAW_INTERVAL) and
+ * the persistent render target reused in between. Advances the throttle, so
+ * call exactly once per frame. */
+bool Port_BottomUI_WantsRedraw(void);
+
+/* Force the next frame to redraw the bottom screen regardless of the
+ * throttle -- call on any change the user should see immediately. */
+void Port_BottomUI_MarkDirty(void);
+
 /* Returns true if the Debug tab should be visible (debug builds only).
  * In production builds PORT_DEBUG_TOOLS_ACTIVE is not defined, so this
  * returns false and the tab is hidden from the tab bar. */
