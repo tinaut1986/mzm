@@ -43,6 +43,20 @@ extern uint8_t gBgPltt[];
 extern uint8_t gObjPltt[];
 extern uint8_t gOamMem[];
 
+/* Power-bomb explosion state, for the issue #28 circular-flash pass below.
+ * Declared as raw bytes rather than via structs/power_bomb_explosion.h so
+ * this file keeps not including any GBA-port header that would drag in the
+ * conflicting u32 typedef alongside <3ds.h> (see port_ppu_mzm.c's header
+ * note). Field offsets mirror struct PowerBomb
+ * (include/structs/power_bomb_explosion.h):
+ *   [0] u8  animationState (PB_STATE_EXPLODING=3, PB_STATE_IMPLODING=4)
+ *   [2] u8  semiMinorAxis  (grows 4..159 while expanding, in screen px)
+ *   [4] u16 xPosition      (sub-pixel world X of the epicentre)
+ *   [6] u16 yPosition      (sub-pixel world Y) */
+extern uint8_t gCurrentPowerBomb[];
+extern uint16_t gBg1XPosition;
+extern uint16_t gBg1YPosition;
+
 static bool sGpuRendererActive = false;
 static bool sInitialized = false;
 
@@ -535,6 +549,29 @@ static inline bool BldIsFirstTarget(uint16_t bldcnt, int layerId) { return ((bld
 static bool sWindowActive;
 static int sWinLeft, sWinTop, sWinRight, sWinBottom;
 static WindowVis sLayerWinVis[5]; /* index 0-3 = BG0-3, 4 = OBJ, same layer-id convention as BldIsFirstTarget */
+
+/* Power-bomb explosion circular flash (issue #28).
+ *
+ * On GBA the explosion darkens every BG via BLDCNT brightness-decrease
+ * (BLDY) and carves a bright expanding "hole" out of it by resizing the
+ * WIN1 rectangle every scanline via an HBlank DMA into REG_WIN1H. This port
+ * emulates neither HBlank DMA nor per-scanline IO, so WIN1H stays frozen at
+ * 0 -> the darken covers the whole screen uniformly and the circle never
+ * appears ("la pantalla se pone oscura pero no se ve el brillo circular").
+ *
+ * Rather than reintroduce per-scanline work on the CPU, RenderFrame detects
+ * the effect (DetectPowerBombFlash) from the live explosion state, draws the
+ * scene at full brightness (sBldEffect forced to 0 so no darken is baked
+ * into tiles, sWindowActive forced off so the zero-width WIN1 rect stops
+ * clipping BG3), then in the per-eye pass lays a translucent-black annulus
+ * over everything outside an ellipse centred on the epicentre -- the darken
+ * and the bright hole, done entirely on the GPU as ~128 triangles. Fidelity
+ * notes: the hole is a smooth ellipse, not GBA's stair-stepped per-line
+ * shape; sprites outside the ellipse get dimmed too (GBA only darkens BGs);
+ * BG3-outside-the-circle is not re-hidden. */
+static bool sPbFlashActive;
+static float sPbFlashCxGba, sPbFlashCyGba, sPbFlashRxGba, sPbFlashRyGba;
+static int sPbFlashEvy;
 
 /* OBJ-window (OBJWIN, DISPCNT bit15) state: a second, mutually-exclusive-
  * with-sWindowActive clipping source (Port_GpuRenderer_CanRenderFrame
@@ -1588,6 +1625,57 @@ static inline C2D_DrawParams BuildDrawParams(const DrawItem* item, float screenB
     return params;
 }
 
+/* Recognise the power-bomb explosion darken+hole frame (issue #28, see
+ * sPbFlashActive's comment) and derive the bright ellipse from the live
+ * explosion state. Gate: the explosion AI is mid-blast
+ * (gCurrentPowerBomb.animationState EXPLODING or IMPLODING) AND BLDCNT is in
+ * brightness-decrease mode with the 4 BGs as first target -- the exact
+ * BLDCNT src/haze.c sets for HAZE_VALUE_POWER_BOMB_EXPANDING/_RETRACTING.
+ * Nothing else in the game combines those. Ellipse: centre = epicentre
+ * minus BG1 scroll (same transform src/haze.c's Haze_PowerBombExpanding
+ * uses), vertical radius = semiMinorAxis (screen px), horizontal radius =
+ * 2x that (the game scales the window's X extent by 2). Read from
+ * gCurrentPowerBomb, not gHazeValues, so it does not depend on the
+ * HBlank/haze DMA plumbing this port stubs out. */
+static bool DetectPowerBombFlash(void) {
+    unsigned pbState = gCurrentPowerBomb[0];
+    if (pbState != 3u && pbState != 4u) return false;   /* not EXPLODING / IMPLODING */
+
+    uint16_t bldcnt = (uint16_t)(gIoMem[0x50] | (gIoMem[0x51] << 8));
+    if (((bldcnt >> 6) & 3u) != 3u) return false;       /* not brightness-decrease */
+    if ((bldcnt & 0x3Fu) != 0x0Fu) return false;        /* first target != {BG0..BG3} */
+
+    unsigned semiMinor = gCurrentPowerBomb[2];
+    if (semiMinor == 0u) return false;                  /* nothing to carve yet */
+
+    int pbX = (int)(gCurrentPowerBomb[4] | (gCurrentPowerBomb[5] << 8));
+    int pbY = (int)(gCurrentPowerBomb[6] | (gCurrentPowerBomb[7] << 8));
+    sPbFlashCxGba = (float)(pbX - (int)gBg1XPosition) / 4.0f; /* SUB_PIXEL_TO_PIXEL */
+    sPbFlashCyGba = (float)(pbY - (int)gBg1YPosition) / 4.0f;
+    sPbFlashRyGba = (float)semiMinor;
+    sPbFlashRxGba = (float)semiMinor * 2.0f;
+
+    uint16_t bldy = (uint16_t)(gIoMem[0x54] | (gIoMem[0x55] << 8));
+    int evy = (int)(bldy & 0x1Fu);
+    if (evy > 16) evy = 16;
+    sPbFlashEvy = evy;
+
+#ifdef PORT_GPU_RENDERER_DIAG_LOG
+    {
+        static unsigned sPbLogCounter;
+        if ((sPbLogCounter++ % 8u) == 0u) {
+            char buf[128];
+            snprintf(buf, sizeof(buf),
+                     "PBFLASH state=%u semiMinor=%u c=(%.0f,%.0f) r=(%.0f,%.0f) evy=%d",
+                     pbState, semiMinor, (double)sPbFlashCxGba, (double)sPbFlashCyGba,
+                     (double)sPbFlashRxGba, (double)sPbFlashRyGba, sPbFlashEvy);
+            Port_DebugLog(buf);
+        }
+    }
+#endif
+    return true;
+}
+
 /* Whether this item should be drawn in the current window-clip scissor pass
  * -- see the two-pass NORMAL/INVERT scheme in Port_GpuRenderer_RenderFrame's
  * draw loop (an ALWAYS item is drawn in BOTH passes; since the two passes'
@@ -1681,6 +1769,15 @@ void Port_GpuRenderer_RenderFrame(void) {
     sBldEvy = (int)(bldy & 0x1Fu);
     if (sBldEvy > 16) sBldEvy = 16;
 
+    /* Power-bomb explosion circular flash (issue #28, see sPbFlashActive).
+     * When it fires, suppress the whole-screen darken bake (sBldEffect 0);
+     * the darken is reapplied only outside the hole in the per-eye pass at
+     * the end of RenderFrame. sWindowActive is cleared right after the
+     * window block below so the degenerate zero-width WIN1 rect doesn't clip
+     * BG3. */
+    sPbFlashActive = DetectPowerBombFlash();
+    if (sPbFlashActive) sBldEffect = 0;
+
     /* Window-clip state (see sWindowActive's comment): exactly one of
      * WIN0/WIN1 clipping is the only case Port_GpuRenderer_CanRenderFrame
      * lets through (both simultaneously clipping still falls back), so at
@@ -1732,6 +1829,13 @@ void Port_GpuRenderer_RenderFrame(void) {
             sLayerWinVis[4] = ComputeLayerWinVis(insideMask, outsideMask, 4);
         }
     }
+
+    /* Power-bomb flash (issue #28): the game's WIN1 rect is zero-width here
+     * (its per-scanline resize is exactly what this port can't do), which as
+     * a real clip would drop BG3 entirely. The circular darken is drawn
+     * separately at the end of RenderFrame, so just disable window clipping
+     * for this frame. */
+    if (sPbFlashActive) sWindowActive = false;
 
     /* OBJWIN state (see sObjWindowActive's comment): mutually exclusive
      * with sWindowActive by construction (Port_GpuRenderer_CanRenderFrame
@@ -2021,6 +2125,50 @@ void Port_GpuRenderer_RenderFrame(void) {
             }
         }
         if (blendModeActive) {
+            C2D_Flush();
+            C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
+        }
+
+        /* Power-bomb explosion circular flash (issue #28, see sPbFlashActive):
+         * the scene above was drawn at full brightness; now lay translucent
+         * black over everything OUTSIDE the bright ellipse to recreate the
+         * BLDY darken + expanding hole, as a triangle annulus between the
+         * ellipse edge and a box well outside the 400x240 screen (so all
+         * four corners are covered). GPU_CONSTANT_ALPHA blend with Ac =
+         * evy/16 matches GBA's brightness-decrease-toward-black fraction. */
+        if (sPbFlashActive && sPbFlashEvy > 0) {
+            C2D_Flush();
+            u32 darkA = (u32)((sPbFlashEvy * 255) / 16);
+            C3D_BlendingColor(C2D_Color32(0, 0, 0, darkA));
+            C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_CONSTANT_ALPHA, GPU_ONE_MINUS_CONSTANT_ALPHA,
+                           GPU_CONSTANT_ALPHA, GPU_ONE_MINUS_CONSTANT_ALPHA);
+
+            const u32 c = C2D_Color32(0, 0, 0, 255); /* vertex colour unused: blend is CONSTANT_ALPHA */
+            float cx = screenBaseX + sPbFlashCxGba * scaleX;
+            float cy = screenBaseY + sPbFlashCyGba * scaleY;
+            float rx = sPbFlashRxGba * scaleX;
+            float ry = sPbFlashRyGba * scaleY;
+            if (rx < 1.0f) rx = 1.0f;
+            if (ry < 1.0f) ry = 1.0f;
+
+            const int kSeg = 64;
+            float pix = 0.0f, piy = 0.0f, pox = 0.0f, poy = 0.0f;
+            for (int i = 0; i <= kSeg; ++i) {
+                float a = (float)i * (2.0f * (float)M_PI / (float)kSeg);
+                float ca = cosf(a), sa = sinf(a);
+                float ix = cx + rx * ca;
+                float iy = cy + ry * sa;
+                float m = fabsf(ca) > fabsf(sa) ? fabsf(ca) : fabsf(sa);
+                if (m < 1e-4f) m = 1e-4f;
+                float ox = cx + 600.0f * ca / m; /* on a half-600 box around the centre */
+                float oy = cy + 600.0f * sa / m;
+                if (i > 0) {
+                    C2D_DrawTriangle(pix, piy, c, pox, poy, c, ix, iy, c, 0.0f);
+                    C2D_DrawTriangle(pox, poy, c, ox, oy, c, ix, iy, c, 0.0f);
+                }
+                pix = ix; piy = iy; pox = ox; poy = oy;
+            }
+
             C2D_Flush();
             C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
         }
