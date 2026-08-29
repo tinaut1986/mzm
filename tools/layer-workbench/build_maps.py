@@ -18,7 +18,7 @@ import struct
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 
-# Si estamos en un worktree secundario, enlazar data/ y include/extracted/ del repositorio principal
+# Si estamos en un worktree secundario, enlazar recursos extraídos del repositorio principal
 try:
     _common_git = subprocess.check_output(
         ["git", "rev-parse", "--git-common-dir"],
@@ -26,9 +26,9 @@ try:
         stderr=subprocess.DEVNULL,
         text=True
     ).strip()
-    _main_root = os.path.abspath(os.path.join(ROOT, _common_git, ".."))
+    _main_root = os.path.abspath(os.path.join(_common_git, ".."))
     if os.path.isdir(_main_root) and _main_root != ROOT:
-        for _item in ("include/extracted", "data"):
+        for _item in ("include/extracted", "data/rooms", "data/tilesets"):
             _src = os.path.join(_main_root, _item.replace("/", os.sep))
             _dst = os.path.join(ROOT, _item.replace("/", os.sep))
             if os.path.exists(_src) and not os.path.exists(_dst):

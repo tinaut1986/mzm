@@ -146,6 +146,20 @@
   .wbtns { display:flex; align-items:center; gap:3px; margin-left:auto; }
   .wbtns button.wb { padding:0 6px; font-size:11px; line-height:16px; border-radius:2px; }
   .wbtns button.wb.vista { font-size:9.5px; letter-spacing:.06em; padding:0 7px; }
+  .wbtns .stage-layers { display:flex; align-items:center; gap:2px; margin-right:4px; }
+  .wbtns button.wb.laytoggle {
+    font-size:10px; font-weight:700; padding:0 5px; line-height:16px; border-radius:2px;
+    font-family:"JetBrains Mono",monospace;
+    transition:background .15s, color .15s, border-color .15s, opacity .15s;
+  }
+  .wbtns button.wb.laytoggle.on {
+    background:var(--accent); color:var(--accent-ink); border-color:var(--accent);
+  }
+  .wbtns button.wb.laytoggle.off {
+    background:transparent; color:var(--dim); border-color:var(--line); opacity:.45;
+    text-decoration:line-through;
+  }
+  .wbtns button.wb.laytoggle:hover { opacity:1; }
 
   /* Barra de ventanas minimizadas. */
   #minbar { position:fixed; left:0; right:0; bottom:0; z-index:70; display:flex;
@@ -464,17 +478,20 @@
     var order=[0,1,2,3].sort(function(a,b){
       var pa=state.prio[a],pb=state.prio[b];return pa!==pb?pb-pa:b-a;});
     var bl=state.blend;
+    var vis=state.stageLayers||{0:true,1:true,2:true,3:true,obj:true,4:true};
     order.forEach(function(bg){
-      if(state.on[bg]){
-        if(bl&&bl.first.indexOf(bg)>=0) overBlend(out,A.layers[bg],bl.eva,bl.evb);
-        else over(out,A.layers[bg]);
+      if(vis[bg]!==false){
+        if(state.on[bg]){
+          if(bl&&bl.first.indexOf(bg)>=0) overBlend(out,A.layers[bg],bl.eva,bl.evb);
+          else over(out,A.layers[bg]);
+        }
+        /* Un bloque movido se pinta tal cual: la corrección cambia su plano de
+           profundidad, no cómo se mezcla. */
+        A.moved.forEach(function(m){ if(m.dest===bg) over(out,m.px); });
       }
-      /* Un bloque movido se pinta tal cual: la corrección cambia su plano de
-         profundidad, no cómo se mezcla. */
-      A.moved.forEach(function(m){ if(m.dest===bg) over(out,m.px); });
     });
-    if(state.obj) over(out,state.obj.img);
-    A.moved.forEach(function(m){ if(m.dest===4) over(out,m.px); });
+    if(state.obj && vis.obj!==false) over(out,state.obj.img);
+    if(vis[4]!==false) A.moved.forEach(function(m){ if(m.dest===4) over(out,m.px); });
     return out;
   }
 
@@ -763,8 +780,9 @@
 
      Desde una capa concreta, sólo esa. */
   function commitBox(box,add){
+    var vis=state.stageLayers||{0:true,1:true,2:true,3:true};
     var capas=(box.bg===null)
-      ? [0,1,2,3].filter(function(b){return state.on[b];})
+      ? [0,1,2,3].filter(function(b){return state.on[b] && (vis[b]!==false);})
       : [box.bg];
     if(!add){ selMore={};sel=null; }
     var cs=cellSize(),primero=null;
@@ -1113,6 +1131,66 @@
     return {card:d,body:body};
   }
 
+  function stageLayerControls(){
+    var wrap=document.createElement("span");wrap.className="stage-layers";
+    if(!state)return wrap;
+    if(!state.stageLayers){
+      state.stageLayers={0:true,1:true,2:true,3:true,obj:true,4:true};
+    }
+    var available=[];
+    [0,1,2,3].forEach(function(bg){
+      if(state.on&&state.on[bg])available.push(bg);
+    });
+    if(state.obj)available.push("obj");
+
+    available.forEach(function(key){
+      var btn=document.createElement("button");
+      var on=state.stageLayers[key]!==false;
+      btn.className="wb laytoggle "+(on?"on":"off");
+      btn.textContent=(key==="obj"?"OBJ":"BG"+key);
+      btn.title=(key==="obj"?"Sprites (OBJ)":"Capa BG"+key)+
+                " en el resultado (Clic: mostrar/ocultar · Ctrl+clic: aislar)";
+      btn.addEventListener("pointerdown",function(e){e.stopPropagation();});
+      btn.addEventListener("click",function(e){
+        e.stopPropagation();
+        if(e.ctrlKey||e.metaKey){
+          var isOnly=true;
+          available.forEach(function(k){
+            if(k!==key&&state.stageLayers[k]!==false)isOnly=false;
+          });
+          available.forEach(function(k){
+            state.stageLayers[k]=isOnly?true:(k===key);
+          });
+        }else{
+          state.stageLayers[key]=(state.stageLayers[key]===false)?true:false;
+        }
+        updateButtons();redraw();
+      });
+      btn.addEventListener("contextmenu",function(e){
+        e.preventDefault();e.stopPropagation();
+        var isOnly=true;
+        available.forEach(function(k){
+          if(k!==key&&state.stageLayers[k]!==false)isOnly=false;
+        });
+        available.forEach(function(k){
+          state.stageLayers[k]=isOnly?true:(k===key);
+        });
+        updateButtons();redraw();
+      });
+      wrap.appendChild(btn);
+    });
+
+    function updateButtons(){
+      Array.prototype.forEach.call(wrap.querySelectorAll(".laytoggle"),function(b,i){
+        var k=available[i];
+        var on=state.stageLayers[k]!==false;
+        b.className="wb laytoggle "+(on?"on":"off");
+      });
+    }
+
+    return wrap;
+  }
+
   function buildMain(){
     var C=state.C;
     els.main.innerHTML="";
@@ -1129,7 +1207,7 @@
 
     /* --- resultado --- */
     var known=C.area!==null;
-    var sp=makePanel("stage","Resultado <i>con las correcciones aplicadas</i>");
+    var sp=makePanel("stage","Resultado <i>con las correcciones aplicadas</i>",stageLayerControls());
     var sc=document.createElement("div");sc.className="scroller stage";
     var cv=document.createElement("canvas");sc.appendChild(cv);
     registerScroller(sc,{cv:cv,bg:null});
@@ -2296,6 +2374,12 @@
       var celdas=roomCells(maps.areas.kraid[k7]);
       eq(celdas.length,6,"huella de kraid 7");
     }
+
+    /* Filtro de capas en el resultado: conmutar visibilidad afecta a composite. */
+    state.stageLayers={0:false,1:true,2:true,3:true,obj:true,4:true};
+    var compNo0=composite(A);
+    ok(compNo0!==null,"composite con BG0 desactivada");
+    state.stageLayers={0:true,1:true,2:true,3:true,obj:true,4:true};
 
     fixes={};clearSel();
     return {n:n,fallos:fallos};

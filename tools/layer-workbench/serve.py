@@ -38,7 +38,7 @@ def newest(*paths):
 
 
 def link_worktree_assets():
-    """Si estamos en un worktree secundario, enlaza data y include/extracted del repo principal."""
+    """Si estamos en un worktree secundario, enlaza recursos extraídos del repo principal."""
     try:
         common_git = subprocess.check_output(
             ["git", "rev-parse", "--git-common-dir"],
@@ -46,9 +46,9 @@ def link_worktree_assets():
             stderr=subprocess.DEVNULL,
             text=True
         ).strip()
-        main_root = os.path.abspath(os.path.join(ROOT, common_git, ".."))
+        main_root = os.path.abspath(os.path.join(common_git, ".."))
         if os.path.isdir(main_root) and main_root != ROOT:
-            for item in ("include/extracted", "data"):
+            for item in ("include/extracted", "data/rooms", "data/tilesets"):
                 src_item = os.path.join(main_root, item.replace("/", os.sep))
                 dst_item = os.path.join(ROOT, item.replace("/", os.sep))
                 if os.path.exists(src_item) and not os.path.exists(dst_item):
@@ -56,6 +56,9 @@ def link_worktree_assets():
                     try:
                         if hasattr(os, "symlink"):
                             os.symlink(src_item, dst_item)
+                        else:
+                            import shutil
+                            shutil.copytree(src_item, dst_item)
                     except Exception:
                         pass
     except Exception:
