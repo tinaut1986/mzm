@@ -280,14 +280,22 @@ LIBS     := -L$(CTRULIB)/lib -L$(PORTLIBS)/lib -lcitro2d -lcitro3d -lctru -lm
 MAKEROM    ?= $(firstword $(wildcard $(ROOT)/tools/bin/makerom $(HOME)/tools/bin/makerom $(DEVKITPRO)/tools/bin/makerom $(shell which makerom 2>/dev/null)))
 BANNERTOOL ?= $(firstword $(wildcard $(ROOT)/tools/bin/bannertool $(HOME)/tools/bin/bannertool $(DEVKITPRO)/tools/bin/bannertool $(shell which bannertool 2>/dev/null)))
 
-# La lista de correcciones es un include opcional, y cuando port_layer_fixes.c
-# se compiló por primera vez todavía no existía: su .d no la menciona y make no
-# reconstruye al añadirla. Explícito, entonces.
-$(BUILD)/port_layer_fixes.o: $(wildcard $(CURDIR)/source/port_layer_fixes.inc)
-
 .PHONY: all clean cia elf 3dsx print-version ftp test
 
+# `all` must be the default goal. Keep it as the first real target rule in the
+# file: an explicit-target rule placed above it (with no recipe, e.g. an extra
+# prerequisite line) would silently become the default goal instead -- that is
+# exactly what happened when the port_layer_fixes.o dep line below sat here, so
+# a bare `make` built one object and stopped, and CI's `cp mzm-3ds.cia` failed.
+.DEFAULT_GOAL := all
+
 all: $(TARGET).cia
+
+# La lista de correcciones es un include opcional, y cuando port_layer_fixes.c
+# se compiló por primera vez todavía no existía: su .d no la menciona y make no
+# reconstruye al añadirla. Explícito, entonces. La ruta es la del patrón
+# $(BUILD)/3ds/%.o (ver más abajo), no $(BUILD)/%.o.
+$(BUILD)/3ds/source/port_layer_fixes.o: $(wildcard $(CURDIR)/source/port_layer_fixes.inc)
 
 cia: $(TARGET).cia
 
