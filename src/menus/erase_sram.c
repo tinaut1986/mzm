@@ -35,25 +35,28 @@ void Init_sEraseSramTextGfxPointers(void) {
     sEraseSramTextGfxPointers[LANGUAGE_HIRAGANA][1] = sEraseSramMenuConfirmJapaneseGfx;
     sEraseSramTextGfxPointers[LANGUAGE_ENGLISH][0] = sEraseSramMenuQuestionEnglishGfx;
     sEraseSramTextGfxPointers[LANGUAGE_ENGLISH][1] = sEraseSramMenuConfirmEnglishGfx;
-#if defined(REGION_EU) || defined(REGION_US_BETA)
-    sEraseSramTextGfxPointers[LANGUAGE_GERMAN][0] = sEraseSramMenuQuestionGermanGfx;
-    sEraseSramTextGfxPointers[LANGUAGE_GERMAN][1] = sEraseSramMenuConfirmGermanGfx;
-    sEraseSramTextGfxPointers[LANGUAGE_FRENCH][0] = sEraseSramMenuQuestionFrenchGfx;
-    sEraseSramTextGfxPointers[LANGUAGE_FRENCH][1] = sEraseSramMenuConfirmFrenchGfx;
-    sEraseSramTextGfxPointers[LANGUAGE_ITALIAN][0] = sEraseSramMenuQuestionItalianGfx;
-    sEraseSramTextGfxPointers[LANGUAGE_ITALIAN][1] = sEraseSramMenuConfirmItalianGfx;
-    sEraseSramTextGfxPointers[LANGUAGE_SPANISH][0] = sEraseSramMenuQuestionSpanishGfx;
-    sEraseSramTextGfxPointers[LANGUAGE_SPANISH][1] = sEraseSramMenuConfirmSpanishGfx;
-#else
-    sEraseSramTextGfxPointers[LANGUAGE_GERMAN][0] = sEraseSramMenuQuestionEnglishGfx;
-    sEraseSramTextGfxPointers[LANGUAGE_GERMAN][1] = sEraseSramMenuConfirmEnglishGfx;
-    sEraseSramTextGfxPointers[LANGUAGE_FRENCH][0] = sEraseSramMenuQuestionEnglishGfx;
-    sEraseSramTextGfxPointers[LANGUAGE_FRENCH][1] = sEraseSramMenuConfirmEnglishGfx;
-    sEraseSramTextGfxPointers[LANGUAGE_ITALIAN][0] = sEraseSramMenuQuestionEnglishGfx;
-    sEraseSramTextGfxPointers[LANGUAGE_ITALIAN][1] = sEraseSramMenuConfirmEnglishGfx;
-    sEraseSramTextGfxPointers[LANGUAGE_SPANISH][0] = sEraseSramMenuQuestionEnglishGfx;
-    sEraseSramTextGfxPointers[LANGUAGE_SPANISH][1] = sEraseSramMenuConfirmEnglishGfx;
-#endif
+    if (REGION_IS_EU())
+    {
+        sEraseSramTextGfxPointers[LANGUAGE_GERMAN][0] = sEraseSramMenuQuestionGermanGfx;
+        sEraseSramTextGfxPointers[LANGUAGE_GERMAN][1] = sEraseSramMenuConfirmGermanGfx;
+        sEraseSramTextGfxPointers[LANGUAGE_FRENCH][0] = sEraseSramMenuQuestionFrenchGfx;
+        sEraseSramTextGfxPointers[LANGUAGE_FRENCH][1] = sEraseSramMenuConfirmFrenchGfx;
+        sEraseSramTextGfxPointers[LANGUAGE_ITALIAN][0] = sEraseSramMenuQuestionItalianGfx;
+        sEraseSramTextGfxPointers[LANGUAGE_ITALIAN][1] = sEraseSramMenuConfirmItalianGfx;
+        sEraseSramTextGfxPointers[LANGUAGE_SPANISH][0] = sEraseSramMenuQuestionSpanishGfx;
+        sEraseSramTextGfxPointers[LANGUAGE_SPANISH][1] = sEraseSramMenuConfirmSpanishGfx;
+    }
+    else
+    {
+        sEraseSramTextGfxPointers[LANGUAGE_GERMAN][0] = sEraseSramMenuQuestionEnglishGfx;
+        sEraseSramTextGfxPointers[LANGUAGE_GERMAN][1] = sEraseSramMenuConfirmEnglishGfx;
+        sEraseSramTextGfxPointers[LANGUAGE_FRENCH][0] = sEraseSramMenuQuestionEnglishGfx;
+        sEraseSramTextGfxPointers[LANGUAGE_FRENCH][1] = sEraseSramMenuConfirmEnglishGfx;
+        sEraseSramTextGfxPointers[LANGUAGE_ITALIAN][0] = sEraseSramMenuQuestionEnglishGfx;
+        sEraseSramTextGfxPointers[LANGUAGE_ITALIAN][1] = sEraseSramMenuConfirmEnglishGfx;
+        sEraseSramTextGfxPointers[LANGUAGE_SPANISH][0] = sEraseSramMenuQuestionEnglishGfx;
+        sEraseSramTextGfxPointers[LANGUAGE_SPANISH][1] = sEraseSramMenuConfirmEnglishGfx;
+    }
 }
 #else
 static const u32* sEraseSramTextGfxPointers[LANGUAGE_COUNT][2] = {

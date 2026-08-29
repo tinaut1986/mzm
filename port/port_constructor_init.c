@@ -41,6 +41,7 @@ extern void Init_sMapScreenChozoStatueAreaNamesGfxPointers(void) __attribute__((
 extern void Init_sMapScreenUnknownItemsNamesGfxPointers(void) __attribute__((weak));
 extern void Init_sMapScreenEquipmentNamesGfxPointers(void) __attribute__((weak));
 extern void Init_sMapScreenMenuNamesGfxPointers(void) __attribute__((weak));
+extern void Init_sStatusScreenFlagsOrderPointers(void) __attribute__((weak));
 extern void Init_sMinimapDataPointers(void) __attribute__((weak));
 extern void Init_sMaintainedInputDelaysPointers(void) __attribute__((weak));
 extern void Init_sBootDebugCutsceneBTextPointers(void) __attribute__((weak));
@@ -239,6 +240,7 @@ void Port_InitConstructorPointers(void)
     if (Init_sMapScreenUnknownItemsNamesGfxPointers) Init_sMapScreenUnknownItemsNamesGfxPointers();
     if (Init_sMapScreenEquipmentNamesGfxPointers) Init_sMapScreenEquipmentNamesGfxPointers();
     if (Init_sMapScreenMenuNamesGfxPointers) Init_sMapScreenMenuNamesGfxPointers();
+    if (Init_sStatusScreenFlagsOrderPointers) Init_sStatusScreenFlagsOrderPointers();
     if (Init_sMinimapDataPointers) Init_sMinimapDataPointers();
     if (Init_sMaintainedInputDelaysPointers) Init_sMaintainedInputDelaysPointers();
     if (Init_sBootDebugCutsceneBTextPointers) Init_sBootDebugCutsceneBTextPointers();
