@@ -260,6 +260,21 @@ endif
 # which is exactly the stale-.o trap documented in section 6l.
 CFLAGS  += $(EXTRA_CFLAGS)
 
+# Warning suppressions that apply ONLY to the decompiled game (src/) and the
+# generated ROM shims (port/), NOT to the hand-written 3DS port under
+# platform/3ds/source (which compiles clean and must keep compiling clean --
+# a warning there is a real signal and should not drown in decomp noise).
+# These are all "the decomp does not write idiomatic C, but it byte-matches
+# the original" cases: out-of-bounds subscripts the optimiser infers on
+# unreachable paths, functions that fall off the end with the return value
+# already in r0, i = i++ style sequence points, constant truncations, etc.
+# Fixing them upstream-side would mean diverging from the decomp.
+CFLAGS_DECOMP := $(CFLAGS) \
+    -Wno-array-bounds -Wno-maybe-uninitialized -Wno-overflow \
+    -Wno-unused-value -Wno-sequence-point -Wno-return-type \
+    -Wno-unused-label -Wno-misleading-indentation -Wno-sizeof-array-div \
+    -Wno-pointer-sign -Wno-discarded-qualifiers
+
 INCLUDES := \
 	-I$(ROOT)/port/generated/shadow \
 	-I$(ROOT) \
@@ -371,7 +386,7 @@ $(BUILD)/rcheevos/%.o: $(RCHEEVOS)/%.c
 	@echo "CC $<"
 	@$(CC) -MMD -MP -MF $(@:.o=.d) $(CFLAGS_RC) $(INCLUDES_RC) -c $< -o $@
 
-CFLAGS_GEN := $(patsubst -O2,-O1,$(CFLAGS))
+CFLAGS_GEN := $(patsubst -O2,-O1,$(CFLAGS_DECOMP))
 
 # Compilación de archivos autogenerados (ROM shims) con -O1 para velocidad
 $(BUILD)/root/port/generated/%.o: $(ROOT)/port/generated/%.c
@@ -379,11 +394,11 @@ $(BUILD)/root/port/generated/%.o: $(ROOT)/port/generated/%.c
 	@echo "CC $<"
 	@$(CC) -MMD -MP -MF $(@:.o=.d) $(CFLAGS_GEN) $(INCLUDES) -c $< -o $@
 
-# Compilación de archivos C bajo ROOT
+# Compilación de archivos C bajo ROOT (decomp + shims): CFLAGS_DECOMP, no CFLAGS.
 $(BUILD)/root/%.o: $(ROOT)/%.c
 	@mkdir -p $(dir $@)
 	@echo "CC $<"
-	@$(CC) -MMD -MP -MF $(@:.o=.d) $(CFLAGS) $(INCLUDES) -c $< -o $@
+	@$(CC) -MMD -MP -MF $(@:.o=.d) $(CFLAGS_DECOMP) $(INCLUDES) -c $< -o $@
 
 # Compilación de archivos ensamblador bajo asm/
 $(BUILD)/root/asm/%.o: $(ROOT)/asm/%.s
