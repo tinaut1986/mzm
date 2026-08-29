@@ -25,12 +25,13 @@
 #include "constants/minimap.h"
 #include "minimap.h"
 #include "macros.h"
+#include "port_debug_tools.h" /* PORT_DEBUG_TOOLS_ACTIVE */
 
 #ifdef PORT_GPU_TILE_RENDERER
 #include "port_gpu_renderer.h"
 #endif
 
-#ifdef PORT_PPU_PERF_LOG
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
 /* Deliberately not <3ds.h> here -- it redeclares u32/s32/etc. incompatibly
  * with this project's own include/types.h (already pulled in transitively
  * above), which is a hard conflicting-types error. CPU_TICKS_PER_MSEC's
@@ -569,12 +570,14 @@ bool Port_PPU_Init(void) {
     return true;
 }
 
-/* Every call site below this point runs from the per-frame present path
- * (PORT_VERBOSE_FRAME_LOG/PORT_PPU_PERF_LOG diagnostics), never a boot/hang
- * checkpoint, so redirect to the buffered logger -- see port_debug_log.h's
- * comment on why the unbuffered version's per-call file I/O is a real cost
- * here (confirmed dominating "upload" time misattribution for most of this
- * session -- docs/3ds-port-gpu-renderer-status-2026-08-20.md section 16). */
+/* The PORT_VERBOSE_FRAME_LOG checkpoints below run from the per-frame
+ * present path, never a boot/hang checkpoint, so redirect to the buffered
+ * logger -- see port_debug_log.h on why the unbuffered version's per-call
+ * file I/O is a real cost here (confirmed dominating "upload" time
+ * misattribution for most of this session --
+ * docs/3ds-port-gpu-renderer-status-2026-08-20.md section 16). The GPU and
+ * PERF diagnostic blocks call Port_DebugLog_Gpu / _Perf explicitly instead,
+ * so they also honour the DEBUG -> HERRAMIENTAS LOG-mode stream filter. */
 extern void Port_DebugLogBuffered(const char* msg);
 #define Port_DebugLog Port_DebugLogBuffered
 
@@ -609,11 +612,14 @@ void Port_PPU_RenderFrame(void) {
         static uint64_t sLastPresentMs;
         uint64_t nowMs = osGetTime();
         if (sLastPresentMs != 0 && (nowMs - sLastPresentMs) < 8u) {
-#ifdef PORT_GPU_RENDERER_DIAG_LOG
-            char msg[64];
-            __builtin_snprintf(msg, sizeof(msg), "PRESENT gap=%lums (skipped, re-entrant)",
-                               (unsigned long)(nowMs - sLastPresentMs));
-            Port_DebugLog(msg);
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
+            {
+                char msg[64];
+                __builtin_snprintf(msg, sizeof(msg), "PRESENT gap=%lums (skipped, re-entrant)",
+                                   (unsigned long)(nowMs - sLastPresentMs));
+                extern void Port_DebugLog_Gpu(const char* msg);
+                Port_DebugLog_Gpu(msg);
+            }
 #endif
             return;
         }
@@ -758,7 +764,7 @@ void Port_PPU_RenderFrame(void) {
     Port_DebugLog("Port_PPU_PresentFrame: done");
 #endif
 
-#ifdef PORT_PPU_PERF_LOG
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
     /* Every ~2s (at the target 60Hz): where is frame time actually going?
      * mode1's main/worker ticks cover the CPU scanline render (per-thread,
      * so on New3DS 3 threads run it in parallel -- main plus 2 workers, one
@@ -781,7 +787,8 @@ void Port_PPU_RenderFrame(void) {
             (double)mode1Stats.workerLastTicks[1] / PORT_PPU_PERF_CPU_TICKS_PER_MSEC,
             (unsigned long)mode1Stats.workerCount,
             (double)gpuStats.drawingTime, (double)gpuStats.processingTime);
-        Port_DebugLog(msg);
+        extern void Port_DebugLog_Perf(const char* msg);
+        Port_DebugLog_Perf(msg);
     }
 #endif
 }
@@ -907,6 +914,10 @@ void PortPpuMzm_GetSamusRecordState(uint32_t* out) {
     out[3] = (uint32_t)gEquipment.suitType;
     out[4] = (uint32_t)gEquipment.suitMiscActivation;
     out[5] = (uint32_t)gSamusPhysics.unk_22;
+}
+
+bool PortPpuMzm_IsSamusDying(void) {
+    return gSamusData.pose == SPOSE_DYING;
 }
 
 /* ---------------------------------------------------------------------

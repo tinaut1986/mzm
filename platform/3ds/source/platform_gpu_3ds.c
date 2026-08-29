@@ -1,4 +1,5 @@
 #include "platform_gpu_3ds.h"
+#include "port_debug_tools.h" /* PORT_DEBUG_TOOLS_ACTIVE */
 
 #include <3ds.h>
 #include <citro2d.h>
@@ -329,7 +330,7 @@ bool PlatformGpu3DS_Init(bool old3dsProfile) {
     C3D_RenderTargetSetOutput(sTopTarget, GFX_TOP, GFX_LEFT, output);
     if (sTopRightTarget) C3D_RenderTargetSetOutput(sTopRightTarget, GFX_TOP, GFX_RIGHT, output);
     C3D_RenderTargetSetOutput(sBottomTarget, GFX_BOTTOM, GFX_LEFT, output);
-#ifdef PORT_GPU_RENDERER_DIAG_LOG
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
     {
         /* Diagnostic (docs/.../3ds-port-gpu-renderer-status-2026-08-20.md
          * section 20): dump every field of both targets' C3D_FrameBuf/
@@ -345,14 +346,14 @@ bool PlatformGpu3DS_Init(bool old3dsProfile) {
                  sTopTarget->frameBuf.width, sTopTarget->frameBuf.height, sTopTarget->frameBuf.colorBuf,
                  sTopTarget->frameBuf.depthBuf, (int)sTopTarget->frameBuf.colorFmt, (int)sTopTarget->linked,
                  (int)sTopTarget->screen, (int)sTopTarget->side, (unsigned long)sTopTarget->transferFlags);
-        extern void Port_DebugLog(const char* msg);
-        Port_DebugLog(msg);
+        extern void Port_DebugLog_Gpu(const char* msg);
+        Port_DebugLog_Gpu(msg);
         snprintf(msg, sizeof(msg),
                  "TARGETCMP bot: w=%u h=%u colorBuf=%p depthBuf=%p colorFmt=%d linked=%d screen=%d side=%d xfer=%08lx",
                  sBottomTarget->frameBuf.width, sBottomTarget->frameBuf.height, sBottomTarget->frameBuf.colorBuf,
                  sBottomTarget->frameBuf.depthBuf, (int)sBottomTarget->frameBuf.colorFmt, (int)sBottomTarget->linked,
                  (int)sBottomTarget->screen, (int)sBottomTarget->side, (unsigned long)sBottomTarget->transferFlags);
-        Port_DebugLog(msg);
+        Port_DebugLog_Gpu(msg);
     }
 #endif
     sReady = true;
@@ -513,7 +514,7 @@ C3D_RenderTarget* PlatformGpu3DS_GetTopRightTarget(void) { return sTopRightTarge
 
 bool PlatformGpu3DS_EndBottom(const uint32_t* pixels, bool changed) {
     if (!sFrameActive || !pixels) return false;
-#ifdef PORT_GPU_RENDERER_DIAG_LOG
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
     {
         /* Diagnostic (docs/.../3ds-port-gpu-renderer-status-2026-08-20.md
          * section 20 pendiente item 4): log every real EndBottom call
@@ -534,8 +535,8 @@ bool PlatformGpu3DS_EndBottom(const uint32_t* pixels, bool changed) {
             const double msSinceFirst = (double)(nowTick - sFirstCallTick) / (double)CPU_TICKS_PER_MSEC;
             snprintf(msg, sizeof(msg), "ENDBOTTOM n=%u changed=%d valid=%d old3ds=%d t=%.0fms",
                      n, (int)changed, (int)sBottomTargetValid, (int)sOld3DSProfile, msSinceFirst);
-            extern void Port_DebugLogBuffered(const char* msg);
-            Port_DebugLogBuffered(msg);
+            extern void Port_DebugLog_Gpu(const char* msg);
+            Port_DebugLog_Gpu(msg);
         }
     }
 #endif
@@ -568,16 +569,16 @@ bool PlatformGpu3DS_EndBottom(const uint32_t* pixels, bool changed) {
         GSPGPU_FlushDataCache(sC2dFlushBase, sC2dFlushSize);
         sStats.boundedFlushBytes += sC2dFlushSize;
     }
-#ifdef PORT_GPU_RENDERER_DIAG_LOG
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
     {
         static unsigned sCmdBufLogCounter;
         if ((sCmdBufLogCounter++ % 30u) == 0u) {
             char msg[64];
             snprintf(msg, sizeof(msg), "CMDBUF usage=%.1f%%", (double)(C3D_GetCmdBufUsage() * 100.0f));
-            /* Buffered: this is per-frame diagnostic logging (throttled),
-             * not a boot/hang checkpoint -- see port_debug_log.h. */
-            extern void Port_DebugLogBuffered(const char* msg);
-            Port_DebugLogBuffered(msg);
+            /* GPU log stream: buffered (per-frame, throttled -- see
+             * port_debug_log.h) and only when LOG mode is ALL or GPU. */
+            extern void Port_DebugLog_Gpu(const char* msg);
+            Port_DebugLog_Gpu(msg);
         }
     }
 #endif

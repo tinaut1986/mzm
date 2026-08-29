@@ -22,12 +22,16 @@ combo they used to be reached by, in parentheses.
 action behind it are compiled out entirely -- not just hidden -- unless the
 build defines `PORT_DEBUG_TOOLS_ACTIVE` (`source/port_debug_tools.h`).
 
-There is exactly **one** debug build: `make clean && make DEBUG_TOOLS=1`. It
-turns on the menu *and* the verbose per-frame `*_DIAG_LOG` tracing
-(`PORT_GPU_RENDERER_DIAG_LOG`, `PORT_AUDIO_DIAG_LOG`). The old split between
-a "simple" menu-only build and a separate tracing build is gone -- it only
-existed because tracing meant unconditional SD writes on hot paths, and it
-no longer does (see **Log to SD / buffering** below).
+There is exactly **one** flag: `make clean && make DEBUG_TOOLS=1` (defines
+`PORT_DEBUG_TOOLS`, from which `port_debug_tools.h` derives
+`PORT_DEBUG_TOOLS_ACTIVE`). It compiles in the menu *and* every throttled
+per-frame diagnostic log stream (GPU, audio, PERF). The old per-system
+opt-in flags (`PORT_GPU_RENDERER_DIAG_LOG`, `PORT_AUDIO_DIAG_LOG`, and an
+ad-hoc `PORT_PPU_PERF_LOG`), each its own `EXTRA_CFLAGS`, are gone: a
+`DEBUG_TOOLS=1` build carries all of them and you pick which one(s) actually
+write from the **LOG** cell in the menu (see **Log to SD / buffering**
+below). Decompiled `src/` files that can't include `port_debug_tools.h`
+check `defined(PORT_DEBUG_TOOLS)` directly.
 
 A plain production build (no flags) shows no button on the DEBUG tab and has
 no source-level path to trigger any of these.
@@ -94,17 +98,21 @@ scene recorder) fast to set up.
 
 ## Log to SD / buffering (LOG A SD, LOG EN BUFFER)
 
-Two toggles in the tools menu, backed by `port/port_debug_log.c`.
+Two cells in the tools menu, backed by `port/port_debug_log.c`.
 
-- **LOG A SD** -- OFF by default, *even in a debug build*. While it is off,
-  `Port_DebugLog` / `Port_DebugLogBuffered` return immediately and nothing
-  is written to `sdmc:/3ds/mzm-debug.log`: no SD I/O, no file growing
-  unasked, no frame-rate cost from the `*_DIAG_LOG` paths that are now
-  always compiled in. Switch it on for the stretch of play you actually
-  want captured; switching it off flushes whatever is still buffered so the
-  tail of the capture isn't lost. Turning it on drops a
-  `USER MARK: SD logging enabled` line, so the start of each capture is easy
-  to find in a log that already has older sessions appended to it.
+- **LOG A SD** -- cycles the log **mode**: `OFF` -> `ALL` -> `GPU` ->
+  `AUDIO` -> `PERF` -> `OFF`. Starts at `OFF`, *even in a debug build*.
+  While `OFF`, `Port_DebugLog` / `Port_DebugLogBuffered` /
+  `Port_DebugLog_Gpu` / `_Audio` / `_Perf` all return immediately and
+  nothing is written to `sdmc:/3ds/mzm-debug.log`: no SD I/O, no file
+  growing unasked, no frame-rate cost from the per-frame diagnostic paths
+  that are now always compiled in. `ALL` writes every stream; a single
+  stream name writes only that one plus the always-on one-off checkpoints
+  (`Port_DebugLog`) -- so a session chasing e.g. the GPU renderer's
+  `GPUDIAG`/`PBFLASH` lines isn't drowned by audio or PERF output. Any
+  transition flushes what's buffered so the tail of a capture isn't lost,
+  and leaving `OFF` drops a `USER MARK: SD logging enabled` line so the
+  start of each capture is easy to find in an appended log.
 - **LOG EN BUFFER** -- ON by default. Lines accumulate in a 4KB RAM buffer
   and hit the card when it fills (one `fopen`/`fwrite`/`fclose` for the
   whole buffer). Turn it OFF to make *both* entry points write immediately,
@@ -119,9 +127,9 @@ it over FTP before a capture if you want a clean one.
 Drops a `"USER MARK: ..."` line with a timestamp into
 `sdmc:/3ds/mzm-debug.log` (via `Port_DebugLog`) so a play session can flag
 "something happened right here" without describing timing after the fact.
-Grep the log for `USER MARK` and read the surrounding lines (needs
-`-DPORT_GPU_RENDERER_DIAG_LOG` for the `GPU_REJECT`/`GPUDIAG` lines) to see
-what the renderer was doing at that moment.
+Grep the log for `USER MARK` and read the surrounding lines (set the **LOG**
+mode to `GPU` or `ALL` for the `GPU_REJECT`/`GPUDIAG` lines) to see what the
+renderer was doing at that moment.
 
 ## Scene recorder (was L+R+START)
 

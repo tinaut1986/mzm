@@ -44,11 +44,44 @@ void Port_DebugLogBuffered(const char* msg);
  * either knob off flushes as well. */
 void Port_DebugLogFlush(void);
 
-/* Runtime knobs behind the two menu toggles. Enabled defaults to false,
- * buffered to true. Safe to call in any build -- they're plain statics, not
+/* Runtime knobs behind the menu toggles. Mode defaults to NONE (no SD
+ * writes), buffered to true. Safe to call in any build -- plain statics, not
  * gated on any debug macro, so a non-debug build links the same file and
- * simply never turns logging on. */
+ * simply never turns logging on.
+ *
+ * SetEnabled/IsEnabled are kept as thin compatibility wrappers over the mode
+ * (SetEnabled(true) -> ALL when currently NONE; IsEnabled() -> mode != NONE)
+ * for the many one-off Port_DebugLog() boot/init/error checkpoints that only
+ * care whether logging is on at all. */
 void Port_DebugLog_SetEnabled(bool enabled);
 bool Port_DebugLog_IsEnabled(void);
 void Port_DebugLog_SetBuffered(bool buffered);
 bool Port_DebugLog_IsBuffered(void);
+
+/* Per-stream filter for the throttled per-frame diagnostic logs, on top of
+ * the master switch above. NONE = nothing; ALL = every stream; or exactly
+ * one stream. Cycled from DEBUG -> HERRAMIENTAS so a session can capture
+ * just the stream it's chasing (e.g. GPU) without the others drowning it. */
+typedef enum {
+    PORT_LOG_MODE_NONE = 0,
+    PORT_LOG_MODE_ALL,
+    PORT_LOG_MODE_GPU,
+    PORT_LOG_MODE_AUDIO,
+    PORT_LOG_MODE_PERF,
+    PORT_LOG_MODE_COUNT
+} PortDebugLogMode;
+
+void Port_DebugLog_SetMode(PortDebugLogMode mode);
+PortDebugLogMode Port_DebugLog_GetMode(void);
+void Port_DebugLog_CycleMode(void);        /* NONE -> ALL -> GPU -> AUDIO -> PERF -> NONE */
+const char* Port_DebugLog_ModeName(void);  /* "OFF" / "ALL" / "GPU" / "AUDIO" / "PERF" */
+
+/* Stream-scoped loggers: write only when the current mode includes that
+ * stream (ALL or that one). GPU/PERF go through the RAM buffer; AUDIO writes
+ * immediately -- it is called from the audio thread, where a hang must not
+ * eat the last lines (same rationale as Port_DebugLog's unbuffered path). A
+ * per-frame diagnostic call site funnels through one of these instead of
+ * Port_DebugLog directly. */
+void Port_DebugLog_Gpu(const char* msg);
+void Port_DebugLog_Audio(const char* msg);
+void Port_DebugLog_Perf(const char* msg);

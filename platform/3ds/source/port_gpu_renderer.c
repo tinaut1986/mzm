@@ -17,6 +17,7 @@
 #include "port_stereo_depth.h"
 #include "port_layer_fixes.h"
 #include "platform_gpu_3ds.h"
+#include "port_debug_tools.h" /* PORT_DEBUG_TOOLS_ACTIVE */
 
 #include <3ds.h>
 #include <citro2d.h>
@@ -25,15 +26,17 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef PORT_GPU_RENDERER_DIAG_LOG
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
 #include <stdio.h>
-/* Buffered, not Port_DebugLog -- this is per-frame diagnostic logging, not
- * a boot/hang checkpoint. See port_debug_log.h's comment: the unbuffered
- * version's per-call fopen/fwrite/fclose measured as the actual dominant
- * cost misattributed to the atlas upload for most of this session (see
- * docs/3ds-port-gpu-renderer-status-2026-08-20.md section 16). */
+/* Route every diagnostic line in this file through the GPU log stream: it is
+ * buffered (per-frame path, not a boot/hang checkpoint -- see
+ * port_debug_log.h, and section 16 of
+ * docs/3ds-port-gpu-renderer-status-2026-08-20.md for why the unbuffered
+ * fopen/fwrite/fclose cost mattered) AND it only writes when DEBUG ->
+ * HERRAMIENTAS -> LOG mode is ALL or GPU, so a session chasing e.g. PBFLASH
+ * is not drowned by audio/perf lines. */
 #include "port_debug_log.h"
-#define Port_DebugLog Port_DebugLogBuffered
+#define Port_DebugLog Port_DebugLog_Gpu
 #endif
 
 /* Emulated GBA memory buffers (port/port_gba_mem.c). */
@@ -279,14 +282,6 @@ static uint64_t sDirtyRowMask;
  * palette (what an 8bpp tile, which doesn't bank, actually samples from). */
 static uint32_t sBgPalBankHash[16], sObjPalBankHash[16];
 static uint32_t sBgPalFullHash, sObjPalFullHash;
-
-#ifdef PORT_GPU_RENDERER_DIAG_LOG
-/* Set once per frame in Port_GpuRenderer_RenderFrame -- see its comment.
- * Gates the per-tile diagnostic logging in GetOrDecodeTileSlot/CollectSprite
- * added for issue #17, so it only fires during the one rare scene shape
- * being investigated (no BG layers, OBJ+non-clipping-WIN1 only). */
-static bool sDiagObjSceneLog;
-#endif
 
 static inline uint32_t HashBytes(const uint8_t* data, size_t len) {
     uint32_t h = 2166136261u;
@@ -860,28 +855,8 @@ static int GetOrDecodeTileSlot(uint32_t byteOffset, bool bpp8, const uint16_t* p
          * one -- see TileCacheKey's comment for why the latter must never
          * allocate a fresh slot. */
         if (memcmp(sCacheSourceBytes[i], src, tileBytes) == 0 && sCachePalHash[i] == palHash && sCacheEvy[i] == curEvy) {
-#ifdef PORT_GPU_RENDERER_DIAG_LOG
-            if (isObj && sDiagObjSceneLog) {
-                extern u16 gFrameCounter16Bit;
-                char buf[128];
-                snprintf(buf, sizeof(buf), "[F%u] OBJTILE HIT off=%05lX pb=%u hf=%u vf=%u ba=%u slot=%d palHash=%08lX evy=%u",
-                         (unsigned)gFrameCounter16Bit, (unsigned long)byteOffset, palBank, hflip, vflip, brightAdjust, (int)i, (unsigned long)palHash, curEvy);
-                Port_DebugLog(buf);
-            }
-#endif
             return i;
         }
-#ifdef PORT_GPU_RENDERER_DIAG_LOG
-        if (isObj && sDiagObjSceneLog) {
-            extern u16 gFrameCounter16Bit;
-            char buf[160];
-            snprintf(buf, sizeof(buf),
-                     "[F%u] OBJTILE STALE off=%05lX pb=%u hf=%u vf=%u ba=%u slot=%d oldPalHash=%08lX newPalHash=%08lX oldEvy=%u newEvy=%u srcMatch=%d",
-                     (unsigned)gFrameCounter16Bit, (unsigned long)byteOffset, palBank, hflip, vflip, brightAdjust, (int)i, (unsigned long)sCachePalHash[i],
-                     (unsigned long)palHash, sCacheEvy[i], curEvy, memcmp(sCacheSourceBytes[i], src, tileBytes) == 0);
-            Port_DebugLog(buf);
-        }
-#endif
         DecodeTileIntoSlot(i, src, bpp8, pal, palBank, hflip, vflip, brightAdjust, palHash);
         return i;
     }
@@ -893,24 +868,12 @@ static int GetOrDecodeTileSlot(uint32_t byteOffset, bool bpp8, const uint16_t* p
          * hundred unique tiles, and the near-full proactive reset at the
          * top of Port_GpuRenderer_RenderFrame keeps this from being reached
          * by slow accumulation over a long play session. */
-#ifdef PORT_GPU_RENDERER_DIAG_LOG
-        if (isObj && sDiagObjSceneLog) Port_DebugLog("OBJTILE OVERFLOW -- reusing slot 0");
-#endif
         return 0;
     }
     int slot = sCacheCount++;
     sCacheKeys[slot] = key;
     sHashChainNext[slot] = sHashBucketHead[h];
     sHashBucketHead[h] = slot;
-#ifdef PORT_GPU_RENDERER_DIAG_LOG
-    if (isObj && sDiagObjSceneLog) {
-        extern u16 gFrameCounter16Bit;
-        char buf[128];
-        snprintf(buf, sizeof(buf), "[F%u] OBJTILE NEW off=%05lX pb=%u hf=%u vf=%u ba=%u slot=%d palHash=%08lX cacheCount=%d",
-                 (unsigned)gFrameCounter16Bit, (unsigned long)byteOffset, palBank, hflip, vflip, brightAdjust, slot, (unsigned long)palHash, sCacheCount);
-        Port_DebugLog(buf);
-    }
-#endif
     DecodeTileIntoSlot(slot, src, bpp8, pal, palBank, hflip, vflip, brightAdjust, palHash);
     return slot;
 }
@@ -1343,15 +1306,6 @@ static void CollectSprite(int oamIndex, bool obj1D) {
                 if (drawY <= -8.0f || drawY >= 160.0f || drawX <= -8.0f || drawX >= 240.0f) continue;
                 if (sObjWindowActive && !ObjWinItemVisible(objWinVis, drawX, drawY)) continue;
                 int slot = GetOrDecodeTileSlot(byteOffset, bpp8, pal, palBank, hflip, vflip, true, brightAdjust);
-#ifdef PORT_GPU_RENDERER_DIAG_LOG
-                if (sDiagObjSceneLog) {
-                    extern u16 gFrameCounter16Bit;
-                    char buf[128];
-                    snprintf(buf, sizeof(buf), "[F%u] COLLECT off=%05lX slot=%d drawX=%.0f drawY=%.0f hf=%u vf=%u pb=%u",
-                             (unsigned)gFrameCounter16Bit, (unsigned long)byteOffset, slot, drawX, drawY, hflip, vflip, palBank);
-                    Port_DebugLog(buf);
-                }
-#endif
                 PushItem(slot, drawX, drawY, sortKey, depthTier, blendAlpha, rectWinVis);
                 continue;
             }
@@ -1405,7 +1359,7 @@ static void CollectSprite(int oamIndex, bool obj1D) {
  * never used this renderer at all. See Port_GpuRenderer_RenderFrame for the
  * approximation (brighten/darken applied at tile-decode time, alpha blend
  * via a second GPU-blended draw pass). */
-#ifdef PORT_GPU_RENDERER_DIAG_LOG
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
 /* Throttled to avoid flooding mzm-debug.log at 60Hz -- one line every 30
  * *rejected* frames is enough to see the pattern during gameplay without
  * drowning the log. */
@@ -1525,17 +1479,18 @@ bool Port_GpuRenderer_CanRenderFrame(void) {
      * GPU-renderer-specific to begin with. Falling back for just this
      * scene's distinctive DISPCNT signature (only OBJ+WIN1 active, WIN1
      * used purely as a BLDCNT-effect gate per the comment above, no BG
-     * layer at all -- confirmed via the same L+R+X/scene-recorder sessions
-     * that diagnosed this bug) is a narrow, low-risk fix for the visible
-     * symptom while the real GPU-side cause remains open. This DISPCNT
-     * pattern is rare enough outside this scene (only other confirmed match
-     * across two sessions of play was a static file-select Samus portrait,
-     * itself cheap to render on CPU) that the perf cost of the fallback is
-     * negligible. If a real fix for the GPU renderer itself is found later,
-     * remove this check rather than leaving it as dead-but-harmless code --
-     * it exists only to route around an unresolved bug, not because this
-     * DISPCNT shape is inherently unsupported. */
-    if ((dispcnt & 0xF00u) == 0u && (dispcnt & (1u << 12)) != 0u) REJECT("issue #17 death-scene workaround");
+     * layer at all, Samus pose == SPOSE_DYING -- confirmed via the same
+     * L+R+X/scene-recorder sessions that diagnosed this bug) is a narrow,
+     * low-risk fix for the visible symptom while the real GPU-side cause
+     * remains open.
+     * Note: previously this checked only (dispcnt & 0xF00u) == 0u && (dispcnt & (1u << 12)) != 0u,
+     * which erroneously matched the intro noise/communication static scene
+     * (issue #27) and caused severe FPS drops. Checking win1On and
+     * PortPpuMzm_IsSamusDying restricts the fallback strictly to Samus's death. */
+    extern bool PortPpuMzm_IsSamusDying(void);
+    if ((dispcnt & 0xF00u) == 0u && (dispcnt & (1u << 12)) != 0u && win1On && PortPpuMzm_IsSamusDying()) {
+        REJECT("issue #17 death-scene workaround");
+    }
 
     return true;
 }
@@ -1660,7 +1615,7 @@ static bool DetectPowerBombFlash(void) {
     if (evy > 16) evy = 16;
     sPbFlashEvy = evy;
 
-#ifdef PORT_GPU_RENDERER_DIAG_LOG
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
     {
         static unsigned sPbLogCounter;
         if ((sPbLogCounter++ % 8u) == 0u) {
@@ -1711,7 +1666,7 @@ void Port_GpuRenderer_RenderFrame(void) {
      * on hardware. Half the atlas (2048) as headroom comfortably absorbs
      * any single frame's worst case in practice. */
     if (sCacheCount >= ATLAS_MAX_SLOTS / 2) {
-#ifdef PORT_GPU_RENDERER_DIAG_LOG
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
         {
             char buf[64];
             snprintf(buf, sizeof(buf), "OBJTILE CACHE RESET at count=%d", sCacheCount);
@@ -1740,18 +1695,6 @@ void Port_GpuRenderer_RenderFrame(void) {
 
     uint16_t dispcnt = (uint16_t)(gIoMem[0] | (gIoMem[1] << 8));
     bool obj1D = (dispcnt & (1u << 6)) != 0;
-
-#ifdef PORT_GPU_RENDERER_DIAG_LOG
-    /* Issue #17 (Samus's death animation showing garbled sprites, GPU
-     * renderer only -- confirmed by RENDERER=cpu build/hardware test): the
-     * scene is DISPCNT=OBJ+WIN1 with WIN1 covering the whole screen (a
-     * no-op, gating BLDCNT only) and NO BG layers at all -- rare enough
-     * outside this one sequence that logging every OBJ tile slot lookup
-     * only while this exact shape is on screen won't flood mzm-debug.log
-     * during normal play. See GetOrDecodeTileSlot's use of sDiagObjSceneLog
-     * below. */
-    sDiagObjSceneLog = (dispcnt & 0xF00u) == 0u && (dispcnt & (1u << 12)) != 0u;
-#endif
 
     /* BLDCNT/BLDALPHA/BLDY: computed once per frame, consumed by
      * CollectBgLayer/CollectSprite below (decide brighten/darken at decode
@@ -1897,7 +1840,7 @@ void Port_GpuRenderer_RenderFrame(void) {
         sLastObjItemCount = objItems;
     }
 
-#ifdef PORT_GPU_RENDERER_DIAG_LOG
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
     {
         static unsigned sDiagCounter;
         if ((sDiagCounter++ % 5u) == 0u) {
@@ -2021,7 +1964,7 @@ void Port_GpuRenderer_RenderFrame(void) {
     C3D_RenderTarget* leftTarget = PlatformGpu3DS_GetTopLeftTarget();
     C3D_RenderTarget* rightTarget = (slider3d > 0.01f) ? PlatformGpu3DS_GetTopRightTarget() : NULL;
 
-#ifdef PORT_GPU_RENDERER_DIAG_LOG
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
     {
         static unsigned sEyeLogCounter;
         if ((sEyeLogCounter++ % 30u) == 0u) {
@@ -2101,21 +2044,6 @@ void Port_GpuRenderer_RenderFrame(void) {
                  * shimmer. */
                 float eyeOffset = floorf(eyeSign * slider3d * PortStereoDepth_TierPx(item->depthTier) + 0.5f);
                 C2D_DrawParams params = BuildDrawParams(item, screenBaseX, screenBaseY, eyeOffset, scaleX, scaleY);
-#ifdef PORT_GPU_RENDERER_DIAG_LOG
-                if (sDiagObjSceneLog && eye == 0) {
-                    extern u16 gFrameCounter16Bit;
-                    int slot = (int)(item->img.subtex - sSlotSubtexTable);
-                    char buf[192];
-                    snprintf(buf, sizeof(buf),
-                             "[F%u] DRAW slot=%d x=%.1f y=%.1f w=%.1f h=%.1f uv=(%.4f,%.4f,%.4f,%.4f) angle=%.3f params.pos=(%.1f,%.1f,%.1f,%.1f)",
-                             (unsigned)gFrameCounter16Bit, slot, item->x, item->y, item->w, item->h,
-                             (double)item->img.subtex->left, (double)item->img.subtex->top,
-                             (double)item->img.subtex->right, (double)item->img.subtex->bottom,
-                             (double)item->angle, (double)params.pos.x, (double)params.pos.y,
-                             (double)params.pos.w, (double)params.pos.h);
-                    Port_DebugLog(buf);
-                }
-#endif
                 C2D_DrawImage(item->img, &params, NULL);
                 ++drawCount;
                 if (!reassertedTexEnv) {
@@ -2207,7 +2135,7 @@ void Port_GpuRenderer_RenderFrame(void) {
             C2D_DrawRectSolid(5.0f + fpsEyeOffset, 216.0f, 0.7f, 65.0f, 18.0f, C2D_Color32(0, 0, 0, 200));
             PlatformGpu3DS_DrawStatusText(8.0f + fpsEyeOffset, 220.0f, 1.5f, label);
         }
-#ifdef PORT_GPU_RENDERER_DIAG_LOG
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
         {
             /* One counter per eye -- a single shared counter with an even
              * modulo (30) always lands on the same eye's turn every time
@@ -2230,7 +2158,7 @@ void Port_GpuRenderer_RenderFrame(void) {
     u64 tEnd = svcGetSystemTick();
     sLastDrawMs = (float)((double)(tEnd - tAfterCollect) / PORT_GPU_RENDERER_CPU_TICKS_PER_MSEC);
 
-#ifdef PORT_GPU_RENDERER_DIAG_LOG
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
     /* The only place in this codebase that actually measures this
      * renderer's own CPU-side cost -- see the comment on
      * PORT_GPU_RENDERER_CPU_TICKS_PER_MSEC above for why neither the

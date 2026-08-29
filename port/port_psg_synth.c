@@ -164,15 +164,16 @@ static bool sAnyVoiceActive;
 void PortPsg_BeginBlock(unsigned int rate) {
     if (rate == 0) return;
 
-#ifdef PORT_AUDIO_DIAG_LOG
+#ifdef PORT_DEBUG_TOOLS
     /* Which voices does the engine ACTUALLY drive? This distinguishes "the
      * engine never starts a note on this channel" from "the synthesis is
      * wrong" -- both sound identical (silence), which is what made the first
      * cut of this file hard to judge. Logs only when the set of
      * ever-non-silent channels grows, so it costs a handful of SD writes for
-     * a whole session rather than one per block. */
+     * a whole session rather than one per block. Off unless LOG mode is ALL
+     * or AUDIO. */
     {
-        extern void Port_DebugLog(const char* msg);
+        extern void Port_DebugLog_Audio(const char* msg);
         static unsigned int sSeenMask;
         unsigned int mask = sSeenMask;
         if (((RegU16(REG_NR11) >> 12) & 0xF) != 0) mask |= 1u;
@@ -186,7 +187,7 @@ void PortPsg_BeginBlock(unsigned int rate) {
                 "psg: voices seen so far: sq1=%d sq2=%d wave=%d noise=%d (pan=%02X)",
                 (mask & 1) != 0, (mask & 2) != 0, (mask & 4) != 0, (mask & 8) != 0,
                 gIoMem[REG_SOUNDCNT_L_ + 1]);
-            Port_DebugLog(msg);
+            Port_DebugLog_Audio(msg);
         }
     }
 #endif
