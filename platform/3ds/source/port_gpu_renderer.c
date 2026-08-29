@@ -1528,17 +1528,18 @@ bool Port_GpuRenderer_CanRenderFrame(void) {
      * GPU-renderer-specific to begin with. Falling back for just this
      * scene's distinctive DISPCNT signature (only OBJ+WIN1 active, WIN1
      * used purely as a BLDCNT-effect gate per the comment above, no BG
-     * layer at all -- confirmed via the same L+R+X/scene-recorder sessions
-     * that diagnosed this bug) is a narrow, low-risk fix for the visible
-     * symptom while the real GPU-side cause remains open. This DISPCNT
-     * pattern is rare enough outside this scene (only other confirmed match
-     * across two sessions of play was a static file-select Samus portrait,
-     * itself cheap to render on CPU) that the perf cost of the fallback is
-     * negligible. If a real fix for the GPU renderer itself is found later,
-     * remove this check rather than leaving it as dead-but-harmless code --
-     * it exists only to route around an unresolved bug, not because this
-     * DISPCNT shape is inherently unsupported. */
-    if ((dispcnt & 0xF00u) == 0u && (dispcnt & (1u << 12)) != 0u) REJECT("issue #17 death-scene workaround");
+     * layer at all, Samus pose == SPOSE_DYING -- confirmed via the same
+     * L+R+X/scene-recorder sessions that diagnosed this bug) is a narrow,
+     * low-risk fix for the visible symptom while the real GPU-side cause
+     * remains open.
+     * Note: previously this checked only (dispcnt & 0xF00u) == 0u && (dispcnt & (1u << 12)) != 0u,
+     * which erroneously matched the intro noise/communication static scene
+     * (issue #27) and caused severe FPS drops. Checking win1On and
+     * PortPpuMzm_IsSamusDying restricts the fallback strictly to Samus's death. */
+    extern bool PortPpuMzm_IsSamusDying(void);
+    if ((dispcnt & 0xF00u) == 0u && (dispcnt & (1u << 12)) != 0u && win1On && PortPpuMzm_IsSamusDying()) {
+        REJECT("issue #17 death-scene workaround");
+    }
 
     return true;
 }
@@ -1752,8 +1753,11 @@ void Port_GpuRenderer_RenderFrame(void) {
      * outside this one sequence that logging every OBJ tile slot lookup
      * only while this exact shape is on screen won't flood mzm-debug.log
      * during normal play. See GetOrDecodeTileSlot's use of sDiagObjSceneLog
-     * below. */
-    sDiagObjSceneLog = (dispcnt & 0xF00u) == 0u && (dispcnt & (1u << 12)) != 0u;
+     * below. Restrict strictly to Samus dying + WIN1 to avoid flooding 1800
+     * log lines/frame during the intro static scene (issue #27). */
+    extern bool PortPpuMzm_IsSamusDying(void);
+    sDiagObjSceneLog = (dispcnt & 0xF00u) == 0u && (dispcnt & (1u << 12)) != 0u &&
+                       (dispcnt & (1u << 14)) != 0u && PortPpuMzm_IsSamusDying();
 #endif
 
     /* BLDCNT/BLDALPHA/BLDY: computed once per frame, consumed by

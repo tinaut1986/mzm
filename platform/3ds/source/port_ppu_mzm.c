@@ -916,6 +916,10 @@ void PortPpuMzm_GetSamusRecordState(uint32_t* out) {
     out[5] = (uint32_t)gSamusPhysics.unk_22;
 }
 
+bool PortPpuMzm_IsSamusDying(void) {
+    return gSamusData.pose == SPOSE_DYING;
+}
+
 /* ---------------------------------------------------------------------
  * Debug warp ("teletransporte")
  *
