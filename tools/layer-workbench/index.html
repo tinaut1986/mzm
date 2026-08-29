@@ -1,0 +1,2414 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Banco de Capas MZM</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+  :root {
+    --ground:#EFEEE9; --panel:#FFFFFF; --sunk:#E4E3DC; --ink:#1A1C22; --dim:#5C6373;
+    --faint:#8C93A2; --line:#D5D4CC; --accent:#C77A16; --accent-ink:#FFFFFF;
+    --accent-soft:#F4E4C8; --cool:#2F6E80; --warn:#A33A2A; --ok:#2E7D4F;
+    --shadow:0 1px 2px rgba(20,22,28,.06),0 6px 20px rgba(20,22,28,.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:#13151A; --panel:#1B1E25; --sunk:#0E1014; --ink:#E5E3DB; --dim:#98A0AE;
+      --faint:#69707E; --line:#2C303A; --accent:#E9A13B; --accent-ink:#13151A;
+      --accent-soft:#3A2C14; --cool:#7FB8C8; --warn:#E0705C; --ok:#6DCB93;
+      --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 24px rgba(0,0,0,.28);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground:#13151A; --panel:#1B1E25; --sunk:#0E1014; --ink:#E5E3DB; --dim:#98A0AE;
+    --faint:#69707E; --line:#2C303A; --accent:#E9A13B; --accent-ink:#13151A;
+    --accent-soft:#3A2C14; --cool:#7FB8C8; --warn:#E0705C; --ok:#6DCB93;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 24px rgba(0,0,0,.28);
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--ground); color:var(--ink);
+         font-family:"JetBrains Mono",ui-monospace,monospace; font-size:13px; line-height:1.5; }
+  h3,button,label.filebtn,.ui { font-family:Archivo,"Helvetica Neue",Arial,sans-serif; }
+  canvas { display:block; image-rendering:pixelated; }
+
+  /* Una sola línea, en grupos: datos, vista y correcciones. Lo que puede
+     crecer -- el estado -- se trunca en vez de romper la línea, porque la
+     altura de esta barra es lo que las ventanas usan como techo. */
+  /* Orden de apilado, de atrás a delante:
+       ventanas 20..49  ·  barras laterales y separadores 60  ·  barra de
+       minimizadas 70  ·  barra de arriba 80.
+     Las ventanas se renumeran para no salirse de su rango: subiendo de una en
+     una acababan por encima del cromo y lo tapaban. */
+  .top { display:flex; align-items:center; gap:10px; flex-wrap:nowrap; padding:8px 14px;
+         border-bottom:1px solid var(--line); background:var(--panel);
+         position:sticky; top:0; z-index:80; overflow:hidden; }
+  .grp { display:flex; align-items:center; gap:5px; padding:0 10px;
+         border-left:1px solid var(--line); flex:0 0 auto; }
+  .grp:first-of-type { border-left:0; padding-left:0; }
+  .status { flex:1 1 auto; min-width:0; display:flex; flex-direction:column;
+            line-height:1.25; padding-left:6px; border-left:1px solid var(--line); }
+  .status .meta { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .brand { font-family:Archivo,sans-serif; font-weight:800; font-size:14px;
+           letter-spacing:-.02em; flex:0 0 auto; }
+  .brand span { color:var(--accent); }
+  .meta { color:var(--faint); font-size:11.5px; }
+  .sep { width:1px; height:22px; background:var(--line); }
+
+  button, label.filebtn { font-family:Archivo,sans-serif; font-size:12px; font-weight:700;
+    background:transparent; color:var(--dim); border:1px solid var(--line); border-radius:3px;
+    padding:5px 11px; cursor:pointer; transition:color .15s,border-color .15s,background .15s; }
+  button:hover, label.filebtn:hover { color:var(--ink); border-color:var(--dim); }
+  button:focus-visible, label.filebtn:focus-within { outline:2px solid var(--cool); outline-offset:2px; }
+  button.primary { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+  button[disabled] { opacity:.4; cursor:not-allowed; }
+  input[type=file] { position:absolute; width:1px; height:1px; opacity:0; }
+  .zoomctl { display:flex; align-items:center; gap:6px; }
+  .zoomctl b { font-family:"JetBrains Mono",monospace; font-weight:500; font-size:11.5px;
+               color:var(--dim); min-width:28px; text-align:center; font-variant-numeric:tabular-nums; }
+
+  .layout { display:flex; align-items:stretch; min-height:calc(100vh - 52px); }
+  .rail { flex:0 0 auto; width:170px; }
+  .side { flex:0 0 auto; width:310px; }
+  .main { flex:1 1 auto; min-width:0; }
+
+  .rail { border-right:1px solid var(--line); background:var(--panel); overflow:auto;
+          max-height:calc(100vh - 52px); position:relative; z-index:60; }
+  .rail h3,.side h3 { font-size:10.5px; letter-spacing:.13em; text-transform:uppercase; color:var(--faint);
+    margin:0; padding:13px 13px 7px; font-family:"JetBrains Mono",monospace; font-weight:500; }
+  .shot { display:flex; align-items:center; gap:9px; padding:5px 11px; cursor:pointer; border:0;
+          border-left:3px solid transparent; background:transparent; width:100%; text-align:left; color:var(--dim); }
+  .shot:hover { background:var(--sunk); }
+  .shot[aria-current="true"] { border-left-color:var(--accent); background:var(--accent-soft); color:var(--ink); }
+  .shot canvas { width:68px; height:45px; border:1px solid var(--line); }
+  .shot .n { font-size:11px; font-variant-numeric:tabular-nums; }
+  .shot.room { justify-content:space-between; padding:4px 11px; }
+  .shot.room .dim { font-size:10px; color:var(--faint); }
+  .shot.room .dim i { font-style:normal; color:var(--warn); }
+  .areasel { width:calc(100% - 22px); margin:0 11px 8px; padding:4px 6px;
+             font-family:"JetBrains Mono",monospace; font-size:11.5px;
+             background:var(--sunk); color:var(--ink); border:1px solid var(--line);
+             border-radius:3px; }
+
+  .main { padding:16px 20px 48px; overflow:auto; }
+  .side { border-left:1px solid var(--line); background:var(--panel); overflow:auto;
+          max-height:calc(100vh - 52px); position:relative; z-index:60; }
+
+  .drop { border:1px dashed var(--line); border-radius:5px; padding:52px 26px; text-align:center;
+          color:var(--dim); background:var(--panel); }
+  .drop.over { border-color:var(--accent); background:var(--accent-soft); }
+  .drop p { margin:8px 0 0; font-size:12px; color:var(--faint); }
+
+  .mmctl button { padding:1px 7px; font-size:10px; margin-left:4px; cursor:pointer; }
+  .mmbody { padding:9px; overflow:auto; flex:1 1 0; min-height:0; }
+  canvas.mm { image-rendering:pixelated; background:#000; border:1px solid var(--line);
+              cursor:crosshair; }
+  .mmbody.grabbing, .mmbody.grabbing canvas.mm { cursor:grabbing; }
+  .mmpick { margin-top:8px; font-size:11px; color:var(--dim); min-height:18px; }
+  .mmpick button { padding:1px 6px; font-size:10px; margin-right:4px; }
+
+  .lab { font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--faint); margin:0 0 5px; }
+  .scroller { overflow:auto; border:1px solid var(--line); background:var(--sunk); box-shadow:var(--shadow); }
+  .scroller.stage { background:#000; max-height:62vh; }
+  .scroller canvas { cursor:crosshair; }
+  .scroller.grabbing, .scroller.grabbing canvas { cursor:grabbing; }
+
+  /* Las tarjetas flotan sobre la ventana, no dentro de un contenedor: metidas
+     en su hueco de la página sólo se podían dejar debajo del escenario, que es
+     justo donde no se ven. Fijas, se sueltan en cualquier punto de la pantalla
+     y no se van con el scroll. Por debajo de la barra de arriba (z-index 30),
+     que tiene que seguir alcanzable. */
+  .layers { position:static; }
+  .lay { position:fixed; z-index:20; display:flex; flex-direction:column;
+         border:1px solid var(--line); border-radius:4px; background:var(--panel);
+         box-shadow:var(--shadow); overflow:hidden; }
+  .lay.sel { border-color:var(--accent); }
+  .lay.moving { box-shadow:0 6px 28px rgba(20,22,28,.28); border-color:var(--accent); }
+  .lay .h { display:flex; justify-content:space-between; align-items:center; padding:5px 9px;
+            border-bottom:1px solid var(--line); font-size:11.5px;
+            cursor:move; user-select:none; -webkit-user-select:none; }
+  .lay .h::before { content:"⠿"; color:var(--faint); margin-right:7px; font-size:12px; }
+  /* Tirador de tamaño: la esquina de siempre, abajo a la derecha. */
+  /* Asas de redimensión: cuatro lados y cuatro esquinas, sobre el borde. */
+  .lay .edge { position:absolute; z-index:6; }
+  .lay .e-n { top:-3px; left:8px; right:8px; height:7px; cursor:ns-resize; }
+  .lay .e-s { bottom:-3px; left:8px; right:8px; height:7px; cursor:ns-resize; }
+  .lay .e-w { left:-3px; top:8px; bottom:8px; width:7px; cursor:ew-resize; }
+  .lay .e-e { right:-3px; top:8px; bottom:8px; width:7px; cursor:ew-resize; }
+  .lay .e-nw { left:-3px; top:-3px; width:12px; height:12px; cursor:nwse-resize; }
+  .lay .e-se { right:-3px; bottom:-3px; width:12px; height:12px; cursor:nwse-resize; }
+  .lay .e-ne { right:-3px; top:-3px; width:12px; height:12px; cursor:nesw-resize; }
+  .lay .e-sw { left:-3px; bottom:-3px; width:12px; height:12px; cursor:nesw-resize; }
+  .lay .e-se::after { content:""; position:absolute; right:4px; bottom:4px;
+    width:6px; height:6px; border-right:2px solid var(--faint); border-bottom:2px solid var(--faint); }
+  .lay.maxi .edge { display:none; }
+
+  .wbtns { display:flex; align-items:center; gap:3px; margin-left:auto; }
+  .wbtns button.wb { padding:0 6px; font-size:11px; line-height:16px; border-radius:2px; }
+  .wbtns button.wb.vista { font-size:9.5px; letter-spacing:.06em; padding:0 7px; }
+  .wbtns .stage-layers { display:flex; align-items:center; gap:2px; margin-right:4px; }
+  .wbtns button.wb.laytoggle {
+    font-size:10px; font-weight:700; padding:0 5px; line-height:16px; border-radius:2px;
+    font-family:"JetBrains Mono",monospace;
+    transition:background .15s, color .15s, border-color .15s, opacity .15s;
+  }
+  .wbtns button.wb.laytoggle.on {
+    background:var(--accent); color:var(--accent-ink); border-color:var(--accent);
+  }
+  .wbtns button.wb.laytoggle.off {
+    background:transparent; color:var(--dim); border-color:var(--line); opacity:.45;
+    text-decoration:line-through;
+  }
+  .wbtns button.wb.laytoggle:hover { opacity:1; }
+
+  /* Barra de ventanas minimizadas. */
+  #minbar { position:fixed; left:0; right:0; bottom:0; z-index:70; display:flex;
+            gap:6px; align-items:center; padding:5px 10px; background:var(--panel);
+            border-top:1px solid var(--line); box-shadow:0 -2px 10px rgba(0,0,0,.12); }
+  #minbar button { padding:2px 9px; font-size:11px; }
+  #minbar[hidden] { display:none; }
+
+  /* Barras laterales: se pliegan y se redimensionan tirando del separador.
+     El separador lleva su propia pestaña, que sobresale y sirve para las dos
+     direcciones -- esconder y volver a mostrar. */
+  .rail.fold, .side.fold { width:0 !important; min-width:0; padding:0; border:0; overflow:hidden; }
+  .divider { position:relative; z-index:60; width:6px; cursor:col-resize;
+             background:var(--line); opacity:.55; transition:opacity .15s; flex:0 0 auto; }
+  .divider:hover { opacity:1; }
+  .divider .tab { position:absolute; top:14px; width:16px; height:42px; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; font-size:10px;
+    background:var(--panel); color:var(--dim); border:1px solid var(--line);
+    border-radius:3px; z-index:2; }
+  .divider.left .tab { left:5px; }
+  .divider.right .tab { right:5px; }
+  .divider .tab:hover { color:var(--ink); border-color:var(--dim); }
+  .lay .h i { font-style:normal; color:var(--faint); font-size:10.5px; }
+  .lay .sub { display:flex; justify-content:space-between; align-items:center; padding:4px 9px;
+              font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--faint);
+              border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
+  /* Un `display` explícito gana a la regla de [hidden] del navegador, así que
+     esconder la franja con el atributo no bastaba: hay que decirlo aquí. */
+  .lay .sub[hidden], .lay .scroller[hidden] { display:none; }
+  .lay .sub .chg { color:var(--accent); }
+  .lay .sub .same { color:var(--faint); }
+  /* En flujo flexible: al agrandar la tarjeta, lo que crece es el lienzo. */
+  .pbody { display:flex; flex-direction:column; flex:1 1 0; min-height:0; }
+  .lay .scroller { border:0; flex:1 1 0; min-height:24px; }
+  .lay .scroller.stage { max-height:none; }
+  .hint.pfoot { padding:5px 9px; border-top:1px solid var(--line); font-size:10.5px;
+                flex:0 0 auto; }
+  .lay .h b i { font-style:normal; color:var(--faint); font-size:10.5px;
+                font-weight:500; margin-left:7px; }
+  .lay .h b em.wstate { font-style:normal; font-weight:500; font-size:10px;
+    letter-spacing:.06em; text-transform:uppercase; color:var(--faint); margin-left:7px; }
+  .lay .h b em.wstate.chg { color:var(--accent); }
+
+  .side .box { padding:11px 13px; border-bottom:1px solid var(--line); }
+  .kv { display:grid; grid-template-columns:auto 1fr; gap:3px 9px; font-size:11.5px; margin:0; }
+  .kv dt { color:var(--faint); }
+  .kv dd { margin:0; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+  button.copysel { margin-top:9px; width:100%; }
+  .dests { display:flex; flex-direction:column; gap:4px; margin-top:9px; }
+  .dests button { text-align:left; display:flex; justify-content:space-between; gap:8px; }
+  .dests button[aria-pressed="true"] { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+  .dests button small { font-weight:500; opacity:.75; font-family:"JetBrains Mono",monospace; font-size:10px; }
+  .zoomwrap { display:flex; gap:10px; align-items:flex-start; }
+  .zoomwrap canvas { width:88px; height:88px; border:1px solid var(--line); background:var(--sunk); }
+
+  .list { font-size:11.5px; }
+  .list .row { display:flex; justify-content:space-between; gap:8px; padding:5px 13px;
+               border-bottom:1px solid var(--line); align-items:center; }
+  .list .row:hover { background:var(--sunk); }
+  .list .row button { padding:1px 6px; font-size:10px; }
+  .list .row button.jump { flex:1; text-align:left; border:0; background:transparent;
+    color:var(--dim); font-family:"JetBrains Mono",monospace; font-weight:400;
+    padding:1px 0; cursor:pointer; }
+  .list .row button.jump:hover { color:var(--ink); }
+  .list .row code { color:var(--accent); }
+  .list .row.other { opacity:.55; }
+  .empty,.hint { padding:0; color:var(--faint); font-size:11.5px; }
+  .empty { padding:11px 13px; }
+  pre { margin:0; padding:11px 13px; background:var(--sunk); border-top:1px solid var(--line);
+        font-size:10px; line-height:1.5; white-space:pre; overflow-x:auto; color:var(--dim); max-height:230px; }
+  .warnbox { color:var(--warn); }
+  .okbox { color:var(--ok); }
+  kbd { font-family:"JetBrains Mono",monospace; font-size:10px; border:1px solid var(--line);
+        border-bottom-width:2px; border-radius:3px; padding:0 4px; color:var(--dim); }
+  @media (prefers-reduced-motion: reduce){ *{transition:none!important} }
+</style>
+</head>
+<body>
+
+<div class="top">
+  <div class="brand">BANCO DE <span>CAPAS</span></div>
+
+  <div class="grp" role="group" aria-label="Datos">
+    <label class="filebtn ui" tabindex="0">MAPAS<input type="file" id="mapsfile" accept=".json,.gz"></label>
+    <label class="filebtn ui" tabindex="0">GRABACIÓN<input type="file" id="file" accept=".bin"></label>
+  </div>
+
+  <div class="grp" role="group" aria-label="Vista">
+    <button id="zout" title="Alejar">−</button><b id="zlab">2×</b><button id="zin" title="Acercar">+</button>
+    <button id="relayout" title="Devolver las ventanas a su sitio">RECOLOCAR</button>
+    <button id="restore" hidden title="Salir de pantalla completa">RESTAURAR</button>
+  </div>
+
+  <div class="grp" role="group" aria-label="Correcciones">
+    <button id="load">CARGAR</button>
+    <input type="file" id="incfile" accept=".inc,.txt" hidden>
+    <button id="save" disabled>GUARDAR</button>
+    <button id="copy" disabled>COPIAR</button>
+    <button id="clear" disabled>VACIAR</button>
+  </div>
+
+  <div class="status">
+    <span class="meta" id="mapsbadge">sin maps.json</span>
+    <span class="meta" id="meta">sin archivo</span>
+    <span class="meta okbox" id="autobadge" hidden></span>
+  </div>
+</div>
+
+<div class="layout">
+  <nav class="rail"><h3 id="railTitle">Salas</h3><div id="shots"></div></nav>
+  <div class="divider left" id="divrail" title="Arrastra para cambiar el ancho">
+    <button class="tab" id="torail" title="Esconder o mostrar la lista">‹</button>
+  </div>
+  <main class="main" id="main">
+    <div class="drop" id="drop">
+      <div class="ui" style="font-size:15px;font-weight:700;color:var(--ink)">Suelta aquí un maps.json o un mzm-rec.bin</div>
+      <p>Se lee en tu navegador. No sale de tu máquina.</p>
+      <p><b>Mapas</b>: genera <code>maps.json</code> con
+         <code>python3 tools/layer-workbench/build_maps.py</code> y suéltalo aquí
+         para recorrer las 315 salas del juego.</p>
+      <p><b>Grabación</b>: desde DEBUG → HERRAMIENTAS → GRAB. ESCENA, queda en
+         <code>sdmc:/3ds/mzm-rec.bin</code>.</p>
+    </div>
+  </main>
+  <div class="divider right" id="divside" title="Arrastra para cambiar el ancho">
+    <button class="tab" id="toside" title="Esconder o mostrar el panel">›</button>
+  </div>
+  <aside class="side" id="side" hidden>
+    <h3>Tile seleccionado</h3>
+    <div class="box" id="tilebox"></div>
+    <h3>Correcciones</h3>
+    <div class="list" id="list"></div>
+    <pre id="export">(vacío)</pre>
+  </aside>
+</div>
+
+<div id="minbar" hidden></div>
+
+<script>
+(function () {
+  "use strict";
+  var O_IO=64,O_BGPAL=1088,O_OBJPAL=1600,O_OAM=2112,O_VRAM=3136,W=240,H=160;
+  /* W/H son la pantalla GBA, que es lo que mide una grabación. Una sala
+     entera mide lo que mida, así que todo lo genérico va contra state. */
+  function dimW(){ return state?state.W:W; }
+  function dimH(){ return state?state.H:H; }
+  function cellSize(){ return state?state.CELL:8; }
+  var OBJW=[[8,16,32,64],[16,32,32,64],[8,8,16,32]];
+  var OBJH=[[8,16,32,64],[8,8,16,32],[16,32,32,64]];
+  var DEST=[{v:4,name:"Sprites",note:"delante de todo"},{v:0,name:"BG0",note:""},
+            {v:1,name:"BG1",note:""},{v:2,name:"BG2",note:""},{v:3,name:"BG3",note:"el más al fondo"}];
+
+  var samples=[],state=null,sel=null,fixes={},zoom=2,fileName="";
+  /* sel es el ancla -- la que manda en el panel de la derecha -- y selMore el
+     resto del conjunto. El conjunto PUEDE mezclar capas: desde el resultado se
+     coge lo que haya en esa posición en todas ellas, que es como se ve el
+     problema, y desde una capa sólo lo suyo. La clave lleva la capa, o dos
+     bloques distintos en la misma posición se pisarían. */
+  var selMore={};
+  var els={};
+  ["file","incfile","mapsfile","mapsbadge","railTitle","meta","shots","main","drop",
+   "side","tilebox","list","export",
+   "copy","clear","save","zin","zout","zlab","relayout","torail","toside",
+   "minbar","divrail","divside","restore","autobadge","load"].forEach(function(id){els[id]=document.getElementById(id);});
+
+  function u16(b,o){return b[o]|(b[o+1]<<8);}
+  function u32(b,o){return (b[o]|(b[o+1]<<8)|(b[o+2]<<16)|(b[o+3]<<24))>>>0;}
+  function hex4(v){return "0x"+v.toString(16).toUpperCase().padStart(4,"0");}
+
+  /* ---------- recording parsing ---------- */
+  function scan(buf){
+    var b=new Uint8Array(buf),offs=[],i;
+    for(i=0;i+4<=b.length;i+=4){var m=u32(b,i);if(m===0x334D5A4D||m===0x344D5A4D)offs.push({off:i,magic:m});}
+    if(!offs.length||offs[0].off!==0)return null;
+    /* A sample is at least VRAM-sized, so the next real header cannot be
+       nearer than that -- otherwise a word inside VRAM that happens to read
+       'MZM4' would be taken as a boundary and give a nonsense stride. */
+    var MIN=O_VRAM+0x18000,stride=b.length;
+    for(var k=1;k<offs.length;k++){if(offs[k].off>=MIN){stride=offs[k].off;break;}}
+    return offs.filter(function(o){return o.off%stride===0;}).map(function(o){
+      return {base:o.off,magic:o.magic,frame:u32(b,o.off+4),clip:o.off+O_VRAM+0x18000,buf:b};
+    });
+  }
+  function rgb(c){return [(c&31)*255/31|0,((c>>5)&31)*255/31|0,((c>>10)&31)*255/31|0];}
+  function pal(b,o){var p=[];for(var i=0;i<256;i++)p.push(rgb(u16(b,o+i*2)));return p;}
+  function ctxOf(s){
+    var b=s.buf,base=s.base,m4=s.magic===0x344D5A4D;
+    return {b:b,io:base+O_IO,bgpal:pal(b,base+O_BGPAL),objpal:pal(b,base+O_OBJPAL),
+            oam:base+O_OAM,vram:base+O_VRAM,clip:s.clip,
+            area:m4?u16(b,s.clip+20):null, room:m4?u16(b,s.clip+22):null,
+            originX:m4?u16(b,s.clip+16):null, originY:m4?u16(b,s.clip+18):null};
+  }
+  function px4(b,off,x,y,hf,vf){if(hf)x=7-x;if(vf)y=7-y;var v=b[off+y*4+(x>>1)];return (x&1)?(v>>4):(v&15);}
+
+  function decodeBg(C,bg){
+    var b=C.b,io=C.io,cnt=u16(b,io+8+bg*2);
+    var charBase=((cnt>>2)&3)*0x4000,bpp8=(cnt>>7)&1,screenBase=((cnt>>8)&31)*0x800,sz=(cnt>>14)&3;
+    var mw=(sz&1)?64:32,mh=(sz&2)?64:32,bpr=mw/32;
+    var sx=u16(b,io+0x10+bg*4)&0x1FF,sy=u16(b,io+0x12+bg*4)&0x1FF,bpt=bpp8?64:32;
+    var img=new Uint8ClampedArray(W*H*4),cells={};
+    for(var ty=-1;ty<=20;ty++)for(var tx=-1;tx<=30;tx++){
+      var col=(((sx/8)|0)+tx)&(mw-1),row=(((sy/8)|0)+ty)&(mh-1);
+      var ma=screenBase+((((col/32)|0)+(((row/32)|0)*bpr))*0x800)+((row%32)*32+(col%32))*2;
+      var e=u16(b,C.vram+ma),tid=e&0x3FF,hf=(e>>10)&1,vf=(e>>11)&1,bank=(e>>12)&15;
+      var off=C.vram+charBase+tid*bpt,ox=tx*8-(sx%8),oy=ty*8-(sy%8),count=0;
+      for(var y=0;y<8;y++){var yy=oy+y;if(yy<0||yy>=H)continue;
+        for(var x=0;x<8;x++){var xx=ox+x;if(xx<0||xx>=W)continue;
+          var idx;
+          if(bpp8){idx=b[off+(vf?7-y:y)*8+(hf?7-x:x)];}
+          else{var v=px4(b,off,x,y,hf,vf);idx=v===0?0:bank*16+v;}
+          if(!idx)continue;count++;
+          var c=C.bgpal[idx],q=(yy*W+xx)*4;img[q]=c[0];img[q+1]=c[1];img[q+2]=c[2];img[q+3]=255;
+        }}
+      if(count>0&&ox>-8&&oy>-8&&ox<W&&oy<H)
+        cells[ox+","+oy]={bg:bg,entry:e,tid:tid,px:count,sx:ox,sy:oy,mapX:col,mapY:row};
+    }
+    return {img:img,cells:cells,prio:cnt&3};
+  }
+
+  function decodeObj(C){
+    var b=C.b,dispcnt=u16(b,C.io),obj1d=(dispcnt>>6)&1,img=new Uint8ClampedArray(W*H*4);
+    for(var i=127;i>=0;i--){
+      var a0=u16(b,C.oam+i*8),a1=u16(b,C.oam+i*8+2),a2=u16(b,C.oam+i*8+4),aff=(a0>>8)&1;
+      if(((a0>>9)&1)&&!aff)continue;
+      if(((a0>>10)&3)===2)continue;
+      var shape=(a0>>14)&3,size=(a1>>14)&3;if(shape===3)continue;
+      var w=OBJW[shape][size],h=OBJH[shape][size];
+      var x=a1&0x1FF,y=a0&0xFF;if(x>=256)x-=512;if(y>=160)y-=256;
+      if(x+w<=0||x>=W||y+h<=0||y>=H)continue;
+      var hf=aff?0:(a1>>12)&1,vf=aff?0:(a1>>13)&1,tile=a2&0x3FF,bank=(a2>>12)&15;
+      var tw=w/8,th=h/8;
+      for(var tyi=0;tyi<th;tyi++)for(var txi=0;txi<tw;txi++){
+        var sxi=hf?tw-1-txi:txi,syi=vf?th-1-tyi:tyi;
+        var tn=obj1d?(tile+syi*tw+sxi):(tile+syi*32+sxi),off=C.vram+0x10000+(tn&0x3FF)*32;
+        for(var yy=0;yy<8;yy++){var py=y+tyi*8+yy;if(py<0||py>=H)continue;
+          for(var xx=0;xx<8;xx++){var pxx=x+txi*8+xx;if(pxx<0||pxx>=W)continue;
+            var v=px4(b,off,xx,yy,hf,vf);if(!v)continue;
+            var c=C.objpal[bank*16+v],q=(py*W+pxx)*4;img[q]=c[0];img[q+1]=c[1];img[q+2]=c[2];img[q+3]=255;
+          }}
+      }
+    }
+    return {img:img};
+  }
+
+  /* ---------- compositing ---------- */
+  function over(dst,src){for(var i=0;i<src.length;i+=4)if(src[i+3]){dst[i]=src[i];dst[i+1]=src[i+1];dst[i+2]=src[i+2];dst[i+3]=255;}}
+
+  /* Mezcla alfa del GBA: primer objetivo por EVA/16 más lo que ya hay por
+     EVB/16, saturando. Sin esto, una capa de efecto se dibuja como si fuera de
+     contenido: el BG0 de Crateria 1 son 4096 bloques de negro sólido y taparía
+     la sala entera, cuando en el juego con sus coeficientes no tapa nada. */
+  function overBlend(dst,src,eva,evb){
+    for(var i=0;i<src.length;i+=4){
+      if(!src[i+3])continue;
+      for(var k=0;k<3;k++){
+        var v=(src[i+k]*eva+dst[i+k]*evb)/16;
+        dst[i+k]=v>255?255:v;
+      }
+      dst[i+3]=255;
+    }
+  }
+  function cellOnly(src,cx,cy){
+    var w=dimW(),h=dimH(),c=cellSize(),o=new Uint8ClampedArray(w*h*4);
+    for(var y=0;y<c;y++){var yy=cy+y;if(yy<0||yy>=h)continue;
+      for(var x=0;x<c;x++){var xx=cx+x;if(xx<0||xx>=w)continue;
+        var q=(yy*w+xx)*4;if(src[q+3]){o[q]=src[q];o[q+1]=src[q+1];o[q+2]=src[q+2];o[q+3]=255;}}}
+    return o;
+  }
+  function blank(src,cx,cy){
+    var w=dimW(),h=dimH(),c=cellSize(),o=new Uint8ClampedArray(src);
+    for(var y=0;y<c;y++){var yy=cy+y;if(yy<0||yy>=h)continue;
+      for(var x=0;x<c;x++){var xx=cx+x;if(xx<0||xx>=w)continue;o[(yy*w+xx)*4+3]=0;}}
+    return o;
+  }
+
+  /* Layers after corrections: a tile leaves its own layer, and arrives on the
+     destination layer drawn ON TOP of what that layer already has. */
+  function applied(){
+    var out={},moved=[];
+    /* Sin copiar de entrada: una sala grande son ~27 MB por capa, y lo normal
+       es que la mayoría de las capas no las toque ninguna corrección. Sólo se
+       clona la capa que de verdad pierde un tile. */
+    [0,1,2,3].forEach(function(bg){ if(state.on[bg]) out[bg]=state.bg[bg].img; });
+    Object.keys(fixes).forEach(function(k){
+      var f=fixes[k]; if(f.tag!==state.tag) return;
+      var L=state.bg[f.info.bg]; if(!L) return;
+      var cell=L.cells[f.info.sx+","+f.info.sy];
+      if(!cell||cell.entry!==f.info.entry) return;   // moved/changed: skip
+      moved.push({dest:f.dest,px:cellOnly(L.img,f.info.sx,f.info.sy),from:f.info.bg});
+      out[f.info.bg]=blank(out[f.info.bg],f.info.sx,f.info.sy);
+    });
+    var after={};
+    [0,1,2,3].forEach(function(bg){
+      if(!state.on[bg])return;
+      var lands=moved.some(function(m){return m.dest===bg;});
+      if(!lands){after[bg]=out[bg];return;}
+      var a=new Uint8ClampedArray(out[bg]);
+      moved.forEach(function(m){ if(m.dest===bg) over(a,m.px); });
+      after[bg]=a;
+    });
+    return {layers:out,after:after,moved:moved};
+  }
+
+  var compBuf=null;
+  function composite(A){
+    var n=dimW()*dimH()*4;
+    if(!compBuf||compBuf.length!==n)compBuf=new Uint8ClampedArray(n);
+    var out=compBuf;
+    out.fill(0);
+    for(var i=3;i<out.length;i+=4)out[i]=255;
+    /* Se recorren las CUATRO capas, no sólo las que la sala usa. Un destino es
+       un nivel de profundidad, y la mayoría de salas no tienen las cuatro: si
+       sólo se pintaran las presentes, mandar un bloque a una capa que esta sala
+       no usa lo haría desaparecer en vez de moverlo. Le pasaba a cualquier
+       destino BG3, y a BG0 en las 162 salas que no lo tienen. */
+    var order=[0,1,2,3].sort(function(a,b){
+      var pa=state.prio[a],pb=state.prio[b];return pa!==pb?pb-pa:b-a;});
+    var bl=state.blend;
+    var vis=state.stageLayers||{0:true,1:true,2:true,3:true,obj:true,4:true};
+    order.forEach(function(bg){
+      if(vis[bg]!==false){
+        if(state.on[bg]){
+          if(bl&&bl.first.indexOf(bg)>=0) overBlend(out,A.layers[bg],bl.eva,bl.evb);
+          else over(out,A.layers[bg]);
+        }
+        /* Un bloque movido se pinta tal cual: la corrección cambia su plano de
+           profundidad, no cómo se mezcla. */
+        A.moved.forEach(function(m){ if(m.dest===bg) over(out,m.px); });
+      }
+    });
+    if(state.obj && vis.obj!==false) over(out,state.obj.img);
+    if(vis[4]!==false) A.moved.forEach(function(m){ if(m.dest===4) over(out,m.px); });
+    return out;
+  }
+
+  /* ---------- canvas helpers ---------- */
+  function sizeCanvas(cv){
+    var w=dimW(),h=dimH();
+    cv.width=w;cv.height=h;
+    cv.style.width=(w*zoom)+"px";cv.style.height=(h*zoom)+"px";
+    return cv.getContext("2d");
+  }
+  function checkerboard(ctx){
+    var c=cellSize();
+    for(var y=0;y<dimH();y+=c)for(var x=0;x<dimW();x+=c){
+      ctx.fillStyle=((x/c+y/c)%2)?"rgba(128,132,142,.13)":"rgba(128,132,142,.05)";
+      ctx.fillRect(x,y,c,c);
+    }
+  }
+  /* La marca sale en TODAS las vistas, no sólo en la capa a la que pertenece
+     el tile: al señalar algo lo que uno quiere ver es qué hay en ese mismo
+     sitio en las demás capas. En la capa dueña va llena; en las otras,
+     atenuada y a trazos, para no confundir dónde está seleccionado. */
+  /* El rectángulo que se está arrastrando, para ver qué va a coger antes de
+     soltar. Sale en todas las vistas, atenuado donde no es su capa. */
+  function drawBox(ctx,own){
+    if(!selBox)return;
+    var c=cellSize();
+    ctx.save();
+    ctx.fillStyle=own?"rgba(233,161,59,.16)":"rgba(233,161,59,.08)";
+    ctx.fillRect(selBox.x0,selBox.y0,selBox.x1-selBox.x0+c,selBox.y1-selBox.y0+c);
+    ctx.setLineDash([4,3]);
+    ctx.strokeStyle=own?"#E9A13B":"rgba(233,161,59,.5)";
+    ctx.lineWidth=1;
+    ctx.strokeRect(selBox.x0+0.5,selBox.y0+0.5,
+                   selBox.x1-selBox.x0+c-1,selBox.y1-selBox.y0+c-1);
+    ctx.restore();
+  }
+
+  /* viewBg es la capa de esta vista, o null en el resultado, donde todo lo
+     seleccionado es suyo. */
+  function markSel(ctx,marks,viewBg){
+    drawBox(ctx,viewBg===null||(sel&&sel.info.bg===viewBg));
+    if(!marks||!marks.length)return;
+    var c=cellSize();
+    ctx.save();
+    marks.forEach(function(m,i){
+      var anchor=(i===0);
+      var own=(viewBg===null||m[2]===viewBg);
+      if(own){
+        /* En su propia capa van rellenos y con el ancla más marcada: es donde
+           de verdad está seleccionado y donde se va a aplicar el cambio. */
+        ctx.setLineDash([]);
+        ctx.fillStyle=anchor?"rgba(233,161,59,.30)":"rgba(233,161,59,.18)";
+        ctx.fillRect(m[0],m[1],c,c);
+        ctx.strokeStyle="#E9A13B";
+        ctx.lineWidth=anchor?2:1;
+      } else {
+        ctx.setLineDash([3,3]);
+        ctx.strokeStyle="rgba(233,161,59,.5)";
+        ctx.lineWidth=1;
+      }
+      ctx.strokeRect(m[0]+0.5,m[1]+0.5,c-1,c-1);
+      ctx.setLineDash([]);
+      ctx.strokeStyle=own?"rgba(0,0,0,.6)":"rgba(0,0,0,.3)";
+      ctx.lineWidth=1;
+      ctx.strokeRect(m[0]-0.5,m[1]-0.5,c+1,c+1);
+    });
+    ctx.restore();
+  }
+  function paint(cv,data,checker,marks,viewBg){
+    var w=dimW(),h=dimH(),ctx=sizeCanvas(cv);
+    ctx.clearRect(0,0,w,h);
+    if(checker)checkerboard(ctx);
+    var tmp=document.createElement("canvas");tmp.width=w;tmp.height=h;
+    var id=tmp.getContext("2d").createImageData(w,h);id.data.set(data);
+    tmp.getContext("2d").putImageData(id,0,0);
+    ctx.drawImage(tmp,0,0);
+    markSel(ctx,marks,viewBg===undefined?null:viewBg);
+  }
+
+  /* Las vistas se sincronizan por el CENTRO, no por scrollLeft/scrollTop.
+     El escenario mide 62vh y las tarjetas de capa 190px: copiando el scroll
+     tal cual, lo único que coincide entre vistas de distinto tamaño es la
+     esquina de arriba a la izquierda, y cada una acaba enseñando una zona
+     distinta de la sala. Con el centro compartido todas miran lo mismo. */
+  var scrollers=[];
+
+  function centerOf(el){
+    return [(el.scrollLeft+el.clientWidth/2)/zoom,
+            (el.scrollTop+el.clientHeight/2)/zoom];
+  }
+  /* Se apunta la posición que se le deja puesta, ya recortada por el navegador
+     (una vista pequeña cerca del borde no puede centrarse del todo). El evento
+     scroll es ASÍNCRONO: una bandera puesta y quitada dentro del bucle no lo
+     tapa, y cada vista acabaría recolocando a las demás en un ping-pong que
+     devuelve todo a donde estaba. Comparar contra lo asignado distingue lo que
+     movió el usuario de lo que movimos nosotros. */
+  /* Un lienzo escondido mide 0: centrarlo daría un centro absurdo y, al
+     compartirse, arrastraría a las demás vistas. */
+  function visible(el){ return el.clientWidth>0&&el.clientHeight>0; }
+  function centerTo(el,x,y){
+    if(!visible(el))return;
+    el.scrollLeft=x*zoom-el.clientWidth/2;
+    el.scrollTop=y*zoom-el.clientHeight/2;
+    el._syncL=el.scrollLeft;el._syncT=el.scrollTop;
+  }
+  function isOurs(el){
+    return el._syncL===el.scrollLeft&&el._syncT===el.scrollTop;
+  }
+  /* Mueve las demás vistas lo mismo que se ha movido ésta.
+     Compartir un CENTRO absoluto parecía lo natural, pero las vistas tienen
+     tamaños distintos y por tanto recorridos distintos: en una sala estrecha
+     el resultado sólo se desplaza 107 px mientras que las capas se desplazan
+     246. Con el centro compartido, en cuanto el resultado topaba con su límite
+     imponía su centro a las demás y las devolvía de un salto, y una zona que
+     sólo se alcanzaba desplazando una capa se perdía en cuanto tocabas el
+     resultado. Propagando el desplazamiento, cada vista llega hasta donde
+     puede y nadie arrastra a nadie. */
+  function panBy(dx,dy,except){
+    if(!dx&&!dy)return;
+    scrollers.forEach(function(o){
+      if(o===except||!visible(o))return;
+      o.scrollLeft+=dx;o.scrollTop+=dy;
+      o._syncL=o.scrollLeft;o._syncT=o.scrollTop;
+    });
+  }
+
+  /* Lleva todas las vistas a un punto de la sala. Sigue siendo lo correcto
+     cuando el usuario señala algo -- un clic, las flechas, ir a una
+     corrección--: ahí sí quiere ver lo mismo en todas. */
+  function centerOn(x,y,except){
+    scrollers.forEach(function(o){ if(o!==except)centerTo(o,x,y); });
+  }
+  /* Copia la posición de cualquier vista que sí se esté viendo. */
+  function syncFromVisible(el){
+    var src=null;
+    scrollers.forEach(function(o){ if(!src&&o!==el&&visible(o))src=o; });
+    if(!src)return;
+    el.scrollLeft=src.scrollLeft;el.scrollTop=src.scrollTop;
+    el._syncL=el.scrollLeft;el._syncT=el.scrollTop;
+  }
+
+  function firstVisibleScroller(){
+    for(var i=0;i<scrollers.length;i++)if(visible(scrollers[i]))return scrollers[i];
+    return null;
+  }
+  function centerOnSel(){
+    if(!sel)return;
+    var c=cellSize();
+    centerOn(sel.info.sx+c/2,sel.info.sy+c/2);
+  }
+
+  /* Acercar lo justo para que la selección se vea, sin recolocar la vista.
+     Centrar en cada pulsación daba saltos: uno pulsa para mirar algo que ya
+     tiene delante, no para que se le mueva todo. Sólo se desplaza si de verdad
+     se ha salido, y lo mínimo, respetando que cada vista tiene su recorrido. */
+  function ensureSelVisible(){
+    if(!sel)return;
+    var c=cellSize(),x=sel.info.sx*zoom,y=sel.info.sy*zoom,w=c*zoom;
+    var margen=w;
+    scrollers.forEach(function(o){
+      if(!visible(o))return;
+      var dx=0,dy=0;
+      if(x-margen<o.scrollLeft)dx=x-margen-o.scrollLeft;
+      else if(x+w+margen>o.scrollLeft+o.clientWidth)dx=x+w+margen-o.scrollLeft-o.clientWidth;
+      if(y-margen<o.scrollTop)dy=y-margen-o.scrollTop;
+      else if(y+w+margen>o.scrollTop+o.clientHeight)dy=y+w+margen-o.scrollTop-o.clientHeight;
+      if(!dx&&!dy)return;
+      o.scrollLeft+=dx;o.scrollTop+=dy;
+      o._syncL=o.scrollLeft;o._syncT=o.scrollTop;
+    });
+  }
+
+  /* Un gesto sobre un lienzo es una de dos cosas:
+
+       clic o arrastre          seleccionar -- un bloque, o el rectángulo que
+                                dibujes, que se va marcando mientras arrastras
+       May + arrastre           recorrer la sala
+
+     y Ctrl suma lo nuevo a lo que ya hubiera. La selección se resuelve aquí y
+     no en un listener de `click` del canvas porque al capturar el puntero para
+     arrastrar el navegador manda el click al elemento que capturó -- el
+     contenedor -- y nunca llega al canvas. */
+  var selBox=null,previewPend=false;
+
+  function schedulePreview(){
+    if(previewPend)return;
+    previewPend=true;
+    /* Coalescido por frame: un redibujado por cada pointermove sobre una sala
+       grande no va a 60 Hz ni de lejos. */
+    requestAnimationFrame(function(){ previewPend=false;redraw(); });
+  }
+
+  /* Dentro del lienzo, no sobre las barras de scroll del contenedor: pulsar la
+     barra y soltar seleccionaba el bloque que hubiera detrás. */
+  function onCanvas(el,cv,ev){
+    var r=cv.getBoundingClientRect();
+    if(ev.clientX<r.left||ev.clientX>=r.right||ev.clientY<r.top||ev.clientY>=r.bottom)
+      return false;
+    var e=el.getBoundingClientRect();
+    return ev.clientX<e.left+el.clientWidth&&ev.clientY<e.top+el.clientHeight;
+  }
+
+  function cellCoords(cv,ev){
+    var r=cv.getBoundingClientRect();
+    if(!r.width||!r.height)return null;
+    var c=cellSize();
+    return [Math.floor((ev.clientX-r.left)/r.width*dimW()/c)*c,
+            Math.floor((ev.clientY-r.top)/r.height*dimH()/c)*c];
+  }
+
+  function registerScroller(el,target){
+    scrollers.push(el);
+    el.addEventListener("scroll",function(){
+      if(!visible(el))return;
+      if(isOurs(el))return;          // lo hemos movido nosotros, no el usuario
+      var dx=el.scrollLeft-(el._syncL||0),dy=el.scrollTop-(el._syncT||0);
+      el._syncL=el.scrollLeft;el._syncT=el.scrollTop;
+      panBy(dx,dy,el);
+    });
+    el.addEventListener("wheel",function(ev){
+      if(!ev.ctrlKey&&!ev.metaKey)return;
+      ev.preventDefault(); setZoom(zoom+(ev.deltaY<0?1:-1));
+    },{passive:false});
+
+    var DRAG_PX=5;
+    var down=false,mode=null,px=0,py=0,ox=0,oy=0,pid=null,a=null;
+
+    el.addEventListener("pointerdown",function(ev){
+      if(ev.button!==0)return;
+      if(target&&!onCanvas(el,target.cv,ev))return;   // barra de scroll
+      down=true;mode=null;pid=ev.pointerId;
+      px=ox=ev.clientX;py=oy=ev.clientY;
+      a=(target&&!ev.shiftKey)?cellCoords(target.cv,ev):null;
+    });
+
+    el.addEventListener("pointermove",function(ev){
+      if(!down)return;
+      var lejos=Math.abs(ev.clientX-ox)+Math.abs(ev.clientY-oy)>DRAG_PX;
+      if(!mode){
+        if(!lejos)return;
+        mode=(ev.shiftKey||!target)?"pan":"box";
+        try{el.setPointerCapture(pid);}catch(e){}
+        if(mode==="pan")el.classList.add("grabbing");
+      }
+      if(mode==="pan"){
+        var dx=ev.clientX-px,dy=ev.clientY-py;
+        px=ev.clientX;py=ev.clientY;
+        var l0=el.scrollLeft,t0=el.scrollTop;
+        el.scrollLeft-=dx;el.scrollTop-=dy;
+        el._syncL=el.scrollLeft;el._syncT=el.scrollTop;
+        panBy(el.scrollLeft-l0,el.scrollTop-t0,el);
+        return;
+      }
+      var b=cellCoords(target.cv,ev);
+      if(!a||!b)return;
+      selBox={bg:target.bg,x0:Math.min(a[0],b[0]),y0:Math.min(a[1],b[1]),
+              x1:Math.max(a[0],b[0]),y1:Math.max(a[1],b[1])};
+      schedulePreview();
+    });
+
+    ["pointerup","pointercancel"].forEach(function(n){
+      el.addEventListener(n,function(ev){
+        if(!down)return;
+        down=false;
+        try{el.releasePointerCapture(pid);}catch(e){}
+        if(mode==="pan"){ el.classList.remove("grabbing");mode=null;return; }
+        if(n!=="pointerup"||!target){ mode=null;selBox=null;return; }
+        if(mode==="box"){
+          var box=selBox;selBox=null;mode=null;
+          if(box)commitBox(box,ev.ctrlKey||ev.metaKey);
+          return;
+        }
+        mode=null;
+        pickAt(ev,target.cv,target.bg,ev.ctrlKey||ev.metaKey);
+      });
+    });
+  }
+
+  /* Lo que haya dentro del rectángulo.
+
+     Desde el resultado se cogen TODAS las capas: ahí no estás mirando una
+     capa, estás mirando el sitio, y lo que quieres corregir es lo que haya en
+     él. Antes se decidía la capa por lo que hubiera en la esquina superior
+     izquierda del rectángulo, y si esa esquina estaba vacía se acababa
+     cogiendo una capa cualquiera -- casi siempre ninguna.
+
+     Desde una capa concreta, sólo esa. */
+  function commitBox(box,add){
+    var vis=state.stageLayers||{0:true,1:true,2:true,3:true};
+    var capas=(box.bg===null)
+      ? [0,1,2,3].filter(function(b){return state.on[b] && (vis[b]!==false);})
+      : [box.bg];
+    if(!add){ selMore={};sel=null; }
+    var cs=cellSize(),primero=null;
+    for(var y=box.y0;y<=box.y1;y+=cs)for(var x=box.x0;x<=box.x1;x+=cs){
+      capas.forEach(function(bg){
+        var L=state.bg[bg];
+        var c=L&&L.cells[x+","+y];
+        if(!c)return;
+        if(!primero)primero=c;
+        selMore[selKey(c)]=c;
+      });
+    }
+    if(primero){ if(!sel)sel={info:primero}; }
+    else if(!sel){
+      /* Ni un bloque con contenido en ninguna capa: se señala la posición, que
+         sigue diciendo qué hay ahí. */
+      var bg0=capas.length?capas[capas.length-1]:1;
+      sel={info:{bg:bg0,entry:0,tid:0,px:0,sx:box.x0,sy:box.y0,
+                 mapX:box.x0/cs,mapY:box.y0/cs,
+                 blockX:box.x0/cs,blockY:box.y0/cs,empty:true}};
+    }
+    renderSide();redraw();
+  }
+
+  function setZoom(z){
+    var v=firstVisibleScroller();
+    var keep=v?centerOf(v):null;
+    zoom=Math.max(1,Math.min(12,z));
+    els.zlab.textContent=zoom+"×";
+    if(state) redraw();
+    /* El canvas cambia de tamaño, así que el scroll se iría solo: se vuelve
+       al mismo punto de la sala para que el zoom no descoloque la vista. */
+    if(keep)centerOn(keep[0],keep[1]);
+  }
+
+
+  /* ================= ventanas ============================================
+     Mapa, resultado y capas son la misma clase de ventana: flotan sobre la
+     página, se mueven, se redimensionan por cualquier borde, se minimizan a
+     una barra abajo y recuerdan dónde las dejaste. Se guardan por id y no por
+     sala, porque al cambiar de sala se reconstruye el DOM y lo que uno espera
+     es que las ventanas sigan donde estaban.
+     ======================================================================== */
+  var PANEL_KEY="mzm-wb-ventanas-v4",PANEL_GAP=14,PANEL_MIN_W=200,PANEL_MIN_H=120;
+  /* Medido, no supuesto: si la barra de arriba cambia de alto -- otra fuente,
+     otro zoom del navegador, un grupo más -- un 58 fijo dejaba las ventanas
+     metidas por debajo, tapando su propia cabecera. */
+  function panelTop(){
+    var t=document.querySelector(".top");
+    return (t?Math.ceil(t.getBoundingClientRect().height):52)+2;
+  }
+  var PANEL_VISIBLE=90;  // cuánto tiene que quedar dentro para poder recogerla
+  var PANEL_BAR=34;      // alto de la barra de minimizadas
+  var panels={};
+  var PANEL_Z_MIN=20,PANEL_Z_MAX=49;
+  try{ panels=JSON.parse(localStorage.getItem(PANEL_KEY))||{}; }catch(e){ panels={}; }
+
+  var railOpen=true,sideOpen=true;
+
+  /* Una ventana de tamaño 0 -- pestaña oculta, ventana minimizada, algún
+     navegador incrustado -- recortaría todas las ventanas a nada y, en cuanto
+     el usuario tocara una, guardaría esa basura. Si no hay medidas creíbles,
+     no se recoloca nada. */
+  function vpW(){ return window.innerWidth||document.documentElement.clientWidth||0; }
+  function vpH(){ return window.innerHeight||document.documentElement.clientHeight||0; }
+  function vpUsable(){ return vpW()>=320&&vpH()>=240; }
+
+  /* El hueco donde se reparten: descuenta las barras laterales abiertas y la
+     de minimizadas, para que RECOLOCAR no las tape. */
+  function areaRect(){
+    var rail=document.querySelector(".rail"),side=document.querySelector(".side");
+    var l=(railOpen&&rail)?rail.getBoundingClientRect().width:0;
+    var r=(sideOpen&&side&&!side.hidden)?side.getBoundingClientRect().width:0;
+    var bar=document.getElementById("minbar");
+    var b=(bar&&bar.children.length)?PANEL_BAR:0;
+    return {x:l,y:panelTop(),w:Math.max(PANEL_MIN_W,vpW()-l-r),
+            h:Math.max(PANEL_MIN_H,vpH()-panelTop()-b)};
+  }
+
+  function savePanels(){
+    try{ localStorage.setItem(PANEL_KEY,JSON.stringify(panels)); }catch(e){}
+  }
+
+  function panelState(id){
+    if(!panels[id])panels[id]={};
+    return panels[id];
+  }
+
+  /* Reparto inicial dentro del hueco libre: el mapa arriba a la izquierda, el
+     resultado ocupando el resto de arriba, y las capas repartidas por abajo. */
+  function defaultPanel(id,ids){
+    var A=areaRect();
+    var hayMapa=ids.indexOf("map")>=0;
+    var mapW=Math.min(330,Math.floor(A.w*0.3));
+    var altoArriba=Math.max(PANEL_MIN_H,Math.floor(A.h*0.52));
+    if(id==="map")
+      return {x:A.x+PANEL_GAP,y:A.y+PANEL_GAP,w:mapW,h:altoArriba};
+    if(id==="stage"){
+      var x=A.x+(hayMapa?PANEL_GAP*2+mapW:PANEL_GAP);
+      return {x:x,y:A.y+PANEL_GAP,w:Math.max(PANEL_MIN_W,A.x+A.w-x-PANEL_GAP),h:altoArriba};
+    }
+    var capas=ids.filter(function(k){return k.indexOf("bg")===0;});
+    var j=Math.max(0,capas.indexOf(id)),n=Math.max(1,capas.length);
+    var cols=Math.min(n,3),rows=Math.ceil(n/cols);
+    var w=Math.max(PANEL_MIN_W,Math.floor((A.w-PANEL_GAP*(cols+1))/cols));
+    var yBase=A.y+PANEL_GAP+altoArriba+PANEL_GAP;
+    var h=Math.max(PANEL_MIN_H,Math.floor((A.y+A.h-yBase-PANEL_GAP*rows)/rows));
+    return {x:A.x+PANEL_GAP+(j%cols)*(w+PANEL_GAP),
+            y:yBase+Math.floor(j/cols)*(h+PANEL_GAP),w:w,h:h};
+  }
+
+  function layoutPanels(reset){
+    var grid=els.main.querySelector(".layers");
+    if(!grid)return;
+    if(!vpUsable())return;
+    var cards=grid.querySelectorAll(".lay");
+    var ids=Array.prototype.map.call(cards,function(c){return c.dataset.panel;});
+    var A=areaRect(),vw=vpW(),vh=vpH();
+    Array.prototype.forEach.call(cards,function(card){
+      var id=card.dataset.panel,p=panelState(id);
+      if(reset||p.w===undefined){
+        var d=defaultPanel(id,ids);
+        p.x=d.x;p.y=d.y;p.w=d.w;p.h=d.h;
+        if(reset){p.min=false;p.max=false;}
+      }
+      card.classList.toggle("mini",!!p.min);
+      card.classList.toggle("maxi",!!p.max);
+      if(id==="stage"&&els.restore)els.restore.hidden=!p.max;
+      if(p.min){ card.style.display="none"; return; }
+      card.style.display="";
+      if(p.max){
+        /* Maximizada ocupa el hueco entero y se va al fondo, para que el resto
+           de ventanas queden por encima -- que es para lo que sirve. */
+        card.style.left=A.x+"px";card.style.top=A.y+"px";
+        card.style.width=A.w+"px";card.style.height=A.h+"px";
+        card.style.zIndex="10";
+        return;
+      }
+      card.style.zIndex=String(p.z||PANEL_Z_MIN);
+      p.w=Math.min(Math.max(PANEL_MIN_W,p.w),vw);
+      p.h=Math.min(Math.max(PANEL_MIN_H,p.h),vh-panelTop());
+      p.x=Math.max(PANEL_VISIBLE-p.w,Math.min(p.x,vw-PANEL_VISIBLE));
+      p.y=Math.max(panelTop(),Math.min(p.y,vh-40));
+      card.style.left=p.x+"px";card.style.top=p.y+"px";
+      card.style.width=p.w+"px";card.style.height=p.h+"px";
+    });
+    renderMinBar();
+    if(reset)savePanels();
+  }
+
+  /* Barra de minimizadas, abajo. */
+  function renderMinBar(){
+    var bar=document.getElementById("minbar");
+    if(!bar)return;
+    bar.innerHTML="";
+    var grid=els.main.querySelector(".layers");
+    if(!grid){bar.hidden=true;return;}
+    Array.prototype.forEach.call(grid.querySelectorAll(".lay"),function(card){
+      var id=card.dataset.panel;
+      if(!panelState(id).min)return;
+      var b=document.createElement("button");
+      b.textContent=card.dataset.short||id;
+      b.title="Restaurar";
+      b.addEventListener("click",function(){
+        panelState(id).min=false;bringToFront(id);layoutPanels(false);savePanels();
+      });
+      bar.appendChild(b);
+    });
+    bar.hidden=!bar.children.length;
+  }
+
+  /* Renumera todas las ventanas dejando la pedida arriba. Bounded a propósito:
+     con un contador que sólo sube, a las veinte pulsaciones las ventanas
+     pasaban por encima de la barra de minimizadas y de las laterales. */
+  function bringToFront(id){
+    var grid=els.main.querySelector(".layers");
+    if(!grid)return;
+    var cards=Array.prototype.slice.call(grid.querySelectorAll(".lay"));
+    cards.sort(function(a,b){
+      if(a.dataset.panel===id)return 1;
+      if(b.dataset.panel===id)return -1;
+      return (panelState(a.dataset.panel).z||PANEL_Z_MIN)-
+             (panelState(b.dataset.panel).z||PANEL_Z_MIN);
+    });
+    cards.forEach(function(c,i){
+      var p=panelState(c.dataset.panel);
+      p.z=Math.min(PANEL_Z_MAX,PANEL_Z_MIN+i);
+      if(!p.max)c.style.zIndex=String(p.z);
+    });
+  }
+
+  /* Mover, redimensionar por cualquier borde, minimizar y maximizar. Dentro
+     del lienzo el arrastre ya significa recorrer la sala, así que la ventana
+     sólo se agarra por sitios que no son lienzo. */
+  var EDGES=[["n",0,-1],["s",0,1],["e",1,0],["w",-1,0],
+             ["ne",1,-1],["nw",-1,-1],["se",1,1],["sw",-1,1]];
+
+  function makeMovable(card,id){
+    function gesture(handle,onMove){
+      handle.addEventListener("pointerdown",function(ev){
+        if(ev.button!==0)return;
+        var p=panelState(id);
+        if(p.max)return;                      // maximizada no se mueve
+        ev.preventDefault();ev.stopPropagation();
+        bringToFront(id);
+        var sx=ev.clientX,sy=ev.clientY,p0={x:p.x,y:p.y,w:p.w,h:p.h};
+        /* Al frente mientras dura el gesto: si no, una ventana arrastrada por
+           debajo de otra desaparece bajo ella a mitad del movimiento. */
+        card.classList.add("moving");
+        try{handle.setPointerCapture(ev.pointerId);}catch(e){}
+        function move(e2){ onMove(p,p0,e2.clientX-sx,e2.clientY-sy);layoutPanels(false); }
+        function up(e2){
+          handle.removeEventListener("pointermove",move);
+          handle.removeEventListener("pointerup",up);
+          handle.removeEventListener("pointercancel",up);
+          card.classList.remove("moving");
+          try{handle.releasePointerCapture(e2.pointerId);}catch(e){}
+          /* Ni al mover ni al redimensionar se recoloca el contenido: cambia
+             el marco, no lo que se mira dentro. */
+          savePanels();
+        }
+        handle.addEventListener("pointermove",move);
+        handle.addEventListener("pointerup",up);
+        handle.addEventListener("pointercancel",up);
+      });
+    }
+    gesture(card.querySelector(".h"),function(p,p0,dx,dy){
+      p.x=p0.x+dx;p.y=p0.y+dy;
+    });
+    Array.prototype.forEach.call(card.querySelectorAll(".edge"),function(h){
+      var ex=+h.dataset.ex,ey=+h.dataset.ey;
+      gesture(h,function(p,p0,dx,dy){
+        if(ex>0)p.w=Math.max(PANEL_MIN_W,p0.w+dx);
+        if(ex<0){var w=Math.max(PANEL_MIN_W,p0.w-dx);p.x=p0.x+(p0.w-w);p.w=w;}
+        if(ey>0)p.h=Math.max(PANEL_MIN_H,p0.h+dy);
+        if(ey<0){var hh=Math.max(PANEL_MIN_H,p0.h-dy);p.y=p0.y+(p0.h-hh);p.h=hh;}
+      });
+    });
+    card.addEventListener("pointerdown",function(){ bringToFront(id); });
+  }
+
+  /* Toda la interfaz de trabajo son paneles flotantes del mismo tipo: el mapa
+     de área, el resultado y cada capa. Comparten cabecera para arrastrar,
+     esquina para redimensionar y posición guardada, y se distinguen sólo por
+     su id. */
+  /* Cada ventana de capa enseña la capa como está, como quedaría, o las dos.
+     Con una sola visible el lienzo ocupa toda la ventana, que es lo que uno
+     quiere al comparar de cerca; con las dos, la mitad cada una. */
+  var VIEWS=[{n:"AMBAS",before:true,after:true},
+             {n:"ANTES",before:true,after:false},
+             {n:"DESPUÉS",before:false,after:true}];
+
+  function applyView(card){
+    var v=VIEWS[panelState("bg"+card.bg).view||0];
+    var eraBefore=card.boxBefore.hidden,eraAfter=card.boxAfter.hidden;
+    card.boxBefore.hidden=!v.before;
+    card.boxAfter.hidden=!v.after;
+    /* Una vista escondida no puede desplazarse -- un elemento sin caja tiene
+       scrollLeft 0 y se queda ahí --, así que se pierde todo el recorrido que
+       hagan las demás mientras no se ve. Al reaparecer se le copia la posición
+       de una que sí estuviera visible, en vez de asomar en la esquina. */
+    if(eraBefore&&v.before)syncFromVisible(card.boxBefore);
+    if(eraAfter&&v.after)syncFromVisible(card.boxAfter);
+    /* La franja de en medio sólo separa dos lienzos. Con uno solo no separa
+       nada, y lo que dice -- cuál es y si cambia -- cabe en la cabecera. */
+    card.sub.hidden=!(v.before&&v.after);
+    card.btn.textContent=v.n;
+  }
+
+  /* ---------- rendering ---------- */
+  function selList(){
+    if(!sel)return [];
+    /* Por capa Y posición: dos capas comparten posición, y comparar sólo por
+       posición se comía la celda de la otra capa en el mismo sitio. */
+    var out=[sel.info],anc=selKey(sel.info);
+    Object.keys(selMore).forEach(function(k){
+      if(k!==anc)out.push(selMore[k]);
+    });
+    return out;
+  }
+  function selKey(c){ return c.bg+":"+c.sx+","+c.sy; }
+  function marksOf(){ return selList().map(function(c){return [c.sx,c.sy,c.bg];}); }
+  function clearSel(){ sel=null;selMore={}; }
+
+  function redraw(){
+    if(!state)return;
+    var A=applied();
+    paint(state.stage,composite(A),false,marksOf());
+    state.cards.forEach(function(c){
+      if(!c.boxBefore.hidden)paint(c.before,state.bg[c.bg].img,true,marksOf(),c.bg);
+      if(!c.boxAfter.hidden)paint(c.after,A.after[c.bg],true,marksOf(),c.bg);
+      var changed=A.moved.some(function(m){return m.from===c.bg||m.dest===c.bg;});
+      c.tag.textContent=changed?"con cambios":"sin cambios";
+      c.tag.className=changed?"chg":"same";
+      if(c.state){
+        var v=VIEWS[panelState("bg"+c.bg).view||0];
+        c.state.textContent=(v.before&&v.after)
+          ? (changed?"con cambios":"")
+          : (v.before?"antes":"después")+(changed?" · con cambios":"");
+        c.state.className="wstate"+(changed?" chg":"");
+      }
+    });
+  }
+
+  function makePanel(id,titleHTML,ctlEl){
+    var d=document.createElement("div");d.className="lay";d.dataset.panel=id;
+    /* Nombre corto, sin el subtítulo: es lo que va en la barra de minimizadas. */
+    d.dataset.short=titleHTML.replace(/<i>[\s\S]*?<\/i>/g,"").replace(/<[^>]*>/g,"").trim();
+    var h=document.createElement("div");h.className="h";
+    var t=document.createElement("b");t.innerHTML=titleHTML;
+    h.appendChild(t);
+    var btns=document.createElement("span");btns.className="wbtns";
+    if(ctlEl)btns.appendChild(ctlEl);
+    /* Sólo el resultado se maximiza: es la vista que uno quiere a pantalla
+       completa, y queda por debajo para poder seguir consultando las capas. */
+    if(id==="stage"){
+      var mx=document.createElement("button");mx.className="wb";mx.textContent="▣";
+      mx.title="Maximizar / restaurar";
+      mx.addEventListener("click",function(e){
+        e.stopPropagation();
+        var p=panelState(id);p.max=!p.max;p.min=false;
+        layoutPanels(false);savePanels();redraw();ensureSelVisible();
+      });
+      mx.addEventListener("pointerdown",function(e){e.stopPropagation();});
+      btns.appendChild(mx);
+    }
+    var mn=document.createElement("button");mn.className="wb";mn.textContent="—";
+    mn.title="Minimizar";
+    mn.addEventListener("click",function(e){
+      e.stopPropagation();
+      var p=panelState(id);p.min=true;p.max=false;
+      layoutPanels(false);savePanels();
+    });
+    mn.addEventListener("pointerdown",function(e){e.stopPropagation();});
+    btns.appendChild(mn);
+    h.appendChild(btns);
+
+    var body=document.createElement("div");body.className="pbody";
+    d.appendChild(h);d.appendChild(body);
+    /* Ocho asas: cuatro lados y cuatro esquinas, justo en el borde. */
+    EDGES.forEach(function(e){
+      var g=document.createElement("div");
+      g.className="edge e-"+e[0];g.dataset.ex=String(e[1]);g.dataset.ey=String(e[2]);
+      d.appendChild(g);
+    });
+    return {card:d,body:body};
+  }
+
+  function stageLayerControls(){
+    var wrap=document.createElement("span");wrap.className="stage-layers";
+    if(!state)return wrap;
+    if(!state.stageLayers){
+      state.stageLayers={0:true,1:true,2:true,3:true,obj:true,4:true};
+    }
+    var available=[];
+    [0,1,2,3].forEach(function(bg){
+      if(state.on&&state.on[bg])available.push(bg);
+    });
+    if(state.obj)available.push("obj");
+
+    available.forEach(function(key){
+      var btn=document.createElement("button");
+      var on=state.stageLayers[key]!==false;
+      btn.className="wb laytoggle "+(on?"on":"off");
+      btn.textContent=(key==="obj"?"OBJ":"BG"+key);
+      btn.title=(key==="obj"?"Sprites (OBJ)":"Capa BG"+key)+
+                " en el resultado (Clic: mostrar/ocultar · Ctrl+clic: aislar)";
+      btn.addEventListener("pointerdown",function(e){e.stopPropagation();});
+      btn.addEventListener("click",function(e){
+        e.stopPropagation();
+        if(e.ctrlKey||e.metaKey){
+          var isOnly=true;
+          available.forEach(function(k){
+            if(k!==key&&state.stageLayers[k]!==false)isOnly=false;
+          });
+          available.forEach(function(k){
+            state.stageLayers[k]=isOnly?true:(k===key);
+          });
+        }else{
+          state.stageLayers[key]=(state.stageLayers[key]===false)?true:false;
+        }
+        updateButtons();redraw();
+      });
+      btn.addEventListener("contextmenu",function(e){
+        e.preventDefault();e.stopPropagation();
+        var isOnly=true;
+        available.forEach(function(k){
+          if(k!==key&&state.stageLayers[k]!==false)isOnly=false;
+        });
+        available.forEach(function(k){
+          state.stageLayers[k]=isOnly?true:(k===key);
+        });
+        updateButtons();redraw();
+      });
+      wrap.appendChild(btn);
+    });
+
+    function updateButtons(){
+      Array.prototype.forEach.call(wrap.querySelectorAll(".laytoggle"),function(b,i){
+        var k=available[i];
+        var on=state.stageLayers[k]!==false;
+        b.className="wb laytoggle "+(on?"on":"off");
+      });
+    }
+
+    return wrap;
+  }
+
+  function buildMain(){
+    var C=state.C;
+    els.main.innerHTML="";
+    scrollers=[];
+    var grid=document.createElement("div");grid.className="layers";
+    state.cards=[];
+
+    /* --- mapa de área --- */
+    if(state.kind==="map"&&maps&&maps.minimap){
+      var mp=makePanel("map","Mapa de área",minimapControls());
+      mp.body.appendChild(buildMinimapBody());
+      grid.appendChild(mp.card);
+    }
+
+    /* --- resultado --- */
+    var known=C.area!==null;
+    var sp=makePanel("stage","Resultado <i>con las correcciones aplicadas</i>",stageLayerControls());
+    var sc=document.createElement("div");sc.className="scroller stage";
+    var cv=document.createElement("canvas");sc.appendChild(cv);
+    registerScroller(sc,{cv:cv,bg:null});
+    sp.body.appendChild(sc);
+    var info=document.createElement("p");
+    info.className=known?"hint pfoot":"hint pfoot warnbox";
+    info.innerHTML=state.kind==="map"
+      ? state.area+" · sala "+C.room+" &nbsp;·&nbsp; capas en el orden que impone "+
+        "la prioridad BGCNT de esta sala &nbsp;·&nbsp; <kbd>↑↓←→</kbd> mueve la "+
+        "selección · arrastra para coger un rectángulo · <kbd>May</kbd>+arrastra "+
+        "para recorrer · <kbd>Ctrl</kbd> suma · <kbd>Ctrl</kbd>+rueda para el zoom"
+      : (known
+      ? "Área "+C.area+" · sala "+C.room+" &nbsp;·&nbsp; <kbd>↑↓←→</kbd> mueve la selección · <kbd>Ctrl</kbd>+rueda para el zoom"
+      : "Grabación antigua sin área/sala: la clave queda incompleta. Regrábala con la build que escribe MZM4.");
+    sp.body.appendChild(info);
+    grid.appendChild(sp.card);
+    state.stage=cv;
+
+    /* --- una por capa --- */
+    [0,1,2,3].forEach(function(bg){
+      if(!state.on[bg])return;
+      var bl0=state.blend,mez=bl0&&bl0.first.indexOf(bg)>=0;
+      var vistaBtn=document.createElement("button");
+      vistaBtn.className="wb vista";
+      vistaBtn.title="Antes / después / ambas";
+      vistaBtn.addEventListener("pointerdown",function(e){e.stopPropagation();});
+      var lp=makePanel("bg"+bg,"BG"+bg+
+        "<i>prio "+state.bg[bg].prio+(state.bg[bg].prio===0?" · delante":"")+
+        (mez?" · mezcla "+bl0.eva+"/"+bl0.evb:"")+"</i>"+
+        '<em class="wstate"></em>',vistaBtn);
+      lp.card.dataset.bg=String(bg);
+      var s1=document.createElement("div");s1.className="scroller";
+      var c1=document.createElement("canvas");s1.appendChild(c1);
+      registerScroller(s1,{cv:c1,bg:bg});
+      var sub=document.createElement("div");sub.className="sub";
+      var t1=document.createElement("span");t1.textContent="después";
+      var t2=document.createElement("span");t2.className="same";t2.textContent="sin cambios";
+      sub.appendChild(t1);sub.appendChild(t2);
+      var s2=document.createElement("div");s2.className="scroller";
+      var c2=document.createElement("canvas");s2.appendChild(c2);
+      registerScroller(s2,{cv:c2,bg:bg});
+      lp.body.appendChild(s1);lp.body.appendChild(sub);lp.body.appendChild(s2);
+      grid.appendChild(lp.card);
+      var card={bg:bg,before:c1,after:c2,tag:t2,node:lp.card,
+                boxBefore:s1,boxAfter:s2,sub:sub,btn:vistaBtn,
+                state:lp.card.querySelector(".wstate")};
+      state.cards.push(card);
+      vistaBtn.addEventListener("click",function(e){
+        e.stopPropagation();
+        var p=panelState("bg"+bg);
+        p.view=((p.view||0)+1)%3;
+        applyView(card);savePanels();redraw();
+      });
+      applyView(card);
+    });
+
+    els.main.appendChild(grid);
+    layoutPanels(false);
+    Array.prototype.forEach.call(grid.querySelectorAll(".lay"),function(card){
+      makeMovable(card,card.dataset.panel);
+    });
+  }
+
+  function pickAt(ev,cv,bg,add){
+    var r=cv.getBoundingClientRect();
+    /* Un lienzo escondido mide 0 y la regla de tres daría NaN, que acabaría en
+       una selección en la posición NaN,NaN. */
+    if(!r.width||!r.height)return;
+    var x=Math.floor((ev.clientX-r.left)/r.width*dimW());
+    var y=Math.floor((ev.clientY-r.top)/r.height*dimH());
+    var cs0=cellSize();
+    var bx=Math.floor(x/cs0)*cs0,by=Math.floor(y/cs0)*cs0;
+    if(bg===null){
+      /* Desde el resultado: todas las capas que tengan algo justo ahí. */
+      commitBox({bg:null,x0:bx,y0:by,x1:bx,y1:by},add);
+      return;
+    }
+    var c=cellAt(bg,x,y);
+    /* Sin tile ahí, se selecciona la POSICIÓN igual: sirve para ver qué hay en
+       ese mismo sitio en las demás capas, que es medio trabajo de decidir a
+       qué plano mandar algo. */
+    if(!c){
+      var cs=cellSize();
+      var cx=Math.floor(x/cs),cy=Math.floor(y/cs);
+      if(cx<0||cy<0||cx*cs>=dimW()||cy*cs>=dimH()){
+        clearSel();renderSide();redraw();return;
+      }
+      c={bg:bg,entry:0,tid:0,px:0,sx:cx*cs,sy:cy*cs,
+         mapX:cx,mapY:cy,blockX:cx,blockY:cy,empty:true};
+    }
+    /* Ctrl suma o quita de lo que ya hubiera, mezclando capas si hace falta. */
+    if(add&&sel){
+      var k=selKey(c);
+      if(selMore[k]&&k!==selKey(sel.info))delete selMore[k];
+      else selMore[k]=c;
+      renderSide();redraw();
+      return;
+    }
+    selMore={};
+    sel={info:c};
+    renderSide();redraw();
+  }
+  function cellAt(bg,x,y){
+    var c=cellSize(),cells=state.bg[bg].cells;
+    var k=(Math.floor(x/c)*c)+","+(Math.floor(y/c)*c);
+    if(cells[k])return cells[k];
+    var hit=null;
+    Object.keys(cells).forEach(function(kk){
+      var cc=cells[kk];
+      if(x>=cc.sx&&x<cc.sx+c&&y>=cc.sy&&y<cc.sy+c)hit=cc;
+    });
+    return hit;
+  }
+
+  function step(dx,dy){
+    if(!sel)return;
+    if(sel.info.empty){
+      var cs=cellSize();
+      var nx=sel.info.sx+dx*cs,ny=sel.info.sy+dy*cs;
+      if(nx<0||ny<0||nx>=dimW()||ny>=dimH())return;
+      var hit=state.bg[sel.info.bg]&&state.bg[sel.info.bg].cells[nx+","+ny];
+      selMore={};
+      sel={info:hit||{bg:sel.info.bg,entry:0,tid:0,px:0,sx:nx,sy:ny,
+                      mapX:nx/cs,mapY:ny/cs,blockX:nx/cs,blockY:ny/cs,empty:true}};
+      renderSide();redraw();ensureSelVisible();
+      return;
+    }
+    var cells=state.bg[sel.info.bg].cells;
+    var best=null,bd=1e9;
+    Object.keys(cells).forEach(function(k){
+      var c=cells[k],cs2=cellSize(),ddx=(c.sx-sel.info.sx)/cs2,ddy=(c.sy-sel.info.sy)/cs2;
+      if(dx&&(Math.sign(ddx)!==dx||ddy!==0))return;
+      if(dy&&(Math.sign(ddy)!==dy||ddx!==0))return;
+      var d=Math.abs(ddx)+Math.abs(ddy);
+      if(d>0&&d<bd){bd=d;best=c;}
+    });
+    if(best){selMore={};sel={info:best};renderSide();redraw();ensureSelVisible();}
+  }
+  document.addEventListener("keydown",function(ev){
+    if(!state||!sel)return;
+    var m={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]}[ev.key];
+    if(!m)return;
+    ev.preventDefault();step(m[0],m[1]);
+  });
+
+  function keyOf(i,C){
+    return [C.area===null?"?":C.area,C.room===null?"?":C.room,
+            "BG"+i.bg,i.blockX,i.blockY].join("/");
+  }
+
+  /* El puerto aplica la corrección donde transfiere bloques de sala, y ahí lo
+     que tiene en la mano es el valor del bloque -- no la entrada de tilemap.
+     Así que el checksum del .inc es el bloque, y en modo mapa lo es ya. */
+  function blockOf(i){
+    if(state.kind==="map")return i.entry;
+    var v=verifyCell(state.C,i);
+    return (v&&v.ok)?v.block:null;
+  }
+  function destName(v){for(var i=0;i<DEST.length;i++)if(DEST[i].v===v)return DEST[i].name;return "?";}
+
+  function renderSide(){
+    els.side.hidden=false;
+    var C=state.C;
+    if(!sel){els.tilebox.innerHTML='<p class="hint">Pulsa un tile en cualquier capa, o en el resultado.</p>';
+      document.querySelectorAll(".lay").forEach(function(d){d.classList.remove("sel");});return;}
+    var i=sel.info,k=keyOf(i,C);
+    els.tilebox.innerHTML="";
+    var zw=document.createElement("div");zw.className="zoomwrap";
+    var cs=cellSize();
+    var zc=document.createElement("canvas");zc.width=cs;zc.height=cs;
+    var zx=zc.getContext("2d"),im=zx.createImageData(cs,cs),src=state.bg[i.bg].img;
+    for(var yy=0;yy<cs;yy++)for(var xx=0;xx<cs;xx++){
+      var q=((i.sy+yy)*dimW()+(i.sx+xx))*4,p=(yy*cs+xx)*4;
+      im.data[p]=src[q];im.data[p+1]=src[q+1];im.data[p+2]=src[q+2];im.data[p+3]=src[q+3];
+    }
+    zx.putImageData(im,0,0);zw.appendChild(zc);
+    var blk=i.empty?null:blockOf(i);
+    var rows=i.empty
+      ? [["capa","BG"+i.bg+" (prio "+(state.bg[i.bg]?state.bg[i.bg].prio:"?")+")"],
+         ["posición",i.blockX+","+i.blockY],["contenido","vacío en esta capa"]]
+      : state.kind==="map"
+      ? [["capa","BG"+i.bg+" (prio "+state.bg[i.bg].prio+")"],
+         ["bloque","0x"+i.entry.toString(16).toUpperCase()],
+         ["posición",i.blockX+","+i.blockY],["opacos",i.px+" px"]]
+      : [["capa","BG"+i.bg+" (prio "+state.bg[i.bg].prio+")"],
+         ["tile","0x"+i.tid.toString(16).toUpperCase()],["entry",hex4(i.entry)],
+         ["screenmap",i.mapX+","+i.mapY],
+         ["bloque",i.blockX===undefined?"—":i.blockX+","+i.blockY],
+         ["opacos",i.px+" px"]];
+    var dl=document.createElement("dl");dl.className="kv";
+    rows.forEach(function(r){
+      var dt=document.createElement("dt");dt.textContent=r[0];
+      var dd=document.createElement("dd");dd.textContent=r[1];dl.appendChild(dt);dl.appendChild(dd);});
+    zw.appendChild(dl);els.tilebox.appendChild(zw);
+
+    var cp=document.createElement("button");
+    cp.className="copysel";
+    cp.textContent="COPIAR INFO";
+    cp.title="Copia los datos de lo seleccionado, para pegarlos en otro sitio";
+    cp.addEventListener("click",function(){
+      var txt=selectionReport();
+      navigator.clipboard.writeText(txt).then(function(){
+        cp.textContent="COPIADO";
+        setTimeout(function(){cp.textContent="COPIAR INFO";},1400);
+      }).catch(function(){
+        /* Sin permiso de portapapeles queda el texto a la vista para copiarlo
+           a mano, que es mejor que no dar nada. */
+        els.export.textContent=txt;
+      });
+    });
+    els.tilebox.appendChild(cp);
+
+    if(blk===null){
+      var why=document.createElement("p");why.className="hint warnbox";
+      why.style.marginTop="9px";
+      why.textContent=i.empty
+        ? "Aquí no hay nada en esta capa, así que no hay nada que mover. La marca sale en todas las ventanas para que veas qué hay en ese mismo sitio en las demás."
+        : !maps
+        ? "Carga maps.json para poder corregir: la clave va contra el bloque de la sala, y sin los datos no hay forma de saber cuál es."
+        : (C.area===null
+           ? "Grabación antigua sin área/sala. Regrábala con la build que escribe MZM4."
+           : "Este tile no cuadra con el bloque de la sala en esa posición. Sin coincidencia no se puede anclar la corrección.");
+      els.tilebox.appendChild(why);
+      document.querySelectorAll(".lay").forEach(function(d){
+        d.classList.toggle("sel",String(i.bg)===d.dataset.bg);});
+      return;
+    }
+
+    /* Los destinos se aplican a TODO el conjunto seleccionado. Se descartan
+       los bloques sin valor válido -- vacíos, o que no cuadran con los datos de
+       la sala -- en vez de meter entradas que el port tiraría igualmente. */
+    var grupo=selList().filter(function(cc){return !cc.empty;})
+      .map(function(cc){ return {c:cc,k:keyOf(cc,C),b:blockOf(cc)}; })
+      .filter(function(e){ return e.b!==null; });
+    if(grupo.length>1){
+      var porCapa={};
+      grupo.forEach(function(e){ porCapa[e.c.bg]=(porCapa[e.c.bg]||0)+1; });
+      var desglose=Object.keys(porCapa).sort().map(function(k){
+        return porCapa[k]+" en BG"+k; }).join(", ");
+      var cuenta=document.createElement("p");cuenta.className="hint";
+      cuenta.style.margin="9px 0 0";
+      cuenta.innerHTML="<b>"+grupo.length+" bloques</b> seleccionados ("+desglose+
+                       "): el destino se aplica a todos.";
+      els.tilebox.appendChild(cuenta);
+    }
+
+    var dests=document.createElement("div");dests.className="dests";
+    DEST.forEach(function(d){
+      /* Un destino sólo sobra si TODO lo seleccionado ya está en esa capa;
+         con capas mezcladas sigue valiendo para el resto. */
+      var mueve=grupo.filter(function(e){ return e.c.bg!==d.v; });
+      if(!mueve.length&&grupo.length)return;
+      var todos=mueve.length>0&&mueve.every(function(e){
+        return fixes[e.k]&&fixes[e.k].dest===d.v; });
+      var b=document.createElement("button");
+      b.innerHTML="→ "+d.name+(d.note?" <small>"+d.note+"</small>":"");
+      b.setAttribute("aria-pressed",todos?"true":"false");
+      b.addEventListener("click",function(){
+        mueve.forEach(function(e){
+          if(todos)delete fixes[e.k];
+          else fixes[e.k]={dest:d.v,info:e.c,tag:state.tag,key:e.k,
+                           area:C.area,room:C.room,block:e.b};
+        });
+        renderSide();renderList();redraw();
+      });
+      dests.appendChild(b);
+    });
+    els.tilebox.appendChild(dests);
+    document.querySelectorAll(".lay").forEach(function(d){
+      d.classList.toggle("sel",String(i.bg)===d.dataset.bg);});
+  }
+
+  /* Informe de lo seleccionado, para pegar en una conversación o en un issue.
+     Lleva lo que hace falta para razonar sobre un caso sin tener la
+     herramienta delante: qué sala, con qué prioridades y qué mezcla, y qué
+     tiene cada capa en esa posición -- incluidas las que están vacías, que es
+     justo el dato que suele faltar. */
+  function selectionReport(){
+    if(!state||!sel)return "";
+    var C=state.C,L=[],cs=cellSize();
+    var cab=state.kind==="map"
+      ? state.area+" sala "+C.room+" ("+state.room.w+"x"+state.room.h+" bloques"+
+        ", tileset "+state.room.tileset+")"
+      : "grabación · área "+C.area+" sala "+C.room;
+    L.push(cab);
+    L.push("prioridades BGCNT: "+[0,1,2,3].map(function(k){
+      return "BG"+k+"="+(state.on[k]?state.prio[k]:state.prio[k]+" (apagada)");}).join("  "));
+    if(state.blend)
+      L.push("mezcla alfa: primer objetivo BG"+state.blend.first.join("/")+
+             ", eva "+state.blend.eva+" evb "+state.blend.evb);
+    L.push("");
+    selList().forEach(function(c){
+      var linea=["bloque "+c.blockX+","+c.blockY+":"];
+      [0,1,2,3].forEach(function(k){
+        var Lk=state.bg[k];
+        if(!Lk){ linea.push("BG"+k+"=--"); return; }
+        var cc=Lk.cells[c.sx+","+c.sy];
+        linea.push("BG"+k+"="+(cc?("0x"+cc.entry.toString(16).toUpperCase().padStart(4,"0")):"vacío"));
+      });
+      linea.push("[capa señalada: BG"+c.bg+"]");
+      var f=fixes[keyOf(c,C)];
+      if(f)linea.push("[corrección: -> "+destName(f.dest)+"]");
+      L.push("  "+linea.join("  "));
+    });
+    return L.join("\n");
+  }
+
+  function renderList(){
+    markDirty();
+    var keys=Object.keys(fixes);
+    els.copy.disabled=els.clear.disabled=!keys.length;
+    /* Con servidor, guardar una lista vacía es legítimo: es como se vacía el
+       .inc. Sin servidor no hay nada que descargar. */
+    els.save.disabled=serverFixes?false:!keys.length;
+    if(!keys.length){els.list.innerHTML='<p class="empty">Ninguna todavía.</p>';els.export.textContent="(vacío)";return;}
+    els.list.innerHTML="";
+    keys.sort().forEach(function(k){
+      var f=fixes[k],r=document.createElement("div");
+      r.className="row"+(state&&f.tag!==state.tag?" other":"");
+      var s=document.createElement("button");s.className="jump";
+      s.title="Abrir esa sala y ese bloque";
+      s.innerHTML="<code>BG"+f.info.bg+"</code> "+f.info.blockX+","+f.info.blockY+
+                  " → "+destName(f.dest);
+      s.addEventListener("click",function(){ goToFix(f); });
+      var b=document.createElement("button");b.textContent="×";b.title="quitar";
+      b.addEventListener("click",function(){delete fixes[k];renderList();renderSide();redraw();});
+      r.appendChild(s);r.appendChild(b);els.list.appendChild(r);
+    });
+    els.export.textContent=exportText();
+  }
+
+  /* Ir a la corrección: abre su sala si no es la que está puesta, y deja
+     seleccionado su bloque. Una lista de correcciones sin esto obliga a buscar
+     a mano el área, la sala y la posición de cada entrada. */
+  function goToFix(f){
+    if(f.area===null||f.room===null)return;
+    if(state&&state.tag===f.tag){ selectBlock(f.info.bg,f.info.blockX,f.info.blockY); return; }
+    if(!maps||state&&state.kind!=="map")return;
+    var area=null;
+    Object.keys(maps.areas).forEach(function(a){ if(areaIndex(a)===f.area)area=a; });
+    if(!area)return;
+    var idx=null;
+    maps.areas[area].forEach(function(r,i){ if(r.id===f.room)idx=i; });
+    if(idx===null)return;
+    loadRoom(area,idx);
+    selectBlock(f.info.bg,f.info.blockX,f.info.blockY);
+  }
+
+  function selectBlock(bg,bx,by){
+    var L=state.bg[bg];
+    if(!L)return;
+    var c=L.cells[(bx*state.CELL)+","+(by*state.CELL)];
+    if(!c){ centerOn(bx*state.CELL,by*state.CELL); return; }
+    selMore={};sel={info:c};renderSide();redraw();centerOnSel();
+  }
+
+  /* The .inc is the source of truth: an X-macro list the port includes
+     directly, and this tool can read back so a list can be edited later. */
+  function exportText(){
+    var out=["/* Correcciones de capa para el port 3DS.",
+             " * Generado por tools/layer-workbench -- vuelve a cargarlo ahí para editarlo.",
+             " *",
+             " * PORT_LAYER_FIX(area, room, capaOrigen, blockX, blockY, block, capaDestino)",
+             " *",
+             " * blockX/blockY son la posición del BLOQUE en la sala, la misma que",
+             " * usa pDecomp en RoomUpdate*Tilemap. No son coordenadas de pantalla ni",
+             " * del screenmap: ese da la vuelta cada 32x16 bloques y más de la mitad",
+             " * de las salas son mayores que eso.",
+             " *",
+             " * El bloque se dibuja al nivel de la capa destino, ENCIMA de ella.",
+             " * Para dejarlo detrás de una capa, mándalo a la capa anterior.",
+             " * `block` es el valor del bloque en el tilemap de la sala y actúa de",
+             " * checksum: si los datos cambian, la corrección falla en voz alta en",
+             " * vez de mover otro bloque.",
+             " */"];
+    Object.keys(fixes).sort().forEach(function(k){
+      var f=fixes[k];
+      out.push("PORT_LAYER_FIX("+[f.area===null?0:f.area,f.room===null?0:f.room,
+        f.info.bg,f.info.blockX,f.info.blockY,hex4(f.block),f.dest].join(", ")+
+        ")  /* BG"+f.info.bg+" -> "+destName(f.dest)+" */");
+    });
+    return out.join("\n");
+  }
+
+  function importText(txt){
+    var re=/PORT_LAYER_FIX\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(0[xX][0-9a-fA-F]+|\d+)\s*,\s*(\d+)\s*\)/g;
+    var m,n=0;
+    while((m=re.exec(txt))){
+      var area=+m[1],room=+m[2],bg=+m[3],bx=+m[4],by=+m[5],blk=parseInt(m[6]),dest=+m[7];
+      var k=[area,room,"BG"+bg,bx,by].join("/");
+      fixes[k]={dest:dest,area:area,room:room,tag:area+"/"+room,key:k,block:blk,
+                info:{bg:bg,blockX:bx,blockY:by,mapX:bx,mapY:by,entry:blk,tid:blk,
+                      px:0,sx:-99,sy:-99}};
+      n++;
+    }
+    /* Re-anchor to on-screen positions for whatever the current sample shows. */
+    if(state)reanchor();
+    renderList();
+    redraw();
+    els.meta.textContent=n+" correcciones cargadas";
+  }
+
+  function reanchor(){
+    Object.keys(fixes).forEach(function(k){
+      var f=fixes[k];
+      if(f.tag!==state.tag)return;
+      var L=state.bg[f.info.bg];if(!L)return;
+      Object.keys(L.cells).forEach(function(ck){
+        var c=L.cells[ck];
+        if(c.blockX===f.info.blockX&&c.blockY===f.info.blockY){
+          f.info=c;
+        }
+      });
+    });
+  }
+
+
+  /* ================= modo mapa: las salas, desde los datos del repo =========
+     maps.json lo genera tools/layer-workbench/build_maps.py leyendo el decomp
+     -- ni ROM ni emulación. Aquí sólo se pinta lo que aquel dejó decodificado.
+     ======================================================================== */
+  var maps=null,mapsName="",common="normal",curArea=null,curRoom=null;
+  var TSCACHE={};
+
+  function tsGfx(t,key){
+    var c=TSCACHE[key];
+    if(!c){
+      var hex=t,n=hex.length/2,a=new Uint8Array(n);
+      for(var i=0;i<n;i++)a[i]=parseInt(hex.substr(i*2,2),16);
+      c=TSCACHE[key]=a;
+    }
+    return c;
+  }
+
+  /* RoomLoad deja los tiles comunes en VRAM 0x4800 y el tileset en 0x5800, y
+     el char base de BG1 es 0x4000: por debajo de 64 no se usa, 64..191 es un
+     tile común y 192 en adelante es del tileset (ver build_maps.py). */
+  function tileSrc(tid,gfx,cgfx){
+    if(tid<64)return null;
+    if(tid<192)return {buf:cgfx,off:(tid-64)*32};
+    var off=(tid-192)*32;
+    return off+32<=gfx.length?{buf:gfx,off:off}:null;
+  }
+
+  /* La paleta del tileset entra desde su fila 1 al banco 3 (room.c:320); los
+     bancos 0..2 son los tiles comunes. */
+  function palLookup(ts,com){
+    var tab=new Uint32Array(256);
+    for(var bank=0;bank<16;bank++)for(var i=0;i<16;i++){
+      if(i===0)continue;
+      var c;
+      if(bank>=3){
+        var q=16+(bank-3)*16+i;
+        c=q<ts.pal.length?ts.pal[q]:0;
+      } else {
+        var n=bank*16+i-1;
+        c=n<com.pal.length?com.pal[n]:0;
+      }
+      var r=(c&31)*255/31|0,g=((c>>5)&31)*255/31|0,b=((c>>10)&31)*255/31|0;
+      tab[bank*16+i]=(255<<24)|(b<<16)|(g<<8)|r;   // little endian RGBA
+    }
+    return tab;
+  }
+
+  /* Una capa de sala: cada bloque son 4 tiles de 8 px, o sea 16x16 px. */
+  function renderLayer(room,ts,gfx,cgfx,tab,data,bg,prio){
+    var w=room.w,h=room.h,W2=w*16,H2=h*16;
+    var img=new Uint8ClampedArray(W2*H2*4),px32=new Uint32Array(img.buffer),cells={};
+    for(var by=0;by<h;by++)for(var bx=0;bx<w;bx++){
+      var blk=data[by*w+bx];
+      if(blk>=ts.blocks.length)continue;
+      var quads=ts.blocks[blk],count=0;
+      for(var k=0;k<4;k++){
+        var e=quads[k],tid=e&0x3FF,hf=(e>>10)&1,vf=(e>>11)&1,bank=(e>>12)&15;
+        var src=tileSrc(tid,gfx,cgfx);
+        if(!src)continue;
+        var ox=bx*16+(k&1)*8,oy=by*16+(k>>1)*8;
+        for(var y=0;y<8;y++)for(var x=0;x<8;x++){
+          var xx=hf?7-x:x,yy=vf?7-y:y;
+          var v=src.buf[src.off+yy*4+(xx>>1)];
+          v=(xx&1)?(v>>4):(v&15);
+          if(!v)continue;
+          count++;
+          px32[(oy+y)*W2+(ox+x)]=tab[bank*16+v];
+        }
+      }
+      if(count)cells[(bx*16)+","+(by*16)]={bg:bg,entry:blk,tid:blk,px:count,
+        sx:bx*16,sy:by*16,mapX:bx,mapY:by,blockX:bx,blockY:by};
+    }
+    return {img:img,cells:cells,prio:prio};
+  }
+
+  /* El número de área lo pone maps.json (enum Area), no una lista repetida
+     aquí que pudiera quedarse desfasada respecto al juego. */
+  function areaIndex(name){
+    return (maps.areaIds&&maps.areaIds[name]!==undefined)?maps.areaIds[name]:-1;
+  }
+
+  function loadRoom(area,idx){
+    var room=maps.areas[area][idx];
+    var ts=maps.tilesets[String(room.tileset)];
+    if(!ts){els.meta.textContent="sala "+room.id+": falta el tileset "+room.tileset;return;}
+    var com=maps.common[common];
+    var gfx=tsGfx(ts.gfx,"ts"+room.tileset),cgfx=tsGfx(com.gfx,"com"+common);
+    var tab=palLookup(ts,com);
+    /* Las prioridades salen de maps.json, que las saca del `transparency` de
+       la sala: no son fijas, y en unas salas BG0 va delante de todo mientras
+       que en otras se va detrás de BG2. Es lo mismo de lo que el port deriva
+       la profundidad estéreo, así que aquí se ve el orden de verdad. */
+    var pr=room.prio||[0,1,2,3];
+    var on=[false,false,false,false],bg={};
+    if(room.bg0){bg[0]=renderLayer(room,ts,gfx,cgfx,tab,room.bg0,0,pr[0]);on[0]=true;}
+    bg[1]=renderLayer(room,ts,gfx,cgfx,tab,room.bg1,1,pr[1]);on[1]=true;
+    if(room.bg2){bg[2]=renderLayer(room,ts,gfx,cgfx,tab,room.bg2,2,pr[2]);on[2]=true;}
+    curArea=area;curRoom=idx;
+    var ai=areaIndex(area);
+    selMore={};
+    state={C:{area:ai,room:room.id},on:on,bg:bg,obj:null,room:room,area:area,
+           prio:pr,blend:room.blend||null,
+           kind:"map",W:room.w*16,H:room.h*16,CELL:16,tag:ai+"/"+room.id};
+    sel=null;compBuf=null;
+    els.meta.textContent=mapsName+" · "+area+" · sala "+room.id+" · "+
+                         room.w+"×"+room.h+" bloques · tileset "+room.tileset+
+                         " · prio "+[0,1,2].filter(function(k){return on[k];})
+                           .map(function(k){return "BG"+k+"="+pr[k];}).join(" ")+
+                         (room.blend?" · mezcla BG"+room.blend.first.join("/")+
+                          " eva "+room.blend.eva+" evb "+room.blend.evb:"");
+    markRailCurrent();
+    rememberMinimapScroll();
+    buildMain();reanchor();renderSide();renderList();redraw();
+    drawMinimap();restoreMinimapScroll();
+  }
+
+  function markRailCurrent(){
+    Array.prototype.forEach.call(els.shots.querySelectorAll(".shot"),function(b){
+      b.setAttribute("aria-current",
+        (b.dataset.area===curArea&&+b.dataset.idx===curRoom)?"true":"false");
+    });
+  }
+
+  function buildMapRail(){
+    els.railTitle.textContent="Salas";
+    els.shots.innerHTML="";
+    var sel2=document.createElement("select");sel2.className="areasel";
+    Object.keys(maps.areas).forEach(function(a){
+      var o=document.createElement("option");o.value=a;
+      o.textContent=a+" ("+maps.areas[a].length+")";sel2.appendChild(o);
+    });
+    sel2.addEventListener("change",function(){
+      buildRoomList(sel2.value);
+      /* Entrar en la primera sala del área: así el mapa que se ve es el del
+         área elegida, no el de la anterior. */
+      if(maps.areas[sel2.value].length)loadRoom(sel2.value,0);
+    });
+    els.shots.appendChild(sel2);
+    var list=document.createElement("div");list.id="roomlist";els.shots.appendChild(list);
+    sel2.value=curArea||Object.keys(maps.areas)[0];
+    buildRoomList(sel2.value);
+  }
+
+  function buildRoomList(area){
+    var list=document.getElementById("roomlist");
+    list.innerHTML="";
+    maps.areas[area].forEach(function(r,i){
+      var b=document.createElement("button");b.className="shot room";
+      b.dataset.area=area;b.dataset.idx=String(i);
+      b.innerHTML='<span class="n">'+String(r.id).padStart(3,"0")+
+                  '</span><span class="dim">'+r.w+"×"+r.h+
+                  (r.bg2?"":' <i>sin BG2</i>')+"</span>";
+      b.addEventListener("click",function(){loadRoom(area,i);});
+      list.appendChild(b);
+    });
+    markRailCurrent();
+  }
+
+  /* maps.json pesa 5 MB, así que también se acepta el .gz: sobre file:// hay
+     que elegirlo a mano y por red pesa una quinta parte. */
+  function ingestMaps(buf,name){
+    var done=function(text){
+      try{ maps=JSON.parse(text); }
+      catch(e){ els.meta.textContent="maps.json ilegible: "+e.message; return; }
+      if(!maps.areas||!maps.tilesets){els.meta.textContent="eso no es un maps.json";return;}
+      if(!maps.common||!maps.areaIds){
+        els.meta.textContent="maps.json antiguo: sin tiles comunes o sin áreas. Vuelve a generarlo.";
+        return;
+      }
+      mapsName=name;TSCACHE={};
+      els.mapsbadge.textContent=Object.keys(maps.areas)
+        .reduce(function(n,a){return n+maps.areas[a].length;},0)+" salas";
+      els.mapsbadge.className="meta okbox";
+      buildMapRail();
+      if(!state||state.kind==="map")loadRoom(curArea||Object.keys(maps.areas)[0],0);
+      else { renderSide();renderList(); }   // una grabación ya cargada gana la clave
+    };
+    var head=new Uint8Array(buf,0,2);
+    if(head[0]===0x1f&&head[1]===0x8b){
+      if(!window.DecompressionStream){
+        els.meta.textContent="este navegador no descomprime .gz: usa maps.json";
+        return;
+      }
+      new Response(new Blob([buf]).stream().pipeThrough(
+        new DecompressionStream("gzip"))).text().then(done);
+    } else {
+      done(new TextDecoder().decode(buf));
+    }
+  }
+
+  /* ---------- el .inc, ida y vuelta con el servidor ----------
+     serve.py sirve y guarda platform/3ds/source/port_layer_fixes.inc, que es
+     de donde el port lo compila. Así la lista se carga sola al abrir y se
+     guarda sola al cambiarla, sin pasar por la carpeta de descargas. Sobre
+     file:// nada de esto funciona -- el navegador no escribe en disco sin
+     diálogo -- y quedan los botones de CARGAR y GUARDAR. */
+  /* `serverFixes` dice si hay servidor detrás, que es lo que decide si CARGAR
+     y GUARDAR trabajan contra platform/3ds/source/port_layer_fixes.inc o caen
+     al diálogo de archivos. Se carga solo al abrir; a partir de ahí manda el
+     usuario: escribir a su espalda una lista a medio editar no es algo que
+     deba pasar. */
+  var serverFixes=false,lastSaved=null;
+
+  function loadFixesFromServer(quiet){
+    if(location.protocol==="file:")return;
+    return fetch("fixes",{cache:"no-store"}).then(function(r){
+      serverFixes=true;               // hay servidor: CARGAR y GUARDAR van al .inc
+      if(r.status===404)return null;  // todavía no hay archivo, no es un error
+      if(!r.ok)throw 0;
+      return r.text();
+    }).then(function(t){
+      fixes={};
+      if(t)importText(t);
+      lastSaved=exportText();
+      badge(t?("cargadas "+Object.keys(fixes).length):"sin .inc todavía");
+      if(!quiet&&state){renderSide();redraw();}
+    }).catch(function(){ serverFixes=false;badge(); });
+  }
+
+  function saveFixesToServer(){
+    var body=exportText();
+    return fetch("fixes",{method:"PUT",body:body,
+                          headers:{"Content-Type":"text/plain"}})
+      .then(function(r){
+        if(!r.ok)throw 0;
+        lastSaved=body;
+        badge("guardado");
+      }).catch(function(){ badge("error al guardar","warn"); });
+  }
+
+  /* Aviso de que hay cambios sin guardar, ya que no se guardan solos. */
+  function markDirty(){
+    if(!serverFixes||lastSaved===null)return;
+    if(exportText()!==lastSaved)badge("sin guardar","warn");
+  }
+
+  function badge(msg,kind){
+    if(!els.autobadge)return;
+    els.autobadge.hidden=!serverFixes;
+    els.autobadge.textContent=msg||"port_layer_fixes.inc";
+    els.autobadge.className="meta "+(kind==="warn"?"warnbox":"okbox");
+  }
+
+  /* Servido por http se carga solo; sobre file:// el fetch falla y hay que
+     usar el botón, que es el caso normal al abrir el archivo a pelo. */
+  function autoloadMaps(){
+    if(location.protocol==="file:")return;
+    fetch("maps.json").then(function(r){
+      if(!r.ok)throw 0;
+      return r.arrayBuffer();
+    }).then(function(b){ingestMaps(b,"maps.json");}).catch(function(){});
+  }
+
+
+  /* ================= mapa de área, el de la pantalla de pausa =============
+     Una rejilla de 32x32 celdas. Cada celda es una pantalla, y la sala a la
+     que pertenece sale de la fórmula del propio juego (minimap.c:783):
+
+         celda = (bloque - SCREEN_*_PADDING) / SCREEN_SIZE_*_BLOCKS + room.map*
+
+     Varias salas pueden caer en la misma celda -- pasa en todas las áreas y no
+     es un error de la conversión, es cómo son los datos -- así que al pulsar
+     donde hay más de una se pregunta cuál.
+     ======================================================================== */
+  var MM_SIZE=32,MM_TILE=8,MM_PAD_X=2,MM_PAD_Y=2,MM_SCR_X=15,MM_SCR_Y=10;
+  var mmScale=2,mmCanvas=null,mmCells=null,mmOpen=true;
+  /* Al abrir una sala se reconstruye la ventana entera, y con ella el mapa:
+     sin guardar su scroll, cada clic devolvía la vista del mapa a la esquina
+     de arriba a la izquierda. */
+  var mmScroll={x:0,y:0},mmBody=null;
+
+  function rememberMinimapScroll(){
+    if(mmBody&&mmBody.clientWidth){ mmScroll.x=mmBody.scrollLeft;mmScroll.y=mmBody.scrollTop; }
+  }
+  function restoreMinimapScroll(){
+    if(mmBody){ mmBody.scrollLeft=mmScroll.x;mmBody.scrollTop=mmScroll.y; }
+  }
+
+  function roomCells(room){
+    var out={};
+    /* Dos recortes, los dos comprobados contra el mapa que dibuja el juego:
+
+       1. Sólo la parte jugable. Los bloques del borde caen antes del padding y
+          arrastran la huella una celda hacia fuera, con lo que una sala se
+          marcaba hasta pasada su puerta y las celdas de dos salas vecinas
+          salían marcadas en las dos.
+       2. Sólo celdas con aire. Los datos de una sala llegan más lejos que su
+          parte jugable: en Kraid 7 las dos celdas que el mapa deja en blanco
+          son justo las que tienen 0% de aire, roca maciza de relleno. El juego
+          no las dibuja y aquí tampoco deben marcarse.
+
+       Entre los dos, las celdas marcadas que el mapa deja en blanco pasan del
+       11% al 1%, y los solapes de 3713 a 256. */
+    var x0=MM_PAD_X,x1=Math.max(x0+1,room.w-MM_PAD_X);
+    var y0=MM_PAD_Y,y1=Math.max(y0+1,room.h-MM_PAD_Y);
+    for(var by=y0;by<y1;by++)for(var bx=x0;bx<x1;bx++){
+      if(room.clip&&room.clip[by*room.w+bx]!==0)continue;
+      var cx=Math.floor((bx-MM_PAD_X)/MM_SCR_X)+room.mapX;
+      var cy=Math.floor((by-MM_PAD_Y)/MM_SCR_Y)+room.mapY;
+      if(cx<0||cy<0||cx>=MM_SIZE||cy>=MM_SIZE)continue;
+      out[cx+","+cy]=true;
+    }
+    return Object.keys(out);
+  }
+
+  /* Índice celda -> salas, una vez por área. */
+  function areaCellIndex(area){
+    if(!mmCells)mmCells={};
+    if(mmCells[area])return mmCells[area];
+    var idx={};
+    maps.areas[area].forEach(function(r,i){
+      roomCells(r).forEach(function(k){ (idx[k]=idx[k]||[]).push(i); });
+    });
+    return (mmCells[area]=idx);
+  }
+
+  function drawMinimap(){
+    if(!mmCanvas||!maps.minimap)return;
+    var area=curArea,tm=maps.minimap.areas[area];
+    if(!tm)return;
+    var gfx=tsGfx(maps.minimap.tiles.gfx,"mmgfx"),pal=maps.minimap.tiles.pal;
+    var N=MM_SIZE*MM_TILE;
+    mmCanvas.width=N;mmCanvas.height=N;
+    mmCanvas.style.width=(N*mmScale)+"px";mmCanvas.style.height=(N*mmScale)+"px";
+    var ctx=mmCanvas.getContext("2d");
+    var img=ctx.createImageData(N,N),px=new Uint32Array(img.data.buffer);
+    for(var ty=0;ty<MM_SIZE;ty++)for(var tx=0;tx<MM_SIZE;tx++){
+      var e=tm[ty*MM_SIZE+tx],tid=e&0x3FF,hf=(e>>10)&1,vf=(e>>11)&1,bank=(e>>12)&15;
+      var off=tid*32;
+      if(off+32>gfx.length)continue;
+      for(var y=0;y<8;y++)for(var x=0;x<8;x++){
+        var xx=hf?7-x:x,yy=vf?7-y:y;
+        var v=gfx[off+yy*4+(xx>>1)];
+        v=(xx&1)?(v>>4):(v&15);
+        if(!v)continue;
+        var q=bank*16+v,c=q<pal.length?pal[q]:0;
+        px[(ty*8+y)*N+(tx*8+x)]=(255<<24)|(((c>>10)&31)*255/31|0)<<16|
+                                (((c>>5)&31)*255/31|0)<<8|((c&31)*255/31|0);
+      }
+    }
+    ctx.putImageData(img,0,0);
+    /* La sala abierta, recuadrada. */
+    if(curRoom!==null&&maps.areas[area][curRoom]){
+      ctx.fillStyle="rgba(233,161,59,.35)";
+      ctx.strokeStyle="#E9A13B";ctx.lineWidth=1;
+      roomCells(maps.areas[area][curRoom]).forEach(function(k){
+        var p=k.split(","),cx=+p[0],cy=+p[1];
+        if(cx<0||cy<0||cx>=MM_SIZE||cy>=MM_SIZE)return;
+        ctx.fillRect(cx*8,cy*8,8,8);
+        ctx.strokeRect(cx*8+0.5,cy*8+0.5,7,7);
+      });
+    }
+  }
+
+  function minimapControls(){
+    var ctl=document.createElement("span");ctl.className="mmctl";
+    var zo=document.createElement("button");zo.textContent="−";
+    var zi=document.createElement("button");zi.textContent="+";
+    function zoom(d){
+      /* Conservar el punto del mapa que se estaba mirando, no la esquina. */
+      var cx=0.5,cy=0.5;
+      if(mmBody&&mmBody.clientWidth){
+        var full=MM_SIZE*MM_TILE*mmScale;
+        cx=(mmScroll.x+mmBody.clientWidth/2)/full;
+        cy=(mmScroll.y+mmBody.clientHeight/2)/full;
+      }
+      mmScale=Math.max(1,Math.min(6,mmScale+d));
+      var nuevo=MM_SIZE*MM_TILE*mmScale;
+      mmScroll.x=Math.max(0,cx*nuevo-(mmBody?mmBody.clientWidth/2:0));
+      mmScroll.y=Math.max(0,cy*nuevo-(mmBody?mmBody.clientHeight/2:0));
+      drawMinimap();restoreMinimapScroll();
+    }
+    zo.addEventListener("click",function(e){e.stopPropagation();zoom(-1);});
+    zi.addEventListener("click",function(e){e.stopPropagation();zoom(1);});
+    /* La cabecera arrastra el panel, así que los botones no deben iniciarlo. */
+    [zo,zi].forEach(function(b2){
+      b2.addEventListener("pointerdown",function(e){e.stopPropagation();});});
+    ctl.appendChild(zo);ctl.appendChild(zi);
+    return ctl;
+  }
+
+  /* Pulsar una celda abre su sala y encuadra esa celda. Con el borde de sala
+     ya descontado casi todas las celdas son de una sola sala; si alguna cae en
+     más de una, se entra en la primera y las otras quedan a un clic. */
+  function buildMinimapBody(){
+    var wrap=document.createElement("div");wrap.className="mmbody";
+    mmBody=wrap;
+    wrap.addEventListener("scroll",rememberMinimapScroll);
+    mmCanvas=document.createElement("canvas");mmCanvas.className="mm";
+    var pick=document.createElement("div");pick.className="mmpick";
+    wrap.appendChild(mmCanvas);wrap.appendChild(pick);
+    /* Arrastrar el minimapa dentro de su ventana. Con el zoom subido no cabe,
+       y las barras de scroll de una ventana pequeña son incómodas. Igual que
+       en los lienzos de sala: si el puntero no se aleja, es un clic. */
+    (function(){
+      var DRAG=5,down=false,pan=false,px=0,py=0,ox=0,oy=0,pid=null;
+      mmCanvas.addEventListener("pointerdown",function(ev){
+        ev.stopPropagation();
+        if(ev.button!==0)return;
+        down=true;pan=false;pid=ev.pointerId;px=ox=ev.clientX;py=oy=ev.clientY;
+      });
+      mmCanvas.addEventListener("pointermove",function(ev){
+        if(!down)return;
+        if(!pan&&Math.abs(ev.clientX-ox)+Math.abs(ev.clientY-oy)<=DRAG)return;
+        if(!pan){pan=true;wrap.classList.add("grabbing");
+          try{mmCanvas.setPointerCapture(pid);}catch(e){}}
+        wrap.scrollLeft-=ev.clientX-px;wrap.scrollTop-=ev.clientY-py;
+        px=ev.clientX;py=ev.clientY;
+        rememberMinimapScroll();
+      });
+      ["pointerup","pointercancel"].forEach(function(n){
+        mmCanvas.addEventListener(n,function(ev){
+          if(!down)return;
+          down=false;
+          if(pan){pan=false;wrap.classList.remove("grabbing");
+            try{mmCanvas.releasePointerCapture(pid);}catch(e){}
+            ev.stopPropagation();}
+        });
+      });
+      mmCanvas.addEventListener("click",function(ev){ if(pan)ev.stopPropagation(); },true);
+    })();
+    mmCanvas.addEventListener("click",function(ev){
+      var r=mmCanvas.getBoundingClientRect();
+      var cx=Math.floor((ev.clientX-r.left)/r.width*MM_SIZE);
+      var cy=Math.floor((ev.clientY-r.top)/r.height*MM_SIZE);
+      var hits=areaCellIndex(curArea)[cx+","+cy]||[];
+      if(!hits.length){
+        pick.textContent="Celda "+cx+","+cy+": ninguna sala.";
+        return;
+      }
+      goToCell(curArea,hits[0],cx,cy);
+      pick.innerHTML="";
+      if(hits.length>1){
+        pick.appendChild(document.createTextNode("también aquí: "));
+        hits.slice(1).forEach(function(i){
+          var b2=document.createElement("button");
+          b2.textContent=String(maps.areas[curArea][i].id).padStart(3,"0");
+          b2.addEventListener("click",function(){goToCell(curArea,i,cx,cy);});
+          pick.appendChild(b2);
+        });
+      }
+    });
+    return wrap;
+  }
+
+  /* Abre la sala y deja la vista sobre la celda pulsada: una celda es una
+     pantalla, y en una sala grande sin esto acabas mirando a otra parte. */
+  function goToCell(area,i,cx,cy){
+    var room=maps.areas[area][i];
+    loadRoom(area,i);
+    var bx=(cx-room.mapX)*MM_SCR_X+MM_PAD_X+MM_SCR_X/2;
+    var by=(cy-room.mapY)*MM_SCR_Y+MM_PAD_Y+MM_SCR_Y/2;
+    bx=Math.max(0,Math.min(bx,room.w-1));
+    by=Math.max(0,Math.min(by,room.h-1));
+    centerOn(bx*16,by*16);
+  }
+
+  /* ---------- sala <-> bloque para las grabaciones ---------- */
+  /* La clave de una corrección es una posición en la SALA, pero lo que se ve
+     en una grabación son coordenadas del screenmap, que da la vuelta cada 32
+     bloques a lo ancho y 16 a lo alto (RoomUpdate*Tilemap enmascara con
+     tmpX&0xF / tmpX&0x10 / yPos&0xF, src/room.c:795). Más de la mitad de las
+     salas del juego son más grandes que eso, así que hay que deshacer la
+     vuelta: la ventana que se transfiere son 21x16 bloques alrededor de la
+     cámara, mucho menos que el periodo, y eso deja una única respuesta. */
+  function unwrap(v,mod,center){ return v+mod*Math.round((center-v)/mod); }
+
+  function blockCoords(C,cells,mw,mh){
+    if(C.originX===null)return;
+    var baseX=C.originX>>4,baseY=C.originY>>4;
+    var modX=mw>>1,modY=mh>>1;
+    Object.keys(cells).forEach(function(k){
+      var c=cells[k];
+      c.blockX=unwrap(c.mapX>>1,modX,baseX+7);
+      c.blockY=unwrap(c.mapY>>1,modY,baseY+5);
+      c.quad=(c.mapX&1)|((c.mapY&1)<<1);
+    });
+  }
+
+  /* Con maps.json cargado se puede comprobar de verdad: el bloque de la sala
+     en esa posición tiene que producir justo la entrada de tilemap que se ve.
+     Los BG con parallax no comparten scroll con la cámara, y sin esto no habría
+     forma de saber si el desenvuelto ha caído en la vuelta correcta. */
+  function verifyCell(C,c){
+    if(!maps||C.area===null||c.blockX===undefined)return null;
+    var area=null;
+    Object.keys(maps.areas).forEach(function(a){if(areaIndex(a)===C.area)area=a;});
+    if(!area)return null;
+    var room=null,list=maps.areas[area];
+    for(var i=0;i<list.length;i++)if(list[i].id===C.room){room=list[i];break;}
+    if(!room)return null;
+    var data=c.bg===2?room.bg2:(c.bg===1?room.bg1:null);
+    if(!data)return null;
+    if(c.blockX<0||c.blockY<0||c.blockX>=room.w||c.blockY>=room.h)return false;
+    var blk=data[c.blockY*room.w+c.blockX];
+    var ts=maps.tilesets[String(room.tileset)];
+    if(!ts||blk>=ts.blocks.length)return false;
+    return {ok:(ts.blocks[blk][c.quad]&0x3FF)===c.tid,block:blk,room:room};
+  }
+
+  /* ---------- sample loading ---------- */
+  function loadSample(i){
+    var C=ctxOf(samples[i]),dispcnt=u16(C.b,C.io),on=[],bg={},prio=[];
+    for(var k=0;k<4;k++){
+      /* La prioridad se lee de BGCNT aunque la capa esté apagada: sigue siendo
+         el nivel al que iría un bloque que se mande ahí. */
+      prio[k]=u16(C.b,C.io+8+k*2)&3;
+      on[k]=!!((dispcnt>>(8+k))&1);
+      if(!on[k])continue;
+      bg[k]=decodeBg(C,k);
+      var cnt=u16(C.b,C.io+8+k*2),sz=(cnt>>14)&3;
+      blockCoords(C,bg[k].cells,(sz&1)?64:32,(sz&2)?64:32);
+    }
+    state={C:C,on:on,bg:bg,obj:decodeObj(C),tag:C.area+"/"+C.room,
+           prio:prio,kind:"rec",W:W,H:H,CELL:8};
+    sel=null;compBuf=null;
+    Array.prototype.forEach.call(els.shots.children,function(s,n){
+      s.setAttribute("aria-current",n===i?"true":"false");});
+    buildMain();reanchor();renderSide();renderList();redraw();
+  }
+
+  function buildRail(){
+    els.railTitle.textContent="Capturas";
+    els.shots.innerHTML="";
+    samples.forEach(function(s,i){
+      var b=document.createElement("button");b.className="shot";
+      var cv=document.createElement("canvas");
+      var C=ctxOf(s),dispcnt=u16(C.b,C.io);
+      var out=new Uint8ClampedArray(W*H*4);
+      for(var q=3;q<out.length;q+=4)out[q]=255;
+      var dec={},ord=[0,1,2,3].filter(function(k){return (dispcnt>>(8+k))&1;});
+      ord.forEach(function(k){dec[k]=decodeBg(C,k);});
+      ord.sort(function(a,b2){var pa=dec[a].prio,pb=dec[b2].prio;return pa!==pb?pb-pa:b2-a;})
+         .forEach(function(k){over(out,dec[k].img);});
+      over(out,decodeObj(C).img);
+      cv.width=W;cv.height=H;
+      var id=cv.getContext("2d").createImageData(W,H);id.data.set(out);
+      cv.getContext("2d").putImageData(id,0,0);
+      cv.style.width="68px";cv.style.height="45px";
+      var n=document.createElement("span");n.className="n";n.textContent=String(i).padStart(2,"0");
+      b.appendChild(cv);b.appendChild(n);
+      b.addEventListener("click",function(){loadSample(i);});
+      els.shots.appendChild(b);
+    });
+  }
+
+  function ingest(buf,name){
+    var f=scan(buf);
+    if(!f||!f.length){els.meta.textContent="no parece un mzm-rec.bin";return;}
+    samples=f;fileName=name;
+    els.meta.textContent=name+" · "+f.length+" capturas · "+(f[0].magic===0x344D5A4D?"MZM4":"MZM3");
+    buildRail();loadSample(0);
+  }
+
+  /* ---------- wiring ---------- */
+  els.file.addEventListener("change",function(e){
+    var f=e.target.files[0];if(!f)return;f.arrayBuffer().then(function(b){ingest(b,f.name);});});
+  els.mapsfile.addEventListener("change",function(e){
+    var f=e.target.files[0];if(!f)return;f.arrayBuffer().then(function(b){ingestMaps(b,f.name);});});
+  els.incfile.addEventListener("change",function(e){
+    var f=e.target.files[0];if(!f)return;
+    f.text().then(function(t){fixes={};importText(t);});});
+  /* Con servidor, CARGAR relee el .inc de su ruta -- por si se ha tocado
+     fuera --; sin él, abre el diálogo de archivos. */
+  els.load.addEventListener("click",function(){
+    if(serverFixes)loadFixesFromServer();
+    else els.incfile.click();
+  });
+  /* En document, no en la caja: en cuanto se carga una sala, main se
+     reconstruye y la caja deja de existir. Se puede soltar en cualquier
+     momento, que es lo que uno espera al querer cambiar de archivo. */
+  ["dragenter","dragover"].forEach(function(n){
+    document.addEventListener(n,function(e){
+      e.preventDefault();if(els.drop)els.drop.classList.add("over");});});
+  ["dragleave","drop"].forEach(function(n){
+    document.addEventListener(n,function(e){
+      e.preventDefault();if(els.drop)els.drop.classList.remove("over");});});
+  /* Un solo sitio donde soltar: se decide por el nombre, que en los dos casos
+     es el que la herramienta que lo generó le puso. */
+  document.addEventListener("drop",function(e){
+    var f=e.dataTransfer&&e.dataTransfer.files[0];if(!f)return;
+    f.arrayBuffer().then(function(b){
+      if(/\.(json|gz)$/i.test(f.name))ingestMaps(b,f.name);
+      else if(/\.(inc|txt)$/i.test(f.name))importText(new TextDecoder().decode(b));
+      else ingest(b,f.name);
+    });});
+
+  els.relayout.addEventListener("click",function(){ layoutPanels(true);ensureSelVisible(); });
+
+  /* Plegar una barra no recoloca las ventanas: sólo cambia el hueco que
+     RECOLOCAR usará la próxima vez, para no mover nada a la espalda. */
+  function fold(which){
+    if(which==="rail"){
+      railOpen=!railOpen;
+      document.querySelector(".rail").classList.toggle("fold",!railOpen);
+      els.torail.textContent=railOpen?"‹":"›";
+    } else {
+      sideOpen=!sideOpen;
+      document.querySelector(".side").classList.toggle("fold",!sideOpen);
+      els.toside.textContent=sideOpen?"›":"‹";
+    }
+  }
+  els.torail.addEventListener("click",function(e){e.stopPropagation();fold("rail");});
+  els.toside.addEventListener("click",function(e){e.stopPropagation();fold("side");});
+
+  /* Arrastrar el separador cambia el ancho de su barra. */
+  function makeDivider(div,el,side){
+    var down=false,sx=0,w0=0;
+    div.addEventListener("pointerdown",function(ev){
+      if(ev.button!==0||ev.target.classList.contains("tab"))return;
+      down=true;sx=ev.clientX;w0=el.getBoundingClientRect().width;
+      div.setPointerCapture(ev.pointerId);
+      document.body.style.cursor="col-resize";
+    });
+    div.addEventListener("pointermove",function(ev){
+      if(!down)return;
+      var d=ev.clientX-sx;
+      var w=Math.max(120,Math.min(520,side==="left"?w0+d:w0-d));
+      el.style.width=w+"px";
+    });
+    ["pointerup","pointercancel"].forEach(function(n){
+      div.addEventListener(n,function(ev){
+        if(!down)return;
+        down=false;document.body.style.cursor="";
+        try{div.releasePointerCapture(ev.pointerId);}catch(e){}
+      });
+    });
+  }
+  makeDivider(els.divrail,document.querySelector(".rail"),"left");
+  makeDivider(els.divside,document.querySelector(".side"),"right");
+
+  /* Salir de pantalla completa desde la barra: maximizada, la ventana se va al
+     fondo y sus propios botones quedan debajo del resto, así que hace falta un
+     mando que no esté tapado por nada. */
+  els.restore.addEventListener("click",function(){
+    var p=panelState("stage");p.max=false;
+    layoutPanels(false);savePanels();redraw();ensureSelVisible();
+  });
+  window.addEventListener("resize",function(){ layoutPanels(false); });
+  els.zin.addEventListener("click",function(){setZoom(zoom+1);});
+  els.zout.addEventListener("click",function(){setZoom(zoom-1);});
+
+  els.copy.addEventListener("click",function(){
+    navigator.clipboard.writeText(exportText()).then(function(){
+      els.copy.textContent="COPIADO";setTimeout(function(){els.copy.textContent="COPIAR";},1400);});});
+  els.clear.addEventListener("click",function(){fixes={};renderList();renderSide();redraw();});
+
+  var handle=null;
+  els.save.addEventListener("click",function(){
+    var text=exportText();
+    if(serverFixes){ saveFixesToServer();return; }
+    if(window.showSaveFilePicker){
+      (handle?Promise.resolve(handle):window.showSaveFilePicker({
+        suggestedName:"port_layer_fixes.inc",
+        types:[{description:"Correcciones de capa",accept:{"text/plain":[".inc"]}}]
+      })).then(function(h){
+        handle=h;return h.createWritable();
+      }).then(function(w){return w.write(text).then(function(){return w.close();});})
+        .then(function(){els.save.textContent="GUARDADO";
+          setTimeout(function(){els.save.textContent="GUARDAR .INC";},1400);})
+        .catch(function(){});
+    } else {
+      var a=document.createElement("a");
+      a.href=URL.createObjectURL(new Blob([text],{type:"text/plain"}));
+      a.download="port_layer_fixes.inc";a.click();
+      setTimeout(function(){URL.revokeObjectURL(a.href);},2000);
+    }
+  });
+
+  /* Dev hook: the workbench is a debugging tool itself, so its internals are
+     reachable from the console for poking at a recording by hand. */
+  window.__wb={get state(){return state;},get fixes(){return fixes;},applied:applied,
+               decodeBg:decodeBg,ctxOf:ctxOf,get samples(){return samples;},
+               get maps(){return maps;},loadRoom:loadRoom,verifyCell:verifyCell,
+               importText:importText,exportText:exportText,
+               selectionReport:selectionReport};
+
+  /* ================= autocomprobación =====================================
+     index.html?test corre unas afirmaciones sobre la lógica del visor y deja
+     el resultado en pantalla. Sin dependencias ni navegador aparte, que es
+     todo el sentido de esta herramienta.
+
+     No intenta cubrir ventanas ni gestos -- eso es geometría del navegador y
+     se mira con los ojos. Cubre lo que sí se puede romper en silencio: que la
+     página entera carga sin excepciones (una reescritura llegó a borrar
+     redraw), que una sala decodifica, que el compositor respeta el orden y
+     dibuja lo movido incluso a una capa que la sala no usa, que la selección
+     distingue capa y posición, y que el .inc va y vuelve igual.
+     ======================================================================== */
+  function selfTest(){
+    var fallos=[],n=0;
+    function ok(cond,msg){ n++; if(!cond)fallos.push(msg); }
+    function eq(a2,b2,msg){ ok(a2===b2,msg+": es "+a2+", se esperaba "+b2); }
+
+    ok(!!maps,"maps.json cargado");
+    if(!maps)return {n:n,fallos:fallos};
+    eq(Object.keys(maps.areas).reduce(function(t,a3){
+      return t+maps.areas[a3].length;},0),315,"salas en total");
+
+    /* Una sala con tres capas, mezcla alfa y prioridades no triviales. */
+    loadRoom("brinstar",1);
+    eq(Object.keys(state.bg).length,3,"brinstar 1: capas dibujadas");
+    ok(state.prio.length===4,"prioridades presentes");
+    ok(!!state.blend,"brinstar 1 mezcla una capa");
+    ok(Object.keys(state.bg[1].cells).length>0,"BG1 tiene bloques");
+
+    /* El compositor pinta de atrás a delante por prioridad. */
+    var orden=[0,1,2,3].sort(function(x,y){
+      var px2=state.prio[x],py=state.prio[y];return px2!==py?py-px2:y-x;});
+    ok(state.prio[orden[0]]>=state.prio[orden[orden.length-1]],
+       "orden de pintado de atrás a delante");
+
+    /* Un bloque movido a una capa que la sala NO usa tiene que seguir viéndose:
+       esto fue un fallo real, desaparecía. */
+    var k0=Object.keys(state.bg[1].cells)[10],c0=state.bg[1].cells[k0];
+    fixes={};selMore={};sel={info:c0};
+    fixes[keyOf(c0,state.C)]={dest:3,info:c0,tag:state.tag,key:keyOf(c0,state.C),
+                              area:state.C.area,room:state.C.room,block:c0.entry};
+    var A=applied();
+    eq(A.moved.length,1,"la corrección se aplica");
+    ok(!state.on[3],"la sala no usa BG3");
+    var comp=composite(A),q=((c0.sy+8)*state.W+(c0.sx+8))*4;
+    ok(comp[q+3]===255,"un bloque movido a una capa ausente se sigue dibujando");
+
+    /* Ida y vuelta del .inc. */
+    var antes=exportText();
+    importText(antes);
+    eq(exportText(),antes,"el .inc va y vuelve igual");
+
+    /* La selección distingue capa Y posición: dos capas comparten posición. */
+    var conDos=null;
+    Object.keys(state.bg[1].cells).forEach(function(k){
+      if(!conDos&&state.bg[0]&&state.bg[0].cells[k])conDos=k;});
+    ok(!!conDos,"hay una posición con bloque en dos capas");
+    if(conDos){
+      selMore={};sel={info:state.bg[0].cells[conDos]};
+      selMore[selKey(state.bg[0].cells[conDos])]=state.bg[0].cells[conDos];
+      selMore[selKey(state.bg[1].cells[conDos])]=state.bg[1].cells[conDos];
+      eq(selList().length,2,"dos capas en la misma posición cuentan como dos");
+    }
+
+    /* La huella del mapa descuenta borde y roca: Kraid 7 tiene dos celdas que
+       el juego deja en blanco y no deben marcarse. */
+    var k7=null;
+    maps.areas.kraid.forEach(function(r,i){ if(r.id===7)k7=i; });
+    if(k7!==null){
+      var celdas=roomCells(maps.areas.kraid[k7]);
+      eq(celdas.length,6,"huella de kraid 7");
+    }
+
+    /* Filtro de capas en el resultado: conmutar visibilidad afecta a composite. */
+    state.stageLayers={0:false,1:true,2:true,3:true,obj:true,4:true};
+    var compNo0=composite(A);
+    ok(compNo0!==null,"composite con BG0 desactivada");
+    state.stageLayers={0:true,1:true,2:true,3:true,obj:true,4:true};
+
+    fixes={};clearSel();
+    return {n:n,fallos:fallos};
+  }
+
+  function runSelfTest(){
+    var r;
+    try{ r=selfTest(); }
+    catch(e){ r={n:0,fallos:["excepción: "+(e&&e.message||e)]}; }
+    var caja=document.createElement("pre");
+    caja.id="selftest";
+    caja.style.cssText="position:fixed;left:0;right:0;bottom:0;z-index:99;max-height:45vh;"+
+      "margin:0;border-top:2px solid "+(r.fallos.length?"#E0705C":"#2E7D4F")+";";
+    caja.textContent=(r.fallos.length?"FALLA":"PASA")+"  "+r.n+" comprobaciones, "+
+      r.fallos.length+" fallos\n"+r.fallos.join("\n");
+    document.body.appendChild(caja);
+    window.__selftest=r;
+  }
+
+  setZoom(2);renderList();autoloadMaps();loadFixesFromServer(true);
+  if(/[?&]test\b/.test(location.search)){
+    /* Tras la carga de maps.json, que es asíncrona. */
+    var espera=setInterval(function(){
+      if(!maps)return;
+      clearInterval(espera);runSelfTest();
+    },100);
+    setTimeout(function(){ clearInterval(espera); if(!window.__selftest)runSelfTest(); },8000);
+  }
+})();
+</script>
+</body>
+</html>

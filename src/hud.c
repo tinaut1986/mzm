@@ -235,6 +235,20 @@ void HudUpdateOam(void)
     }
 
     gNextOamSlot = oamSlot;
+
+#ifdef __3DS__
+    /* The HUD is exactly OAM slots [0, oamSlot) -- this function fills them
+     * from 0 and everything else in the frame is allocated after it. The
+     * 3DS stereo renderer needs that boundary to decide which sprites get
+     * the HUD depth plane (in front of the screen) instead of a world
+     * plane, and guessing it from palette bank and sprite shape is only a
+     * heuristic: a world sprite legitimately using the HUD palette (the
+     * pulsing item orb in the 2026-08-28 recording is palette bank 4) can
+     * fall on the wrong side of it. Publishing the real boundary here costs
+     * one store and removes the guess. */
+    extern void Port_Hud_SetOamCount(int count);
+    Port_Hud_SetOamCount((int)oamSlot);
+#endif
 }
 
 /**

@@ -34,3 +34,7 @@ platform/3ds/*.3dsx
 platform/linux/build/
 platform/linux/mzm-linux
 scratch/
+__pycache__/
+*.pyc
+.3ds_ftp_ip
+platform/3ds/.3ds_ftp_ip

@@ -539,7 +539,20 @@ bool PlatformGpu3DS_EndBottom(const uint32_t* pixels, bool changed) {
         }
     }
 #endif
-    if (!sOld3DSProfile || changed || !sBottomTargetValid) {
+    /* `changed` is always true from the callers and is no longer the redraw
+     * signal: the bottom UI owns its own cadence now. It advances per-frame
+     * state every frame, but the actual rasterise (several thousand
+     * immediate-mode quads for a text/map view -- enough to tip the game
+     * frame past the vsync budget) only runs on a ~20Hz throttle, or
+     * immediately after any interaction. The persistent render target is
+     * scanned out unchanged on the frames in between. */
+    (void)changed;
+    extern void Port_BottomUI_FrameTick(void);
+    extern bool Port_BottomUI_WantsRedraw(void);
+    Port_BottomUI_FrameTick();
+    const bool redrawBottom = Port_BottomUI_WantsRedraw();
+
+    if (redrawBottom || !sBottomTargetValid) {
         C2D_TargetClear(sBottomTarget, C2D_Color32(0, 0, 0, 255));
         C2D_SceneBegin(sBottomTarget);
         PlatformGpu3DS_ResetSolidTexEnv();
@@ -893,10 +906,11 @@ void PlatformGpu3DS_RecordTick(void) {
     if (stats.processingTime < 0.0f) procX100 = 0;
 
     uint32_t header[2 + 6 + 8]; /* magic, frame counter, 6 Samus words, perf */
-    /* 'MZM3': sample now carries a clip/camera block after VRAM. Magic
-     * bumped so an older parser fails loudly instead of walking off the end
-     * of every sample. */
-    header[0] = 0x334D5A4Du;
+    /* 'MZM4': the clip/camera block after VRAM now also carries the area
+     * and room number, which a tile correction has to be keyed to. Magic
+     * bumped, as with 'MZM3' before it, so an older parser fails loudly
+     * instead of walking off the end of every sample. */
+    header[0] = 0x344D5A4Du;
     header[1] = sRecFrameCounter;
     PortPpuMzm_GetSamusRecordState(&header[2]);
     header[8]  = frameUs;

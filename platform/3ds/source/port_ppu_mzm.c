@@ -186,6 +186,8 @@ void Port_Config_Save(void) {
     fprintf(file, "# Metroid Zero Mission 3DS runtime settings\n");
     fprintf(file, "aspect_ratio=%d\n", sAspectRatio);
     fprintf(file, "display_style=%d\n", sDisplayStyle);
+    extern int PortStereoDepth_GetSpread(void);
+    fprintf(file, "stereo_depth=%d\n", PortStereoDepth_GetSpread());
     fprintf(file, "show_fps=%u\n", sShowFps ? 1u : 0u);
     fprintf(file, "auto_hide_hud=%u\n", sAutoHideHud ? 1u : 0u);
     fprintf(file, "hide_spoilers=%u\n", sHideSpoilers ? 1u : 0u);
@@ -250,6 +252,9 @@ void Port_Config_Load(void) {
             if (val >= 0 && val < 3) sAspectRatio = val;
         } else if (strcmp(key, "display_style") == 0) {
             if (val >= 0 && val < 3) sDisplayStyle = val;
+        } else if (strcmp(key, "stereo_depth") == 0 || strcmp(key, "stereo_spread") == 0) {
+            extern void PortStereoDepth_SetSpread(int);
+            if (val >= 0 && val < 3) PortStereoDepth_SetSpread(val);
         } else if (strcmp(key, "show_fps") == 0) {
             sShowFps = (val != 0);
         } else if (strcmp(key, "auto_hide_hud") == 0) {
@@ -1200,31 +1205,36 @@ void PortPpuMzm_DebugGetAmmoText(char* out, int outSize) {
 
 
 /* ---------------------------------------------------------------------
- * Clipdata probe for the stereo renderer.
+ * World pixel shown at screen (0,0).
  *
- * Which BG layer a tile is painted on turns out to be a poor source of
- * depth. Room data routinely spreads one solid object across two layers:
- * in the Chozodia room recorded on 2026-08-28 a single crate platform has
- * its left half on BG1 (priority 1) and its right half on BG2 (priority 2)
- * using the IDENTICAL tile pair 0x3139/0x313A, with both layers on the same
- * scroll. On real hardware that is invisible -- both halves are opaque and
- * nothing draws between them -- so nothing in the original game could ever
- * expose it. Deriving parallax from priority does expose it: the platform
- * splits across two depth planes.
+ * This used to back PortPpuMzm_ClipIsSolidAtScreen, a per-tile clipdata
+ * probe the stereo renderer asked for depth. That approach is gone --
+ * clipdata is a collision grid, not an outline of what is drawn, and using
+ * it per tile tore ramps and rock ledges apart every 16px (see
+ * EffectiveBgPriority in port_gpu_renderer.c for the full history). Depth
+ * now comes from BG priority reconciled against the sprite priorities on
+ * screen, and needs no clipdata at all.
  *
- * Clipdata is the right source instead: it is what the game itself uses to
- * decide what Samus collides with, so "solid" means "in the play plane" by
- * definition, whichever layer happened to draw it.
+ * Two consumers remain. The scene recorder's clip grid, which is still
+ * worth capturing: clipdata and the camera live in EWRAM, so without it no
+ * recording can say where in the world a frame actually was, which is what
+ * made the ramp diagnosis possible in the first place. And the GPU
+ * renderer's per-block layer corrections (port_layer_fixes.c), which are
+ * keyed to absolute room-block positions and so need the world position of
+ * screen (0,0) to turn an on-screen tile back into a room block.
  *
- * Same lookup as ClipdataProcessForSamus (src/clipdata.c), minus the
- * sub-pixel/slope resolution -- this only needs to know whether the block
- * is part of the solid world. Lives here rather than in port_gpu_renderer.c
- * because that file has no access to the GBA-side structs.
+ * The world position of screen pixel 0 comes from the BG SCROLL REGISTERS,
+ * not from the camera. The two agree only while the camera is still:
+ * decoding a ledge-grab recording (191 samples carrying both) showed
+ * camPixelX - BG1HOFS == 0 always, but camPixelY - BG1VOFS drifting to as
+ * much as -37 whenever the camera moved vertically -- over two 16px clip
+ * blocks. The registers are 9 bits, so they only give position modulo 512;
+ * the camera resolves WHICH 512px window we are in, exact as long as the
+ * two never disagree by more than 256px, orders of magnitude beyond the
+ * observed drift. BG1 is the layer clipdata belongs to, so its registers
+ * are the ones that define the grid's alignment.
  * ------------------------------------------------------------------- */
-/* World pixel shown at screen (0,0). Split out of the probe so the scene
- * recorder samples its clip grid from the exact same origin -- a recording
- * whose grid disagreed with the probe would be worse than no recording. */
-static void PortPpuMzm_ScreenOrigin(int* outX, int* outY) {
+void PortPpuMzm_ScreenOrigin(int* outX, int* outY) {
     const int kScrollMask = 0x1FF;
     int bg1Hofs = (int)(gIoMem[0x14] | (gIoMem[0x15] << 8)) & kScrollMask;
     int bg1Vofs = (int)(gIoMem[0x16] | (gIoMem[0x17] << 8)) & kScrollMask;
@@ -1233,57 +1243,6 @@ static void PortPpuMzm_ScreenOrigin(int* outX, int* outY) {
     *outX = camPixelX + ((((bg1Hofs - camPixelX) & kScrollMask) + 256) & kScrollMask) - 256;
     *outY = camPixelY + ((((bg1Vofs - camPixelY) & kScrollMask) + 256) & kScrollMask) - 256;
 }
-
-bool PortPpuMzm_ClipIsSolidAtScreen(int screenX, int screenY) {
-    if (gMainGameMode != GM_INGAME) return false;
-    if (gTilemapAndClipPointers.pClipCollisions == NULL) return false;
-
-    /* The world position of screen pixel 0 comes from the BG SCROLL
-     * REGISTERS, not from the camera.
-     *
-     * gCamera and the scroll registers agree only while the camera is
-     * still. Decoding a recording of a ledge grab (191 samples carrying
-     * both) showed camPixelX - BG1HOFS == 0 always, but camPixelY - BG1VOFS
-     * drifting to as much as -37 whenever the camera moved vertically --
-     * over two 16px clip blocks. Probing with the camera therefore asked
-     * about a block the frame on screen was not showing, and tiles near a
-     * block boundary flipped depth plane for as long as the drift lasted.
-     * An earlier fix here removed the camera's sub-pixel remainder, a real
-     * error but worth less than one pixel; this is the one that mattered.
-     *
-     * The scroll registers are 9 bits, so they only give the position
-     * modulo 512. The camera still resolves WHICH 512px window we are in:
-     * take the congruent value nearest the camera, exact as long as the two
-     * never disagree by more than 256px -- orders of magnitude beyond the
-     * observed drift.
-     *
-     * BG1 is the layer clipdata belongs to, so its registers are the ones
-     * that define the clip grid's alignment. */
-    int originX, originY;
-    PortPpuMzm_ScreenOrigin(&originX, &originY);
-    int worldPixelX = originX + screenX;
-    int worldPixelY = originY + screenY;
-    if (worldPixelX < 0 || worldPixelY < 0) return false;
-
-    u32 blockX = (u32)worldPixelX / PIXEL_PER_BLOCK;
-    u32 blockY = (u32)worldPixelY / PIXEL_PER_BLOCK;
-    if (blockX >= gBgPointersAndDimensions.clipdataWidth) return false;
-    if (blockY >= gBgPointersAndDimensions.clipdataHeight) return false;
-
-    u8 type = gTilemapAndClipPointers.pClipCollisions[GET_CLIP_BLOCK_(blockX, blockY)];
-    switch (type) {
-        /* Air, and the two "blocks enemies but not Samus" types: none of
-         * these are part of the solid world Samus walks on. */
-        case CLIPDATA_TYPE_AIR:
-        case CLIPDATA_TYPE_ENEMY_ONLY:
-        case CLIPDATA_TYPE_STOP_ENEMY:
-            return false;
-        default:
-            /* Solid, plus every slope variant. */
-            return true;
-    }
-}
-
 
 /* ---------------------------------------------------------------------
  * Clip/camera snapshot for the scene recorder.
@@ -1303,7 +1262,7 @@ bool PortPpuMzm_ClipIsSolidAtScreen(int screenX, int screenY) {
 #define PORT_CLIPREC_ROWS 12
 
 void PortPpuMzm_GetClipRecordBlock(uint8_t* out) {
-    /* 20 bytes of scalars, then the grid. */
+    /* 24 bytes of scalars, then the grid. */
     uint16_t* w = (uint16_t*)out;
     w[0] = gCamera.xPosition;
     w[1] = gCamera.yPosition;
@@ -1313,14 +1272,20 @@ void PortPpuMzm_GetClipRecordBlock(uint8_t* out) {
     w[5] = (uint16_t)gBgPointersAndDimensions.clipdataHeight;
     w[6] = (uint16_t)gMainGameMode;
     w[7] = (uint16_t)gSamusData.pose;
-    /* w[8]/w[9]: the origin the grid below was sampled from. */
+    /* w[8]/w[9]: the origin the grid below was sampled from.
+     * w[10]/w[11]: area and room. A tile correction has to be keyed to a
+     * position in a ROOM, not on screen, or it moves with the camera --
+     * without these a recording cannot say which room it is of, and the key
+     * has to be filled in by hand afterwards. */
 
     int originX, originY;
     PortPpuMzm_ScreenOrigin(&originX, &originY);
     w[8] = (uint16_t)originX;
     w[9] = (uint16_t)originY;
+    w[10] = (uint16_t)gCurrentArea;
+    w[11] = (uint16_t)gCurrentRoom;
 
-    uint8_t* grid = out + 20;
+    uint8_t* grid = out + 24;
     int baseBlockX = originX / PIXEL_PER_BLOCK;
     int baseBlockY = originY / PIXEL_PER_BLOCK;
 
@@ -1341,5 +1306,5 @@ void PortPpuMzm_GetClipRecordBlock(uint8_t* out) {
 }
 
 int PortPpuMzm_GetClipRecordBlockSize(void) {
-    return 20 + PORT_CLIPREC_COLS * PORT_CLIPREC_ROWS;
+    return 24 + PORT_CLIPREC_COLS * PORT_CLIPREC_ROWS;
 }
