@@ -127,7 +127,7 @@ static int sDisplayStyle = 0; /* 0 = PIXEL PERFECT, 1 = SCALED, 2 = BLUR */
 static const char* const sConfigPath = "mzm3ds.ini";
 
 static bool sAutoHideHud = true;
-static bool sHideSpoilers = false;
+static bool sHideSpoilers = true;
 
 /* Button Actions:
  * 0 = NINGUNA (NONE)
