@@ -15,6 +15,7 @@
  */
 #include "port_gpu_renderer.h"
 #include "port_stereo_depth.h"
+#include "port_layer_fixes.h"
 #include "platform_gpu_3ds.h"
 
 #include <3ds.h>
@@ -336,6 +337,43 @@ static PortStereoDepthState sDepthState;
 
 extern int Port_Hud_GetOamCount(void);
 
+/* Room the correction list was last selected for. Re-selecting on every frame
+ * would rescan the whole list for nothing; the room only changes on a door. */
+static int sFixArea = -1, sFixRoom = -1;
+
+static void UpdateLayerFixRoom(void) {
+    if (!PortLayerFix_Present()) return;
+
+    extern u8 gCurrentArea;
+    extern u8 gCurrentRoom;
+    if ((int)gCurrentArea == sFixArea && (int)gCurrentRoom == sFixRoom) return;
+    sFixArea = (int)gCurrentArea;
+    sFixRoom = (int)gCurrentRoom;
+
+    /* The room's decompressed block maps, which is what each correction's
+     * checksum is validated against. Only BG0..BG2 exist here -- BG3 is a
+     * separate LZ77 backdrop and has no block map (src/room.c:454). */
+    extern struct {
+        struct { u16* pDecomp; u16 width; u16 height; } backgrounds[3];
+        u16* pClipDecomp;
+        u16 clipdataWidth;
+        u16 clipdataHeight;
+    } gBgPointersAndDimensions;
+
+    const uint16_t* data[4];
+    uint16_t w[4], h[4];
+    for (int bg = 0; bg < 4; ++bg) {
+        if (bg < 3) {
+            data[bg] = (const uint16_t*)gBgPointersAndDimensions.backgrounds[bg].pDecomp;
+            w[bg] = gBgPointersAndDimensions.backgrounds[bg].width;
+            h[bg] = gBgPointersAndDimensions.backgrounds[bg].height;
+        } else {
+            data[bg] = NULL; w[bg] = 0; h[bg] = 0;
+        }
+    }
+    PortLayerFix_SetRoom(sFixArea, sFixRoom, data, w, h);
+}
+
 static void ComputeDepthState(uint16_t dispcnt) {
     extern s16 gMainGameMode;
     (void)dispcnt;
@@ -344,6 +382,7 @@ static void ComputeDepthState(uint16_t dispcnt) {
         sDepthState.priority[bg] =
             (uint8_t)(((uint16_t)(gIoMem[0x08 + bg * 2] | (gIoMem[0x09 + bg * 2] << 8))) & 3u);
     }
+    UpdateLayerFixRoom();
 }
 
 bool Port_GpuRenderer_IsActive(void) { return sGpuRendererActive; }
@@ -995,6 +1034,30 @@ static void CollectBgLayer(int bgIndex) {
              * which is where BG0 genuinely is the text/dialog layer. In
              * gameplay every BG, BG0 included, maps by its own priority. */
             int depthTier = PortStereoDepth_BgTier(&sDepthState, bgIndex);
+            /* Hand-picked exceptions, if a correction list was built in.
+             *
+             * The block moves in BOTH senses: its depth plane AND its 2D draw
+             * order. Changing only the depth was tried first and is not what
+             * the corrections are for -- a tile the room paints over Samus
+             * still painted over her, just flat, so the thing being corrected
+             * stayed on screen. These entries exist precisely because the
+             * room's own layering is wrong for a stereo image, so honouring
+             * half of it fixes nothing. */
+            if (PortLayerFix_ActiveCount() > 0) {
+                int dest = PortLayerFix_DestFor(bgIndex, tileCol >> 1, tileRow >> 1);
+                if (dest >= 0) {
+                    if (dest >= 4) {
+                        /* Sprite level, which the workbench offers as "in
+                         * front of everything": the frontmost bucket, above
+                         * every BG and every sprite. */
+                        depthTier = PortStereoDepth_ObjTier(&sDepthState, 1);
+                        sortKey = (3 - 0) * 10 + 4;
+                    } else {
+                        depthTier = PortStereoDepth_BgTier(&sDepthState, dest);
+                        sortKey = (3 - sDepthState.priority[dest]) * 10 + (3 - dest);
+                    }
+                }
+            }
             PushItem(slot, drawX, drawY, sortKey, depthTier, blendAlpha, rectWinVis);
         }
     }

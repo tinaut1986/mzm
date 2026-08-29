@@ -98,6 +98,7 @@ SRCS_3DS := \
 	$(CURDIR)/source/port_ppu_mzm.c \
 	$(CURDIR)/source/port_gpu_renderer.c \
 	$(CURDIR)/source/port_stereo_depth.c \
+	$(CURDIR)/source/port_layer_fixes.c \
 	$(CURDIR)/source/port_hud_oam.c \
 	$(CURDIR)/source/port_mzm_audio_3ds.c \
 	$(CURDIR)/source/port_retroachievements_3ds.c \
@@ -275,6 +276,11 @@ LIBS     := -L$(CTRULIB)/lib -L$(PORTLIBS)/lib -lcitro2d -lcitro3d -lctru -lm
 
 MAKEROM    ?= $(shell which makerom 2>/dev/null || echo $(DEVKITPRO)/tools/bin/makerom)
 BANNERTOOL ?= $(shell which bannertool 2>/dev/null || echo $(DEVKITPRO)/tools/bin/bannertool)
+
+# La lista de correcciones es un include opcional, y cuando port_layer_fixes.c
+# se compiló por primera vez todavía no existía: su .d no la menciona y make no
+# reconstruye al añadirla. Explícito, entonces.
+$(BUILD)/port_layer_fixes.o: $(wildcard $(CURDIR)/source/port_layer_fixes.inc)
 
 .PHONY: all clean cia elf 3dsx print-version ftp test
 
