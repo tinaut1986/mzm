@@ -42,8 +42,8 @@ static const PortLayerFixEntry sAll[1];
 typedef struct {
     uint8_t bg;
     uint8_t dest;
-    uint8_t col;   /* blockX wrapped to the screenmap period */
-    uint8_t row;   /* blockY wrapped */
+    uint16_t col;   /* absolute block X in the room */
+    uint16_t row;   /* absolute block Y in the room */
 } ActiveFix;
 
 static ActiveFix sActive[PORT_FIX_MAX_ACTIVE];
@@ -77,8 +77,8 @@ int PortLayerFix_SetRoom(int area, int room,
 
         sActive[sActiveCount].bg = f->fromBg;
         sActive[sActiveCount].dest = f->dest;
-        sActive[sActiveCount].col = (uint8_t)(f->blockX & 31u);
-        sActive[sActiveCount].row = (uint8_t)(f->blockY & 15u);
+        sActive[sActiveCount].col = f->blockX;
+        sActive[sActiveCount].row = f->blockY;
         sActiveCount++;
     }
     return sActiveCount;
@@ -86,9 +86,10 @@ int PortLayerFix_SetRoom(int area, int room,
 
 int PortLayerFix_DestFor(int bg, int colBlock, int rowBlock) {
     if (sActiveCount == 0) return -1;
-    uint8_t c = (uint8_t)(colBlock & 31), r = (uint8_t)(rowBlock & 15);
+    if (colBlock < 0 || rowBlock < 0) return -1;
     for (int i = 0; i < sActiveCount; ++i) {
-        if (sActive[i].bg == (uint8_t)bg && sActive[i].col == c && sActive[i].row == r)
+        if (sActive[i].bg == (uint8_t)bg &&
+            sActive[i].col == (uint16_t)colBlock && sActive[i].row == (uint16_t)rowBlock)
             return (int)sActive[i].dest;
     }
     return -1;

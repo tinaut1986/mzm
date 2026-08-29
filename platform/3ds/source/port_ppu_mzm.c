@@ -1210,10 +1210,13 @@ void PortPpuMzm_DebugGetAmmoText(char* out, int outSize) {
  * now comes from BG priority reconciled against the sprite priorities on
  * screen, and needs no clipdata at all.
  *
- * What remains is the scene recorder's clip grid, which is still worth
- * capturing: clipdata and the camera live in EWRAM, so without it no
+ * Two consumers remain. The scene recorder's clip grid, which is still
+ * worth capturing: clipdata and the camera live in EWRAM, so without it no
  * recording can say where in the world a frame actually was, which is what
- * made the ramp diagnosis possible in the first place.
+ * made the ramp diagnosis possible in the first place. And the GPU
+ * renderer's per-block layer corrections (port_layer_fixes.c), which are
+ * keyed to absolute room-block positions and so need the world position of
+ * screen (0,0) to turn an on-screen tile back into a room block.
  *
  * The world position of screen pixel 0 comes from the BG SCROLL REGISTERS,
  * not from the camera. The two agree only while the camera is still:
@@ -1226,7 +1229,7 @@ void PortPpuMzm_DebugGetAmmoText(char* out, int outSize) {
  * observed drift. BG1 is the layer clipdata belongs to, so its registers
  * are the ones that define the grid's alignment.
  * ------------------------------------------------------------------- */
-static void PortPpuMzm_ScreenOrigin(int* outX, int* outY) {
+void PortPpuMzm_ScreenOrigin(int* outX, int* outY) {
     const int kScrollMask = 0x1FF;
     int bg1Hofs = (int)(gIoMem[0x14] | (gIoMem[0x15] << 8)) & kScrollMask;
     int bg1Vofs = (int)(gIoMem[0x16] | (gIoMem[0x17] << 8)) & kScrollMask;

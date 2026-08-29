@@ -975,6 +975,25 @@ static void CollectBgLayer(int bgIndex) {
     int startTileY = scrollY / 8;
     int fineX = scrollX % 8;
     int fineY = scrollY % 8;
+
+    /* World tile shown at screen (0,0), de-wrapped from the 9-bit BG scroll
+     * via the camera (PortPpuMzm_ScreenOrigin). The per-block layer
+     * corrections (port_layer_fixes.c) are keyed to ABSOLUTE room-block
+     * positions, so screen tile (tx,ty) has to be turned back into a room
+     * block before the lookup -- matching on the raw screenmap position
+     * aliased every correction onto a 32x16-block lattice (an entry for
+     * block (9,43) also fired on (9,59)). Every room layer a correction can
+     * target scrolls with the camera 1:1, so one origin serves them all.
+     * Only computed when a list is actually compiled in. */
+    int fixOriginTileX = 0, fixOriginTileY = 0;
+    if (PortLayerFix_ActiveCount() > 0) {
+        extern void PortPpuMzm_ScreenOrigin(int* outX, int* outY);
+        int originX = 0, originY = 0;
+        PortPpuMzm_ScreenOrigin(&originX, &originY);
+        fixOriginTileX = originX >> 3;
+        fixOriginTileY = originY >> 3;
+    }
+
     for (int ty = 0; ty <= 20; ++ty) {
         int tileRow = (startTileY + ty) & (mapHeightTiles - 1);
         int screenBlockY = tileRow / 32;
@@ -1044,7 +1063,8 @@ static void CollectBgLayer(int bgIndex) {
              * room's own layering is wrong for a stereo image, so honouring
              * half of it fixes nothing. */
             if (PortLayerFix_ActiveCount() > 0) {
-                int dest = PortLayerFix_DestFor(bgIndex, tileCol >> 1, tileRow >> 1);
+                int dest = PortLayerFix_DestFor(bgIndex, (fixOriginTileX + tx) >> 1,
+                                                (fixOriginTileY + ty) >> 1);
                 if (dest >= 0) {
                     if (dest >= 4) {
                         /* Sprite level, which the workbench offers as "in

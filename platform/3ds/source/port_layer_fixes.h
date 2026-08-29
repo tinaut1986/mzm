@@ -55,12 +55,15 @@ int PortLayerFix_ActiveCount(void);
 /*
  * Destination layer for a tile being drawn, or -1 for "leave it alone".
  *
- * colBlock/rowBlock are the tile's block position in the SCREENMAP, which
- * wraps every 32 blocks across and 16 down (RoomUpdate*Tilemap masks with
- * tmpX&0xF / tmpX&0x10 / yPos&0xF, src/room.c:795). The corrections are keyed
- * to absolute room positions, so they are matched against the wrapped
- * position: only one of the aliases of a given cell can be on screen at a
- * time, because the visible window is ~16 blocks wide and the period is 32.
+ * colBlock/rowBlock are the tile's ABSOLUTE block position in the room --
+ * the same coordinate the corrections are authored against, not the
+ * screenmap position. The screenmap wraps every 32 blocks across and 16
+ * down (RoomUpdate*Tilemap masks with tmpX&0xF / yPos&0xF, src/room.c:795),
+ * so matching on it aliased every correction onto a lattice of blocks 32
+ * across / 16 down and moved whichever alias happened to be on screen --
+ * e.g. an entry for room block (9,43) also hit (9,59). The caller
+ * (port_gpu_renderer.c) now recovers the absolute block from the BG scroll
+ * registers via PortPpuMzm_ScreenOrigin.
  *
  * 4 means "sprite level"; 0..3 are BG levels.
  */

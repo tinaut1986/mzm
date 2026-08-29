@@ -308,6 +308,10 @@ test:
 		-o $(BUILD)/stereo_depth_test \
 		$(CURDIR)/tests/stereo_depth_test.c $(CURDIR)/source/port_stereo_depth.c
 	@$(BUILD)/stereo_depth_test
+	@$(TEST_CC) -std=c11 -O1 -Wall -Wextra -Werror -I$(CURDIR)/source \
+		-o $(BUILD)/layer_fixes_test \
+		$(CURDIR)/tests/layer_fixes_test.c $(CURDIR)/source/port_layer_fixes.c
+	@$(BUILD)/layer_fixes_test
 
 ftp: $(TARGET).cia
 	@echo "Uploading $(TARGET).cia as mzm-3ds-$(VERSION).cia to FTP..."
