@@ -14,6 +14,7 @@
  * frame that renders with the wrong palette bank or wrong sprite size is not.
  */
 #include "port_gpu_renderer.h"
+#include "port_stereo_depth.h"
 #include "platform_gpu_3ds.h"
 
 #include <3ds.h>
@@ -325,47 +326,25 @@ static int sDrawOrderCount;
 static const uint8_t kObjWidths[3][4] = { { 8, 16, 32, 64 }, { 16, 32, 32, 64 }, { 8, 8, 16, 32 } };
 static const uint8_t kObjHeights[3][4] = { { 8, 16, 32, 64 }, { 8, 8, 16, 32 }, { 16, 32, 32, 64 } };
 
-/* Stereo depth mapping (docs/future-roadmap-and-architecture.md's table):
- * index 0=BG3(farthest) .. 3=BG0/HUD(nearest), 4=OBJ. Values are px of
- * parallax shift at full slider; sign flips between eyes in the caller.
- * Samus (OBJ) is placed slightly behind BG1 platforms so platforms appear
- * with depth/thickness in front of Samus. */
-static const float kTierEyeOffsetPx[11] = {
-    -4.0f, /* 0: BG3: far background / sky */
-    -2.0f, /* 1: BG2: mid background / caves */
-    -0.3f, /* 2: BG1: platforms / interactive ground / scenery */
-    +1.8f, /* 3: BG0: text overlay / dialogs */
-    -0.8f, /* 4: World OBJ: Samus / enemies / particles (priority 1..3), gameplay only */
-    +2.0f, /* 5: HUD OBJ: Health bar, missiles, tanks, minimap sprites (priority 0) */
-    +1.2f, /* 6: Map/pause-screen OBJ (priority 1..3): the pause map's Samus
-            * position marker and similar icons. Tier 4's -0.8f barely read
-            * as separated from the map BG's own -0.3f (tier 2) once the
-            * map/grid occlusion bug was fixed and the marker was actually
-            * visible against it -- confirmed on hardware. Kept as its own
-            * tier instead of just raising tier 4's magnitude so real
-            * gameplay Samus/enemy depth (tier 4, used every frame during
-            * play) stays untouched by a change aimed only at map screens. */
-    -1.5f, /* 7: World OBJ with OAM priority 2: composites BEHIND any BG of
-            * priority 0/1 (tier 2, -0.3f) and in front of priority-2 BGs
-            * (tier 1, -2.0f), so its parallax must sit between those two.
-            * Tier 4's -0.8f put such sprites nearer than the very BG layers
-            * that draw over them, which read as background scenery popping
-            * in FRONT of Samus once the 3D slider was up. */
-    -3.2f, /* 8: World OBJ with OAM priority 3: backmost sprites, drawn
-            * behind every BG of priority 0..2; sits between tier 1 (-2.0f)
-            * and tier 0 (-4.0f). */
-    -1.0f, /* 9: BG with priority 1. Used to be lumped in with priority 0 on
-            * tier 2 (-0.3f), which is wrong whenever a room puts real
-            * background art on a priority-1 layer: OBJ priority 1 (Samus,
-            * tier 4, -0.8f) beats a priority-1 BG in the 2D compositor
-            * (equal priority -> OBJ wins), so the BG must read as slightly
-            * FARTHER than -0.8f, not nearer. Confirmed on hardware in
-            * Crateria room 8, where the big Chozo statue backdrop is exactly
-            * such a layer. */
-    -0.2f, /* 10: World OBJ with OAM priority 0: explosions, shot impacts,
-            * bombs -- sprites the game deliberately draws above every BG,
-            * so they must be nearer than tier 2's -0.3f platforms. */
-};
+/* Stereo depth lives in port_stereo_depth.c as a pure function of register
+ * state, so platform/3ds/tests/stereo_depth_test.c can enumerate the whole
+ * input space on the host -- no GPU, no 3DS, no ROM. Every past depth bug
+ * (the split crate, the torn ramp, the column in front of Samus) is a
+ * property of that mapping, not of the drawing, so that is where new rules
+ * belong. Building the state here once per frame is all this file does. */
+static PortStereoDepthState sDepthState;
+
+extern int Port_Hud_GetOamCount(void);
+
+static void ComputeDepthState(uint16_t dispcnt) {
+    extern s16 gMainGameMode;
+    (void)dispcnt;
+    sDepthState.inGameplay = (gMainGameMode == 4);
+    for (int bg = 0; bg < 4; ++bg) {
+        sDepthState.priority[bg] =
+            (uint8_t)(((uint16_t)(gIoMem[0x08 + bg * 2] | (gIoMem[0x09 + bg * 2] << 8))) & 3u);
+    }
+}
 
 bool Port_GpuRenderer_IsActive(void) { return sGpuRendererActive; }
 void Port_GpuRenderer_SetActive(bool active) { sGpuRendererActive = active; }
@@ -1015,31 +994,7 @@ static void CollectBgLayer(int bgIndex) {
              * gameplay (GM_INGAME == 4, include/constants/game_state.h),
              * which is where BG0 genuinely is the text/dialog layer. In
              * gameplay every BG, BG0 included, maps by its own priority. */
-            extern s16 gMainGameMode;
-            extern bool PortPpuMzm_ClipIsSolidAtScreen(int screenX, int screenY);
-            int depthTier;
-            if (bgIndex == 0 && gMainGameMode != 4) {
-                depthTier = 3; /* Menu/dialog text overlay, topmost */
-            } else if (PortPpuMzm_ClipIsSolidAtScreen((int)drawX + 4, (int)drawY + 4)) {
-                /* Solid world geometry goes on the play plane whatever layer
-                 * drew it. Room data splits single objects across layers --
-                 * see the crate platform documented on
-                 * PortPpuMzm_ClipIsSolidAtScreen -- and priority alone then
-                 * tears them across two depth planes. Clipdata is the same
-                 * information the game uses for collision, so it groups an
-                 * object by what it IS rather than by which layer holds it.
-                 * Probed at the tile's center (+4,+4) so an 8x8 tile is
-                 * attributed to the 16x16 clip block it actually sits in. */
-                depthTier = 2;
-            } else if (priority == 0) {
-                depthTier = 2; /* platforms / interactive foreground, -0.3f */
-            } else if (priority == 1) {
-                depthTier = 9; /* just behind OBJ priority 1 (Samus), -1.0f */
-            } else if (priority == 2) {
-                depthTier = 1; /* mid background, -2.0f */
-            } else {
-                depthTier = 0; /* far background / sky, -4.0f */
-            }
+            int depthTier = PortStereoDepth_BgTier(&sDepthState, bgIndex);
             PushItem(slot, drawX, drawY, sortKey, depthTier, blendAlpha, rectWinVis);
         }
     }
@@ -1218,29 +1173,34 @@ static void CollectSprite(int oamIndex, bool obj1D) {
              * untouched. */
             extern s16 gMainGameMode;
             bool inMapOrPauseScreen = gMainGameMode == 5;
-            /* Two earlier signals for "this is real HUD, elevate it" both
-             * failed on hardware: OAM priority 0 also catches explosions/
-             * shot-impacts/reload-flashes/bombs (they use priority 0 too,
-             * just as a "draw above everything" compositing tool, not
-             * because they're HUD); gNextOamSlot turned out to be a running
-             * cursor every sprite system keeps advancing all frame, not a
-             * fixed post-HUD boundary, so it ended up covering Samus,
-             * enemies, and even save/map stations.
-             * src/hud.c hardcodes OBJ palette bank 4 or 5 (paletteNum = 4/5)
-             * for every HUD element it draws -- health/charge bars, missile/
-             * super-missile/power-bomb counts, the minimap icon -- and nothing
-             * else in the codebase assigns those banks literally (dynamic
-             * gameplay sprites go through a separate palette-slot allocator).
-             * Confirmed on hardware this alone still isn't enough: the Morph
-             * Ball bomb sprite (tile 335) genuinely also sits on palette
-             * bank 4 -- not a random allocator collision, that's just the
-             * real ROM data. What does differ: every bank-4 HUD element in
-             * hud.c is drawn OAM_SHAPE_WIDE (health/charge/missile/super-
-             * missile/power-bomb count bars, shape == 1); the bomb sprite is
-             * OAM_SHAPE_SQUARE (shape == 0). Bank 5 (minimap icons) is
-             * always OAM_SHAPE_SQUARE in hud.c, so it doesn't need the
-             * shape check. */
-            bool isRealHud = (palBank == 4 && shape == 1) || palBank == 5;
+            /* HUD sprites are exactly the OAM slots HudUpdateOam wrote
+             * this frame -- it fills OAM from slot 0 and runs before every
+             * sprite system in in_game.c's frame (SpriteDrawAll_*,
+             * ParticleProcessAll, ProjectileDrawAll_*, SamusDraw), so the
+             * count it publishes is a real boundary. See port_hud_oam.c.
+             *
+             * Three earlier signals for "this is real HUD, elevate it" each
+             * failed on hardware:
+             *  - OAM priority 0: also catches explosions, shot impacts,
+             *    reload flashes and bombs, which use priority 0 as a
+             *    "draw above everything" tool, not because they are HUD.
+             *  - gNextOamSlot: a running cursor every sprite system keeps
+             *    advancing all frame, so by the time it was read it covered
+             *    Samus, enemies and save/map stations. Reading oamSlot
+             *    INSIDE HudUpdateOam instead is what makes this work.
+             *  - Palette bank 4/5 plus sprite shape: classifies a sprite by
+             *    how it LOOKS rather than by what drew it. Bank 4 is not
+             *    exclusively HUD in the real ROM data (the Morph Ball bomb
+             *    sprite sits there too, which is why a shape test was bolted
+             *    on), and the 2026-08-28 recording has a pulsing item orb on
+             *    bank 4 in the middle of the play field. It happened to fall
+             *    the right side of the shape test; nothing guaranteed it.
+             *
+             * Gated on gameplay so a stale count cannot leak into a mode
+             * that never calls HudDraw: the map/pause branch above already
+             * handles GM_MAP_SCREEN, and everywhere else these are world
+             * sprites. */
+            bool isRealHud = gMainGameMode == 4 && oamIndex < Port_Hud_GetOamCount();
             int depthTier;
             if (inMapOrPauseScreen) {
                 depthTier = (priority == 0) ? 5 : 6;
@@ -1255,10 +1215,7 @@ static void CollectSprite(int oamIndex, bool obj1D) {
                  * paint over still appears nearest to the viewer in stereo.
                  * Priority 0/1 keeps tier 4's tuned -0.8f (Samus, enemies,
                  * particles); 2 and 3 map to the new intermediate tiers. */
-                if (priority == 0) depthTier = 10;
-                else if (priority == 1) depthTier = 4;
-                else if (priority == 2) depthTier = 7;
-                else depthTier = 8;
+                depthTier = PortStereoDepth_ObjTier(&sDepthState, priority);
             }
             if (!isAffine) {
                 float drawX = (float)(x + tx * 8);
@@ -1715,6 +1672,10 @@ void Port_GpuRenderer_RenderFrame(void) {
         ComputeObjWinMask(obj1D);
     }
 
+    /* Depth depends on register state the collection loops below read one
+     * layer at a time, so it is snapshotted once, up front, for all of them. */
+    ComputeDepthState(dispcnt);
+
     for (int bg = 3; bg >= 0; --bg) {
         if (dispcnt & (1u << (8 + bg))) CollectBgLayer(bg);
     }
@@ -1951,7 +1912,7 @@ void Port_GpuRenderer_RenderFrame(void) {
                  * renders with no parallax at all -- but it never really had
                  * any: what it had was per-tile rounding noise that read as
                  * shimmer. */
-                float eyeOffset = floorf(eyeSign * slider3d * kTierEyeOffsetPx[item->depthTier] + 0.5f);
+                float eyeOffset = floorf(eyeSign * slider3d * PortStereoDepth_TierPx(item->depthTier) + 0.5f);
                 C2D_DrawParams params = BuildDrawParams(item, screenBaseX, screenBaseY, eyeOffset, scaleX, scaleY);
 #ifdef PORT_GPU_RENDERER_DIAG_LOG
                 if (sDiagObjSceneLog && eye == 0) {

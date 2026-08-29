@@ -97,6 +97,8 @@ SRCS_3DS := \
 	$(CURDIR)/source/port_bottom_ui_3ds.c \
 	$(CURDIR)/source/port_ppu_mzm.c \
 	$(CURDIR)/source/port_gpu_renderer.c \
+	$(CURDIR)/source/port_stereo_depth.c \
+	$(CURDIR)/source/port_hud_oam.c \
 	$(CURDIR)/source/port_mzm_audio_3ds.c \
 	$(CURDIR)/source/port_retroachievements_3ds.c \
 	$(CURDIR)/source/port_ra_iwram_map.c \
@@ -274,7 +276,7 @@ LIBS     := -L$(CTRULIB)/lib -L$(PORTLIBS)/lib -lcitro2d -lcitro3d -lctru -lm
 MAKEROM    ?= $(shell which makerom 2>/dev/null || echo $(DEVKITPRO)/tools/bin/makerom)
 BANNERTOOL ?= $(shell which bannertool 2>/dev/null || echo $(DEVKITPRO)/tools/bin/bannertool)
 
-.PHONY: all clean cia elf 3dsx print-version ftp
+.PHONY: all clean cia elf 3dsx print-version ftp test
 
 all: $(TARGET).cia
 
@@ -286,6 +288,17 @@ elf: $(TARGET).elf
 
 print-version:
 	@echo $(VERSION)
+
+# Host-side tests. No devkitARM, no 3DS, no ROM -- these cover logic that is
+# a pure function of GBA register state, which is where every stereo-depth
+# bug so far has actually lived. Run them before deploying:
+#   make -C platform/3ds test
+TEST_CC ?= cc
+test:
+	@$(TEST_CC) -std=c11 -O1 -Wall -Wextra -Werror -I$(CURDIR)/source \
+		-o $(BUILD)/stereo_depth_test \
+		$(CURDIR)/tests/stereo_depth_test.c $(CURDIR)/source/port_stereo_depth.c
+	@$(BUILD)/stereo_depth_test
 
 ftp: $(TARGET).cia
 	@echo "Uploading $(TARGET).cia as mzm-3ds-$(VERSION).cia to FTP..."
