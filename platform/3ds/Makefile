@@ -123,6 +123,9 @@ OBJS_RC   := $(patsubst $(RCHEEVOS)/%.c, $(BUILD)/rcheevos/%.o, $(SRCS_RCHEEVOS)
 C_OBJS    := $(OBJS_ROOT) $(OBJS_ASM) $(OBJS_3DS) $(OBJS_RC)
 DEPS      := $(C_OBJS:.o=.d)
 
+# Asegurar que existan todos los directorios de salida y tmp antes de compilar en paralelo
+$(shell mkdir -p $(BUILD)/tmp $(sort $(dir $(C_OBJS))))
+
 GIT_BRANCH  := $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null)
 EXACT_TAG   := $(shell git describe --tags --exact-match 2>/dev/null)
 # Rama release/* más reciente que contiene HEAD (local u origin): permite
@@ -274,8 +277,8 @@ LDFLAGS  := -specs=3dsx.specs -g $(ARCH) -Wl,-Map,$(BUILD)/mzm-3ds.map -Wl,--gc-
 LIBS     := -L$(CTRULIB)/lib -L$(PORTLIBS)/lib -lcitro2d -lcitro3d -lctru -lm
 
 
-MAKEROM    ?= $(shell which makerom 2>/dev/null || echo $(DEVKITPRO)/tools/bin/makerom)
-BANNERTOOL ?= $(shell which bannertool 2>/dev/null || echo $(DEVKITPRO)/tools/bin/bannertool)
+MAKEROM    ?= $(firstword $(wildcard $(ROOT)/tools/bin/makerom $(HOME)/tools/bin/makerom $(DEVKITPRO)/tools/bin/makerom $(shell which makerom 2>/dev/null)))
+BANNERTOOL ?= $(firstword $(wildcard $(ROOT)/tools/bin/bannertool $(HOME)/tools/bin/bannertool $(DEVKITPRO)/tools/bin/bannertool $(shell which bannertool 2>/dev/null)))
 
 # La lista de correcciones es un include opcional, y cuando port_layer_fixes.c
 # se compiló por primera vez todavía no existía: su .d no la menciona y make no
@@ -346,7 +349,7 @@ $(TARGET).elf: $(C_OBJS)
 # should not hide anything here -- and without the decomp's defines, which
 # mean nothing to it. -D_3DS is what its rc_compat.h looks for to pick the
 # libctru mutex implementation.
-CFLAGS_RC := -O2 -fomit-frame-pointer -Wall -mword-relocations \
+CFLAGS_RC := -O2 -fomit-frame-pointer -Wall -Wno-format -mword-relocations \
              -ffunction-sections -fdata-sections -D__3DS__ -D_3DS $(ARCH) $(EXTRA_CFLAGS)
 INCLUDES_RC := -I$(RCHEEVOS)/include -I$(RCHEEVOS)/src -I$(RCHEEVOS)/src/rhash \
                -I$(CTRULIB)/include
