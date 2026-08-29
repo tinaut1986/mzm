@@ -50,11 +50,6 @@ static struct PauseScreenStateData sPauseScreenStateInfo_Empty = {
 
 #ifdef MZM_3DS
 static const u32* sMapScreenAreaNamesGfxPointers[LANGUAGE_COUNT];
-static const u32* sMapScreenChozoStatueAreaNamesGfxPointers[LANGUAGE_COUNT];
-static const u32* sMapScreenUnknownItemsNamesGfxPointers[LANGUAGE_COUNT];
-static const u32* sMapScreenEquipmentNamesGfxPointers[LANGUAGE_COUNT];
-static const u32* sMapScreenMenuNamesGfxPointers[LANGUAGE_COUNT];
-
 void Init_sMapScreenGfxPointers(void) {
     sMapScreenAreaNamesGfxPointers[LANGUAGE_JAPANESE] = sMapScreenAreaNamesEnglishGfx;
     sMapScreenAreaNamesGfxPointers[LANGUAGE_HIRAGANA] = sMapScreenAreaNamesHiraganaGfx;
@@ -63,59 +58,6 @@ void Init_sMapScreenGfxPointers(void) {
     sMapScreenAreaNamesGfxPointers[LANGUAGE_FRENCH] = sMapScreenAreaNamesEnglishGfx;
     sMapScreenAreaNamesGfxPointers[LANGUAGE_ITALIAN] = sMapScreenAreaNamesEnglishGfx;
     sMapScreenAreaNamesGfxPointers[LANGUAGE_SPANISH] = sMapScreenAreaNamesEnglishGfx;
-
-    sMapScreenChozoStatueAreaNamesGfxPointers[LANGUAGE_JAPANESE] = sMapScreenChozoStatueAreaNamesEnglishGfx;
-    sMapScreenChozoStatueAreaNamesGfxPointers[LANGUAGE_HIRAGANA] = sMapScreenChozoStatueAreaNamesHiraganaGfx;
-    sMapScreenChozoStatueAreaNamesGfxPointers[LANGUAGE_ENGLISH] = sMapScreenChozoStatueAreaNamesEnglishGfx;
-    sMapScreenChozoStatueAreaNamesGfxPointers[LANGUAGE_GERMAN] = sMapScreenChozoStatueAreaNamesEnglishGfx;
-    sMapScreenChozoStatueAreaNamesGfxPointers[LANGUAGE_FRENCH] = sMapScreenChozoStatueAreaNamesEnglishGfx;
-    sMapScreenChozoStatueAreaNamesGfxPointers[LANGUAGE_ITALIAN] = sMapScreenChozoStatueAreaNamesEnglishGfx;
-    sMapScreenChozoStatueAreaNamesGfxPointers[LANGUAGE_SPANISH] = sMapScreenChozoStatueAreaNamesEnglishGfx;
-
-    sMapScreenUnknownItemsNamesGfxPointers[LANGUAGE_JAPANESE] = sMapScreenUnknownItemsNamesJapaneseGfx;
-    sMapScreenUnknownItemsNamesGfxPointers[LANGUAGE_HIRAGANA] = sMapScreenUnknownItemsNamesHiraganaGfx;
-    sMapScreenUnknownItemsNamesGfxPointers[LANGUAGE_ENGLISH] = sMapScreenUnknownItemsNamesEnglishGfx;
-#if defined(REGION_EU) || defined(REGION_US_BETA)
-    sMapScreenUnknownItemsNamesGfxPointers[LANGUAGE_GERMAN] = sMapScreenUnknownItemsNamesGermanGfx;
-    sMapScreenUnknownItemsNamesGfxPointers[LANGUAGE_FRENCH] = sMapScreenUnknownItemsNamesFrenchGfx;
-    sMapScreenUnknownItemsNamesGfxPointers[LANGUAGE_ITALIAN] = sMapScreenUnknownItemsNamesItalianGfx;
-    sMapScreenUnknownItemsNamesGfxPointers[LANGUAGE_SPANISH] = sMapScreenUnknownItemsNamesSpanishGfx;
-#else
-    sMapScreenUnknownItemsNamesGfxPointers[LANGUAGE_GERMAN] = sMapScreenUnknownItemsNamesEnglishGfx;
-    sMapScreenUnknownItemsNamesGfxPointers[LANGUAGE_FRENCH] = sMapScreenUnknownItemsNamesEnglishGfx;
-    sMapScreenUnknownItemsNamesGfxPointers[LANGUAGE_ITALIAN] = sMapScreenUnknownItemsNamesEnglishGfx;
-    sMapScreenUnknownItemsNamesGfxPointers[LANGUAGE_SPANISH] = sMapScreenUnknownItemsNamesEnglishGfx;
-#endif
-
-    sMapScreenEquipmentNamesGfxPointers[LANGUAGE_JAPANESE] = sEquipmentNamesJapaneseGfx;
-    sMapScreenEquipmentNamesGfxPointers[LANGUAGE_HIRAGANA] = sEquipmentNamesHiraganaGfx;
-    sMapScreenEquipmentNamesGfxPointers[LANGUAGE_ENGLISH] = sEquipmentNamesEnglishGfx;
-#if defined(REGION_EU) || defined(REGION_US_BETA)
-    sMapScreenEquipmentNamesGfxPointers[LANGUAGE_GERMAN] = sEquipmentNamesGermanGfx;
-    sMapScreenEquipmentNamesGfxPointers[LANGUAGE_FRENCH] = sEquipmentNamesFrenchGfx;
-    sMapScreenEquipmentNamesGfxPointers[LANGUAGE_ITALIAN] = sEquipmentNamesItalianGfx;
-    sMapScreenEquipmentNamesGfxPointers[LANGUAGE_SPANISH] = sEquipmentNamesSpanishGfx;
-#else
-    sMapScreenEquipmentNamesGfxPointers[LANGUAGE_GERMAN] = sEquipmentNamesEnglishGfx;
-    sMapScreenEquipmentNamesGfxPointers[LANGUAGE_FRENCH] = sEquipmentNamesEnglishGfx;
-    sMapScreenEquipmentNamesGfxPointers[LANGUAGE_ITALIAN] = sEquipmentNamesEnglishGfx;
-    sMapScreenEquipmentNamesGfxPointers[LANGUAGE_SPANISH] = sEquipmentNamesEnglishGfx;
-#endif
-
-    sMapScreenMenuNamesGfxPointers[LANGUAGE_JAPANESE] = sMenuNamesJapaneseGfx;
-    sMapScreenMenuNamesGfxPointers[LANGUAGE_HIRAGANA] = sMenuNamesHiraganaGfx;
-    sMapScreenMenuNamesGfxPointers[LANGUAGE_ENGLISH] = sMenuNamesEnglishGfx;
-#if defined(REGION_EU) || defined(REGION_US_BETA)
-    sMapScreenMenuNamesGfxPointers[LANGUAGE_GERMAN] = sMenuNamesGermanGfx;
-    sMapScreenMenuNamesGfxPointers[LANGUAGE_FRENCH] = sMenuNamesFrenchGfx;
-    sMapScreenMenuNamesGfxPointers[LANGUAGE_ITALIAN] = sMenuNamesItalianGfx;
-    sMapScreenMenuNamesGfxPointers[LANGUAGE_SPANISH] = sMenuNamesSpanishGfx;
-#else
-    sMapScreenMenuNamesGfxPointers[LANGUAGE_GERMAN] = sMenuNamesEnglishGfx;
-    sMapScreenMenuNamesGfxPointers[LANGUAGE_FRENCH] = sMenuNamesEnglishGfx;
-    sMapScreenMenuNamesGfxPointers[LANGUAGE_ITALIAN] = sMenuNamesEnglishGfx;
-    sMapScreenMenuNamesGfxPointers[LANGUAGE_SPANISH] = sMenuNamesEnglishGfx;
-#endif
 }
 #else
 static const u32* sMapScreenAreaNamesGfxPointers[LANGUAGE_COUNT] = {
@@ -127,6 +69,7 @@ static const u32* sMapScreenAreaNamesGfxPointers[LANGUAGE_COUNT] = {
     [LANGUAGE_ITALIAN] = sMapScreenAreaNamesEnglishGfx,
     [LANGUAGE_SPANISH] = sMapScreenAreaNamesEnglishGfx
 };
+#endif
 
 #ifdef MZM_3DS
 static const u32* sMapScreenChozoStatueAreaNamesGfxPointers[LANGUAGE_COUNT];
@@ -157,14 +100,20 @@ void Init_sMapScreenUnknownItemsNamesGfxPointers(void) {
     sMapScreenUnknownItemsNamesGfxPointers[LANGUAGE_JAPANESE] = sMapScreenUnknownItemsNamesJapaneseGfx;
     sMapScreenUnknownItemsNamesGfxPointers[LANGUAGE_HIRAGANA] = sMapScreenUnknownItemsNamesHiraganaGfx;
     sMapScreenUnknownItemsNamesGfxPointers[LANGUAGE_ENGLISH] = sMapScreenUnknownItemsNamesEnglishGfx;
-    sMapScreenUnknownItemsNamesGfxPointers[LANGUAGE_GERMAN] = sMapScreenUnknownItemsNamesGermanGfx;
-    sMapScreenUnknownItemsNamesGfxPointers[LANGUAGE_FRENCH] = sMapScreenUnknownItemsNamesFrenchGfx;
-    sMapScreenUnknownItemsNamesGfxPointers[LANGUAGE_ITALIAN] = sMapScreenUnknownItemsNamesItalianGfx;
-    sMapScreenUnknownItemsNamesGfxPointers[LANGUAGE_SPANISH] = sMapScreenUnknownItemsNamesSpanishGfx;
-    sMapScreenUnknownItemsNamesGfxPointers[LANGUAGE_GERMAN] = sMapScreenUnknownItemsNamesEnglishGfx;
-    sMapScreenUnknownItemsNamesGfxPointers[LANGUAGE_FRENCH] = sMapScreenUnknownItemsNamesEnglishGfx;
-    sMapScreenUnknownItemsNamesGfxPointers[LANGUAGE_ITALIAN] = sMapScreenUnknownItemsNamesEnglishGfx;
-    sMapScreenUnknownItemsNamesGfxPointers[LANGUAGE_SPANISH] = sMapScreenUnknownItemsNamesEnglishGfx;
+    if (REGION_IS_EU())
+    {
+        sMapScreenUnknownItemsNamesGfxPointers[LANGUAGE_GERMAN] = sMapScreenUnknownItemsNamesGermanGfx;
+        sMapScreenUnknownItemsNamesGfxPointers[LANGUAGE_FRENCH] = sMapScreenUnknownItemsNamesFrenchGfx;
+        sMapScreenUnknownItemsNamesGfxPointers[LANGUAGE_ITALIAN] = sMapScreenUnknownItemsNamesItalianGfx;
+        sMapScreenUnknownItemsNamesGfxPointers[LANGUAGE_SPANISH] = sMapScreenUnknownItemsNamesSpanishGfx;
+    }
+    else
+    {
+        sMapScreenUnknownItemsNamesGfxPointers[LANGUAGE_GERMAN] = sMapScreenUnknownItemsNamesEnglishGfx;
+        sMapScreenUnknownItemsNamesGfxPointers[LANGUAGE_FRENCH] = sMapScreenUnknownItemsNamesEnglishGfx;
+        sMapScreenUnknownItemsNamesGfxPointers[LANGUAGE_ITALIAN] = sMapScreenUnknownItemsNamesEnglishGfx;
+        sMapScreenUnknownItemsNamesGfxPointers[LANGUAGE_SPANISH] = sMapScreenUnknownItemsNamesEnglishGfx;
+    }
 }
 #else
 static const u32* sMapScreenUnknownItemsNamesGfxPointers[LANGUAGE_COUNT] = {
@@ -191,14 +140,20 @@ void Init_sMapScreenEquipmentNamesGfxPointers(void) {
     sMapScreenEquipmentNamesGfxPointers[LANGUAGE_JAPANESE] = sEquipmentNamesJapaneseGfx;
     sMapScreenEquipmentNamesGfxPointers[LANGUAGE_HIRAGANA] = sEquipmentNamesHiraganaGfx;
     sMapScreenEquipmentNamesGfxPointers[LANGUAGE_ENGLISH] = sEquipmentNamesEnglishGfx;
-    sMapScreenEquipmentNamesGfxPointers[LANGUAGE_GERMAN] = sEquipmentNamesGermanGfx;
-    sMapScreenEquipmentNamesGfxPointers[LANGUAGE_FRENCH] = sEquipmentNamesFrenchGfx;
-    sMapScreenEquipmentNamesGfxPointers[LANGUAGE_ITALIAN] = sEquipmentNamesItalianGfx;
-    sMapScreenEquipmentNamesGfxPointers[LANGUAGE_SPANISH] = sEquipmentNamesSpanishGfx;
-    sMapScreenEquipmentNamesGfxPointers[LANGUAGE_GERMAN] = sEquipmentNamesEnglishGfx;
-    sMapScreenEquipmentNamesGfxPointers[LANGUAGE_FRENCH] = sEquipmentNamesEnglishGfx;
-    sMapScreenEquipmentNamesGfxPointers[LANGUAGE_ITALIAN] = sEquipmentNamesEnglishGfx;
-    sMapScreenEquipmentNamesGfxPointers[LANGUAGE_SPANISH] = sEquipmentNamesEnglishGfx;
+    if (REGION_IS_EU())
+    {
+        sMapScreenEquipmentNamesGfxPointers[LANGUAGE_GERMAN] = sEquipmentNamesGermanGfx;
+        sMapScreenEquipmentNamesGfxPointers[LANGUAGE_FRENCH] = sEquipmentNamesFrenchGfx;
+        sMapScreenEquipmentNamesGfxPointers[LANGUAGE_ITALIAN] = sEquipmentNamesItalianGfx;
+        sMapScreenEquipmentNamesGfxPointers[LANGUAGE_SPANISH] = sEquipmentNamesSpanishGfx;
+    }
+    else
+    {
+        sMapScreenEquipmentNamesGfxPointers[LANGUAGE_GERMAN] = sEquipmentNamesEnglishGfx;
+        sMapScreenEquipmentNamesGfxPointers[LANGUAGE_FRENCH] = sEquipmentNamesEnglishGfx;
+        sMapScreenEquipmentNamesGfxPointers[LANGUAGE_ITALIAN] = sEquipmentNamesEnglishGfx;
+        sMapScreenEquipmentNamesGfxPointers[LANGUAGE_SPANISH] = sEquipmentNamesEnglishGfx;
+    }
 }
 #else
 static const u32* sMapScreenEquipmentNamesGfxPointers[LANGUAGE_COUNT] = {
@@ -225,14 +180,20 @@ void Init_sMapScreenMenuNamesGfxPointers(void) {
     sMapScreenMenuNamesGfxPointers[LANGUAGE_JAPANESE] = sMenuNamesJapaneseGfx;
     sMapScreenMenuNamesGfxPointers[LANGUAGE_HIRAGANA] = sMenuNamesHiraganaGfx;
     sMapScreenMenuNamesGfxPointers[LANGUAGE_ENGLISH] = sMenuNamesEnglishGfx;
-    sMapScreenMenuNamesGfxPointers[LANGUAGE_GERMAN] = sMenuNamesGermanGfx;
-    sMapScreenMenuNamesGfxPointers[LANGUAGE_FRENCH] = sMenuNamesFrenchGfx;
-    sMapScreenMenuNamesGfxPointers[LANGUAGE_ITALIAN] = sMenuNamesItalianGfx;
-    sMapScreenMenuNamesGfxPointers[LANGUAGE_SPANISH] = sMenuNamesSpanishGfx;
-    sMapScreenMenuNamesGfxPointers[LANGUAGE_GERMAN] = sMenuNamesEnglishGfx;
-    sMapScreenMenuNamesGfxPointers[LANGUAGE_FRENCH] = sMenuNamesEnglishGfx;
-    sMapScreenMenuNamesGfxPointers[LANGUAGE_ITALIAN] = sMenuNamesEnglishGfx;
-    sMapScreenMenuNamesGfxPointers[LANGUAGE_SPANISH] = sMenuNamesEnglishGfx;
+    if (REGION_IS_EU())
+    {
+        sMapScreenMenuNamesGfxPointers[LANGUAGE_GERMAN] = sMenuNamesGermanGfx;
+        sMapScreenMenuNamesGfxPointers[LANGUAGE_FRENCH] = sMenuNamesFrenchGfx;
+        sMapScreenMenuNamesGfxPointers[LANGUAGE_ITALIAN] = sMenuNamesItalianGfx;
+        sMapScreenMenuNamesGfxPointers[LANGUAGE_SPANISH] = sMenuNamesSpanishGfx;
+    }
+    else
+    {
+        sMapScreenMenuNamesGfxPointers[LANGUAGE_GERMAN] = sMenuNamesEnglishGfx;
+        sMapScreenMenuNamesGfxPointers[LANGUAGE_FRENCH] = sMenuNamesEnglishGfx;
+        sMapScreenMenuNamesGfxPointers[LANGUAGE_ITALIAN] = sMenuNamesEnglishGfx;
+        sMapScreenMenuNamesGfxPointers[LANGUAGE_SPANISH] = sMenuNamesEnglishGfx;
+    }
 }
 #else
 static const u32* sMapScreenMenuNamesGfxPointers[LANGUAGE_COUNT] = {
@@ -251,7 +212,6 @@ static const u32* sMapScreenMenuNamesGfxPointers[LANGUAGE_COUNT] = {
     [LANGUAGE_SPANISH] = sMenuNamesEnglishGfx
 #endif // REGION_EU || REGION_US_BETA
 };
-#endif
 #endif
 
 static u16 sPauseScreenCompletionInfoOamData[6][5] = {
@@ -290,31 +250,11 @@ static u8 sUnused_7601cc[16] = {
 
 #ifdef MZM_3DS
 const u8* sStatusScreenFlagsOrderPointers[4];
-const u32* sMinimapDataPointers[AREA_COUNT];
-/* SLOW only exists in the EUR ROM, so that entry stays NULL elsewhere; it is
- * only read when REGION_IS_EU(). */
-static const u8* sMaintainedInputDelaysPointers[MAINTAINED_INPUT_SPEED_COUNT];
-
-void Init_sPauseScreenPointers(void) {
+void Init_sStatusScreenFlagsOrderPointers(void) {
     sStatusScreenFlagsOrderPointers[ABILITY_GROUP_BEAMS] = sStatusScreenBeamFlagsOrder;
     sStatusScreenFlagsOrderPointers[ABILITY_GROUP_BOMBS] = sStatusScreenBombFlagsOrder;
     sStatusScreenFlagsOrderPointers[ABILITY_GROUP_SUITS] = sStatusScreenSuitFlagsOrder;
     sStatusScreenFlagsOrderPointers[ABILITY_GROUP_MISC] = sStatusScreenMiscFlagsOrder;
-
-    sMinimapDataPointers[AREA_BRINSTAR] = sBrinstarMinimap;
-    sMinimapDataPointers[AREA_KRAID] = sKraidMinimap;
-    sMinimapDataPointers[AREA_NORFAIR] = sNorfairMinimap;
-    sMinimapDataPointers[AREA_RIDLEY] = sRidleyMinimap;
-    sMinimapDataPointers[AREA_TOURIAN] = sTourianMinimap;
-    sMinimapDataPointers[AREA_CRATERIA] = sCrateriaMinimap;
-    sMinimapDataPointers[AREA_CHOZODIA] = sChozodiaMinimap;
-    sMinimapDataPointers[AREA_TEST] = sBrinstarMinimap;
-    sMinimapDataPointers[AREA_TEST_1] = sTestMinimap;
-    sMinimapDataPointers[AREA_TEST_2] = sTestMinimap;
-    sMinimapDataPointers[AREA_TEST_3] = sTestMinimap;
-
-    sMaintainedInputDelaysPointers[MAINTAINED_INPUT_SPEED_FAST] = sMaintainedInputDelays_Fast;
-    sMaintainedInputDelaysPointers[MAINTAINED_INPUT_SPEED_SLOW] = sMaintainedInputDelays_Slow;
 }
 #else
 const u8* sStatusScreenFlagsOrderPointers[4] = {
@@ -323,6 +263,7 @@ const u8* sStatusScreenFlagsOrderPointers[4] = {
     [ABILITY_GROUP_SUITS] = sStatusScreenSuitFlagsOrder,
     [ABILITY_GROUP_MISC] = sStatusScreenMiscFlagsOrder
 };
+#endif
 
 #ifdef MZM_3DS
 const u32* sMinimapDataPointers[AREA_COUNT];
@@ -355,7 +296,6 @@ const u32* sMinimapDataPointers[AREA_COUNT] = {
 };
 #endif
 
-#ifdef REGION_EU
 #ifdef MZM_3DS
 static const u8* sMaintainedInputDelaysPointers[MAINTAINED_INPUT_SPEED_COUNT];
 void Init_sMaintainedInputDelaysPointers(void) {
@@ -363,12 +303,12 @@ void Init_sMaintainedInputDelaysPointers(void) {
     sMaintainedInputDelaysPointers[MAINTAINED_INPUT_SPEED_SLOW] = sMaintainedInputDelays_Slow;
 }
 #else
+#ifdef REGION_EU
 static const u8* sMaintainedInputDelaysPointers[MAINTAINED_INPUT_SPEED_COUNT] = {
     [MAINTAINED_INPUT_SPEED_FAST] = sMaintainedInputDelays_Fast,
     [MAINTAINED_INPUT_SPEED_SLOW] = sMaintainedInputDelays_Slow
 };
 #endif
-#endif // REGION_EU
 #endif
 
 /**

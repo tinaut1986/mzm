@@ -92,7 +92,14 @@ const char* PortStereoDepth_SpreadNameLang(int spread, int lang) {
             case PORT_STEREO_SPREAD_FLAT: return "PIATTO";
             default: return "?";
         }
-    } else { /* English (0, 1, 2) / Default */
+    } else if (lang == 0 || lang == 1) { /* Japanese / Hiragana */
+        switch (spread) {
+            case PORT_STEREO_SPREAD_BOLD: return "BOLD";
+            case PORT_STEREO_SPREAD_SOFT: return "SOFT";
+            case PORT_STEREO_SPREAD_FLAT: return "FLAT";
+            default: return "?";
+        }
+    } else { /* English (2) / Default */
         switch (spread) {
             case PORT_STEREO_SPREAD_BOLD: return "BOLD";
             case PORT_STEREO_SPREAD_SOFT: return "SOFT";

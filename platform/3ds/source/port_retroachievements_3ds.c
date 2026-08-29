@@ -1022,23 +1022,68 @@ const char* Port_RA_GetLastDebugLog(void) {
 }
 
 const char* Port_RA_GetStatusString(int lang) {
-    if (lang == 6) { /* ES */
-        switch (sRAStatus) {
-            case RA_STATUS_DISABLED: return "DESACTIVADO";
-            case RA_STATUS_OFFLINE: return "SIN CONEXION";
-            case RA_STATUS_CONNECTING: return "CONECTANDO...";
-            case RA_STATUS_CONNECTED: return "CONECTADO";
-            case RA_STATUS_ERROR: return "ERROR DE LOGIN";
-            case RA_STATUS_NO_ACCOUNT: return "SIN CUENTA";
-        }
-    }
-    switch (sRAStatus) {
-        case RA_STATUS_DISABLED: return "DISABLED";
-        case RA_STATUS_OFFLINE: return "OFFLINE";
-        case RA_STATUS_CONNECTING: return "CONNECTING...";
-        case RA_STATUS_CONNECTED: return "CONNECTED";
-        case RA_STATUS_ERROR: return "LOGIN ERROR";
-        case RA_STATUS_NO_ACCOUNT: return "NOT LOGGED IN";
+    switch (lang) {
+        case 0: /* JP */
+        case 1: /* HIRA */
+            switch (sRAStatus) {
+                case RA_STATUS_DISABLED: return "むこう";
+                case RA_STATUS_OFFLINE: return "オフライン";
+                case RA_STATUS_CONNECTING: return "せつぞくちゅう...";
+                case RA_STATUS_CONNECTED: return "せつぞくずみ";
+                case RA_STATUS_ERROR: return "ログインエラー";
+                case RA_STATUS_NO_ACCOUNT: return "みとうろく";
+            }
+            break;
+        case 3: /* DE */
+            switch (sRAStatus) {
+                case RA_STATUS_DISABLED: return "DEAKTIVIERT";
+                case RA_STATUS_OFFLINE: return "OFFLINE";
+                case RA_STATUS_CONNECTING: return "VERBINDEN...";
+                case RA_STATUS_CONNECTED: return "VERBUNDEN";
+                case RA_STATUS_ERROR: return "ANMELDEFEHLER";
+                case RA_STATUS_NO_ACCOUNT: return "NICHT ANGEMELDET";
+            }
+            break;
+        case 4: /* FR */
+            switch (sRAStatus) {
+                case RA_STATUS_DISABLED: return "DESACTIVE";
+                case RA_STATUS_OFFLINE: return "HORS LIGNE";
+                case RA_STATUS_CONNECTING: return "CONNEXION...";
+                case RA_STATUS_CONNECTED: return "CONNECTE";
+                case RA_STATUS_ERROR: return "ERREUR LOGIN";
+                case RA_STATUS_NO_ACCOUNT: return "NON CONNECTE";
+            }
+            break;
+        case 5: /* IT */
+            switch (sRAStatus) {
+                case RA_STATUS_DISABLED: return "DISATTIVATO";
+                case RA_STATUS_OFFLINE: return "NON IN LINEA";
+                case RA_STATUS_CONNECTING: return "CONNESSIONE...";
+                case RA_STATUS_CONNECTED: return "CONNESSO";
+                case RA_STATUS_ERROR: return "ERRORE LOGIN";
+                case RA_STATUS_NO_ACCOUNT: return "NON COLLEGATO";
+            }
+            break;
+        case 6: /* ES */
+            switch (sRAStatus) {
+                case RA_STATUS_DISABLED: return "DESACTIVADO";
+                case RA_STATUS_OFFLINE: return "SIN CONEXION";
+                case RA_STATUS_CONNECTING: return "CONECTANDO...";
+                case RA_STATUS_CONNECTED: return "CONECTADO";
+                case RA_STATUS_ERROR: return "ERROR DE LOGIN";
+                case RA_STATUS_NO_ACCOUNT: return "SIN CUENTA";
+            }
+            break;
+        default: /* EN */
+            switch (sRAStatus) {
+                case RA_STATUS_DISABLED: return "DISABLED";
+                case RA_STATUS_OFFLINE: return "OFFLINE";
+                case RA_STATUS_CONNECTING: return "CONNECTING...";
+                case RA_STATUS_CONNECTED: return "CONNECTED";
+                case RA_STATUS_ERROR: return "LOGIN ERROR";
+                case RA_STATUS_NO_ACCOUNT: return "NOT LOGGED IN";
+            }
+            break;
     }
     return "UNKNOWN";
 }
@@ -1130,6 +1175,18 @@ static const uint8_t* GetToastGlyph(char c) {
     static const uint8_t lbracket[7]= { 0x0E, 0x08, 0x08, 0x08, 0x08, 0x08, 0x0E };
     static const uint8_t rbracket[7]= { 0x0E, 0x02, 0x02, 0x02, 0x02, 0x02, 0x0E };
 
+    static const uint8_t n_tilde[7] = { 0x1A, 0x00, 0x11, 0x19, 0x15, 0x13, 0x11 }; /* Ñ */
+    static const uint8_t c_cedil[7] = { 0x0E, 0x11, 0x10, 0x10, 0x11, 0x0E, 0x04 }; /* Ç */
+    static const uint8_t a_acute[7] = { 0x02, 0x04, 0x0E, 0x11, 0x1F, 0x11, 0x11 }; /* Á */
+    static const uint8_t e_acute[7] = { 0x02, 0x04, 0x1F, 0x10, 0x1E, 0x10, 0x1F }; /* É */
+    static const uint8_t i_acute[7] = { 0x02, 0x04, 0x0E, 0x04, 0x04, 0x04, 0x0E }; /* Í */
+    static const uint8_t o_acute[7] = { 0x02, 0x04, 0x0E, 0x11, 0x11, 0x11, 0x0E }; /* Ó */
+    static const uint8_t u_acute[7] = { 0x02, 0x04, 0x11, 0x11, 0x11, 0x11, 0x0E }; /* Ú */
+    static const uint8_t a_umlaut[7]= { 0x0A, 0x00, 0x0E, 0x11, 0x1F, 0x11, 0x11 }; /* Ä */
+    static const uint8_t o_umlaut[7]= { 0x0A, 0x00, 0x0E, 0x11, 0x11, 0x11, 0x0E }; /* Ö */
+    static const uint8_t u_umlaut[7]= { 0x0A, 0x00, 0x11, 0x11, 0x11, 0x11, 0x0E }; /* Ü */
+    static const uint8_t eszett[7]  = { 0x1E, 0x11, 0x1E, 0x11, 0x11, 0x11, 0x1C }; /* ß */
+
     if (c >= '0' && c <= '9') return digits[c - '0'];
     if (c >= 'A' && c <= 'Z') return letters[c - 'A'];
     if (c >= 'a' && c <= 'z') return letters[c - 'a'];
@@ -1139,15 +1196,54 @@ static const uint8_t* GetToastGlyph(char c) {
     if (c == '+') return plus;
     if (c == '(' || c == '[') return lbracket;
     if (c == ')' || c == ']') return rbracket;
+
+    switch ((uint8_t)c) {
+        case 0xD1: case 0xF1: return n_tilde;
+        case 0xC7: case 0xE7: return c_cedil;
+        case 0xC1: case 0xE1: case 0xC0: case 0xE0: return a_acute;
+        case 0xC9: case 0xE9: case 0xC8: case 0xE8: case 0xCA: case 0xEA: return e_acute;
+        case 0xCD: case 0xED: case 0xCC: case 0xEC: return i_acute;
+        case 0xD3: case 0xF3: case 0xD2: case 0xF2: return o_acute;
+        case 0xDA: case 0xFA: case 0xD9: case 0xF9: return u_acute;
+        case 0xC4: case 0xE4: return a_umlaut;
+        case 0xD6: case 0xF6: return o_umlaut;
+        case 0xDC: case 0xFC: return u_umlaut;
+        case 0xDF: return eszett;
+        default: break;
+    }
+    return NULL;
+}
+
+static const uint8_t* GetToastUtf8Glyph(const char** textPtr) {
+    const uint8_t* s = (const uint8_t*)*textPtr;
+    if (!*s) return NULL;
+    if (s[0] < 0x80) {
+        (*textPtr)++;
+        return GetToastGlyph((char)s[0]);
+    }
+    if ((s[0] & 0xE0) == 0xC0 && s[1]) {
+        uint16_t code = (uint16_t)(((s[0] & 0x1F) << 6) | (s[1] & 0x3F));
+        *textPtr += 2;
+        if (code >= 0x00A0 && code <= 0x00FF) {
+            return GetToastGlyph((char)code);
+        }
+        return NULL;
+    }
+    if ((s[0] & 0xF0) == 0xE0 && s[1] && s[2]) { *textPtr += 3; return NULL; }
+    if ((s[0] & 0xF8) == 0xF0 && s[1] && s[2] && s[3]) { *textPtr += 4; return NULL; }
+    (*textPtr)++;
     return NULL;
 }
 
 static void DrawToastText(float x, float y, const char* text, uint32_t color) {
     float scale = 1.0f;
     float charW = 6.0f;
-    for (; *text; ++text, x += charW) {
-        const uint8_t* glyph = GetToastGlyph(*text);
-        if (!glyph) continue;
+    while (*text) {
+        const uint8_t* glyph = GetToastUtf8Glyph(&text);
+        if (!glyph) {
+            x += charW;
+            continue;
+        }
         for (int row = 0; row < 7; ++row) {
             float py = y + (float)row * scale;
             uint8_t rowVal = glyph[row];
@@ -1163,6 +1259,7 @@ static void DrawToastText(float x, float y, const char* text, uint32_t color) {
                 col = end;
             }
         }
+        x += charW;
     }
 }
 

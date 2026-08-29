@@ -206,6 +206,7 @@ void Port_Config_Save(void) {
     fprintf(file, "bottom_zoom=%d\n", Port_BottomUI_GetZoom());
     fprintf(file, "bottom_area=%d\n", Port_BottomUI_GetViewArea());
     fprintf(file, "bottom_follow=%u\n", Port_BottomUI_GetFollowSamus() ? 1u : 0u);
+    fprintf(file, "language=%d\n", (int)gLanguage);
     extern bool Port_RA_IsEnabled(void);
     extern bool Port_RA_IsHardcore(void);
     extern bool Port_RA_GetNotificationSound(void);
@@ -248,6 +249,12 @@ void Port_Config_Load(void) {
         } else if (strcmp(key, "ra_sound") == 0) {
             extern void Port_RA_SetNotificationSound(bool);
             Port_RA_SetNotificationSound(val != 0);
+        } else if (strcmp(key, "language") == 0) {
+            if (val >= 0 && val < LANGUAGE_COUNT) {
+                extern void SramWrite_Language(void);
+                gLanguage = (u8)val;
+                SramWrite_Language();
+            }
         } else if (strcmp(key, "aspect_ratio") == 0) {
             if (val >= 0 && val < 3) sAspectRatio = val;
         } else if (strcmp(key, "display_style") == 0) {
@@ -296,62 +303,127 @@ void Port_Config_Load(void) {
     fclose(file);
 }
 
-int Port_Config_GetButtonMapping(int buttonIndex) {
-    if (buttonIndex >= 0 && buttonIndex < BTN_REMAP_COUNT)
-        return sBtnRemap[buttonIndex];
+int Port_Config_GetAspectRatio(void) { return sAspectRatio; }
+void Port_Config_SetAspectRatio(int ratio) { if (ratio >= 0 && ratio < 3) { sAspectRatio = ratio; Port_Config_Save(); } }
+
+int Port_Config_GetDisplayStyle(void) { return sDisplayStyle; }
+void Port_Config_SetDisplayStyle(int style) { if (style >= 0 && style < 3) { sDisplayStyle = style; Port_Config_Save(); } }
+
+bool Port_Config_GetShowFps(void) { return sShowFps; }
+void Port_Config_SetShowFps(bool show) { sShowFps = show; Port_Config_Save(); }
+
+bool Port_Config_GetAutoHideHud(void) { return sAutoHideHud; }
+void Port_Config_SetAutoHideHud(bool autoHide) { sAutoHideHud = autoHide; Port_Config_Save(); }
+
+bool Port_Config_GetHideSpoilers(void) { return sHideSpoilers; }
+void Port_Config_SetHideSpoilers(bool hide) { sHideSpoilers = hide; Port_Config_Save(); }
+
+int Port_Config_GetBtnRemap(int btn) {
+    if (btn >= 0 && btn < 10) return sBtnRemap[btn];
     return 0;
 }
 
-void Port_Config_CycleButtonMapping(int buttonIndex) {
-    if (buttonIndex < 0 || buttonIndex >= BTN_REMAP_COUNT) return;
-    int val = (sBtnRemap[buttonIndex] + 1) % BTN_ACTION_COUNT;
-    sBtnRemap[buttonIndex] = val;
-    Port_Config_Save();
+int Port_Config_GetButtonMapping(int buttonIndex) {
+    return Port_Config_GetBtnRemap(buttonIndex);
+}
+
+void Port_Config_SetBtnRemap(int btn, int action) {
+    if (btn >= 0 && btn < 10 && action >= 0 && action < BTN_ACTION_COUNT) {
+        sBtnRemap[btn] = action;
+        Port_Config_Save();
+    }
 }
 
 void Port_Config_SetButtonMapping(int buttonIndex, int action) {
-    if (buttonIndex < 0 || buttonIndex >= BTN_REMAP_COUNT) return;
-    if (action < 0 || action >= BTN_ACTION_COUNT) return;
-    sBtnRemap[buttonIndex] = action;
-    Port_Config_Save();
+    Port_Config_SetBtnRemap(buttonIndex, action);
 }
 
 int Port_Config_GetCstickMode(void) { return sCstickMode; }
 void Port_Config_SetCstickMode(int mode) { if (mode >= 0 && mode < 4) { sCstickMode = mode; Port_Config_Save(); } }
 
 const char* Port_Config_GetActionName(int action, int lang) {
-    if (lang == 6) {
-        switch (action) {
-            case 0: return "NINGUNA";
-            case 1: return "AUTODISPARO";
-            case 2: return "MORFOSFERA RAPIDA";
-            case 3: return "DISPARAR (B)";
-            case 4: return "SALTAR (A)";
-            case 5: return "MISILES (SELECT)";
-            case 6: return "APUNTAR (L)";
-            case 7: return "ARMAR MISILES (R)";
-            case 8: return "PAUSA (START)";
-            default: return "NINGUNA";
-        }
-    }
-    switch (action) {
-        case 0: return "NONE";
-        case 1: return "RAPID FIRE";
-        case 2: return "QUICK MORPH";
-        case 3: return "FIRE (B)";
-        case 4: return "JUMP (A)";
-        case 5: return "MISSILES (SELECT)";
-        case 6: return "AIM (L)";
-        case 7: return "ARM WEAPON (R)";
-        case 8: return "PAUSE (START)";
-        default: return "NONE";
+    switch (lang) {
+        case 0: /* Japanese */
+        case 1: /* Hiragana */
+            switch (action) {
+                case 0: return "NONE";
+                case 1: return "RAPID FIRE";
+                case 2: return "QUICK MORPH";
+                case 3: return "FIRE (B)";
+                case 4: return "JUMP (A)";
+                case 5: return "MISSILES (SELECT)";
+                case 6: return "AIM (L)";
+                case 7: return "ARM WEAPON (R)";
+                case 8: return "PAUSE (START)";
+                default: return "NONE";
+            }
+        case 3: /* German */
+            switch (action) {
+                case 0: return "KEINE";
+                case 1: return "DAUERFEUER";
+                case 2: return "SCHNELLER MORPH";
+                case 3: return "SCHIESSEN (B)";
+                case 4: return "SPRINGEN (A)";
+                case 5: return "RAKETEN (SELECT)";
+                case 6: return "ZIELEN (L)";
+                case 7: return "WAFFE WAEHLEN (R)";
+                case 8: return "PAUSE (START)";
+                default: return "KEINE";
+            }
+        case 4: /* French */
+            switch (action) {
+                case 0: return "AUCUN";
+                case 1: return "TIR RAPIDE";
+                case 2: return "MORPHING RAPIDE";
+                case 3: return "TIRER (B)";
+                case 4: return "SAUTER (A)";
+                case 5: return "MISSILES (SELECT)";
+                case 6: return "VISER (L)";
+                case 7: return "ARMER MISSILE (R)";
+                case 8: return "PAUSE (START)";
+                default: return "AUCUN";
+            }
+        case 5: /* Italian */
+            switch (action) {
+                case 0: return "NESSUNO";
+                case 1: return "FUOCO RAPIDO";
+                case 2: return "MORFOSFERA RAPIDA";
+                case 3: return "SPARA (B)";
+                case 4: return "SALTA (A)";
+                case 5: return "MISSILI (SELECT)";
+                case 6: return "MIRA (L)";
+                case 7: return "ARMA MISSILE (R)";
+                case 8: return "PAUSA (START)";
+                default: return "NESSUNO";
+            }
+        case 6: /* Spanish */
+            switch (action) {
+                case 0: return "NINGUNA";
+                case 1: return "AUTODISPARO";
+                case 2: return "MORFOSFERA RAPIDA";
+                case 3: return "DISPARAR (B)";
+                case 4: return "SALTAR (A)";
+                case 5: return "MISILES (SELECT)";
+                case 6: return "APUNTAR (L)";
+                case 7: return "ARMAR MISILES (R)";
+                case 8: return "PAUSA (START)";
+                default: return "NINGUNA";
+            }
+        default: /* English */
+            switch (action) {
+                case 0: return "NONE";
+                case 1: return "RAPID FIRE";
+                case 2: return "QUICK MORPH";
+                case 3: return "FIRE (B)";
+                case 4: return "JUMP (A)";
+                case 5: return "MISSILES (SELECT)";
+                case 6: return "AIM (L)";
+                case 7: return "ARM WEAPON (R)";
+                case 8: return "PAUSE (START)";
+                default: return "NONE";
+            }
     }
 }
-
-bool Port_Config_GetHideSpoilers(void) { return sHideSpoilers; }
-void Port_Config_SetHideSpoilers(bool on) { sHideSpoilers = on; Port_Config_Save(); }
-bool Port_Config_GetAutoHideHud(void) { return sAutoHideHud; }
-void Port_Config_SetAutoHideHud(bool on) { sAutoHideHud = on; Port_Config_Save(); }
 
 /* Quick Morph (platform_3ds_minimal.c) needs to know Samus's current pose
  * "class" to decide which key to simulate and when it's done:
@@ -419,8 +491,6 @@ void Port_GetAreaItemTypeCounts(int area, int* outEnergy, int* outMissile, int* 
     }
 }
 
-bool Port_Config_GetShowFps(void) { return sShowFps; }
-void Port_Config_SetShowFps(bool on) { sShowFps = on; Port_Config_Save(); }
 
 int Port_Config_Get3DSAspectRatio(void) { return sAspectRatio; }
 const char* Port_Config_Get3DSAspectRatioName(void) {

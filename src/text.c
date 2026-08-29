@@ -26,17 +26,20 @@ void Init_sDescriptionTextPointers(void) {
     sDescriptionTextPointers[LANGUAGE_JAPANESE] = sJapaneseTextPointers_Description;
     sDescriptionTextPointers[LANGUAGE_HIRAGANA] = sHiraganaTextPointers_Description;
     sDescriptionTextPointers[LANGUAGE_ENGLISH] = sEnglishTextPointers_Description;
-#if defined(REGION_EU) || defined(REGION_US_BETA)
-    sDescriptionTextPointers[LANGUAGE_GERMAN] = sGermanTextPointers_Description;
-    sDescriptionTextPointers[LANGUAGE_FRENCH] = sFrenchTextPointers_Description;
-    sDescriptionTextPointers[LANGUAGE_ITALIAN] = sItalianTextPointers_Description;
-    sDescriptionTextPointers[LANGUAGE_SPANISH] = sSpanishTextPointers_Description;
-#else
-    sDescriptionTextPointers[LANGUAGE_GERMAN] = sEnglishTextPointers_Description;
-    sDescriptionTextPointers[LANGUAGE_FRENCH] = sEnglishTextPointers_Description;
-    sDescriptionTextPointers[LANGUAGE_ITALIAN] = sEnglishTextPointers_Description;
-    sDescriptionTextPointers[LANGUAGE_SPANISH] = sEnglishTextPointers_Description;
-#endif
+    if (REGION_IS_EU())
+    {
+        sDescriptionTextPointers[LANGUAGE_GERMAN] = sGermanTextPointers_Description;
+        sDescriptionTextPointers[LANGUAGE_FRENCH] = sFrenchTextPointers_Description;
+        sDescriptionTextPointers[LANGUAGE_ITALIAN] = sItalianTextPointers_Description;
+        sDescriptionTextPointers[LANGUAGE_SPANISH] = sSpanishTextPointers_Description;
+    }
+    else
+    {
+        sDescriptionTextPointers[LANGUAGE_GERMAN] = sEnglishTextPointers_Description;
+        sDescriptionTextPointers[LANGUAGE_FRENCH] = sEnglishTextPointers_Description;
+        sDescriptionTextPointers[LANGUAGE_ITALIAN] = sEnglishTextPointers_Description;
+        sDescriptionTextPointers[LANGUAGE_SPANISH] = sEnglishTextPointers_Description;
+    }
 }
 #else
 static const u16** sDescriptionTextPointers[LANGUAGE_COUNT] = {

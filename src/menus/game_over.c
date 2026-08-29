@@ -1,4 +1,5 @@
 #include "menus/game_over.h"
+#include "region.h"
 #include "dma.h"
 #include "macros.h"
 #include "callbacks.h"
@@ -273,17 +274,20 @@ void Init_sGameOverTextPromptGfxPointers(void) {
     sGameOverTextPromptGfxPointers[LANGUAGE_JAPANESE] = sGameOverTextPromptEnglishGfx;
     sGameOverTextPromptGfxPointers[LANGUAGE_HIRAGANA] = sGameOverTextPromptHiraganaGfx;
     sGameOverTextPromptGfxPointers[LANGUAGE_ENGLISH] = sGameOverTextPromptEnglishGfx;
-#if defined(REGION_EU) || defined(REGION_US_BETA)
-    sGameOverTextPromptGfxPointers[LANGUAGE_GERMAN] = sGameOverTextPromptGermanGfx;
-    sGameOverTextPromptGfxPointers[LANGUAGE_FRENCH] = sGameOverTextPromptFrenchGfx;
-    sGameOverTextPromptGfxPointers[LANGUAGE_ITALIAN] = sGameOverTextPromptItalianGfx;
-    sGameOverTextPromptGfxPointers[LANGUAGE_SPANISH] = sGameOverTextPromptSpanishGfx;
-#else
-    sGameOverTextPromptGfxPointers[LANGUAGE_GERMAN] = sGameOverTextPromptEnglishGfx;
-    sGameOverTextPromptGfxPointers[LANGUAGE_FRENCH] = sGameOverTextPromptEnglishGfx;
-    sGameOverTextPromptGfxPointers[LANGUAGE_ITALIAN] = sGameOverTextPromptEnglishGfx;
-    sGameOverTextPromptGfxPointers[LANGUAGE_SPANISH] = sGameOverTextPromptEnglishGfx;
-#endif
+    if (REGION_IS_EU())
+    {
+        sGameOverTextPromptGfxPointers[LANGUAGE_GERMAN] = sGameOverTextPromptGermanGfx;
+        sGameOverTextPromptGfxPointers[LANGUAGE_FRENCH] = sGameOverTextPromptFrenchGfx;
+        sGameOverTextPromptGfxPointers[LANGUAGE_ITALIAN] = sGameOverTextPromptItalianGfx;
+        sGameOverTextPromptGfxPointers[LANGUAGE_SPANISH] = sGameOverTextPromptSpanishGfx;
+    }
+    else
+    {
+        sGameOverTextPromptGfxPointers[LANGUAGE_GERMAN] = sGameOverTextPromptEnglishGfx;
+        sGameOverTextPromptGfxPointers[LANGUAGE_FRENCH] = sGameOverTextPromptEnglishGfx;
+        sGameOverTextPromptGfxPointers[LANGUAGE_ITALIAN] = sGameOverTextPromptEnglishGfx;
+        sGameOverTextPromptGfxPointers[LANGUAGE_SPANISH] = sGameOverTextPromptEnglishGfx;
+    }
 }
 #else
 static const u32* sGameOverTextPromptGfxPointers[LANGUAGE_COUNT] = {
