@@ -1,0 +1,8 @@
+# Generados por build_maps.py -- se reconstruyen en segundos
+maps.json
+maps.json.gz
+
+__pycache__/
+
+# El .bin de prueba lo hace make_test_rec.py
+mzm-rec-test.bin
