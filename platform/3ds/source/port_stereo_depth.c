@@ -60,11 +60,45 @@ void PortStereoDepth_SetSpread(int spread) {
 int PortStereoDepth_GetSpread(void) { return sSpread; }
 
 const char* PortStereoDepth_SpreadName(int spread) {
-    switch (spread) {
-        case PORT_STEREO_SPREAD_BOLD: return "MARCADO";
-        case PORT_STEREO_SPREAD_SOFT: return "SUAVE";
-        case PORT_STEREO_SPREAD_FLAT: return "PLANO";
-        default: return "?";
+    return PortStereoDepth_SpreadNameLang(spread, 6); /* Default to Spanish for backward compatibility */
+}
+
+const char* PortStereoDepth_SpreadNameLang(int spread, int lang) {
+    if (lang == 6) { /* Spanish */
+        switch (spread) {
+            case PORT_STEREO_SPREAD_BOLD: return "MARCADO";
+            case PORT_STEREO_SPREAD_SOFT: return "SUAVE";
+            case PORT_STEREO_SPREAD_FLAT: return "PLANO";
+            default: return "?";
+        }
+    } else if (lang == 3) { /* German */
+        switch (spread) {
+            case PORT_STEREO_SPREAD_BOLD: return "STARK";
+            case PORT_STEREO_SPREAD_SOFT: return "SANFT";
+            case PORT_STEREO_SPREAD_FLAT: return "FLACH";
+            default: return "?";
+        }
+    } else if (lang == 4) { /* French */
+        switch (spread) {
+            case PORT_STEREO_SPREAD_BOLD: return "FORT";
+            case PORT_STEREO_SPREAD_SOFT: return "DOUX";
+            case PORT_STEREO_SPREAD_FLAT: return "PLAT";
+            default: return "?";
+        }
+    } else if (lang == 5) { /* Italian */
+        switch (spread) {
+            case PORT_STEREO_SPREAD_BOLD: return "MARCATO";
+            case PORT_STEREO_SPREAD_SOFT: return "LEGGERO";
+            case PORT_STEREO_SPREAD_FLAT: return "PIATTO";
+            default: return "?";
+        }
+    } else { /* English (0, 1, 2) / Default */
+        switch (spread) {
+            case PORT_STEREO_SPREAD_BOLD: return "BOLD";
+            case PORT_STEREO_SPREAD_SOFT: return "SOFT";
+            case PORT_STEREO_SPREAD_FLAT: return "FLAT";
+            default: return "?";
+        }
     }
 }
 

@@ -83,6 +83,7 @@ enum {
 void PortStereoDepth_SetSpread(int spread);
 int PortStereoDepth_GetSpread(void);
 const char* PortStereoDepth_SpreadName(int spread);
+const char* PortStereoDepth_SpreadNameLang(int spread, int lang);
 
 /* Parallax shift in px at full slider for a tier; larger = nearer to the
  * viewer. The single source of truth -- port_gpu_renderer.c's render loop
