@@ -59,8 +59,11 @@ ESCENA en la consola; queda en `sdmc:/3ds/`).
   a verla.
 - **Arrastra sobre el lienzo** para coger el rectángulo que dibujes; mientras
   arrastras se ve lo que va a coger. `Ctrl` suma lo nuevo a lo que ya hubiera,
-  tanto en un clic suelto como en un rectángulo. El destino que elijas se
-  aplica a todo el conjunto de una vez.
+  tanto en un clic suelto como en un rectángulo.
+- **Dónde selecciones decide qué coges.** En el resultado no estás mirando una
+  capa sino un sitio, así que coge lo que haya en esa posición en **todas** las
+  capas; en una capa concreta, sólo lo suyo. Una selección puede mezclar capas
+  y moverse entera a la vez — el panel dice cuántos bloques hay de cada una.
 - **`COPIAR INFO`** vuelca lo seleccionado como texto: la sala, sus prioridades
   BGCNT, su mezcla alfa, y qué tiene **cada** capa en esa posición, incluidas
   las vacías. Es lo que hace falta para razonar sobre un caso sin tener la

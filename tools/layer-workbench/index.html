@@ -300,8 +300,10 @@
 
   var samples=[],state=null,sel=null,fixes={},zoom=2,fileName="";
   /* sel es el ancla -- la que manda en el panel de la derecha -- y selMore el
-     resto del conjunto. Todo el conjunto vive siempre en la misma capa: mover
-     bloques de capas distintas a la vez no significaría nada. */
+     resto del conjunto. El conjunto PUEDE mezclar capas: desde el resultado se
+     coge lo que haya en esa posición en todas ellas, que es como se ve el
+     problema, y desde una capa sólo lo suyo. La clave lleva la capa, o dos
+     bloques distintos en la misma posición se pisarían. */
   var selMore={};
   var els={};
   ["file","incfile","mapsfile","mapsbadge","railTitle","meta","shots","main","drop",
@@ -510,13 +512,16 @@
     ctx.restore();
   }
 
-  function markSel(ctx,marks,own){
-    drawBox(ctx,own);
+  /* viewBg es la capa de esta vista, o null en el resultado, donde todo lo
+     seleccionado es suyo. */
+  function markSel(ctx,marks,viewBg){
+    drawBox(ctx,viewBg===null||(sel&&sel.info.bg===viewBg));
     if(!marks||!marks.length)return;
     var c=cellSize();
     ctx.save();
     marks.forEach(function(m,i){
       var anchor=(i===0);
+      var own=(viewBg===null||m[2]===viewBg);
       if(own){
         /* En su propia capa van rellenos y con el ancla más marcada: es donde
            de verdad está seleccionado y donde se va a aplicar el cambio. */
@@ -538,7 +543,7 @@
     });
     ctx.restore();
   }
-  function paint(cv,data,checker,marks,own){
+  function paint(cv,data,checker,marks,viewBg){
     var w=dimW(),h=dimH(),ctx=sizeCanvas(cv);
     ctx.clearRect(0,0,w,h);
     if(checker)checkerboard(ctx);
@@ -546,7 +551,7 @@
     var id=tmp.getContext("2d").createImageData(w,h);id.data.set(data);
     tmp.getContext("2d").putImageData(id,0,0);
     ctx.drawImage(tmp,0,0);
-    markSel(ctx,marks,own!==false);
+    markSel(ctx,marks,viewBg===undefined?null:viewBg);
   }
 
   /* Las vistas se sincronizan por el CENTRO, no por scrollLeft/scrollTop.
@@ -748,35 +753,40 @@
     });
   }
 
-  /* Todo lo que la capa tenga dentro del rectángulo. */
+  /* Lo que haya dentro del rectángulo.
+
+     Desde el resultado se cogen TODAS las capas: ahí no estás mirando una
+     capa, estás mirando el sitio, y lo que quieres corregir es lo que haya en
+     él. Antes se decidía la capa por lo que hubiera en la esquina superior
+     izquierda del rectángulo, y si esa esquina estaba vacía se acababa
+     cogiendo una capa cualquiera -- casi siempre ninguna.
+
+     Desde una capa concreta, sólo esa. */
   function commitBox(box,add){
-    var bg=box.bg;
-    if(bg===null)bg=frontmostAt(box.x0,box.y0);
-    var L=bg===null?null:state.bg[bg];
-    if(!L)return;
-    if(!add||!sel||sel.info.bg!==bg){ selMore={};sel=null; }
+    var capas=(box.bg===null)
+      ? [0,1,2,3].filter(function(b){return state.on[b];})
+      : [box.bg];
+    if(!add){ selMore={};sel=null; }
     var cs=cellSize(),primero=null;
     for(var y=box.y0;y<=box.y1;y+=cs)for(var x=box.x0;x<=box.x1;x+=cs){
-      var c=L.cells[x+","+y];
-      if(!c)continue;
-      if(!primero)primero=c;
-      selMore[selKey(c)]=c;
+      capas.forEach(function(bg){
+        var L=state.bg[bg];
+        var c=L&&L.cells[x+","+y];
+        if(!c)return;
+        if(!primero)primero=c;
+        selMore[selKey(c)]=c;
+      });
     }
-    if(!primero){
-      /* Ni un bloque con contenido: se señala la posición, que sigue diciendo
-         qué hay ahí en las demás capas. */
-      if(!sel)sel={info:{bg:bg,entry:0,tid:0,px:0,sx:box.x0,sy:box.y0,
-                         mapX:box.x0/cs,mapY:box.y0/cs,
-                         blockX:box.x0/cs,blockY:box.y0/cs,empty:true}};
-    } else if(!sel){ sel={info:primero}; }
+    if(primero){ if(!sel)sel={info:primero}; }
+    else if(!sel){
+      /* Ni un bloque con contenido en ninguna capa: se señala la posición, que
+         sigue diciendo qué hay ahí. */
+      var bg0=capas.length?capas[capas.length-1]:1;
+      sel={info:{bg:bg0,entry:0,tid:0,px:0,sx:box.x0,sy:box.y0,
+                 mapX:box.x0/cs,mapY:box.y0/cs,
+                 blockX:box.x0/cs,blockY:box.y0/cs,empty:true}};
+    }
     renderSide();redraw();
-  }
-
-  function frontmostAt(x,y){
-    var order=[0,1,2,3].filter(function(b){return state.on[b];}).sort(function(a2,b2){
-      var pa=state.prio[a2],pb=state.prio[b2];return pa!==pb?pa-pb:a2-b2;});
-    for(var i=0;i<order.length;i++)if(cellAt(order[i],x,y))return order[i];
-    return order.length?order[order.length-1]:null;
   }
 
   function setZoom(z){
@@ -1027,16 +1037,16 @@
   /* ---------- rendering ---------- */
   function selList(){
     if(!sel)return [];
-    var out=[sel.info];
+    /* Por capa Y posición: dos capas comparten posición, y comparar sólo por
+       posición se comía la celda de la otra capa en el mismo sitio. */
+    var out=[sel.info],anc=selKey(sel.info);
     Object.keys(selMore).forEach(function(k){
-      var c=selMore[k];
-      if(c.sx!==sel.info.sx||c.sy!==sel.info.sy)out.push(c);
+      if(k!==anc)out.push(selMore[k]);
     });
     return out;
   }
-  function selKey(c){ return c.sx+","+c.sy; }
-  function marksOf(){ return selList().map(function(c){return [c.sx,c.sy];}); }
-  function ownsSel(bg){ return !!sel&&sel.info.bg===bg; }
+  function selKey(c){ return c.bg+":"+c.sx+","+c.sy; }
+  function marksOf(){ return selList().map(function(c){return [c.sx,c.sy,c.bg];}); }
   function clearSel(){ sel=null;selMore={}; }
 
   function redraw(){
@@ -1044,8 +1054,8 @@
     var A=applied();
     paint(state.stage,composite(A),false,marksOf());
     state.cards.forEach(function(c){
-      if(!c.boxBefore.hidden)paint(c.before,state.bg[c.bg].img,true,marksOf(),ownsSel(c.bg));
-      if(!c.boxAfter.hidden)paint(c.after,A.after[c.bg],true,marksOf(),ownsSel(c.bg));
+      if(!c.boxBefore.hidden)paint(c.before,state.bg[c.bg].img,true,marksOf(),c.bg);
+      if(!c.boxAfter.hidden)paint(c.after,A.after[c.bg],true,marksOf(),c.bg);
       var changed=A.moved.some(function(m){return m.from===c.bg||m.dest===c.bg;});
       c.tag.textContent=changed?"con cambios":"sin cambios";
       c.tag.className=changed?"chg":"same";
@@ -1190,8 +1200,13 @@
     if(!r.width||!r.height)return;
     var x=Math.floor((ev.clientX-r.left)/r.width*dimW());
     var y=Math.floor((ev.clientY-r.top)/r.height*dimH());
-    if(bg===null)bg=frontmostAt(x,y);
-    if(bg===null)return;
+    var cs0=cellSize();
+    var bx=Math.floor(x/cs0)*cs0,by=Math.floor(y/cs0)*cs0;
+    if(bg===null){
+      /* Desde el resultado: todas las capas que tengan algo justo ahí. */
+      commitBox({bg:null,x0:bx,y0:by,x1:bx,y1:by},add);
+      return;
+    }
     var c=cellAt(bg,x,y);
     /* Sin tile ahí, se selecciona la POSICIÓN igual: sirve para ver qué hay en
        ese mismo sitio en las demás capas, que es medio trabajo de decidir a
@@ -1205,10 +1220,10 @@
       c={bg:bg,entry:0,tid:0,px:0,sx:cx*cs,sy:cy*cs,
          mapX:cx,mapY:cy,blockX:cx,blockY:cy,empty:true};
     }
-    /* Ctrl suma o quita de lo que ya hubiera, siempre dentro de una capa. */
-    if(add&&sel&&sel.info.bg===c.bg){
+    /* Ctrl suma o quita de lo que ya hubiera, mezclando capas si hace falta. */
+    if(add&&sel){
       var k=selKey(c);
-      if(selMore[k]&&!(c.sx===sel.info.sx&&c.sy===sel.info.sy))delete selMore[k];
+      if(selMore[k]&&k!==selKey(sel.info))delete selMore[k];
       else selMore[k]=c;
       renderSide();redraw();
       return;
@@ -1350,22 +1365,30 @@
       .map(function(cc){ return {c:cc,k:keyOf(cc,C),b:blockOf(cc)}; })
       .filter(function(e){ return e.b!==null; });
     if(grupo.length>1){
+      var porCapa={};
+      grupo.forEach(function(e){ porCapa[e.c.bg]=(porCapa[e.c.bg]||0)+1; });
+      var desglose=Object.keys(porCapa).sort().map(function(k){
+        return porCapa[k]+" en BG"+k; }).join(", ");
       var cuenta=document.createElement("p");cuenta.className="hint";
       cuenta.style.margin="9px 0 0";
-      cuenta.innerHTML="<b>"+grupo.length+" bloques</b> seleccionados: el destino se aplica a todos.";
+      cuenta.innerHTML="<b>"+grupo.length+" bloques</b> seleccionados ("+desglose+
+                       "): el destino se aplica a todos.";
       els.tilebox.appendChild(cuenta);
     }
 
     var dests=document.createElement("div");dests.className="dests";
     DEST.forEach(function(d){
-      if(d.v===i.bg)return;
-      var todos=grupo.length>0&&grupo.every(function(e){
+      /* Un destino sólo sobra si TODO lo seleccionado ya está en esa capa;
+         con capas mezcladas sigue valiendo para el resto. */
+      var mueve=grupo.filter(function(e){ return e.c.bg!==d.v; });
+      if(!mueve.length&&grupo.length)return;
+      var todos=mueve.length>0&&mueve.every(function(e){
         return fixes[e.k]&&fixes[e.k].dest===d.v; });
       var b=document.createElement("button");
       b.innerHTML="→ "+d.name+(d.note?" <small>"+d.note+"</small>":"");
       b.setAttribute("aria-pressed",todos?"true":"false");
       b.addEventListener("click",function(){
-        grupo.forEach(function(e){
+        mueve.forEach(function(e){
           if(todos)delete fixes[e.k];
           else fixes[e.k]={dest:d.v,info:e.c,tag:state.tag,key:e.k,
                            area:C.area,room:C.room,block:e.b};
