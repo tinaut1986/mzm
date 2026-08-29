@@ -2604,7 +2604,7 @@ static void RenderStatusView(void) {
         bool active = (gEquipment.beamBombsActivation & beams[i].flag) != 0;
         bool unknown = beams[i].isUnknownItem && !isFullyPowered && has;
 
-        const char* label = unknown ? unknownNames[lang] : beams[i].name[lang];
+        const char* label = (unknown && hcStatus) ? unknownNames[lang] : beams[i].name[lang];
         if (hcStatus && !has) label = "----";
         const char* statusStr = "--";
         uint32_t col = C2D_Color32(75, 85, 105, 255);
@@ -2668,7 +2668,7 @@ static void RenderStatusView(void) {
         bool active = (gEquipment.suitMiscActivation & flag) != 0;
         bool unknown = suits[i].isUnknownItem && !isFullyPowered && has;
 
-        const char* label = unknown ? unknownNames[lang] : suits[i].name[lang];
+        const char* label = (unknown && hcStatus) ? unknownNames[lang] : suits[i].name[lang];
         if (hcStatus && !has) label = "----";
         const char* statusStr = "--";
         uint32_t col = C2D_Color32(75, 85, 105, 255);
