@@ -186,6 +186,8 @@ void Port_Config_Save(void) {
     fprintf(file, "# Metroid Zero Mission 3DS runtime settings\n");
     fprintf(file, "aspect_ratio=%d\n", sAspectRatio);
     fprintf(file, "display_style=%d\n", sDisplayStyle);
+    extern int PortStereoDepth_GetSpread(void);
+    fprintf(file, "stereo_depth=%d\n", PortStereoDepth_GetSpread());
     fprintf(file, "show_fps=%u\n", sShowFps ? 1u : 0u);
     fprintf(file, "auto_hide_hud=%u\n", sAutoHideHud ? 1u : 0u);
     fprintf(file, "hide_spoilers=%u\n", sHideSpoilers ? 1u : 0u);
@@ -250,6 +252,9 @@ void Port_Config_Load(void) {
             if (val >= 0 && val < 3) sAspectRatio = val;
         } else if (strcmp(key, "display_style") == 0) {
             if (val >= 0 && val < 3) sDisplayStyle = val;
+        } else if (strcmp(key, "stereo_depth") == 0 || strcmp(key, "stereo_spread") == 0) {
+            extern void PortStereoDepth_SetSpread(int);
+            if (val >= 0 && val < 3) PortStereoDepth_SetSpread(val);
         } else if (strcmp(key, "show_fps") == 0) {
             sShowFps = (val != 0);
         } else if (strcmp(key, "auto_hide_hud") == 0) {

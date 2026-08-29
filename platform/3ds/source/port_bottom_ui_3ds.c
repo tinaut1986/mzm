@@ -174,6 +174,7 @@ extern void Port_DebugLog(const char* msg);
 extern void PortStereoDepth_SetSpread(int spread);
 extern int PortStereoDepth_GetSpread(void);
 extern const char* PortStereoDepth_SpreadName(int spread);
+extern const char* PortStereoDepth_SpreadNameLang(int spread, int lang);
 extern void Port_DebugLog_SetEnabled(bool enabled);
 extern bool Port_DebugLog_IsEnabled(void);
 extern void Port_DebugLog_SetBuffered(bool buffered);
@@ -723,12 +724,18 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
         /* Map Canvas Dragging Area (Y: 48 to 236, X: 4 to 316) */
         if (y >= 48 && y <= 236 && x >= 4 && x <= 316) {
 #ifdef PORT_DEBUG_TOOLS_ACTIVE
-            /* Armed from DEBUG -> HERRAMIENTAS -> TELETRANSPORTE. The warp
-             * itself fires on RELEASE, in Port_BottomUI_TouchReleased, and
-             * only if the finger barely moved -- panning the map to find the
-             * place you want to jump to must not be a jump. Just remember
-             * where the touch started and fall through to the normal
-             * drag/pan handling below. */
+            /* Persistent WARP button tap toggle (bottom right of map canvas) */
+            if (isNewTap && x >= 236 && x <= 312 && y >= 204 && y <= 232) {
+                sDebugMapWarpArmed = !sDebugMapWarpArmed;
+                sLastTouchX = -1;
+                sLastTouchY = -1;
+                sTouchStartX = -1;
+                sTouchStartY = -1;
+                sIsDragging = false;
+                return;
+            }
+            /* Armed tap-to-warp. The warp fires on RELEASE in
+             * Port_BottomUI_TouchReleased, and only if the finger barely moved. */
             if (sDebugMapWarpArmed) {
                 if (isNewTap) {
                     sTouchStartX = x;
@@ -991,14 +998,24 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
 
         if (sShowDisplayModal) {
             if (isNewTap) {
-                if (x >= 100 && x <= 220 && y >= 204 && y <= 230) {
+                if (x >= 100 && x <= 220 && y >= 198 && y <= 226) {
                     sShowDisplayModal = false;
                 } else if (x >= 10 && x <= 308) {
-                    if (y >= 52 && y <= 74) Port_Config_Cycle3DSAspectRatio();
-                    else if (y >= 78 && y <= 100) Port_Config_Cycle3DSDisplayStyle();
-                    else if (y >= 104 && y <= 126) Port_Config_SetShowFps(!Port_Config_GetShowFps());
-                    else if (y >= 130 && y <= 152) Port_Config_SetAutoHideHud(!Port_Config_GetAutoHideHud());
-                    else if (y >= 156 && y <= 178) Port_Config_SetHideSpoilers(!Port_Config_GetHideSpoilers());
+                    if (y >= 46 && y <= 68) {
+                        Port_Config_Cycle3DSAspectRatio();
+                    } else if (y >= 71 && y <= 93) {
+                        Port_Config_Cycle3DSDisplayStyle();
+                    } else if (y >= 96 && y <= 118) {
+                        int next = (PortStereoDepth_GetSpread() + 1) % 3;
+                        PortStereoDepth_SetSpread(next);
+                        Port_Config_Save();
+                    } else if (y >= 121 && y <= 143) {
+                        Port_Config_SetShowFps(!Port_Config_GetShowFps());
+                    } else if (y >= 146 && y <= 168) {
+                        Port_Config_SetAutoHideHud(!Port_Config_GetAutoHideHud());
+                    } else if (y >= 171 && y <= 193) {
+                        Port_Config_SetHideSpoilers(!Port_Config_GetHideSpoilers());
+                    }
                 }
             }
             return;
@@ -1091,7 +1108,7 @@ void Port_BottomUI_TouchReleased(void) {
         if (sDebugMapWarpDevSq <= 400) {
             int tx = 0, ty = 0;
             if (MapTileAtTouch(sTouchStartX, sTouchStartY, &tx, &ty)) {
-                sDebugMapWarpArmed = false;
+                /* Stays armed until the user manually turns it off */
                 int door = PortPpuMzm_DebugRequestWarpToMapTile(sViewArea, tx, ty);
                 DebugToolsSetMsg(door >= 0 ? "TELETRANSPORTANDO..." : "SIN PUERTA CERCA");
             }
@@ -1359,6 +1376,10 @@ static const char* GetDisplayStyleDisplayName(int lang) {
         case 2: return "BLUR (SMOOTH)";
         default: return "SCALED";
     }
+}
+
+static const char* GetStereoDepthDisplayName(int lang) {
+    return PortStereoDepth_SpreadNameLang(PortStereoDepth_GetSpread(), lang);
 }
 
 static const char* GetFpsOverlayDisplayName(int lang) {
@@ -1768,42 +1789,47 @@ static void RenderDisplayModal(int lang) {
     C2D_DrawRectSolid(10.0f, 26.0f, 0.85f, 300.0f, 206.0f, C2D_Color32(10, 14, 24, 250));
     C2D_DrawRectSolid(10.0f, 26.0f, 0.84f, 300.0f, 206.0f, C2D_Color32(40, 70, 120, 255));
 
-    DrawText(20.0f, 32.0f, 1.0f, (lang == 6) ? "CONFIGURACION DE PANTALLA" : "DISPLAY SETTINGS", C2D_Color32(255, 215, 0, 255));
+    DrawText(20.0f, 30.0f, 1.0f, (lang == 6) ? "CONFIGURACION DE PANTALLA" : "DISPLAY SETTINGS", C2D_Color32(255, 215, 0, 255));
 
-    /* Aspect Ratio row (Y: 52 to 74) */
-    C2D_DrawRectSolid(16.0f, 52.0f, 0.9f, 288.0f, 22.0f, C2D_Color32(24, 32, 50, 255));
-    DrawText(24.0f, 57.0f, 1.0f, (lang == 6) ? "ASPECTO:" : "ASPECT RATIO:", C2D_Color32(255, 255, 255, 255));
-    DrawText(170.0f, 57.0f, 1.0f, GetAspectRatioDisplayName(lang), C2D_Color32(255, 215, 0, 255));
+    /* Aspect Ratio row (Y: 46 to 68) */
+    C2D_DrawRectSolid(16.0f, 46.0f, 0.9f, 288.0f, 22.0f, C2D_Color32(24, 32, 50, 255));
+    DrawText(24.0f, 51.0f, 1.0f, (lang == 6) ? "ASPECTO:" : "ASPECT RATIO:", C2D_Color32(255, 255, 255, 255));
+    DrawText(170.0f, 51.0f, 1.0f, GetAspectRatioDisplayName(lang), C2D_Color32(255, 215, 0, 255));
 
-    /* Display Style row (Y: 78 to 100) */
-    C2D_DrawRectSolid(16.0f, 78.0f, 0.9f, 288.0f, 22.0f, C2D_Color32(24, 32, 50, 255));
-    DrawText(24.0f, 83.0f, 1.0f, (lang == 6) ? "ESTILO:" : "DISPLAY STYLE:", C2D_Color32(255, 255, 255, 255));
-    DrawText(170.0f, 83.0f, 1.0f, GetDisplayStyleDisplayName(lang), C2D_Color32(255, 215, 0, 255));
+    /* Display Style row (Y: 71 to 93) */
+    C2D_DrawRectSolid(16.0f, 71.0f, 0.9f, 288.0f, 22.0f, C2D_Color32(24, 32, 50, 255));
+    DrawText(24.0f, 76.0f, 1.0f, (lang == 6) ? "ESTILO:" : "DISPLAY STYLE:", C2D_Color32(255, 255, 255, 255));
+    DrawText(170.0f, 76.0f, 1.0f, GetDisplayStyleDisplayName(lang), C2D_Color32(255, 215, 0, 255));
 
-    /* FPS Overlay toggle row (Y: 104 to 126) */
-    C2D_DrawRectSolid(16.0f, 104.0f, 0.9f, 288.0f, 22.0f, C2D_Color32(24, 32, 50, 255));
-    DrawText(24.0f, 109.0f, 1.0f, (lang == 6) ? "MOSTRAR FPS:" : "SHOW FPS:", C2D_Color32(255, 255, 255, 255));
+    /* 3D Depth row (Y: 96 to 118) */
+    C2D_DrawRectSolid(16.0f, 96.0f, 0.9f, 288.0f, 22.0f, C2D_Color32(24, 32, 50, 255));
+    DrawText(24.0f, 101.0f, 1.0f, (lang == 6) ? "PROFUNDIDAD 3D:" : "3D DEPTH:", C2D_Color32(255, 255, 255, 255));
+    DrawText(170.0f, 101.0f, 1.0f, GetStereoDepthDisplayName(lang), C2D_Color32(255, 215, 0, 255));
+
+    /* FPS Overlay toggle row (Y: 121 to 143) */
+    C2D_DrawRectSolid(16.0f, 121.0f, 0.9f, 288.0f, 22.0f, C2D_Color32(24, 32, 50, 255));
+    DrawText(24.0f, 126.0f, 1.0f, (lang == 6) ? "MOSTRAR FPS:" : "SHOW FPS:", C2D_Color32(255, 255, 255, 255));
     bool fpsOn = Port_Config_GetShowFps();
-    DrawText(170.0f, 109.0f, 1.0f, fpsOn ? ((lang == 6) ? "ACTIVADO" : "ON") : ((lang == 6) ? "DESACTIVADO" : "OFF"),
+    DrawText(170.0f, 126.0f, 1.0f, fpsOn ? ((lang == 6) ? "ACTIVADO" : "ON") : ((lang == 6) ? "DESACTIVADO" : "OFF"),
              fpsOn ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 100, 100, 255));
 
-    /* Auto-Hide HUD toggle row (Y: 130 to 152) */
-    C2D_DrawRectSolid(16.0f, 130.0f, 0.9f, 288.0f, 22.0f, C2D_Color32(24, 32, 50, 255));
-    DrawText(24.0f, 135.0f, 1.0f, (lang == 6) ? "AUTOESCONDER HUD:" : "AUTO-HIDE HUD:", C2D_Color32(255, 255, 255, 255));
+    /* Auto-Hide HUD toggle row (Y: 146 to 168) */
+    C2D_DrawRectSolid(16.0f, 146.0f, 0.9f, 288.0f, 22.0f, C2D_Color32(24, 32, 50, 255));
+    DrawText(24.0f, 151.0f, 1.0f, (lang == 6) ? "AUTOESCONDER HUD:" : "AUTO-HIDE HUD:", C2D_Color32(255, 255, 255, 255));
     bool ahOn = Port_Config_GetAutoHideHud();
-    DrawText(170.0f, 135.0f, 1.0f, ahOn ? ((lang == 6) ? "ACTIVADO" : "ON") : ((lang == 6) ? "DESACTIVADO" : "OFF"),
+    DrawText(170.0f, 151.0f, 1.0f, ahOn ? ((lang == 6) ? "ACTIVADO" : "ON") : ((lang == 6) ? "DESACTIVADO" : "OFF"),
              ahOn ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 100, 100, 255));
 
-    /* Hide Spoilers toggle row (Y: 156 to 178) */
-    C2D_DrawRectSolid(16.0f, 156.0f, 0.9f, 288.0f, 22.0f, C2D_Color32(24, 32, 50, 255));
-    DrawText(24.0f, 161.0f, 1.0f, (lang == 6) ? "OCULTAR SPOILERS:" : "HIDE SPOILERS:", C2D_Color32(255, 255, 255, 255));
+    /* Hide Spoilers toggle row (Y: 171 to 193) */
+    C2D_DrawRectSolid(16.0f, 171.0f, 0.9f, 288.0f, 22.0f, C2D_Color32(24, 32, 50, 255));
+    DrawText(24.0f, 176.0f, 1.0f, (lang == 6) ? "OCULTAR SPOILERS:" : "HIDE SPOILERS:", C2D_Color32(255, 255, 255, 255));
     bool spOn = Port_Config_GetHideSpoilers();
-    DrawText(170.0f, 161.0f, 1.0f, spOn ? ((lang == 6) ? "ACTIVADO" : "ON") : ((lang == 6) ? "DESACTIVADO" : "OFF"),
+    DrawText(170.0f, 176.0f, 1.0f, spOn ? ((lang == 6) ? "ACTIVADO" : "ON") : ((lang == 6) ? "DESACTIVADO" : "OFF"),
              spOn ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 100, 100, 255));
 
-    /* Close button */
-    C2D_DrawRectSolid(100.0f, 206.0f, 0.9f, 120.0f, 22.0f, C2D_Color32(20, 70, 130, 255));
-    DrawTextCentered(160.0f, 212.0f, 1.0f, (lang == 6) ? "CERRAR" : "CLOSE", C2D_Color32(255, 255, 255, 255));
+    /* Close button (Y: 200 to 224) */
+    C2D_DrawRectSolid(100.0f, 200.0f, 0.9f, 120.0f, 24.0f, C2D_Color32(20, 70, 130, 255));
+    DrawTextCentered(160.0f, 206.0f, 1.0f, (lang == 6) ? "CERRAR" : "CLOSE", C2D_Color32(255, 255, 255, 255));
 }
 
 /* Render RetroAchievements Settings Modal */
@@ -2202,6 +2228,27 @@ static void RenderMapView(void) {
         }
     }
 
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
+    /* Persistent Tap-to-Warp toggle button on the map canvas */
+    const float warpBtnX = 236.0f;
+    const float warpBtnY = 206.0f;
+    const float warpBtnW = 74.0f;
+    const float warpBtnH = 24.0f;
+    uint32_t warpBtnBg = sDebugMapWarpArmed
+        ? (((sFrameCounter & 0x10) != 0) ? C2D_Color32(190, 140, 15, 255) : C2D_Color32(140, 95, 10, 255))
+        : C2D_Color32(16, 24, 40, 230);
+    uint32_t warpBtnBorder = sDebugMapWarpArmed
+        ? C2D_Color32(255, 220, 50, 255)
+        : C2D_Color32(45, 65, 95, 255);
+    uint32_t warpBtnTextCol = sDebugMapWarpArmed
+        ? C2D_Color32(255, 255, 255, 255)
+        : C2D_Color32(140, 160, 190, 255);
+
+    C2D_DrawRectSolid(warpBtnX - 1.0f, warpBtnY - 1.0f, 0.94f, warpBtnW + 2.0f, warpBtnH + 2.0f, warpBtnBorder);
+    C2D_DrawRectSolid(warpBtnX, warpBtnY, 0.95f, warpBtnW, warpBtnH, warpBtnBg);
+    DrawTextCentered(warpBtnX + warpBtnW / 2.0f, warpBtnY + 5.0f, 1.0f,
+                     sDebugMapWarpArmed ? "WARP: ON" : "WARP: OFF", warpBtnTextCol);
+#endif
 }
 
 /* Render Status (Estado) View */
@@ -2574,7 +2621,7 @@ static void RenderOptionsView(void) {
 #define DBGTOOL_GRID_PITCH 26
 #define DBGTOOL_CELL_H    24
 #define DBGTOOL_GRID_ROWS 6
-#define DBGTOOL_COUNT     12
+#define DBGTOOL_COUNT     11
 
 #define DBGTOOL_CELL_Y(r) ((float)(DBGTOOL_GRID_Y0 + (r) * DBGTOOL_GRID_PITCH))
 #define DBGTOOL_CELL_X(c) ((float)((c) == 0 ? DBGTOOL_COL_L_X : DBGTOOL_COL_R_X))
@@ -2683,15 +2730,6 @@ static void RenderDebugToolsModal(int lang) {
     DrawDebugCell(10, (lang == 6) ? "LOG EN BUFFER" : "LOG BUFFERING",
                   logBuf ? onTxt : offTxt, logBuf ? colOn : colAct);
 
-    /* How far apart the world BG layers sit in stereo. Room data composites
-     * several layers into one flat image, so any separation lets a layer's
-     * detail pixels float off the backdrop they are painted on -- see the
-     * preset table in port_stereo_depth.c. Cycles so the tradeoff can be
-     * judged on hardware rather than argued about. */
-    DrawDebugCell(11, (lang == 6) ? "PROFUND. 3D" : "3D DEPTH",
-                  PortStereoDepth_SpreadName(PortStereoDepth_GetSpread()),
-                  C2D_Color32(255, 215, 0, 255));
-
     if (sDebugToolsMsg[0] && sFrameCounter < sDebugToolsMsgUntil) {
         DrawTextCentered(160.0f, 204.0f, 1.0f, sDebugToolsMsg, C2D_Color32(120, 255, 160, 255));
     }
@@ -2753,12 +2791,6 @@ static bool HandleDebugToolsModalTouch(int x, int y) {
             const bool buf = !Port_DebugLog_IsBuffered();
             Port_DebugLog_SetBuffered(buf);
             DebugToolsSetMsg(buf ? "LOG EN BUFFER" : "LOG DIRECTO");
-            break;
-        }
-        case 11: {
-            int next = (PortStereoDepth_GetSpread() + 1) % 3;
-            PortStereoDepth_SetSpread(next);
-            DebugToolsSetMsg(PortStereoDepth_SpreadName(next));
             break;
         }
         default:
