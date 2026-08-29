@@ -276,9 +276,9 @@ void UpdateMusic(void)
         pChannel->unk_11 = var_2 * pChannel->unk_4 >> 8;
         pChannel->unk_12 = var_2 * pChannel->unk_5 >> 8;
 
-#if defined(MZM_3DS) && defined(PORT_AUDIO_DIAG_LOG)
+#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
         {
-            extern void Port_DebugLog(const char* msg);
+            extern void Port_DebugLog_Audio(const char* msg);
             static unsigned int sChanDiagCount;
             if (i == 0 && (++sChanDiagCount & 0x1F) == 0) {
                 char msg[200];
@@ -289,7 +289,7 @@ void UpdateMusic(void)
                     (unsigned)pChannel->unk_11, (unsigned)pChannel->unk_12,
                     (unsigned)gMusicInfo.volume, (void*)pChannel->pSample,
                     (unsigned)pChannel->unk_F);
-                Port_DebugLog(msg);
+                Port_DebugLog_Audio(msg);
             }
         }
 #endif
@@ -298,9 +298,9 @@ void UpdateMusic(void)
         gSoundCodeAPointer(pChannel, tmp, (var_6 + var_3) * 4);
     }
 
-#if defined(MZM_3DS) && defined(PORT_AUDIO_DIAG_LOG)
+#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
     {
-        extern void Port_DebugLog(const char* msg);
+        extern void Port_DebugLog_Audio(const char* msg);
         static unsigned int sChDiagCount;
         if ((++sChDiagCount & 0x1F) == 0) {
             char msg[160];
@@ -311,7 +311,7 @@ void UpdateMusic(void)
                 (void*)gMusicInfo.soundChannels[0].pVariables,
                 (unsigned)sMusicTrackDataRom[0].pTrack->flags,
                 (void*)sMusicTrackDataRom[0].pTrack->pVoice);
-            Port_DebugLog(msg);
+            Port_DebugLog_Audio(msg);
         }
     }
 #endif

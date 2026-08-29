@@ -175,10 +175,11 @@ extern void PortStereoDepth_SetSpread(int spread);
 extern int PortStereoDepth_GetSpread(void);
 extern const char* PortStereoDepth_SpreadName(int spread);
 extern const char* PortStereoDepth_SpreadNameLang(int spread, int lang);
-extern void Port_DebugLog_SetEnabled(bool enabled);
 extern bool Port_DebugLog_IsEnabled(void);
 extern void Port_DebugLog_SetBuffered(bool buffered);
 extern bool Port_DebugLog_IsBuffered(void);
+extern void Port_DebugLog_CycleMode(void);       /* OFF -> ALL -> GPU -> AUDIO -> PERF -> OFF */
+extern const char* Port_DebugLog_ModeName(void); /* "OFF"/"ALL"/"GPU"/"AUDIO"/"PERF" */
 extern void PortPpuMzm_DebugSaveWarpPoint(void);
 extern bool PortPpuMzm_DebugHasWarpPoint(void);
 extern void PortPpuMzm_DebugGetWarpPointInfo(char* out, int outSize);
@@ -2966,13 +2967,15 @@ static void RenderDebugToolsModal(int lang) {
     DrawDebugCell(8, (lang == 6) ? "REVELAR MAPAS" : "REVEAL MAPS",
                   (lang == 6) ? "REVELAR" : "REVEAL", colMenu);
 
-    /* The two log knobs. Writing to the SD card is off by default even in a
-     * debug build (see port_debug_log.h) -- these are how a session says
-     * "start capturing now" and, for a hang, "stop holding lines in RAM". */
+    /* The two log knobs. Nothing is written to the SD card while LOG is OFF
+     * even in a debug build (see port_debug_log.h). LOG cycles the stream
+     * filter -- OFF / ALL / GPU / AUDIO / PERF -- so a session captures only
+     * the stream it is chasing; BUFFER is "stop holding lines in RAM" for a
+     * hang. */
     const bool logOn = Port_DebugLog_IsEnabled();
     const bool logBuf = Port_DebugLog_IsBuffered();
     DrawDebugCell(9, (lang == 6) ? "LOG A SD" : "SD LOGGING",
-                  logOn ? onTxt : offTxt, logOn ? colOn : colAct);
+                  Port_DebugLog_ModeName(), logOn ? colOn : colAct);
     DrawDebugCell(10, (lang == 6) ? "LOG EN BUFFER" : "LOG BUFFERING",
                   logBuf ? onTxt : offTxt, logBuf ? colOn : colAct);
 
@@ -3027,10 +3030,11 @@ static bool HandleDebugToolsModalTouch(int x, int y) {
             DebugToolsSetMsg("MAPAS REVELADOS");
             break;
         case 9: {
-            const bool on = !Port_DebugLog_IsEnabled();
-            Port_DebugLog_SetEnabled(on);
-            if (on) Port_DebugLog("USER MARK: SD logging enabled");
-            DebugToolsSetMsg(on ? "LOG SD ACTIVADO" : "LOG SD PARADO");
+            Port_DebugLog_CycleMode();
+            if (Port_DebugLog_IsEnabled()) Port_DebugLog("USER MARK: SD logging enabled");
+            char msg[24];
+            snprintf(msg, sizeof(msg), "LOG SD: %s", Port_DebugLog_ModeName());
+            DebugToolsSetMsg(msg);
             break;
         }
         case 10: {

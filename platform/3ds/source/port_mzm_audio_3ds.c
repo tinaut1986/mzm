@@ -1,4 +1,5 @@
 #include "port_mzm_audio_glue.h"
+#include "port_debug_tools.h" /* PORT_DEBUG_TOOLS_ACTIVE */
 
 #include <3ds.h>
 #include <stdbool.h>
@@ -7,6 +8,7 @@
 #include <stdio.h>
 
 extern void Port_DebugLog(const char* msg);
+extern void Port_DebugLog_Audio(const char* msg);
 extern bool Platform3DS_CanUseCore1(void);
 
 /*
@@ -119,17 +121,17 @@ static void FillBuffer(int index) {
      * (toRead < BUFFER_FRAMES means we under-ran the ring and had to pad with
      * silence, which is exactly what the "clicks" would sound like).
      *
-     * [PORT] 2026-08-19: gated OFF by default (-DPORT_AUDIO_DIAG_LOG), see
-     * port_mzm_audio_glue.c. This one runs on the AUDIO THREAD, so its SD
-     * write (Port_DebugLog = fopen+fprintf+fclose) blocks the very thread
-     * that is supposed to be feeding NDSP on time. */
-#ifdef PORT_AUDIO_DIAG_LOG
+     * [PORT] Off unless DEBUG -> HERRAMIENTAS -> LOG mode is ALL or AUDIO
+     * (Port_DebugLog_Audio). This one runs on the AUDIO THREAD, so its SD
+     * write (fopen+fprintf+fclose) blocks the very thread that is supposed
+     * to be feeding NDSP on time. */
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
     static unsigned int sDiagCount;
     if ((++sDiagCount & 0x1F) == 0) {
         char msg[96];
         __builtin_snprintf(msg, sizeof(msg), "ndsp: toRead=%u/%u rate=%u",
             toRead, BUFFER_FRAMES, sOutRate);
-        Port_DebugLog(msg);
+        Port_DebugLog_Audio(msg);
     }
 #endif
 }

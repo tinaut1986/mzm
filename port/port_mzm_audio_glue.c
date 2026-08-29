@@ -8,6 +8,7 @@
 #include <stdio.h>
 
 extern void Port_DebugLog(const char* msg);
+extern void Port_DebugLog_Audio(const char* msg);
 
 /* The engine's real CallSoundCodeC (the asm mixdown), captured on first use. */
 static SoundCodeCFunc_T sRealSoundCodeC;
@@ -171,12 +172,12 @@ static u8* Port_MzmAudio_SoundCodeC(u32* dest, u32* src, u8 count) {
          * ring fill, peak amplitude, nonzero-sample count and a few raw
          * bytes. peak==0 with all-zero capture => reading silence.
          *
-         * [PORT] 2026-08-19: gated OFF by default (-DPORT_AUDIO_DIAG_LOG to
-         * re-enable), same reason as DumpRaw above -- Port_DebugLog is an
-         * fopen+fprintf+fclose to the SD (port/port_debug_log.c) and this one
-         * additionally scans the whole 3072-byte buffer first. Even throttled
-         * to 1-in-64 it is real SD I/O inside the audio production path. */
-#ifdef PORT_AUDIO_DIAG_LOG
+         * [PORT] Off unless DEBUG -> HERRAMIENTAS -> LOG mode is ALL or
+         * AUDIO (Port_DebugLog_Audio), same reason as DumpRaw above -- the
+         * write is an fopen+fprintf+fclose to the SD and this one
+         * additionally scans the whole 3072-byte buffer first. Even
+         * throttled to 1-in-8 it is real SD I/O inside the audio path. */
+#ifdef PORT_DEBUG_TOOLS
         static unsigned int sDiagCount;
         if ((++sDiagCount & 0x7) == 0) {
             /* Scan the WHOLE soundRawData buffer to see if the engine wrote
@@ -201,9 +202,9 @@ static u8* Port_MzmAudio_SoundCodeC(u32* dest, u32* src, u8 count) {
                 engineRate, n, sRingWriteIndex - curRead, wholePeak, wholeNonz,
                 gMusicInfo.maxSoundChannels, (unsigned int)((const unsigned char*)dest - wb),
                 left[0], left[1], left[2], (unsigned int)PortPsg_IsAnyVoiceActive(), (void*)dest);
-            Port_DebugLog(msg);
+            Port_DebugLog_Audio(msg);
         }
-#endif /* PORT_AUDIO_DIAG_LOG */
+#endif /* PORT_DEBUG_TOOLS_ACTIVE */
     }
 
     return ret;

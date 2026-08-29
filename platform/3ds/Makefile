@@ -227,35 +227,36 @@ else ifneq ($(FORCE_OLD3DS),0)
   $(error Unknown FORCE_OLD3DS '$(FORCE_OLD3DS)' -- expected '0' or '1')
 endif
 
-# THE debug build. There is exactly one:
+# THE debug build. There is exactly one flag:
 #   make clean && make DEBUG_TOOLS=1
 # It compiles in the bottom screen's DEBUG -> HERRAMIENTAS menu and every
-# tool behind it (instant-kill, scene recorder, live atlas dump, screen/state
-# dump, USER MARK log line, warp, equipment -- see docs/3ds-debug-tools.md)
-# AND the verbose per-frame *_DIAG_LOG tracing. All of it is source-level
-# absent from a production build, so that build has NO WAY to trigger any of
-# it, not even by accident.
+# tool behind it (instant-kill, scene recorder, perf recorder, live atlas
+# dump, screen/state dump, USER MARK log line, warp, equipment -- see
+# docs/3ds-debug-tools.md) AND every throttled per-frame diagnostic log
+# stream (GPU, audio, PERF). All of it is source-level absent from a
+# production build, so that build has NO WAY to trigger any of it.
 #
-# There used to be two debug builds -- "simple" (menu only) and "tracing"
-# (EXTRA_CFLAGS=-DPORT_*_DIAG_LOG) -- because tracing meant unconditional SD
-# writes on hot paths, at real cost in frame rate and SD I/O. It no longer
-# does: nothing is written to sdmc:/3ds/mzm-debug.log until the LOG A SD
-# toggle in that menu is switched on (port_debug_log.h), so a debug build
-# that is never asked to log behaves like the old "simple" one, and the
-# split stopped earning its keep.
+# There used to be three opt-in flags -- PORT_DEBUG_TOOLS for the menu,
+# PORT_GPU_RENDERER_DIAG_LOG / PORT_AUDIO_DIAG_LOG (and an ad-hoc
+# PORT_PPU_PERF_LOG) for the logs, each its own EXTRA_CFLAGS. Now a
+# DEBUG_TOOLS=1 build compiles every stream in and you pick which one(s)
+# write from the menu: LOG mode OFF / ALL / GPU / AUDIO / PERF (nothing hits
+# sdmc:/3ds/mzm-debug.log while it is OFF -- port_debug_log.h). So a debug
+# build that is never asked to log costs nothing, and the flag split stopped
+# earning its keep.
 # The clean matters: changing flags alone does not invalidate existing
 # objects, which is exactly the stale-.o trap documented in section 6l.
 DEBUG_TOOLS ?= 0
 ifeq ($(DEBUG_TOOLS),1)
-  CFLAGS += -DPORT_DEBUG_TOOLS -DPORT_GPU_RENDERER_DIAG_LOG -DPORT_AUDIO_DIAG_LOG
+  CFLAGS += -DPORT_DEBUG_TOOLS
 else ifneq ($(DEBUG_TOOLS),0)
   $(error Unknown DEBUG_TOOLS '$(DEBUG_TOOLS)' -- expected '0' or '1')
 endif
 
-# Extra flags from the command line, e.g. to turn on the audio diagnostics that
-# are off by default (they do SD I/O on the audio path and cost real frame rate,
-# see docs/3ds-port-status-2026-08-17.md section 6s):
-#   make clean && make EXTRA_CFLAGS=-DPORT_AUDIO_DIAG_LOG
+# Extra flags from the command line, for one-off experiments. The debug
+# tooling no longer needs any (see DEBUG_TOOLS above); this stays for things
+# like -DPORT_VERBOSE_FRAME_LOG when bisecting a boot hang.
+#   make clean && make EXTRA_CFLAGS=-DPORT_VERBOSE_FRAME_LOG
 # The clean matters: changing flags alone does not invalidate existing objects,
 # which is exactly the stale-.o trap documented in section 6l.
 CFLAGS  += $(EXTRA_CFLAGS)
