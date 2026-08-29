@@ -17,6 +17,33 @@ import struct
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
+
+# Si estamos en un worktree secundario, enlazar data/ y include/extracted/ del repositorio principal
+try:
+    _common_git = subprocess.check_output(
+        ["git", "rev-parse", "--git-common-dir"],
+        cwd=ROOT,
+        stderr=subprocess.DEVNULL,
+        text=True
+    ).strip()
+    _main_root = os.path.abspath(os.path.join(ROOT, _common_git, ".."))
+    if os.path.isdir(_main_root) and _main_root != ROOT:
+        for _item in ("include/extracted", "data"):
+            _src = os.path.join(_main_root, _item.replace("/", os.sep))
+            _dst = os.path.join(ROOT, _item.replace("/", os.sep))
+            if os.path.exists(_src) and not os.path.exists(_dst):
+                os.makedirs(os.path.dirname(_dst), exist_ok=True)
+                try:
+                    if hasattr(os, "symlink"):
+                        os.symlink(_src, _dst)
+                    else:
+                        import shutil
+                        shutil.copytree(_src, _dst)
+                except Exception:
+                    pass
+except Exception:
+    pass
+
 sys.path.insert(0, HERE)
 from mzmdata import rle_decompress  # noqa: E402
 

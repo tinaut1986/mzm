@@ -37,7 +37,33 @@ def newest(*paths):
     return t
 
 
+def link_worktree_assets():
+    """Si estamos en un worktree secundario, enlaza data y include/extracted del repo principal."""
+    try:
+        common_git = subprocess.check_output(
+            ["git", "rev-parse", "--git-common-dir"],
+            cwd=ROOT,
+            stderr=subprocess.DEVNULL,
+            text=True
+        ).strip()
+        main_root = os.path.abspath(os.path.join(ROOT, common_git, ".."))
+        if os.path.isdir(main_root) and main_root != ROOT:
+            for item in ("include/extracted", "data"):
+                src_item = os.path.join(main_root, item.replace("/", os.sep))
+                dst_item = os.path.join(ROOT, item.replace("/", os.sep))
+                if os.path.exists(src_item) and not os.path.exists(dst_item):
+                    os.makedirs(os.path.dirname(dst_item), exist_ok=True)
+                    try:
+                        if hasattr(os, "symlink"):
+                            os.symlink(src_item, dst_item)
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+
+
 def ensure_maps():
+    link_worktree_assets()
     maps = os.path.join(HERE, "maps.json")
     sources = newest(os.path.join(ROOT, "src", "data", "rooms_data.c"),
                      os.path.join(ROOT, "data", "rooms"),

@@ -104,7 +104,24 @@ Both live in the ROM directory (`sdmc:/3ds/Metroid Zero Mission 3DS/`):
 - [devkitPro](https://devkitpro.org/) with `devkitARM`, `libctru`, `citro2d` and `citro3d`.
 - `makerom` and `bannertool` for `.cia` packaging.
 
-### Build commands
+### Build commands & Helper Scripts
+
+We provide interactive and automated scripts for Linux and Windows:
+
+- **Linux / macOS**:
+  ```sh
+  ./build_3ds.sh              # Launches the interactive arrow-key build assistant
+  ./build_3ds.sh --mode prod  # Builds production CIA package
+  ./build_3ds.sh --ftp 192.168.1.50 # Builds and uploads via FTP (defaults to debug mode)
+  ```
+- **Windows**:
+  ```cmd
+  build_3ds.bat               # Launches the interactive build assistant
+  build_3ds.bat --mode prod   # Builds production CIA package
+  build_3ds.bat --ftp 192.168.1.50
+  ```
+
+Alternatively, you can invoke `make` directly:
 
 ```sh
 cd platform/3ds
@@ -112,6 +129,15 @@ make clean && make -j$(nproc)
 ```
 
 Outputs land in `platform/3ds/`: `mzm-3ds.cia`, `mzm-3ds.3dsx`, `mzm-3ds.elf`. There are also `cia`, `3dsx` and `elf` targets to build just one of them.
+
+### Tools: Layer Workbench
+
+To launch the map layer workbench viewer and visual editor:
+
+- **Linux / macOS**: `./run_workbench.sh`
+- **Windows**: `run_workbench.bat`
+
+(Runs local web server at `http://127.0.0.1:8731/` and opens your default browser).
 
 ### Region
 

@@ -45,6 +45,35 @@ This target builds the native dual-screen Nintendo 3DS port of **Metroid: Zero M
 
 ### Compilation
 
+#### Quick Compilation & Interactive Assistant (Linux & Windows)
+
+You can use the helper scripts from the repository root:
+
+- **Interactive Menu**: Run without arguments to launch the arrow-key terminal assistant:
+  ```sh
+  ./build_3ds.sh        # Linux / macOS
+  build_3ds.bat         # Windows
+  ```
+- **CLI Options**:
+  ```sh
+  # Debug / Test mode (DEBUG_TOOLS=1)
+  ./build_3ds.sh --mode test
+
+  # Production / Release mode (DEBUG_TOOLS=0)
+  ./build_3ds.sh --mode prod
+
+  # Build & FTP upload directly to 3DS (defaults to debug mode unless specified)
+  ./build_3ds.sh --ftp 192.168.1.50
+
+  # Custom FTP port and production mode
+  ./build_3ds.sh --mode prod --ftp 192.168.1.50:5000
+
+  # Incremental build (skip make clean)
+  ./build_3ds.sh --no-clean
+  ```
+
+#### Manual Compilation with Make
+
 From the repository root:
 
 ```sh
