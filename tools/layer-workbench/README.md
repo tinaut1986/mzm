@@ -175,6 +175,35 @@ Las correcciones valen para US, EU y JP: los tilemaps de sala
 en `src/data/rooms_data.c` sólo hay cinco, sobre efecto de ácido y pista de
 música. La numeración de salas y las coordenadas de bloque son las mismas.
 
+## Comprobaciones
+
+```bash
+python3 tools/layer-workbench/test_maps.py     # los datos: 44272 comprobaciones
+```
+
+Sin dependencias y en un minuto. Cubre la mitad donde los errores no se ven:
+un decodificador equivocado no revienta, dibuja algo plausible y falso. Los
+cinco fallos reales que hubo aquí fueron de esa clase — puertas negras por no
+cargar los tiles comunes, celdas negras en el mapa por usar 160 tiles donde hay
+384, BG0 ausente en 153 salas, la mezcla alfa sin aplicar, y las prioridades
+tratadas como fijas. Lleva además checksums de regresión de todo lo
+decodificado; si cambian a propósito, el propio test imprime los valores nuevos
+para pegarlos.
+
+Al escribirlo salió que **«el RLE consume el archivo entero» no es propiedad
+del formato**, aunque lo pareciera con el archivo con el que se verificó: de
+los 1069 mapas, 925 acaban justo al final, 111 dejan relleno de ceros y 33
+traen datos propios detrás. Lo que sí se comprueba es que nunca se pasa del
+final ni se queda a medias.
+
+Abriendo `index.html?test` la propia página corre sus afirmaciones y deja el
+resultado abajo: que carga entera sin excepciones, que una sala decodifica, que
+el compositor dibuja lo movido incluso a una capa que la sala no usa, que la
+selección distingue capa y posición, y que el `.inc` va y vuelve igual.
+
+Lo que no se prueba: ventanas, gestos y scroll. Es geometría del navegador,
+cara y frágil de automatizar, y un vistazo la cubre mejor.
+
 ## Los datos
 
 `build_maps.py` recorre `src/data/rooms_data.c` y los archivos sueltos y emite

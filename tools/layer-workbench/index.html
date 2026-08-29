@@ -2224,7 +2224,106 @@
                importText:importText,exportText:exportText,
                selectionReport:selectionReport};
 
+  /* ================= autocomprobación =====================================
+     index.html?test corre unas afirmaciones sobre la lógica del visor y deja
+     el resultado en pantalla. Sin dependencias ni navegador aparte, que es
+     todo el sentido de esta herramienta.
+
+     No intenta cubrir ventanas ni gestos -- eso es geometría del navegador y
+     se mira con los ojos. Cubre lo que sí se puede romper en silencio: que la
+     página entera carga sin excepciones (una reescritura llegó a borrar
+     redraw), que una sala decodifica, que el compositor respeta el orden y
+     dibuja lo movido incluso a una capa que la sala no usa, que la selección
+     distingue capa y posición, y que el .inc va y vuelve igual.
+     ======================================================================== */
+  function selfTest(){
+    var fallos=[],n=0;
+    function ok(cond,msg){ n++; if(!cond)fallos.push(msg); }
+    function eq(a2,b2,msg){ ok(a2===b2,msg+": es "+a2+", se esperaba "+b2); }
+
+    ok(!!maps,"maps.json cargado");
+    if(!maps)return {n:n,fallos:fallos};
+    eq(Object.keys(maps.areas).reduce(function(t,a3){
+      return t+maps.areas[a3].length;},0),315,"salas en total");
+
+    /* Una sala con tres capas, mezcla alfa y prioridades no triviales. */
+    loadRoom("brinstar",1);
+    eq(Object.keys(state.bg).length,3,"brinstar 1: capas dibujadas");
+    ok(state.prio.length===4,"prioridades presentes");
+    ok(!!state.blend,"brinstar 1 mezcla una capa");
+    ok(Object.keys(state.bg[1].cells).length>0,"BG1 tiene bloques");
+
+    /* El compositor pinta de atrás a delante por prioridad. */
+    var orden=[0,1,2,3].sort(function(x,y){
+      var px2=state.prio[x],py=state.prio[y];return px2!==py?py-px2:y-x;});
+    ok(state.prio[orden[0]]>=state.prio[orden[orden.length-1]],
+       "orden de pintado de atrás a delante");
+
+    /* Un bloque movido a una capa que la sala NO usa tiene que seguir viéndose:
+       esto fue un fallo real, desaparecía. */
+    var k0=Object.keys(state.bg[1].cells)[10],c0=state.bg[1].cells[k0];
+    fixes={};selMore={};sel={info:c0};
+    fixes[keyOf(c0,state.C)]={dest:3,info:c0,tag:state.tag,key:keyOf(c0,state.C),
+                              area:state.C.area,room:state.C.room,block:c0.entry};
+    var A=applied();
+    eq(A.moved.length,1,"la corrección se aplica");
+    ok(!state.on[3],"la sala no usa BG3");
+    var comp=composite(A),q=((c0.sy+8)*state.W+(c0.sx+8))*4;
+    ok(comp[q+3]===255,"un bloque movido a una capa ausente se sigue dibujando");
+
+    /* Ida y vuelta del .inc. */
+    var antes=exportText();
+    importText(antes);
+    eq(exportText(),antes,"el .inc va y vuelve igual");
+
+    /* La selección distingue capa Y posición: dos capas comparten posición. */
+    var conDos=null;
+    Object.keys(state.bg[1].cells).forEach(function(k){
+      if(!conDos&&state.bg[0]&&state.bg[0].cells[k])conDos=k;});
+    ok(!!conDos,"hay una posición con bloque en dos capas");
+    if(conDos){
+      selMore={};sel={info:state.bg[0].cells[conDos]};
+      selMore[selKey(state.bg[0].cells[conDos])]=state.bg[0].cells[conDos];
+      selMore[selKey(state.bg[1].cells[conDos])]=state.bg[1].cells[conDos];
+      eq(selList().length,2,"dos capas en la misma posición cuentan como dos");
+    }
+
+    /* La huella del mapa descuenta borde y roca: Kraid 7 tiene dos celdas que
+       el juego deja en blanco y no deben marcarse. */
+    var k7=null;
+    maps.areas.kraid.forEach(function(r,i){ if(r.id===7)k7=i; });
+    if(k7!==null){
+      var celdas=roomCells(maps.areas.kraid[k7]);
+      eq(celdas.length,6,"huella de kraid 7");
+    }
+
+    fixes={};clearSel();
+    return {n:n,fallos:fallos};
+  }
+
+  function runSelfTest(){
+    var r;
+    try{ r=selfTest(); }
+    catch(e){ r={n:0,fallos:["excepción: "+(e&&e.message||e)]}; }
+    var caja=document.createElement("pre");
+    caja.id="selftest";
+    caja.style.cssText="position:fixed;left:0;right:0;bottom:0;z-index:99;max-height:45vh;"+
+      "margin:0;border-top:2px solid "+(r.fallos.length?"#E0705C":"#2E7D4F")+";";
+    caja.textContent=(r.fallos.length?"FALLA":"PASA")+"  "+r.n+" comprobaciones, "+
+      r.fallos.length+" fallos\n"+r.fallos.join("\n");
+    document.body.appendChild(caja);
+    window.__selftest=r;
+  }
+
   setZoom(2);renderList();autoloadMaps();loadFixesFromServer(true);
+  if(/[?&]test\b/.test(location.search)){
+    /* Tras la carga de maps.json, que es asíncrona. */
+    var espera=setInterval(function(){
+      if(!maps)return;
+      clearInterval(espera);runSelfTest();
+    },100);
+    setTimeout(function(){ clearInterval(espera); if(!window.__selftest)runSelfTest(); },8000);
+  }
 })();
 </script>
 </body>
