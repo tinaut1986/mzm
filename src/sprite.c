@@ -1836,6 +1836,15 @@ void SpriteDrawAll_HighPriority(void)
     u32 checkStatus;
     u32 notPlaying;
 
+#ifdef __3DS__
+    /* First sprite pass of the frame: reset the overlay-text OAM mask so it
+     * only ever describes this frame's banners (see port_overlay_text_oam.c). */
+    {
+        extern void Port_OverlayText_BeginFrame(void);
+        Port_OverlayText_BeginFrame();
+    }
+#endif
+
     if (gSubGameMode1 == SUB_GAME_MODE_PLAYING)
         notPlaying = FALSE;
     else
@@ -2335,6 +2344,26 @@ void SpriteDraw(struct SpriteData* pSprite, s32 slot)
             gOamData[31 * 4 + 3].all.affineParam = dmy;
         }
     }
+
+#ifdef __3DS__
+    /* Tag the OAM span just emitted [prevSlot, gNextOamSlot) as overlay
+     * text so the stereo renderer lifts it to the front depth tier instead
+     * of leaving it coplanar with Samus. Identity-based (see
+     * port_overlay_text_oam.c): the in-game message banner, the area-name
+     * banner, and the save YES/NO cursor that rides with the banner. */
+    {
+        u32 spriteId = pSprite->spriteId;
+        u32 secondary = pSprite->properties & SP_SECONDARY_SPRITE;
+        u32 isOverlayText =
+            (!secondary && (spriteId == PSPRITE_MESSAGE_BANNER || spriteId == PSPRITE_AREA_BANNER)) ||
+            (secondary && spriteId == SSPRITE_SAVE_YES_NO_CURSOR);
+        if (isOverlayText)
+        {
+            extern void Port_OverlayText_NoteBannerOam(int firstSlot, int endSlot);
+            Port_OverlayText_NoteBannerOam(prevSlot, gNextOamSlot);
+        }
+    }
+#endif
 }
 
 /**

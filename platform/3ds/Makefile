@@ -100,6 +100,7 @@ SRCS_3DS := \
 	$(CURDIR)/source/port_stereo_depth.c \
 	$(CURDIR)/source/port_layer_fixes.c \
 	$(CURDIR)/source/port_hud_oam.c \
+	$(CURDIR)/source/port_overlay_text_oam.c \
 	$(CURDIR)/source/port_mzm_audio_3ds.c \
 	$(CURDIR)/source/port_retroachievements_3ds.c \
 	$(CURDIR)/source/port_ra_iwram_map.c \

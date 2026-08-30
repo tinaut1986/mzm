@@ -1284,10 +1284,18 @@ static void CollectSprite(int oamIndex, bool obj1D) {
              * handles GM_MAP_SCREEN, and everywhere else these are world
              * sprites. */
             bool isRealHud = gMainGameMode == 4 && oamIndex < Port_Hud_GetOamCount();
+            /* In-game message / area-name banners (and the save cursor) are
+             * ordinary sprites, so isRealHud never catches them, yet they
+             * are an overlay and draw at OAM priority 0 in 2D. SpriteDraw
+             * tags their OAM slots (port_overlay_text_oam.c); lift them to
+             * the same front tier as the HUD so stereo does not sink the
+             * flat text into Samus. */
+            extern int Port_OverlayText_IsSlot(int oamIndex);
+            bool isOverlayText = gMainGameMode == 4 && Port_OverlayText_IsSlot(oamIndex);
             int depthTier;
             if (inMapOrPauseScreen) {
                 depthTier = (priority == 0) ? 5 : 6;
-            } else if (isRealHud) {
+            } else if (isRealHud || isOverlayText) {
                 depthTier = 5;
             } else {
                 /* World sprites: parallax must follow the same ordering the
@@ -2131,7 +2139,12 @@ void Port_GpuRenderer_RenderFrame(void) {
             unsigned rounded = fps > 0.0 ? (unsigned)(fps + 0.5) : 0u;
             if (rounded > 999u) rounded = 999u;
             snprintf(label, sizeof(label), "FPS %u", rounded);
-            float fpsEyeOffset = eyeSign * slider3d * (+1.0f);
+            /* Parallax past the frontmost world tier (HUD, +2.0px) and
+             * pixel-snapped like the tile layers, so the debug counter
+             * always reads as being in front of everything -- health bar,
+             * message banners, dialog overlay -- rather than swimming at
+             * their depth. */
+            float fpsEyeOffset = floorf(eyeSign * slider3d * (+2.5f) + 0.5f);
             C2D_DrawRectSolid(5.0f + fpsEyeOffset, 216.0f, 0.7f, 65.0f, 18.0f, C2D_Color32(0, 0, 0, 200));
             PlatformGpu3DS_DrawStatusText(8.0f + fpsEyeOffset, 220.0f, 1.5f, label);
         }
