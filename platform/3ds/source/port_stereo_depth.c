@@ -142,9 +142,22 @@ int PortStereoDepth_BgTier(const PortStereoDepthState* st, int bgIndex) {
 
 /* Every world sprite sits on one plane. The HUD and the pause map do not come
  * through here -- port_gpu_renderer.c picks their tiers directly -- which is
- * what keeps the UI in front without it having a layer of its own. */
+ * what keeps the UI in front without it having a layer of its own.
+ *
+ * In gameplay that plane sits just BEHIND the shared BG play tier so
+ * foreground platforms read with thickness in front of Samus (she can duck
+ * behind them). Outside gameplay the only sprites routed here are cutscene
+ * actors, and a cutscene never puts one behind an equal-or-higher-priority
+ * BG the way a room's foreground platform does -- the actor is the subject,
+ * painted over its own BG backdrops. Leaving it on the gameplay plane makes
+ * those backdrops (e.g. the mountains behind the Ridley-landing mothership,
+ * BG priority 1 -> BG_PLAY) float stereoscopically IN FRONT of the sprite
+ * that visibly draws over them. Park cutscene sprites on the play plane
+ * instead: coplanar with a priority-0/1 backdrop (occlusion then orders
+ * them, matching the GBA), still behind a priority-0 BG0 overlay. */
 int PortStereoDepth_ObjTier(const PortStereoDepthState* st, int objPriority) {
-    (void)st;
     (void)objPriority;
+    if (!st->inGameplay)
+        return PORT_TIER_BG_PLAY; /* -0.3f: coplanar with the cutscene backdrop */
     return PORT_TIER_OBJ_P1; /* -0.8f */
 }

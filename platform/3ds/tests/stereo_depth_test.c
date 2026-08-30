@@ -216,10 +216,56 @@ static void TestDepthIsPerLayer(void) {
     }
 }
 
+/* ------------------------------------------------------------------ *
+ * Test 5: outside gameplay, cutscene sprites do not sit behind their own
+ * BG backdrops.
+ *
+ * In gameplay the one world-sprite plane is deliberately just behind the
+ * BG play plane (Test 1 pins that). Outside gameplay the only sprites that
+ * reach PortStereoDepth_ObjTier are cutscene actors -- the HUD and pause
+ * map are assigned directly by the renderer -- and a cutscene paints its
+ * actor OVER its BG backdrops, never behind an equal/higher-priority one.
+ * So there the sprite plane must not be farther than a priority-0/1 BG.
+ * ------------------------------------------------------------------ */
+static void TestCutsceneSpriteNotBehindBackdrop(void) {
+    printf("policy: outside gameplay, sprites are not farther than a "
+           "priority-0/1 BG backdrop\n");
+    for (int spread = 0; spread < PORT_STEREO_SPREAD_COUNT; ++spread) {
+        PortStereoDepthState st;
+        memset(&st, 0, sizeof(st));
+        st.inGameplay = false;
+        /* Ridley-landing layout: sky far, mountains behind the ship on a
+         * priority-1 BG, ground overlay on BG0. */
+        st.priority[0] = 0; st.priority[1] = 1; st.priority[2] = 2; st.priority[3] = 3;
+
+        float objPx = PortStereoDepth_TierPxFor(
+            spread, PortStereoDepth_ObjTier(&st, 1));
+        for (int bg = 1; bg <= 2; ++bg) { /* the priority-1 and priority-2 BGs */
+            int bgTier = PortStereoDepth_BgTier(&st, bg);
+            if (bgTier != PORT_TIER_BG_PLAY) continue;
+            float bgPx = PortStereoDepth_TierPxFor(spread, bgTier);
+            CHECK(objPx >= bgPx,
+                  "cutscene sprite (%+.2f) must not sit behind its "
+                  "BG%d play-plane backdrop (%+.2f)",
+                  (double)objPx, bg, (double)bgPx);
+        }
+    }
+
+    /* In gameplay the plane is unchanged: still the one world-sprite tier. */
+    PortStereoDepthState g;
+    memset(&g, 0, sizeof(g));
+    g.inGameplay = true;
+    for (int q = 0; q < 4; ++q) {
+        CHECK(PortStereoDepth_ObjTier(&g, q) == PORT_TIER_OBJ_P1,
+              "in gameplay world OBJ prio %d keeps the one world-sprite plane", q);
+    }
+}
+
 int main(void) {
     TestNoContradictionExhaustive();
     TestDepthIsPriorityOnly();
     TestDepthIsPerLayer();
+    TestCutsceneSpriteNotBehindBackdrop();
 
     printf("\n%d checks, %d failures\n", sChecks, sFailures);
     if (sFailures > 20) printf("(only the first 20 failures shown)\n");
