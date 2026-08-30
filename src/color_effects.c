@@ -3,6 +3,10 @@
 #include "dma.h"
 #include "gba.h"
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+#include "port_gba_mem.h"
+#endif
+
 #include "data/color_fading_data.h"
 
 #include "constants/color_fading.h"
@@ -363,6 +367,13 @@ void ApplySmoothPaletteTransition(u16* srcStart, u16* srcEnd, u16* dst, u8 stage
     u8 startG;
     u8 startB;
     s32 color;
+
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+    // dst is a raw GBA palette-RAM address (e.g. PALRAM_OBJ + n from the Enter
+    // Tourian cutscene). The DMA paths below resolve it internally, but the
+    // interpolation loop writes through it directly, so map it here too.
+    dst = GBA_RESOLVE(dst);
+#endif
 
     if (stage == 0)
     {
