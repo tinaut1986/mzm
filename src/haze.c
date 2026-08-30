@@ -353,11 +353,17 @@ void HazeCalculateGradient(void)
         if (i < 5)
         {
             src = (u16*)(PALRAM_BASE + 16 * 28);
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+            src = GBA_RESOLVE(src);
+#endif
             j = src[0];
         }
         else if (i > 0x9A)
         {
             src = (u16*)(PALRAM_BASE + 16 * 28);
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+            src = GBA_RESOLVE(src);
+#endif
             j = src[15];
         }
 
@@ -369,6 +375,9 @@ void HazeCalculateGradient(void)
     for (i = 0; i < 15; i++)
     {
         src = (u16*)(PALRAM_BASE + 16 * 28);
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+        src = GBA_RESOLVE(src);
+#endif
         src2 = &src[i];
         
         rBase = RED(src2[0]);
