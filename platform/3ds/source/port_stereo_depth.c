@@ -128,13 +128,24 @@ int PortStereoDepth_BgTier(const PortStereoDepthState* st, int bgIndex) {
      * Samus the moment the slider came up. */
     if (bgIndex == 0 && !st->inGameplay) return PORT_TIER_BG_OVERLAY;
 
-    /* Priorities 0 and 1 share the play plane. Splitting them onto their own
-     * planes was tried and reordered which tiles read as wrong: two layers the
-     * room composites as one flat image were pushed 0.7px apart. Deliberate
-     * exceptions go in the curated list (port_layer_fixes.h), not here. */
+    /* Priorities 0 and 1 share the play plane. Splitting them for EVERY room
+     * was tried and reordered which tiles read as wrong: two layers the room
+     * composites as one flat image were pushed 0.7px apart.
+     *
+     * The one place the merge is wrong is a samusOnTopOfBackgrounds room (see
+     * the field comment): there priority 1 is scenery Samus stands in front
+     * of, not part of the play plane, so it drops to the mid plane -- behind
+     * the one world-sprite tier (OBJ_P1, -0.8f) exactly as the priority
+     * numbers and the sprite bump already say it should be. Priority 0 stays
+     * put: it is the room's only real foreground layer. Everything else is
+     * unchanged, so a normal room still gets the merge.
+     *
+     * Other deliberate exceptions go in the curated list (port_layer_fixes.h),
+     * not here. */
     switch (st->priority[bgIndex]) {
-        case 0:
-        case 1:  return PORT_TIER_BG_PLAY; /* -0.3f */
+        case 0:  return PORT_TIER_BG_PLAY; /* -0.3f */
+        case 1:  return st->samusOnTopOfBackgrounds ? PORT_TIER_BG_MID   /* -2.0f */
+                                                    : PORT_TIER_BG_PLAY; /* -0.3f */
         case 2:  return PORT_TIER_BG_MID;  /* -2.0f */
         default: return PORT_TIER_BG_FAR;  /* -4.0f */
     }

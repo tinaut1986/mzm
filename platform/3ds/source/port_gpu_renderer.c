@@ -385,8 +385,11 @@ static void UpdateLayerFixRoom(void) {
 
 static void ComputeDepthState(uint16_t dispcnt) {
     extern s16 gMainGameMode;
+    extern u8 gSamusOnTopOfBackgrounds;
     (void)dispcnt;
     sDepthState.inGameplay = (gMainGameMode == 4);
+    sDepthState.samusOnTopOfBackgrounds =
+        sDepthState.inGameplay && gSamusOnTopOfBackgrounds != 0;
     for (int bg = 0; bg < 4; ++bg) {
         sDepthState.priority[bg] =
             (uint8_t)(((uint16_t)(gIoMem[0x08 + bg * 2] | (gIoMem[0x09 + bg * 2] << 8))) & 3u);

@@ -32,6 +32,20 @@
 typedef struct {
     uint8_t priority[4];  /* BGCNT bits 0-1, per BG */
     bool inGameplay;      /* gMainGameMode == GM_INGAME */
+
+    /* gSamusOnTopOfBackgrounds (src/transparency.c). A handful of room
+     * transparency configs set it, and they all lay the room out the same
+     * way: BG1 at BGCNT priority 0 is the only foreground layer, every
+     * other BG is scenery Samus is meant to stand in FRONT of, and the
+     * sprite pipeline bumps every sprite one priority nearer to match
+     * (SpriteDraw: `if (gSamusOnTopOfBackgrounds && bgPriority) bgPriority--`).
+     * On GBA the priority numbers carry that; in stereo the priority-0/1
+     * merge hides it, leaving a priority-1 scenery layer on the play plane
+     * IN FRONT of Samus while she visibly draws over it. When this is set,
+     * a priority-1 BG drops to the mid plane instead -- see BgTier. Not a
+     * hardware register, but snapshotted from room config right next to the
+     * priorities, so the mapping stays a pure function of its input. */
+    bool samusOnTopOfBackgrounds;
 } PortStereoDepthState;
 
 /* Depth tier indices. port_gpu_renderer.c picks the HUD and map tiers by
