@@ -119,6 +119,9 @@ void Port_BottomUI_FrameTick(void) {
     extern void Port_RA_Update(void); /* port_retroachievements_3ds.h, included below */
     ++sFrameCounter;
     Port_RA_Update();
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
+    { extern void PortPpuMzm_DebugCheatTick(void); PortPpuMzm_DebugCheatTick(); }
+#endif
 }
 
 /* Whether Port_BottomUI_Render should run this frame. Has the side effect of
@@ -193,6 +196,9 @@ extern void PortPpuMzm_DebugStepWarpDoor(int delta);
 extern bool PortPpuMzm_DebugRequestWarpToSelection(void);
 extern int PortPpuMzm_DebugRequestWarpToMapTile(int area, int tileX, int tileY);
 extern void PortPpuMzm_DebugRevealAllMaps(void);
+extern void PortPpuMzm_DebugRevealAreaMap(int area);
+extern void PortPpuMzm_DebugSetGod(bool on);
+extern bool PortPpuMzm_DebugGetGod(void);
 extern void PortPpuMzm_DebugGetEquipment(unsigned* outBeams, unsigned* outMisc);
 extern void PortPpuMzm_DebugToggleBeam(unsigned bit);
 extern void PortPpuMzm_DebugToggleMisc(unsigned bit);
@@ -713,6 +719,51 @@ static bool GetActiveChozoTarget(uint8_t* outArea, uint8_t* outX, uint8_t* outY)
 
 extern void Port_Config_Save(void);
 
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
+/* Equipment bits per row of the STATUS page's two columns, in draw order --
+ * mirrors the beams[]/suits[] tables in RenderStatusView. Used by the debug
+ * tap-to-toggle in Port_BottomUI_HandleTouchDrag. */
+static const uint8_t kStatusBeamBits[6] = { 1u<<0, 1u<<1, 1u<<2, 1u<<3, 1u<<4, 1u<<7 };
+static const uint8_t kStatusSuitBits[8] = { 1u<<0, 1u<<1, 1u<<2, 1u<<3, 1u<<4, 1u<<5, 1u<<6, 1u<<7 };
+static bool sDebugStatsFull = false; /* the max<->min button's toggle state */
+
+/* Two small icon buttons to the right of the STATUS title (debug only):
+ *   0: vida+municion a tope <-> al minimo (up/down arrows)
+ *   1: god mode toggle (filled/tinted when on)
+ * Geometry shared with the touch handler. */
+#define STATUS_BTN_Y  27
+#define STATUS_BTN_W  16
+#define STATUS_BTN_H  14
+static const float kStatusBtnX[2] = { 274.0f, 294.0f };
+
+static int DebugStatusBtnHit(int x, int y) {
+    if (y < STATUS_BTN_Y || y > STATUS_BTN_Y + STATUS_BTN_H) return -1;
+    for (int i = 0; i < 2; ++i)
+        if ((float)x >= kStatusBtnX[i] && (float)x <= kStatusBtnX[i] + STATUS_BTN_W) return i;
+    return -1;
+}
+
+static void DrawStatusDebugButtons(void) {
+    const bool god = PortPpuMzm_DebugGetGod();
+    for (int i = 0; i < 2; ++i) {
+        float bx = kStatusBtnX[i], by = (float)STATUS_BTN_Y;
+        bool on = (i == 0) ? sDebugStatsFull : god;
+        C2D_DrawRectSolid(bx, by, 0.9f, (float)STATUS_BTN_W, (float)STATUS_BTN_H,
+                          on ? C2D_Color32(110, 85, 20, 255) : C2D_Color32(24, 34, 52, 255));
+        C2D_DrawRectSolid(bx, by, 0.91f, (float)STATUS_BTN_W, 1.0f, C2D_Color32(60, 90, 140, 255));
+        float mx = bx + STATUS_BTN_W * 0.5f, my = by + STATUS_BTN_H * 0.5f;
+        uint32_t c = on ? C2D_Color32(255, 220, 90, 255) : C2D_Color32(150, 190, 230, 255);
+        if (i == 0) {
+            C2D_DrawTriangle(mx - 4.0f, my - 1.5f, c, mx + 4.0f, my - 1.5f, c, mx, my - 6.0f, c, 0.92f);
+            C2D_DrawTriangle(mx - 4.0f, my + 1.5f, c, mx + 4.0f, my + 1.5f, c, mx, my + 6.0f, c, 0.92f);
+        } else {
+            C2D_DrawTriangle(mx, my - 6.0f, c, mx - 6.0f, my, c, mx + 6.0f, my, c, 0.92f);
+            C2D_DrawTriangle(mx, my + 6.0f, c, mx - 6.0f, my, c, mx + 6.0f, my, c, 0.92f);
+        }
+    }
+}
+#endif /* PORT_DEBUG_TOOLS_ACTIVE */
+
 void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
     /* Any stylus contact can move something (pan, button, modal); redraw the
      * next frame instead of waiting for the throttle. */
@@ -807,8 +858,10 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
         /* Map Canvas Dragging Area (Y: 48 to 236, X: 4 to 316) */
         if (y >= 48 && y <= 236 && x >= 4 && x <= 316) {
 #ifdef PORT_DEBUG_TOOLS_ACTIVE
-            /* Persistent WARP button tap toggle (bottom right of map canvas) */
-            if (isNewTap && x >= 236 && x <= 312 && y >= 204 && y <= 232) {
+            /* Persistent WARP button tap toggle (bottom right of map canvas;
+             * kept in sync with warpBtn* in RenderMapView -- 58x16 flush to
+             * the 312/232 corner, with a couple px of slack). */
+            if (isNewTap && x >= 252 && x <= 312 && y >= 214 && y <= 232) {
                 sDebugMapWarpArmed = !sDebugMapWarpArmed;
                 sLastTouchX = -1;
                 sLastTouchY = -1;
@@ -888,6 +941,67 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
             sShowCollectiblesModal = false;
             return;
         }
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
+        if (Port_BottomUI_DebugTabVisible()) {
+            /* Title-bar icon buttons */
+            int btn = DebugStatusBtnHit(x, y);
+            if (btn == 0) {
+                sDebugStatsFull = !sDebugStatsFull;
+                PortPpuMzm_DebugSetAmmo(sDebugStatsFull);
+                Port_BottomUI_MarkDirty();
+                return;
+            }
+            if (btn == 1) {
+                bool g = !PortPpuMzm_DebugGetGod();
+                PortPpuMzm_DebugSetGod(g);
+                Port_BottomUI_MarkDirty();
+                return;
+            }
+            /* Beams & bombs column: rows at py = 92 + i*11, x 8..156 */
+            if (x >= 8 && x <= 156) {
+                for (int i = 0; i < 6; ++i) {
+                    int py = 92 + i * 11;
+                    if (y >= py && y <= py + 11) {
+                        PortPpuMzm_DebugToggleBeam(kStatusBeamBits[i]);
+                        Port_BottomUI_MarkDirty();
+                        return;
+                    }
+                }
+            }
+            /* Suits & movement column: rows at py = 91 + i*9, x 164..312 */
+            if (x >= 164 && x <= 312) {
+                for (int i = 0; i < 8; ++i) {
+                    int py = 91 + i * 9;
+                    if (y >= py && y <= py + 9) {
+                        PortPpuMzm_DebugToggleMisc(kStatusSuitBits[i]);
+                        Port_BottomUI_MarkDirty();
+                        return;
+                    }
+                }
+            }
+            /* Downloaded-maps card: tap an area box to reveal its map. */
+            if (y >= 188 && y <= 206) {
+                for (int i = 0; i < 4; ++i) {
+                    int bx = 14 + i * 73;
+                    if (x >= bx && x <= bx + 68) {
+                        PortPpuMzm_DebugRevealAreaMap(i);
+                        Port_BottomUI_MarkDirty();
+                        return;
+                    }
+                }
+            }
+            if (y >= 210 && y <= 228) {
+                for (int i = 4; i < 7; ++i) {
+                    int bx = 14 + (i - 4) * 98;
+                    if (x >= bx && x <= bx + 92) {
+                        PortPpuMzm_DebugRevealAreaMap(i);
+                        Port_BottomUI_MarkDirty();
+                        return;
+                    }
+                }
+            }
+        }
+#endif
         if (x >= 180 && x <= 310 && y >= 166 && y <= 186) {
             sShowCollectiblesModal = true;
             return;
@@ -2453,11 +2567,12 @@ static void RenderMapView(void) {
     }
 
 #ifdef PORT_DEBUG_TOOLS_ACTIVE
-    /* Persistent Tap-to-Warp toggle button on the map canvas */
-    const float warpBtnX = 236.0f;
-    const float warpBtnY = 206.0f;
-    const float warpBtnW = 74.0f;
-    const float warpBtnH = 24.0f;
+    /* Persistent Tap-to-Warp toggle button on the map canvas. Sized to the
+     * text ("WARP: OFF" == 8 chars * 6px) with a small margin. */
+    const float warpBtnW = 58.0f;
+    const float warpBtnH = 16.0f;
+    const float warpBtnX = 312.0f - warpBtnW;
+    const float warpBtnY = 232.0f - warpBtnH;
     uint32_t warpBtnBg = sDebugMapWarpArmed
         ? (((sFrameCounter & 0x10) != 0) ? C2D_Color32(190, 140, 15, 255) : C2D_Color32(140, 95, 10, 255))
         : C2D_Color32(16, 24, 40, 230);
@@ -2470,7 +2585,7 @@ static void RenderMapView(void) {
 
     C2D_DrawRectSolid(warpBtnX - 1.0f, warpBtnY - 1.0f, 0.94f, warpBtnW + 2.0f, warpBtnH + 2.0f, warpBtnBorder);
     C2D_DrawRectSolid(warpBtnX, warpBtnY, 0.95f, warpBtnW, warpBtnH, warpBtnBg);
-    DrawTextCentered(warpBtnX + warpBtnW / 2.0f, warpBtnY + 5.0f, 1.0f,
+    DrawTextCentered(warpBtnX + warpBtnW / 2.0f, warpBtnY + (warpBtnH - 8.0f) / 2.0f, 1.0f,
                      sDebugMapWarpArmed ? "WARP: ON" : "WARP: OFF", warpBtnTextCol);
 #endif
 }
@@ -2494,6 +2609,10 @@ static void RenderStatusView(void) {
         "SAMUS ARAN - ESTADO Y EQUIPAMIENTO"
     };
     DrawText(12.0f, 30.0f, 1.0f, titles[lang], C2D_Color32(100, 220, 255, 255));
+
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
+    if (Port_BottomUI_DebugTabVisible()) DrawStatusDebugButtons();
+#endif
 
     /* 1. Header Resource Card (X: 8, Y: 44 to 72, W: 304, H: 28) */
     C2D_DrawRectSolid(8.0f, 44.0f, 0.45f, 304.0f, 30.0f, C2D_Color32(20, 26, 40, 255));
