@@ -979,12 +979,15 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
                     }
                 }
             }
-            /* Downloaded-maps card: tap an area box to reveal its map. */
+            /* Downloaded-maps card: tap an area box to reveal its map. The
+             * MAP tab caches the decompressed tiles of the last non-current
+             * area it drew; that copy is now stale. */
             if (y >= 188 && y <= 206) {
                 for (int i = 0; i < 4; ++i) {
                     int bx = 14 + i * 73;
                     if (x >= bx && x <= bx + 68) {
                         PortPpuMzm_DebugRevealAreaMap(i);
+                        sCachedOtherArea = 0xFF;
                         Port_BottomUI_MarkDirty();
                         return;
                     }
@@ -995,6 +998,7 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
                     int bx = 14 + (i - 4) * 98;
                     if (x >= bx && x <= bx + 92) {
                         PortPpuMzm_DebugRevealAreaMap(i);
+                        sCachedOtherArea = 0xFF;
                         Port_BottomUI_MarkDirty();
                         return;
                     }

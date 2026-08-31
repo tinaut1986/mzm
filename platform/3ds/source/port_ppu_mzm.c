@@ -1180,35 +1180,23 @@ int PortPpuMzm_DebugRequestWarpToMapTile(int area, int tileX, int tileY) {
  * sequence MinimapCheckOnTransition uses (copy the raw map over it, then
  * MinimapSetDownloadedTiles), or the tiles the player is standing among
  * would stay dark until they walked to another area and back. */
+/* Set the per-area "map downloaded" bit -- same effect as touching a map
+ * station in-game: the area outline appears, but tiles Samus has actually
+ * walked stay the only ones drawn as explored. Deliberately does NOT fill
+ * gVisitedMinimapTiles (that painted the whole area as personally explored
+ * -- the "green squares" a map station never produces). */
 void PortPpuMzm_DebugRevealAllMaps(void) {
-    /* [area][row]: with USE_EWRAM_SYMBOLS off (this build), structs/minimap.h
-     * defines gVisitedMinimapTiles as a two-dimensional hardcoded-pointer
-     * cast, not the flat one-dimensional symbol the other variant declares. */
-    for (int a = 0; a < MAX_AMOUNT_OF_AREAS; ++a) {
-        for (int row = 0; row < MINIMAP_SIZE; ++row) {
-            gVisitedMinimapTiles[a][row] = 0xFFFFFFFFu;
-        }
-    }
     gEquipment.downloadedMapStatus = 0xFF;
-
-    memcpy(gDecompressedMinimapVisitedTiles, gDecompressedMinimapData,
-           MINIMAP_SIZE * MINIMAP_SIZE * sizeof(u16));
     MinimapSetDownloadedTiles(gCurrentArea, gDecompressedMinimapVisitedTiles);
-
     Port_DebugLog("DEBUG: all maps revealed");
 }
 
-/* Reveal just one area's map (the STATUS-page per-area tap). */
+/* One area (the STATUS-page per-area tap). */
 void PortPpuMzm_DebugRevealAreaMap(int area) {
     if (area < 0 || area >= MAX_AMOUNT_OF_AREAS) return;
-    for (int row = 0; row < MINIMAP_SIZE; ++row)
-        gVisitedMinimapTiles[area][row] = 0xFFFFFFFFu;
     gEquipment.downloadedMapStatus |= (u8)(1u << area);
-    if (area == gCurrentArea) {
-        memcpy(gDecompressedMinimapVisitedTiles, gDecompressedMinimapData,
-               MINIMAP_SIZE * MINIMAP_SIZE * sizeof(u16));
+    if (area == gCurrentArea)
         MinimapSetDownloadedTiles(gCurrentArea, gDecompressedMinimapVisitedTiles);
-    }
     Port_DebugLog("DEBUG: area map revealed");
 }
 
