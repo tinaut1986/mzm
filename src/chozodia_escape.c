@@ -309,6 +309,14 @@ static void ChozodiaEscapeProcessOam_1(void)
         previousSlot = nextSlot;
 
         src = CHOZODIA_ESCAPE_DATA.oamPointers[i];
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+        /* oamPointers[] entries can still hold a raw GBA ROM address here:
+         * ChozodiaEscapeShipBlowingUp only resolves indices 0..MAX-2, and
+         * stale values from earlier stages are never re-resolved. Resolve at
+         * this single choke point so every caller is covered; GBA_RESOLVE is
+         * idempotent on already-resolved host pointers. */
+        src = GBA_RESOLVE(src);
+#endif
         part = *src++;
         nextSlot = previousSlot + (part & 0xFF);
 
@@ -359,6 +367,9 @@ static void ChozodiaEscapeProcessOam_2(void)
     if (CHOZODIA_ESCAPE_DATA.oamTypes[CHOZODIA_ESCAPE_OAM_BLUE_SHIP] != CHOZODIA_ESCAPE_OAM_TYPE_NONE)
     {
         src = CHOZODIA_ESCAPE_DATA.oamPointers[CHOZODIA_ESCAPE_OAM_BLUE_SHIP];
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+        src = GBA_RESOLVE(src);
+#endif
         nextSlot = *src++;
         nextSlot &= 0xFF;
 
@@ -386,6 +397,9 @@ static void ChozodiaEscapeProcessOam_2(void)
             continue;
 
         src = CHOZODIA_ESCAPE_DATA.oamPointers[i];
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+        src = GBA_RESOLVE(src);
+#endif
         part = *src++;
         nextSlot += (part & 0xFF);
 
@@ -904,6 +918,13 @@ static u8 ChozodiaEscapeShipBlowingUp(void)
         {
             pOamBase = sChozodiaEscape_5ca0c4[i];
         }
+
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+        /* Elements of sChozodiaEscape_5ca0c4[] are raw GBA ROM pointers baked
+         * into the table data; only the table symbol itself is resolved by
+         * the ROM shim. Translate before dereferencing pOam->timer/pFrame. */
+        pOamBase = GBA_RESOLVE(pOamBase);
+#endif
 
         pOam = &pOamBase[CHOZODIA_ESCAPE_DATA.oamFrames[i]];
 
