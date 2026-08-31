@@ -68,6 +68,16 @@ void PlatformGpu3DS_ToggleRecording(void);
 void PlatformGpu3DS_RecordTick(void);
 bool PlatformGpu3DS_IsRecording(void);
 
+/* Scene-recorder preset, cycled live from the debug menu (tap the right edge
+ * of the SCENE RECORDER cell). Selects sample rate (every Nth frame) and
+ * whether samples stream to SD or are held in a RAM buffer flushed on stop.
+ * Cycling is ignored while a recording is in progress. */
+unsigned PlatformGpu3DS_CycleRecordPreset(void);
+const char* PlatformGpu3DS_RecordPresetLabel(void);
+/* Basename of the last buffered-mode flush (e.g. "mzm-rec.bin" or
+ * "mzm-rec-2.bin"); "" before the first one. */
+const char* PlatformGpu3DS_RecordLastFile(void);
+
 /* Perf-only frame-time recorder (L+R+A, issue #20): samples every emulated
  * frame's duration + OAM census into a RAM buffer with no SD I/O while
  * running (unlike the full recorder above, which slows the game down);

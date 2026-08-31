@@ -7,6 +7,7 @@
 
 #include "platform_gpu_3ds.h"
 #include "port_debug_tools.h"
+#include "port_debug_log.h"
 
 /* GBA & MZM minimap and state globals */
 extern uint16_t gDecompressedMinimapVisitedTiles[32 * 32];
@@ -2886,6 +2887,20 @@ static void DrawDebugCell(int index, const char* label, const char* state, uint3
     if (state) DrawText(x + 6.0f, y + 13.0f, 1.0f, state, accent);
 }
 
+/* Marks the right ~48px of a cell as a second tap target (DebugCellRightZoneHit):
+ * a divider plus a right-pointing chevron. Drawn over the cell after it. */
+static void DrawDebugCellCycleMark(int index) {
+    float x = DBGTOOL_CELL_X(index & 1) + (float)DBGTOOL_COL_W;
+    float y = DBGTOOL_CELL_Y(index >> 1);
+    float cy = y + (float)DBGTOOL_CELL_H * 0.5f;
+    const uint32_t c = C2D_Color32(255, 215, 0, 255); /* same yellow as submenu cells */
+    C2D_DrawRectSolid(x - 48.0f, y + 3.0f, 0.92f, 1.0f, (float)DBGTOOL_CELL_H - 6.0f,
+                      C2D_Color32(90, 110, 150, 255));
+    C2D_DrawTriangle(x - 26.0f, cy - 5.0f, c,
+                     x - 26.0f, cy + 5.0f, c,
+                     x - 18.0f, cy,        c, 0.92f);
+}
+
 /* Index of the grid cell a tap landed on, or -1. */
 static int DebugCellHit(int x, int y, int count) {
     int col;
@@ -2954,8 +2969,13 @@ static void RenderDebugToolsModal(int lang) {
                   (lang == 6) ? "VOLCAR" : "DUMP", colAct);
     DrawDebugCell(1, (lang == 6) ? "MARCA EN EL LOG" : "LOG MARKER",
                   (lang == 6) ? "MARCAR" : "MARK", colAct);
+    /* When stopped, the state line shows the selected capture preset in
+     * yellow (tap the cell's right edge to cycle it); when recording, it
+     * shows ACTIVO. */
     DrawDebugCell(2, (lang == 6) ? "GRAB. ESCENA" : "SCENE RECORDER",
-                  rec ? onTxt : offTxt, rec ? colOn : colAct);
+                  rec ? onTxt : PlatformGpu3DS_RecordPresetLabel(),
+                  rec ? colOn : colMenu);
+    if (!rec) DrawDebugCellCycleMark(2);
     DrawDebugCell(3, (lang == 6) ? "GRAB. RENDIMIENTO" : "PERF RECORDER",
                   perf ? onTxt : offTxt, perf ? colOn : colAct);
     DrawDebugCell(4, (lang == 6) ? "ATLAS GPU" : "GPU ATLAS",
@@ -2968,14 +2988,16 @@ static void RenderDebugToolsModal(int lang) {
                   (lang == 6) ? "REVELAR" : "REVEAL", colMenu);
 
     /* The two log knobs. Nothing is written to the SD card while LOG is OFF
-     * even in a debug build (see port_debug_log.h). LOG cycles the stream
-     * filter -- OFF / ALL / GPU / AUDIO / PERF -- so a session captures only
-     * the stream it is chasing; BUFFER is "stop holding lines in RAM" for a
-     * hang. */
+     * even in a debug build (see port_debug_log.h). Tapping the middle of
+     * LOG A SD toggles ON/OFF (restoring the last stream); its right edge
+     * cycles the stream filter -- OFF / ALL / GPU / AUDIO / PERF -- so a
+     * session captures only the stream it is chasing. BUFFER is "stop
+     * holding lines in RAM" for a hang. */
     const bool logOn = Port_DebugLog_IsEnabled();
     const bool logBuf = Port_DebugLog_IsBuffered();
     DrawDebugCell(9, (lang == 6) ? "LOG A SD" : "SD LOGGING",
                   Port_DebugLog_ModeName(), logOn ? colOn : colAct);
+    DrawDebugCellCycleMark(9);
     DrawDebugCell(10, (lang == 6) ? "LOG EN BUFFER" : "LOG BUFFERING",
                   logBuf ? onTxt : offTxt, logBuf ? colOn : colAct);
 
@@ -2984,12 +3006,38 @@ static void RenderDebugToolsModal(int lang) {
     }
 }
 
+/* True when the tap is in the right ~48px of grid cell `cell` -- used for
+ * cells that carry a "tap here to cycle an option" affordance on that edge. */
+static bool DebugCellRightZoneHit(int x, int cell) {
+    float cx = DBGTOOL_CELL_X(cell & 1);
+    return (float)x >= cx + (float)DBGTOOL_COL_W - 48.0f;
+}
+
 static bool HandleDebugToolsModalTouch(int x, int y) {
     if (DebugCloseHit(x, y)) {
         sShowDebugToolsModal = false;
         return true;
     }
-    switch (DebugCellHit(x, y, DBGTOOL_COUNT)) {
+    int cell = DebugCellHit(x, y, DBGTOOL_COUNT);
+    /* Cells with a second tap target on their right edge (marked with the
+     * chevron): tapping there cycles an option, the middle does the main
+     * action. */
+    if (cell == 2 && !PlatformGpu3DS_IsRecording() && DebugCellRightZoneHit(x, 2)) {
+        /* SCENE RECORDER: right edge cycles the capture preset. */
+        PlatformGpu3DS_CycleRecordPreset();
+        DebugToolsSetMsg(PlatformGpu3DS_RecordPresetLabel());
+        return true;
+    }
+    if (cell == 9 && DebugCellRightZoneHit(x, 9)) {
+        /* SD LOGGING: right edge cycles the stream filter. */
+        Port_DebugLog_CycleMode();
+        if (Port_DebugLog_IsEnabled()) Port_DebugLog("USER MARK: SD logging enabled");
+        char msg[24];
+        snprintf(msg, sizeof(msg), "LOG SD: %s", Port_DebugLog_ModeName());
+        DebugToolsSetMsg(msg);
+        return true;
+    }
+    switch (cell) {
         case 0:
             PlatformGpu3DS_DumpScreens();
             DebugToolsSetMsg("DUMP -> sdmc:/3ds/");
@@ -2998,10 +3046,13 @@ static bool HandleDebugToolsModalTouch(int x, int y) {
             Port_DebugLog("USER MARK: debug tools menu");
             DebugToolsSetMsg("MARCA EN EL LOG");
             break;
-        case 2:
+        case 2: {
             PlatformGpu3DS_ToggleRecording();
-            DebugToolsSetMsg(PlatformGpu3DS_IsRecording() ? "REC ON" : "REC OFF");
+            const char* last = PlatformGpu3DS_RecordLastFile();
+            DebugToolsSetMsg(PlatformGpu3DS_IsRecording() ? "REC ON"
+                             : (last && last[0]) ? last : "REC OFF");
             break;
+        }
         case 3:
             PlatformGpu3DS_TogglePerfRecording();
             DebugToolsSetMsg(PlatformGpu3DS_IsPerfRecording() ? "PERF ON" : "PERF OFF");
@@ -3030,8 +3081,17 @@ static bool HandleDebugToolsModalTouch(int x, int y) {
             DebugToolsSetMsg("MAPAS REVELADOS");
             break;
         case 9: {
-            Port_DebugLog_CycleMode();
-            if (Port_DebugLog_IsEnabled()) Port_DebugLog("USER MARK: SD logging enabled");
+            /* Middle tap = ON/OFF. Turning off remembers the stream so
+             * turning back on restores it (the right edge picks a stream). */
+            static PortDebugLogMode sLogModeBeforeOff = PORT_LOG_MODE_ALL;
+            if (Port_DebugLog_IsEnabled()) {
+                sLogModeBeforeOff = Port_DebugLog_GetMode();
+                Port_DebugLog_SetMode(PORT_LOG_MODE_NONE);
+            } else {
+                Port_DebugLog_SetMode(sLogModeBeforeOff == PORT_LOG_MODE_NONE
+                                          ? PORT_LOG_MODE_ALL : sLogModeBeforeOff);
+                Port_DebugLog("USER MARK: SD logging enabled");
+            }
             char msg[24];
             snprintf(msg, sizeof(msg), "LOG SD: %s", Port_DebugLog_ModeName());
             DebugToolsSetMsg(msg);
