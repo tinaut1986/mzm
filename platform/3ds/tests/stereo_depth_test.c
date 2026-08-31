@@ -361,12 +361,50 @@ static void TestSamusOnTopSplitsMerge(void) {
     }
 }
 
+/* ------------------------------------------------------------------ *
+ * Test 7: BgTierForPriority is the BgTier mapping keyed on a raw priority.
+ *
+ * A sprite that matches a BG's priority to composite with it (the boss
+ * statues) is placed with this, so it must agree with BgTier for a BG that
+ * actually has that priority -- overlay rule aside -- with and without the
+ * samusOnTopOfBackgrounds split.
+ * ------------------------------------------------------------------ */
+static void TestBgTierForPriorityMatchesBgTier(void) {
+    printf("policy: BgTierForPriority tracks BgTier for the same priority\n");
+    for (int flag = 0; flag < 2; ++flag) {
+        for (int p = 0; p < 4; ++p) {
+            PortStereoDepthState st;
+            memset(&st, 0, sizeof(st));
+            st.inGameplay = true;
+            st.samusOnTopOfBackgrounds = (flag != 0);
+            /* Put that priority on BG1 (never the BG0 overlay special case). */
+            st.priority[1] = (uint8_t)p;
+            CHECK(PortStereoDepth_BgTierForPriority(&st, p) ==
+                      PortStereoDepth_BgTier(&st, 1),
+                  "flag %d priority %d: %s vs %s", flag, p,
+                  TierName(PortStereoDepth_BgTierForPriority(&st, p)),
+                  TierName(PortStereoDepth_BgTier(&st, 1)));
+        }
+    }
+    /* The split still shows through: priority 1 differs by the flag. */
+    PortStereoDepthState a, b;
+    memset(&a, 0, sizeof(a));
+    memset(&b, 0, sizeof(b));
+    a.inGameplay = b.inGameplay = true;
+    b.samusOnTopOfBackgrounds = true;
+    CHECK(PortStereoDepth_BgTierForPriority(&a, 1) == PORT_TIER_BG_PLAY,
+          "no flag: priority 1 -> play plane");
+    CHECK(PortStereoDepth_BgTierForPriority(&b, 1) == PORT_TIER_BG_MID,
+          "flag: priority 1 -> mid plane");
+}
+
 int main(void) {
     TestNoContradictionExhaustive();
     TestDepthIsPriorityOnly();
     TestDepthIsPerLayer();
     TestCutsceneSpriteNotBehindBackdrop();
     TestSamusOnTopSplitsMerge();
+    TestBgTierForPriorityMatchesBgTier();
 
     printf("\n%d checks, %d failures\n", sChecks, sFailures);
     if (sFailures > 20) printf("(only the first 20 failures shown)\n");

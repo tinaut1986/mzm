@@ -3,6 +3,10 @@
 #include "syscalls.h"
 #include "gba.h"
 #include "macros.h"
+
+#ifdef __3DS__
+#include "port_sprite_depth_oam.h" /* PORT_SPRITE_DEPTH_* codes */
+#endif
 #include "fixed_point.h"
 #include "sprites_ai/sprites.h"
 
@@ -1837,11 +1841,14 @@ void SpriteDrawAll_HighPriority(void)
     u32 notPlaying;
 
 #ifdef __3DS__
-    /* First sprite pass of the frame: reset the overlay-text OAM mask so it
-     * only ever describes this frame's banners (see port_overlay_text_oam.c). */
+    /* First sprite pass of the frame: reset the per-frame OAM depth tags so
+     * they only ever describe this frame's sprites (see
+     * port_overlay_text_oam.c / port_sprite_depth_oam.c). */
     {
         extern void Port_OverlayText_BeginFrame(void);
+        extern void Port_SpriteDepth_BeginFrame(void);
         Port_OverlayText_BeginFrame();
+        Port_SpriteDepth_BeginFrame();
     }
 #endif
 
@@ -2361,6 +2368,34 @@ void SpriteDraw(struct SpriteData* pSprite, s32 slot)
         {
             extern void Port_OverlayText_NoteBannerOam(int firstSlot, int endSlot);
             Port_OverlayText_NoteBannerOam(prevSlot, gNextOamSlot);
+        }
+
+        /* Per-type stereo depth overrides, authored in
+         * platform/3ds/source/port_sprite_depth.inc (X-macro; keyed by
+         * sprite id + primary/secondary). Absent file -> just the
+         * terminator, so the loop never matches. See port_sprite_depth_oam.c
+         * for the codes. */
+        {
+            static const struct { u16 id; u8 secondary; s8 code; } sDepthOverrides[] = {
+#if defined(__has_include)
+#  if __has_include("port_sprite_depth.inc")
+#    define PORT_SPRITE_DEPTH(id_, sec_, code_) { (u16)(id_), (u8)(sec_), (s8)(code_) },
+#    include "port_sprite_depth.inc"
+#    undef PORT_SPRITE_DEPTH
+#  endif
+#endif
+                { 0xFFFFu, 0u, (s8)PORT_SPRITE_DEPTH_NONE } /* terminator */
+            };
+            u8 sec = secondary != 0;
+            for (u32 k = 0; k < ARRAY_SIZE(sDepthOverrides); k++)
+            {
+                if (sDepthOverrides[k].id == spriteId && sDepthOverrides[k].secondary == sec)
+                {
+                    extern void Port_SpriteDepth_NoteSlots(int firstSlot, int endSlot, int code);
+                    Port_SpriteDepth_NoteSlots(prevSlot, gNextOamSlot, sDepthOverrides[k].code);
+                    break;
+                }
+            }
         }
     }
 #endif

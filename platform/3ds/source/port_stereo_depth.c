@@ -127,7 +127,10 @@ int PortStereoDepth_BgTier(const PortStereoDepthState* st, int bgIndex) {
      * forcing that to the nearest tier shoved the statue in front of
      * Samus the moment the slider came up. */
     if (bgIndex == 0 && !st->inGameplay) return PORT_TIER_BG_OVERLAY;
+    return PortStereoDepth_BgTierForPriority(st, st->priority[bgIndex]);
+}
 
+int PortStereoDepth_BgTierForPriority(const PortStereoDepthState* st, int priority) {
     /* Priorities 0 and 1 share the play plane. Splitting them for EVERY room
      * was tried and reordered which tiles read as wrong: two layers the room
      * composites as one flat image were pushed 0.7px apart.
@@ -140,9 +143,14 @@ int PortStereoDepth_BgTier(const PortStereoDepthState* st, int bgIndex) {
      * put: it is the room's only real foreground layer. Everything else is
      * unchanged, so a normal room still gets the merge.
      *
+     * Split out from BgTier so a sprite that deliberately matches a BG's
+     * priority (BossStatue: bgPriority = BG1's priority, so the sprite face
+     * composites with the BG that carries the rest of the statue) can land
+     * on that same plane instead of the one forced world-sprite tier.
+     *
      * Other deliberate exceptions go in the curated list (port_layer_fixes.h),
      * not here. */
-    switch (st->priority[bgIndex]) {
+    switch (priority & 3) {
         case 0:  return PORT_TIER_BG_PLAY; /* -0.3f */
         case 1:  return st->samusOnTopOfBackgrounds ? PORT_TIER_BG_MID   /* -2.0f */
                                                     : PORT_TIER_BG_PLAY; /* -0.3f */

@@ -16,6 +16,7 @@
 #include "port_gpu_renderer.h"
 #include "port_stereo_depth.h"
 #include "port_layer_fixes.h"
+#include "port_sprite_depth_oam.h"
 #include "platform_gpu_3ds.h"
 #include "port_debug_tools.h" /* PORT_DEBUG_TOOLS_ACTIVE */
 
@@ -1295,11 +1296,23 @@ static void CollectSprite(int oamIndex, bool obj1D) {
              * flat text into Samus. */
             extern int Port_OverlayText_IsSlot(int oamIndex);
             bool isOverlayText = gMainGameMode == 4 && Port_OverlayText_IsSlot(oamIndex);
+            /* Per-sprite depth override (port_sprite_depth_oam.c): a few
+             * sprite TYPES are authored to composite with a specific BG --
+             * the Kraid/Ridley statues set their OAM priority to BG1's so
+             * the sprite face blends with the BG that carries the top of
+             * the head. SpriteDraw tags their slots; honour that here
+             * instead of the one forced world-sprite plane. */
+            int spriteDepthCode = (gMainGameMode == 4) ? Port_SpriteDepth_SlotCode(oamIndex)
+                                                       : PORT_SPRITE_DEPTH_NONE;
             int depthTier;
             if (inMapOrPauseScreen) {
                 depthTier = (priority == 0) ? 5 : 6;
             } else if (isRealHud || isOverlayText) {
                 depthTier = 5;
+            } else if (spriteDepthCode == PORT_SPRITE_DEPTH_BG_COPLANAR) {
+                depthTier = PortStereoDepth_BgTierForPriority(&sDepthState, priority);
+            } else if (spriteDepthCode >= 0) {
+                depthTier = spriteDepthCode;
             } else {
                 /* World sprites: parallax must follow the same ordering the
                  * 2D compositor already uses. An OBJ of priority p draws in

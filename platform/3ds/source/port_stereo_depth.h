@@ -81,6 +81,11 @@ enum {
  * rule (menus and dialogs genuinely do put text on BG0). */
 int PortStereoDepth_BgTier(const PortStereoDepthState* st, int bgIndex);
 
+/* The BG-tier mapping keyed on a raw BGCNT priority (0-3) rather than a BG
+ * index -- no overlay rule. For a sprite that deliberately sets its OAM
+ * priority to match a BG it must composite with. */
+int PortStereoDepth_BgTierForPriority(const PortStereoDepthState* st, int priority);
+
 /* Depth tier for a sprite of the given OAM priority. */
 int PortStereoDepth_ObjTier(const PortStereoDepthState* st, int objPriority);
 
