@@ -7,6 +7,7 @@
 
 #include "platform_gpu_3ds.h"
 #include "port_debug_tools.h"
+#include "port_debug_log.h"
 
 /* GBA & MZM minimap and state globals */
 extern uint16_t gDecompressedMinimapVisitedTiles[32 * 32];
@@ -2886,6 +2887,45 @@ static void DrawDebugCell(int index, const char* label, const char* state, uint3
     if (state) DrawText(x + 6.0f, y + 13.0f, 1.0f, state, accent);
 }
 
+/* The right ~48px of a cell is a start/stop side button (DebugCellRightZoneHit):
+ * a divider, a tinted panel, and either a play triangle (idle) or a stop
+ * square (running). The button's colour is the only running indicator -- the
+ * cell's own label/state stays put. Drawn over the cell after it. */
+static void DrawDebugCellSideButton(int index, bool running) {
+    float xr = DBGTOOL_CELL_X(index & 1) + (float)DBGTOOL_COL_W;
+    float y = DBGTOOL_CELL_Y(index >> 1);
+    float cy = y + (float)DBGTOOL_CELL_H * 0.5f;
+    float bx = xr - 46.0f;                 /* panel left edge */
+    const uint32_t fg   = running ? C2D_Color32(255, 90, 90, 255)   /* red = tap to stop */
+                                  : C2D_Color32(120, 230, 140, 255);/* green = tap to start */
+    const uint32_t bg   = running ? C2D_Color32(70, 22, 22, 255)
+                                  : C2D_Color32(22, 44, 30, 255);
+    C2D_DrawRectSolid(bx - 2.0f, y + 3.0f, 0.92f, 1.0f, (float)DBGTOOL_CELL_H - 6.0f,
+                      C2D_Color32(90, 110, 150, 255));
+    C2D_DrawRectSolid(bx, y + 3.0f, 0.92f, 44.0f, (float)DBGTOOL_CELL_H - 6.0f, bg);
+    float mx = bx + 22.0f;                 /* glyph centre */
+    if (running) {
+        C2D_DrawRectSolid(mx - 5.0f, cy - 5.0f, 0.93f, 10.0f, 10.0f, fg);
+    } else {
+        C2D_DrawTriangle(mx - 4.0f, cy - 6.0f, fg,
+                         mx - 4.0f, cy + 6.0f, fg,
+                         mx + 6.0f, cy,        fg, 0.93f);
+    }
+}
+
+/* Stream the LOG A SD cell has selected (never NONE -- on/off is the side
+ * button). Middle taps cycle it; when logging is on it is applied live. */
+static PortDebugLogMode sLogSel = PORT_LOG_MODE_ALL;
+
+static const char* DebugLogSelName(void) {
+    switch (sLogSel) {
+        case PORT_LOG_MODE_GPU:   return "GPU";
+        case PORT_LOG_MODE_AUDIO: return "AUDIO";
+        case PORT_LOG_MODE_PERF:  return "PERF";
+        default:                  return "ALL";
+    }
+}
+
 /* Index of the grid cell a tap landed on, or -1. */
 static int DebugCellHit(int x, int y, int count) {
     int col;
@@ -2954,8 +2994,12 @@ static void RenderDebugToolsModal(int lang) {
                   (lang == 6) ? "VOLCAR" : "DUMP", colAct);
     DrawDebugCell(1, (lang == 6) ? "MARCA EN EL LOG" : "LOG MARKER",
                   (lang == 6) ? "MARCAR" : "MARK", colAct);
+    /* Middle taps the state line to cycle the capture preset (always shown
+     * in yellow); the side button starts/stops -- its colour is the running
+     * indicator, so the cell text never changes. */
     DrawDebugCell(2, (lang == 6) ? "GRAB. ESCENA" : "SCENE RECORDER",
-                  rec ? onTxt : offTxt, rec ? colOn : colAct);
+                  PlatformGpu3DS_RecordPresetLabel(), colMenu);
+    DrawDebugCellSideButton(2, rec);
     DrawDebugCell(3, (lang == 6) ? "GRAB. RENDIMIENTO" : "PERF RECORDER",
                   perf ? onTxt : offTxt, perf ? colOn : colAct);
     DrawDebugCell(4, (lang == 6) ? "ATLAS GPU" : "GPU ATLAS",
@@ -2967,15 +3011,17 @@ static void RenderDebugToolsModal(int lang) {
     DrawDebugCell(8, (lang == 6) ? "REVELAR MAPAS" : "REVEAL MAPS",
                   (lang == 6) ? "REVELAR" : "REVEAL", colMenu);
 
-    /* The two log knobs. Nothing is written to the SD card while LOG is OFF
-     * even in a debug build (see port_debug_log.h). LOG cycles the stream
-     * filter -- OFF / ALL / GPU / AUDIO / PERF -- so a session captures only
-     * the stream it is chasing; BUFFER is "stop holding lines in RAM" for a
-     * hang. */
+    /* Nothing is written to the SD card while LOG is stopped even in a debug
+     * build (see port_debug_log.h). Tapping the middle of LOG A SD cycles
+     * the stream filter -- OFF / ALL / GPU / AUDIO / PERF (the label keeps
+     * showing the pick); the side button starts/stops logging and its
+     * colour is the running indicator. BUFFER is "stop holding lines in
+     * RAM" for a hang. */
     const bool logOn = Port_DebugLog_IsEnabled();
     const bool logBuf = Port_DebugLog_IsBuffered();
     DrawDebugCell(9, (lang == 6) ? "LOG A SD" : "SD LOGGING",
-                  Port_DebugLog_ModeName(), logOn ? colOn : colAct);
+                  DebugLogSelName(), colMenu);
+    DrawDebugCellSideButton(9, logOn);
     DrawDebugCell(10, (lang == 6) ? "LOG EN BUFFER" : "LOG BUFFERING",
                   logBuf ? onTxt : offTxt, logBuf ? colOn : colAct);
 
@@ -2984,12 +3030,44 @@ static void RenderDebugToolsModal(int lang) {
     }
 }
 
+/* True when the tap is in the right ~48px of grid cell `cell` -- the
+ * start/stop side button (DrawDebugCellSideButton). The rest of the cell
+ * cycles that cell's option. */
+static bool DebugCellRightZoneHit(int x, int cell) {
+    float cx = DBGTOOL_CELL_X(cell & 1);
+    return (float)x >= cx + (float)DBGTOOL_COL_W - 48.0f;
+}
+
 static bool HandleDebugToolsModalTouch(int x, int y) {
     if (DebugCloseHit(x, y)) {
         sShowDebugToolsModal = false;
         return true;
     }
-    switch (DebugCellHit(x, y, DBGTOOL_COUNT)) {
+    int cell = DebugCellHit(x, y, DBGTOOL_COUNT);
+    /* SCENE RECORDER / SD LOGGING: the side button starts/stops; the rest of
+     * the cell cycles the option. */
+    if (cell == 2 && DebugCellRightZoneHit(x, 2)) {
+        PlatformGpu3DS_ToggleRecording();
+        const char* last = PlatformGpu3DS_RecordLastFile();
+        DebugToolsSetMsg(PlatformGpu3DS_IsRecording() ? "REC ON"
+                         : (last && last[0]) ? last : "REC OFF");
+        return true;
+    }
+    if (cell == 9 && DebugCellRightZoneHit(x, 9)) {
+        /* Side button: start/stop logging on the selected stream. */
+        if (Port_DebugLog_IsEnabled()) {
+            Port_DebugLog_SetMode(PORT_LOG_MODE_NONE);
+            DebugToolsSetMsg("LOG SD: OFF");
+        } else {
+            Port_DebugLog_SetMode(sLogSel);
+            Port_DebugLog("USER MARK: SD logging enabled");
+            char msg[24];
+            snprintf(msg, sizeof(msg), "LOG SD: %s", DebugLogSelName());
+            DebugToolsSetMsg(msg);
+        }
+        return true;
+    }
+    switch (cell) {
         case 0:
             PlatformGpu3DS_DumpScreens();
             DebugToolsSetMsg("DUMP -> sdmc:/3ds/");
@@ -2999,8 +3077,9 @@ static bool HandleDebugToolsModalTouch(int x, int y) {
             DebugToolsSetMsg("MARCA EN EL LOG");
             break;
         case 2:
-            PlatformGpu3DS_ToggleRecording();
-            DebugToolsSetMsg(PlatformGpu3DS_IsRecording() ? "REC ON" : "REC OFF");
+            /* Middle: cycle the capture preset (no-op while recording). */
+            PlatformGpu3DS_CycleRecordPreset();
+            DebugToolsSetMsg(PlatformGpu3DS_RecordPresetLabel());
             break;
         case 3:
             PlatformGpu3DS_TogglePerfRecording();
@@ -3030,10 +3109,14 @@ static bool HandleDebugToolsModalTouch(int x, int y) {
             DebugToolsSetMsg("MAPAS REVELADOS");
             break;
         case 9: {
-            Port_DebugLog_CycleMode();
-            if (Port_DebugLog_IsEnabled()) Port_DebugLog("USER MARK: SD logging enabled");
+            /* Middle: cycle the stream selection (ALL/GPU/AUDIO/PERF, no
+             * OFF -- the side button does on/off). Applied live if logging
+             * is running. */
+            sLogSel = (PortDebugLogMode)(sLogSel + 1);
+            if (sLogSel >= PORT_LOG_MODE_COUNT) sLogSel = PORT_LOG_MODE_ALL;
+            if (Port_DebugLog_IsEnabled()) Port_DebugLog_SetMode(sLogSel);
             char msg[24];
-            snprintf(msg, sizeof(msg), "LOG SD: %s", Port_DebugLog_ModeName());
+            snprintf(msg, sizeof(msg), "LOG SD: %s", DebugLogSelName());
             DebugToolsSetMsg(msg);
             break;
         }

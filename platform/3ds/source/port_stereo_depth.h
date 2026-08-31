@@ -33,6 +33,17 @@ typedef struct {
     uint8_t priority[4];  /* BGCNT bits 0-1, per BG */
     bool inGameplay;      /* gMainGameMode == GM_INGAME */
 
+    /* True only when BG0 genuinely carries the text/dialog/pause-map
+     * overlay -- menus, in-game dialogs, the pause map. It is NOT the same
+     * as "outside gameplay": a scene-art cutscene (the Chozodia escape's
+     * "mission accomplished", in-game story cutscenes) draws its ARTWORK on
+     * BG0 while the on-screen caption is OBJ sprites. Lifting BG0 to the
+     * overlay tier there floats the artwork stereoscopically in front of
+     * its own caption -- occlusion says the letters are on top, parallax
+     * says they are behind. Set from gMainGameMode by the renderer; the
+     * host test sets it by hand per scene. See BgTier. */
+    bool bg0IsOverlayText;
+
     /* gSamusOnTopOfBackgrounds (src/transparency.c). A handful of room
      * transparency configs set it, and they all lay the room out the same
      * way: BG1 at BGCNT priority 0 is the only foreground layer, every

@@ -295,6 +295,15 @@ void UpdateMusic(void)
 #endif
 
         tmp = gMusicInfo.musicRawData;
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+        /* [PORT] SoundCodeA (asm/soundcode.s) dereferences pChannel->pSample
+         * unconditionally (pSample[3] = sample length). On GBA an active
+         * DirectSound channel always has a valid pSample; in the port a
+         * note-on whose voice pSample is NULL / unresolved can leave it 0,
+         * and the raw asm mixer then faults (crash dump 48: data abort,
+         * FAR=0xc, r3=0). Skip mixing that channel rather than crash. */
+        if (pChannel->pSample != NULL)
+#endif
         gSoundCodeAPointer(pChannel, tmp, (var_6 + var_3) * 4);
     }
 
