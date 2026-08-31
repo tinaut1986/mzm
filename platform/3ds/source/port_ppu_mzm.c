@@ -1198,6 +1198,39 @@ void PortPpuMzm_DebugRevealAllMaps(void) {
     Port_DebugLog("DEBUG: all maps revealed");
 }
 
+/* Reveal just one area's map (the STATUS-page per-area tap). */
+void PortPpuMzm_DebugRevealAreaMap(int area) {
+    if (area < 0 || area >= MAX_AMOUNT_OF_AREAS) return;
+    for (int row = 0; row < MINIMAP_SIZE; ++row)
+        gVisitedMinimapTiles[area][row] = 0xFFFFFFFFu;
+    gEquipment.downloadedMapStatus |= (u8)(1u << area);
+    if (area == gCurrentArea) {
+        memcpy(gDecompressedMinimapVisitedTiles, gDecompressedMinimapData,
+               MINIMAP_SIZE * MINIMAP_SIZE * sizeof(u16));
+        MinimapSetDownloadedTiles(gCurrentArea, gDecompressedMinimapVisitedTiles);
+    }
+    Port_DebugLog("DEBUG: area map revealed");
+}
+
+/* ---- Cheat tick ----------------------------------------------------------
+ * God mode: forced from Port_BottomUI_FrameTick once per frame. While on,
+ * energy is held at max (invincible) and ammo counts are kept topped
+ * (infinite). Deliberately does NOT raise beam damage -- that would let
+ * every shot break blocks; a "one-shot bosses without breaking anything"
+ * cheat is a separate, later thing. */
+static bool sDebugGod = false;
+void PortPpuMzm_DebugSetGod(bool on) { sDebugGod = on; }
+bool PortPpuMzm_DebugGetGod(void) { return sDebugGod; }
+
+void PortPpuMzm_DebugCheatTick(void) {
+    if (!sDebugGod) return;
+    if (gMainGameMode != GM_INGAME) return;
+    gEquipment.currentEnergy = gEquipment.maxEnergy;
+    gEquipment.currentMissiles = gEquipment.maxMissiles;
+    gEquipment.currentSuperMissiles = gEquipment.maxSuperMissiles;
+    gEquipment.currentPowerBombs = gEquipment.maxPowerBombs;
+}
+
 /* ---- Equipment -------------------------------------------------------
  * Every flag exists twice in gEquipment: the "owned" set (beamBombs /
  * suitMisc) and the "currently switched on" set (beamBombsActivation /
