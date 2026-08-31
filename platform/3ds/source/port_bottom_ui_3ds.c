@@ -197,6 +197,9 @@ extern bool PortPpuMzm_DebugRequestWarpToSelection(void);
 extern int PortPpuMzm_DebugRequestWarpToMapTile(int area, int tileX, int tileY);
 extern void PortPpuMzm_DebugRevealAllMaps(void);
 extern void PortPpuMzm_DebugRevealAreaMap(int area);
+extern void PortPpuMzm_DebugMarkAreaVisited(int area);
+extern void PortPpuMzm_DebugClearAreaMap(int area);
+extern int  PortPpuMzm_DebugAreaMapPercent(int area);
 extern void PortPpuMzm_DebugSetGod(bool on);
 extern bool PortPpuMzm_DebugGetGod(void);
 extern void PortPpuMzm_DebugGetEquipment(unsigned* outBeams, unsigned* outMisc);
@@ -979,29 +982,30 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
                     }
                 }
             }
-            /* Downloaded-maps card: tap an area box to reveal its map. The
-             * MAP tab caches the decompressed tiles of the last non-current
-             * area it drew; that copy is now stale. */
-            if (y >= 188 && y <= 206) {
-                for (int i = 0; i < 4; ++i) {
-                    int bx = 14 + i * 73;
-                    if (x >= bx && x <= bx + 68) {
-                        PortPpuMzm_DebugRevealAreaMap(i);
-                        sCachedOtherArea = 0xFF;
-                        Port_BottomUI_MarkDirty();
-                        return;
-                    }
+            /* Downloaded-maps card: tapping an area box cycles it
+             *   nothing -> downloaded -> fully visited -> nothing
+             * (1st tap = get the map, 2nd = mark the whole area explored).
+             * The MAP tab's cache of the last non-current area is now stale. */
+            {
+                int hit = -1;
+                if (y >= 188 && y <= 206) {
+                    for (int i = 0; i < 4; ++i) { int bx = 14 + i * 73;
+                        if (x >= bx && x <= bx + 68) { hit = i; break; } }
+                } else if (y >= 210 && y <= 228) {
+                    for (int i = 4; i < 7; ++i) { int bx = 14 + (i - 4) * 98;
+                        if (x >= bx && x <= bx + 92) { hit = i; break; } }
                 }
-            }
-            if (y >= 210 && y <= 228) {
-                for (int i = 4; i < 7; ++i) {
-                    int bx = 14 + (i - 4) * 98;
-                    if (x >= bx && x <= bx + 92) {
-                        PortPpuMzm_DebugRevealAreaMap(i);
-                        sCachedOtherArea = 0xFF;
-                        Port_BottomUI_MarkDirty();
-                        return;
-                    }
+                if (hit >= 0) {
+                    bool dl = (gEquipment.downloadedMapStatus & (1 << hit)) != 0;
+                    if (!dl)
+                        PortPpuMzm_DebugRevealAreaMap(hit);
+                    else if (PortPpuMzm_DebugAreaMapPercent(hit) < 100)
+                        PortPpuMzm_DebugMarkAreaVisited(hit);
+                    else
+                        PortPpuMzm_DebugClearAreaMap(hit);
+                    sCachedOtherArea = 0xFF;
+                    Port_BottomUI_MarkDirty();
+                    return;
                 }
             }
         }
@@ -2571,6 +2575,16 @@ static void RenderMapView(void) {
     }
 
 #ifdef PORT_DEBUG_TOOLS_ACTIVE
+    /* Map completion badge, top-left of the canvas. */
+    if (Port_BottomUI_DebugTabVisible()) {
+        char pctBuf[16];
+        snprintf(pctBuf, sizeof(pctBuf), "%d%%", PortPpuMzm_DebugAreaMapPercent((int)sViewArea));
+        float bw = (float)(Utf8CharCount(pctBuf) * 6 + 8);
+        C2D_DrawRectSolid(canvasX + 3.0f, canvasY + 3.0f, 0.9f, bw, 12.0f, C2D_Color32(10, 16, 26, 220));
+        C2D_DrawRectSolid(canvasX + 3.0f, canvasY + 3.0f, 0.91f, bw, 1.0f, C2D_Color32(60, 90, 140, 255));
+        DrawText(canvasX + 7.0f, canvasY + 5.0f, 1.0f, pctBuf, C2D_Color32(120, 220, 255, 255));
+    }
+
     /* Persistent Tap-to-Warp toggle button on the map canvas. Sized to the
      * text ("WARP: OFF" == 8 chars * 6px) with a small margin. */
     const float warpBtnW = 58.0f;
@@ -2844,32 +2858,32 @@ static void RenderStatusView(void) {
     C2D_DrawRectSolid(183.0f, 171.0f, 0.55f, 124.0f, 12.0f, C2D_Color32(12, 30, 60, 255));
     DrawTextCentered(245.0f, 173.0f, 1.0f, globBtn, C2D_Color32(255, 215, 0, 255));
 
-    /* Row 1: 4 areas (Brinstar, Kraid, Norfair, Ridley) */
-    for (int i = 0; i < 4; ++i) {
-        bool dl = (gEquipment.downloadedMapStatus & (1 << i)) != 0;
-        float bx = 14.0f + (float)i * 73.0f;
-        float by = 188.0f;
-        uint32_t boxBg = dl ? C2D_Color32(16, 50, 95, 255) : C2D_Color32(22, 26, 38, 255);
-        uint32_t boxBorder = dl ? C2D_Color32(40, 160, 250, 255) : C2D_Color32(45, 52, 70, 255);
-        uint32_t textCol = dl ? C2D_Color32(255, 255, 255, 255) : C2D_Color32(90, 100, 120, 255);
-
-        C2D_DrawRectSolid(bx, by, 0.5f, 68.0f, 18.0f, boxBorder);
-        C2D_DrawRectSolid(bx + 1.0f, by + 1.0f, 0.55f, 66.0f, 16.0f, boxBg);
-        DrawTextCentered(bx + 34.0f, by + 5.0f, 1.0f, AreaName(i), textCol);
-    }
-
-    /* Row 2: 3 areas (Tourian, Crateria, Chozodia) */
-    for (int i = 4; i < 7; ++i) {
-        bool dl = (gEquipment.downloadedMapStatus & (1 << i)) != 0;
-        float bx = 14.0f + (float)(i - 4) * 98.0f;
-        float by = 210.0f;
-        uint32_t boxBg = dl ? C2D_Color32(16, 50, 95, 255) : C2D_Color32(22, 26, 38, 255);
-        uint32_t boxBorder = dl ? C2D_Color32(40, 160, 250, 255) : C2D_Color32(45, 52, 70, 255);
-        uint32_t textCol = dl ? C2D_Color32(255, 255, 255, 255) : C2D_Color32(90, 100, 120, 255);
-
-        C2D_DrawRectSolid(bx, by, 0.5f, 92.0f, 18.0f, boxBorder);
-        C2D_DrawRectSolid(bx + 1.0f, by + 1.0f, 0.55f, 90.0f, 16.0f, boxBg);
-        DrawTextCentered(bx + 46.0f, by + 5.0f, 1.0f, AreaName(i), textCol);
+    /* dl = map downloaded; full = every room tile of the area visited.
+     * Downloaded -> blue, fully visited -> green. */
+    for (int row = 0; row < 2; ++row) {
+        int i0 = row == 0 ? 0 : 4, i1 = row == 0 ? 4 : 7;
+        float by = row == 0 ? 188.0f : 210.0f;
+        float bw = row == 0 ? 68.0f : 92.0f;
+        float step = row == 0 ? 73.0f : 98.0f;
+        for (int i = i0; i < i1; ++i) {
+            bool dl = (gEquipment.downloadedMapStatus & (1 << i)) != 0;
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
+            bool full = dl && Port_BottomUI_DebugTabVisible() &&
+                        PortPpuMzm_DebugAreaMapPercent(i) >= 100;
+#else
+            bool full = false;
+#endif
+            float bx = 14.0f + (float)(i - i0) * step;
+            uint32_t boxBg = full ? C2D_Color32(18, 62, 32, 255)
+                           : dl   ? C2D_Color32(16, 50, 95, 255) : C2D_Color32(22, 26, 38, 255);
+            uint32_t boxBorder = full ? C2D_Color32(70, 220, 110, 255)
+                               : dl   ? C2D_Color32(40, 160, 250, 255) : C2D_Color32(45, 52, 70, 255);
+            uint32_t textCol = (dl || full) ? C2D_Color32(255, 255, 255, 255)
+                                            : C2D_Color32(90, 100, 120, 255);
+            C2D_DrawRectSolid(bx, by, 0.5f, bw, 18.0f, boxBorder);
+            C2D_DrawRectSolid(bx + 1.0f, by + 1.0f, 0.55f, bw - 2.0f, 16.0f, boxBg);
+            DrawTextCentered(bx + bw / 2.0f, by + 5.0f, 1.0f, AreaName(i), textCol);
+        }
     }
 
     if (sShowCollectiblesModal) {
