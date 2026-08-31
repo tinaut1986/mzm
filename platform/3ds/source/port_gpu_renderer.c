@@ -16,6 +16,7 @@
 #include "port_gpu_renderer.h"
 #include "port_stereo_depth.h"
 #include "port_layer_fixes.h"
+#include "port_sprite_depth_oam.h"
 #include "platform_gpu_3ds.h"
 #include "port_debug_tools.h" /* PORT_DEBUG_TOOLS_ACTIVE */
 
@@ -385,8 +386,11 @@ static void UpdateLayerFixRoom(void) {
 
 static void ComputeDepthState(uint16_t dispcnt) {
     extern s16 gMainGameMode;
+    extern u8 gSamusOnTopOfBackgrounds;
     (void)dispcnt;
     sDepthState.inGameplay = (gMainGameMode == 4);
+    sDepthState.samusOnTopOfBackgrounds =
+        sDepthState.inGameplay && gSamusOnTopOfBackgrounds != 0;
     for (int bg = 0; bg < 4; ++bg) {
         sDepthState.priority[bg] =
             (uint8_t)(((uint16_t)(gIoMem[0x08 + bg * 2] | (gIoMem[0x09 + bg * 2] << 8))) & 3u);
@@ -1284,11 +1288,31 @@ static void CollectSprite(int oamIndex, bool obj1D) {
              * handles GM_MAP_SCREEN, and everywhere else these are world
              * sprites. */
             bool isRealHud = gMainGameMode == 4 && oamIndex < Port_Hud_GetOamCount();
+            /* In-game message / area-name banners (and the save cursor) are
+             * ordinary sprites, so isRealHud never catches them, yet they
+             * are an overlay and draw at OAM priority 0 in 2D. SpriteDraw
+             * tags their OAM slots (port_overlay_text_oam.c); lift them to
+             * the same front tier as the HUD so stereo does not sink the
+             * flat text into Samus. */
+            extern int Port_OverlayText_IsSlot(int oamIndex);
+            bool isOverlayText = gMainGameMode == 4 && Port_OverlayText_IsSlot(oamIndex);
+            /* Per-sprite depth override (port_sprite_depth_oam.c): a few
+             * sprite TYPES are authored to composite with a specific BG --
+             * the Kraid/Ridley statues set their OAM priority to BG1's so
+             * the sprite face blends with the BG that carries the top of
+             * the head. SpriteDraw tags their slots; honour that here
+             * instead of the one forced world-sprite plane. */
+            int spriteDepthCode = (gMainGameMode == 4) ? Port_SpriteDepth_SlotCode(oamIndex)
+                                                       : PORT_SPRITE_DEPTH_NONE;
             int depthTier;
             if (inMapOrPauseScreen) {
                 depthTier = (priority == 0) ? 5 : 6;
-            } else if (isRealHud) {
+            } else if (isRealHud || isOverlayText) {
                 depthTier = 5;
+            } else if (spriteDepthCode == PORT_SPRITE_DEPTH_BG_COPLANAR) {
+                depthTier = PortStereoDepth_BgTierForPriority(&sDepthState, priority);
+            } else if (spriteDepthCode >= 0) {
+                depthTier = spriteDepthCode;
             } else {
                 /* World sprites: parallax must follow the same ordering the
                  * 2D compositor already uses. An OBJ of priority p draws in
@@ -2131,7 +2155,12 @@ void Port_GpuRenderer_RenderFrame(void) {
             unsigned rounded = fps > 0.0 ? (unsigned)(fps + 0.5) : 0u;
             if (rounded > 999u) rounded = 999u;
             snprintf(label, sizeof(label), "FPS %u", rounded);
-            float fpsEyeOffset = eyeSign * slider3d * (+1.0f);
+            /* Parallax past the frontmost world tier (HUD, +2.0px) and
+             * pixel-snapped like the tile layers, so the debug counter
+             * always reads as being in front of everything -- health bar,
+             * message banners, dialog overlay -- rather than swimming at
+             * their depth. */
+            float fpsEyeOffset = floorf(eyeSign * slider3d * (+2.5f) + 0.5f);
             C2D_DrawRectSolid(5.0f + fpsEyeOffset, 216.0f, 0.7f, 65.0f, 18.0f, C2D_Color32(0, 0, 0, 200));
             PlatformGpu3DS_DrawStatusText(8.0f + fpsEyeOffset, 220.0f, 1.5f, label);
         }
