@@ -6,11 +6,24 @@ con flechas de dirección.
 """
 
 import argparse
+import datetime
 import os
 import re
 import shutil
 import subprocess
 import sys
+
+# Force UTF-8 on stdout/stderr. This script prints non-ASCII status glyphs
+# (checkmarks, arrows, box drawing); on a legacy Windows console the default
+# cp1252 codec raises UnicodeEncodeError on those, which aborts the script
+# with a traceback *after* the build has already succeeded (or failed),
+# hiding the real result. errors="replace" keeps it alive even on consoles
+# that still can't render the glyph.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
 
 # Rutas base
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -251,6 +264,57 @@ def save_last_ip(ip):
         pass
 
 
+# Local CIA that `make cia` produces (fixed name, no version suffix).
+CIA_PATH = os.path.join(PLATFORM_3DS, "mzm-3ds.cia")
+
+
+def make_version(make_bin, env):
+    """VERSION as the Makefile computes it (`make -C platform/3ds print-version`).
+
+    NOT platform/3ds/version.txt (a stale remnant): the Makefile derives
+    VERSION from git (see its GIT_VERSION block), and that is the string
+    `make ftp` puts in the uploaded CIA name mzm-3ds-<VERSION>.cia. The cmake
+    platform/3ds/build.sh now resolves its version the same way (via this
+    same `make print-version`). Returns "" if it can't be determined.
+    """
+    try:
+        proc = subprocess.run(
+            [make_bin, "-C", PLATFORM_3DS, "-s", "--no-print-directory", "print-version"],
+            env=env, capture_output=True, text=True,
+        )
+        for line in reversed(proc.stdout.splitlines()):
+            line = line.strip()
+            if line:
+                return line
+    except Exception:
+        pass
+    return ""
+
+
+def report_artifact(send_ftp, ftp_host, ftp_port, remote_name):
+    """Print the name and location of the generated CIA (and its FTP
+    destination when it was uploaded). Called on a successful build so the
+    result is visible on both the Windows (.bat) and Linux (.sh) wrappers,
+    which both funnel through this script. `remote_name` is the exact
+    basename `make ftp` uploaded (from parsing make's own output, or from
+    make_version() as a fallback); ignored when not sending by FTP."""
+    if os.path.isfile(CIA_PATH):
+        size_mb = os.path.getsize(CIA_PATH) / (1024 * 1024)
+        mtime = datetime.datetime.fromtimestamp(
+            os.path.getmtime(CIA_PATH)
+        ).strftime("%Y-%m-%d %H:%M:%S")
+        print(f"  {BOLD}CIA generado:{RESET}    {os.path.basename(CIA_PATH)}  "
+              f"({size_mb:.2f} MB, {mtime})")
+        print(f"  {BOLD}Guardado en:{RESET}     {CIA_PATH}")
+    else:
+        print(f"  {YELLOW}Aviso: no se encontró el CIA esperado en {CIA_PATH}{RESET}")
+
+    if send_ftp:
+        name = remote_name or "mzm-3ds.cia"
+        print(f"  {BOLD}Enviado por FTP:{RESET} "
+              f"ftp://{ftp_host}:{ftp_port}/cias/{name}")
+
+
 def find_make():
     """Localiza el ejecutable de make en el sistema o dentro de devkitPro."""
     make_bin = shutil.which("make")
@@ -382,14 +446,19 @@ def run_build(mode, send_ftp=False, ftp_host="", ftp_port=5000, clean=True, dry_
         full_output = proc.stdout + "\n" + proc.stderr
 
     if returncode == 0:
+        remote_name = ""
         if send_ftp:
+            # Ground truth: the `ftp` recipe echoes
+            #   Uploading <local>.cia as <remote>.cia to FTP...
+            m = re.search(r"\bas\s+(mzm-3ds-\S+\.cia)\s+to FTP", full_output or "")
+            remote_name = m.group(1) if m else ""
+            if not remote_name:
+                v = make_version(make_bin, env)
+                remote_name = f"mzm-3ds-{v}.cia" if v else ""
             print(f"\n{BOLD}{GREEN}✓ Compilación y subida por FTP a {ftp_host}:{ftp_port} completadas con éxito!{RESET}")
         else:
-            cia_path = os.path.join(PLATFORM_3DS, "mzm-3ds.cia")
             print(f"\n{BOLD}{GREEN}✓ Compilación completada con éxito!{RESET}")
-            if os.path.isfile(cia_path):
-                size_mb = os.path.getsize(cia_path) / (1024 * 1024)
-                print(f"  Archivo CIA generado: {BOLD}{cia_path}{RESET} ({size_mb:.2f} MB)")
+        report_artifact(send_ftp, ftp_host, ftp_port, remote_name)
     else:
         print(f"\n{BOLD}{RED}✗ Error durante la compilación:{RESET}")
         if not verbose and full_output:
