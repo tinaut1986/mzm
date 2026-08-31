@@ -4,12 +4,19 @@ Herramienta de escritorio (un solo HTML, sin dependencias ni servidor) para
 mirar el juego capa por capa y decidir a mano qué bloques quieres mover de
 plano en el 3D estereoscópico del port.
 
-Dos formas de mirar lo mismo:
+Tres vistas, con el selector **MAPA / GRABACIÓN / SPRITES** de la barra de
+arriba. Se cambia de una a otra sin recargar y sin perder lo cargado: el
+`maps.json`, la grabación y el catálogo de sprites conviven en memoria (antes
+cargar una grabación te dejaba encerrado en ella hasta cerrar y reabrir).
 
-- **Mapas** — las 315 salas del juego, decodificadas de los datos del repo.
-  Sin ROM y sin emular nada. Es el modo de trabajo normal.
+- **Mapa** — las 315 salas del juego, decodificadas de los datos del repo.
+  Sin ROM y sin emular nada. Es el modo de trabajo normal. Al abrir la
+  herramienta entra aquí y carga solo `port_layer_fixes.inc`.
 - **Grabación** — una escena concreta capturada en la consola, con sus sprites
   y sus registros. Sirve para ver un caso que sólo se da jugando.
+- **Sprites** — el catálogo de tipos `PSPRITE_*` / `SSPRITE_*`, para decir a
+  qué plano de profundidad va *forzado* cada uno. Escribe
+  `platform/3ds/source/port_sprite_depth.inc`. Ver más abajo.
 
 ## Uso
 
@@ -199,7 +206,8 @@ final ni se queda a medias.
 Abriendo `index.html?test` la propia página corre sus afirmaciones y deja el
 resultado abajo: que carga entera sin excepciones, que una sala decodifica, que
 el compositor dibuja lo movido incluso a una capa que la sala no usa, que la
-selección distingue capa y posición, y que el `.inc` va y vuelve igual.
+selección distingue capa y posición, que el `.inc` (de capas y de sprites) va y
+vuelve igual, y que las miniaturas de sprite salen bien formadas.
 
 Lo que no se prueba: ventanas, gestos y scroll. Es geometría del navegador,
 cara y frágil de automatizar, y un vistazo la cubre mejor.
@@ -246,6 +254,74 @@ El include es **opcional** (`__has_include`). Sin el archivo, la tabla queda
 vacía, el render se salta la búsqueda y el port se comporta exactamente como
 antes — así que una build con correcciones y otra sin ellas se diferencian sólo
 por ese archivo.
+
+## Modo sprites
+
+Los sprites no están en los datos de mapa: se generan al jugar desde los
+spritesets de la sala, y un tipo no se **coloca** sin correr su IA (fija pose,
+`bgPriority` y posición en runtime). El modo sprites es la lista de tipos
+`PSPRITE_*` / `SSPRITE_*` con un desplegable de profundidad por tipo. Para *ver*
+el problema real de profundidad, míralo en una **grabación** y vuelve aquí a
+asignarlo.
+
+- La lista sale de `sprites.json`, que genera
+  `python3 tools/layer-workbench/build_sprites.py` de `include/constants/sprite.h`
+  (sólo nombres e ids; los tiers salen de `port_stereo_depth.h` y los códigos
+  especiales de `port_sprite_depth_oam.h`). `serve.py` lo regenera si
+  `sprite.h` es más nuevo.
+- **Miniatura para reconocer el bicho.** Cada primario trae una miniatura, que
+  genera `python3 tools/layer-workbench/build_sprite_thumbs.py` en `thumbs/`
+  (que `serve.py` rehace si cambian `src/sprite.c`, `src/data/sprites/` o los
+  `.inc` extraídos). Descomprime la hoja de tiles (LZ77), le aplica la paleta
+  (BGR555) y monta una animación de reposo con los `OAM_ENTRY` del `.c` —una
+  tira de fotogramas en un PNG que el visor recorre en un `<canvas>`. El mapeo
+  de tiles es 2D (rejilla OBJ de 32 de ancho: MZM no pone `DCNT_OBJ_1D` en
+  ningún sitio). La casilla *ver hoja de gráficos* enseña los tiles en esa
+  misma rejilla, con lo que las partes de cada sprite ya salen casi montadas.
+  - Es **sólo para identificar**: la pose, la `bgPriority` y la posición reales
+    las fija la IA, no la miniatura.
+  - **Variantes de color.** Zoomer amarillo/rojo, Sova morado/naranja… comparten
+    `*Gfx` y `*Pal`; el `*Pal` trae 2+ filas de 16 colores y la IA elige la fila
+    con `if (spriteId == PSPRITE_X) paletteRow = N`. El generador lee ese `if`
+    de `src/sprites_AI/` y cada variante sale con su color. Lo que **no** puede
+    es el color por estado (destello de daño, tinte de área, congelado).
+  - **De qué `.c` sale el OAM.** El OAM de un tipo vive en su `.c` de datos,
+    que casa por nombre con su `.c` de IA (`sPrimarySpritesAIPointers`), no
+    siempre con el `.c` del `*Gfx`. Los cinco *drops* (energía grande/pequeña,
+    misil, súper misil, bomba de poder) apuntan a `sZeelaGfx` de relleno pero
+    en realidad se dibujan del **bloque común** (`sCommonSpritesGfx`, siempre
+    residente en VRAM OBJ desde `tile 0x40`, paleta `sCommonSpritesPal` fila 2):
+    el generador lo detecta porque sus tiles OAM caen por debajo de `0x200`, y
+    así cada drop sale con su forma. Si un tipo no tiene ni `.c` de datos, ni
+    `*Gfx` propio, ni entrada de tabla que no sea el relleno `sZeelaGfx`, es un
+    disparador de evento invisible y **no lleva miniatura**.
+  - **Sólo primarios.** Un secundario no tiene entrada en
+    `sSpritesGraphicsPointers` (hereda el hueco de gráficos de su padre), así
+    que no hay forma fiable de saber su hoja sin la sala.
+  - La base de tile del OAM es una dirección de VRAM que fija el runtime; se
+    aproxima con el menor índice de tile que usa el fichero. Casi siempre
+    acierta; cuando no, la hoja de tiles sigue valiendo. Los jefes multi-parte
+    (Kraid, Ridley, Mecha Ridley) los arma la IA con varios spawns y un
+    fotograma suelto sale incompleto. Los sprites que hacen streaming de
+    gráficos por fotograma no se pueden montar en estático — ésos se ven en una
+    grabación.
+  - `thumbs/` está en `.gitignore`: se reconstruye en un par de segundos.
+- El desplegable: *sin override* (plano único de sprites, `-0.8`),
+  **BG_COPLANAR** (`-2`: al plano del BG cuya prioridad coincide con la
+  prioridad OAM que el propio sprite fija — lo que quieren las estatuas
+  Kraid/Ridley), o un `PORT_TIER_*` explícito que lo clava ahí.
+- `GUARDAR` escribe `platform/3ds/source/port_sprite_depth.inc` (endpoint
+  `/sprite-fixes` del `serve.py`, escritura atómica). `CARGAR` lo relee.
+  Sobre `file://`, los dos botones caen al diálogo de archivos.
+- El formato es un X-macro,
+  `PORT_SPRITE_DEPTH(spriteId, esSecundario, code)`, con nombres simbólicos.
+  `src/sprite.c` lo incluye (`#ifdef __3DS__`, `__has_include` + entrada
+  terminadora, así que sin archivo o vacío es un no-op) y etiqueta los slots
+  OAM del sprite; `port_gpu_renderer.c` los respeta al elegir el plano.
+- **La herramienta es dueña del archivo**: al guardar regenera cabecera +
+  entradas, igual que con `port_layer_fixes.inc`. Los comentarios por entrada
+  que hubiera a mano se pierden. El *por qué* de cada caso va en
+  `port_sprite_depth_oam.c` y en `docs/`.
 
 ## Pendiente
 
