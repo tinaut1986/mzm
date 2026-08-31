@@ -78,15 +78,59 @@ def ensure_maps():
     subprocess.run([sys.executable, os.path.join(HERE, "build_maps.py")], check=True)
 
 
+def ensure_sprites():
+    sprites = os.path.join(HERE, "sprites.json")
+    sources = newest(os.path.join(ROOT, "include", "constants", "sprite.h"),
+                     os.path.join(ROOT, "platform", "3ds", "source", "port_stereo_depth.h"),
+                     os.path.join(ROOT, "platform", "3ds", "source", "port_sprite_depth_oam.h"),
+                     os.path.join(HERE, "build_sprites.py"))
+    stale = not os.path.isfile(sprites) or os.path.getmtime(sprites) < sources
+    if stale:
+        print("generando sprites.json...")
+        subprocess.run([sys.executable, os.path.join(HERE, "build_sprites.py")], check=True)
+    ensure_sprite_thumbs(rebuilt=stale)
+
+
+def ensure_sprite_thumbs(rebuilt):
+    """Sprite thumbnails. Rebuilt when sprites.json is newer, when the repo's
+    sprite data changed (src/sprite.c, src/data/sprites/, the extracted .inc
+    files) or when the generator itself changed."""
+    thumbs = os.path.join(HERE, "thumbs")
+    marker = os.path.join(thumbs, ".built")
+    sources = newest(os.path.join(HERE, "sprites.json"),
+                     os.path.join(HERE, "build_sprite_thumbs.py"),
+                     os.path.join(ROOT, "src", "sprite.c"),
+                     os.path.join(ROOT, "src", "data", "sprites"),
+                     os.path.join(ROOT, "include", "extracted", "data", "sprites"))
+    if not rebuilt and os.path.isfile(marker) and os.path.getmtime(marker) >= sources:
+        return
+    print("generando miniaturas de sprite...")
+    try:
+        subprocess.run([sys.executable, os.path.join(HERE, "build_sprite_thumbs.py")],
+                       check=True)
+        os.makedirs(thumbs, exist_ok=True)
+        open(marker, "w").close()
+    except subprocess.CalledProcessError as e:
+        # Without thumbnails, SPRITES mode still works as a plain catalogue.
+        print("  (fallo, sigo sin miniaturas: %s)" % e)
+
+
 FIXES = os.path.join(ROOT, "platform", "3ds", "source", "port_layer_fixes.inc")
+SPRITE_FIXES = os.path.join(ROOT, "platform", "3ds", "source", "port_sprite_depth.inc")
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
-    """Lo de siempre, más /fixes para leer y escribir el .inc.
+    """Lo de siempre, más /fixes y /sprite-fixes para leer y escribir los .inc.
 
-    Sólo escucha en 127.0.0.1 y sólo escribe en esa ruta concreta: no es un
-    servidor de archivos general con escritura.
+    Sólo escucha en 127.0.0.1 y sólo escribe en esas dos rutas concretas: no
+    es un servidor de archivos general con escritura.
     """
+
+    # ruta -> (fichero, marca X-macro para el recuento del log)
+    ENDPOINTS = {
+        "/fixes": (FIXES, b"PORT_LAYER_FIX("),
+        "/sprite-fixes": (SPRITE_FIXES, b"PORT_SPRITE_DEPTH("),
+    }
 
     def _send(self, code, body=b"", ctype="text/plain; charset=utf-8"):
         self.send_response(code)
@@ -98,29 +142,33 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(body)
 
     def do_GET(self):
-        if self.path.split("?")[0] == "/fixes":
-            if not os.path.isfile(FIXES):
+        ep = self.ENDPOINTS.get(self.path.split("?")[0])
+        if ep:
+            path = ep[0]
+            if not os.path.isfile(path):
                 return self._send(404, "sin correcciones todavía".encode("utf-8"))
-            with open(FIXES, "rb") as f:
+            with open(path, "rb") as f:
                 return self._send(200, f.read())
         return http.server.SimpleHTTPRequestHandler.do_GET(self)
 
     def do_PUT(self):
-        if self.path.split("?")[0] != "/fixes":
-            return self._send(405, b"solo /fixes")
+        ep = self.ENDPOINTS.get(self.path.split("?")[0])
+        if not ep:
+            return self._send(405, b"solo /fixes y /sprite-fixes")
+        path, mark = ep
         n = int(self.headers.get("Content-Length") or 0)
         if n > (1 << 20):
             return self._send(413, b"demasiado grande")
         data = self.rfile.read(n)
-        os.makedirs(os.path.dirname(FIXES), exist_ok=True)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         # Atómico: un guardado a medias dejaría al port compilando una lista
         # truncada.
-        tmp = FIXES + ".tmp"
+        tmp = path + ".tmp"
         with open(tmp, "wb") as f:
             f.write(data)
-        os.replace(tmp, FIXES)
-        print("guardadas %d correcciones en %s"
-              % (data.count(b"PORT_LAYER_FIX("), os.path.relpath(FIXES, ROOT)))
+        os.replace(tmp, path)
+        print("guardadas %d entradas en %s"
+              % (data.count(mark), os.path.relpath(path, ROOT)))
         return self._send(200, b"ok")
 
     def log_message(self, fmt, *args):
@@ -129,6 +177,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
 def main():
     ensure_maps()
+    ensure_sprites()
     os.chdir(HERE)
     # Sólo desde esta máquina: sirve el repo y escribe en él, no hay por qué
     # exponerlo. Si el puerto está pillado -- otra copia abierta -- se prueba el
@@ -145,7 +194,8 @@ def main():
 
     url = "http://127.0.0.1:%d/index.html" % port
     print("banco de capas en " + url + "   (Ctrl+C para parar)")
-    print("correcciones en    " + os.path.relpath(FIXES, ROOT))
+    print("correcciones capas   " + os.path.relpath(FIXES, ROOT))
+    print("correcciones sprites " + os.path.relpath(SPRITE_FIXES, ROOT))
     threading.Timer(0.4, lambda: webbrowser.open(url)).start()
     try:
         server.serve_forever()
