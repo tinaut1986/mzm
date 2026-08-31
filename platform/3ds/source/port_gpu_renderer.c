@@ -391,6 +391,22 @@ static void ComputeDepthState(uint16_t dispcnt) {
     sDepthState.inGameplay = (gMainGameMode == 4);
     sDepthState.samusOnTopOfBackgrounds =
         sDepthState.inGameplay && gSamusOnTopOfBackgrounds != 0;
+    /* BG0 is the pop-forward overlay layer for menus / dialogs / the pause
+     * map -- i.e. everywhere outside gameplay EXCEPT the cutscenes that
+     * draw scene artwork on BG0 while their caption is OBJ sprites:
+     *   7  GM_CHOZODIA_ESCAPE  ("mission accomplished" over the blue ship)
+     *   10 GM_CUTSCENE         (in-game story cutscenes: Kraid rising, ...)
+     * Those keep BG0 on its priority-based tier so the caption is not left
+     * behind its own backdrop. */
+    switch (gMainGameMode) {
+        case 7:
+        case 10:
+            sDepthState.bg0IsOverlayText = false;
+            break;
+        default:
+            sDepthState.bg0IsOverlayText = !sDepthState.inGameplay;
+            break;
+    }
     for (int bg = 0; bg < 4; ++bg) {
         sDepthState.priority[bg] =
             (uint8_t)(((uint16_t)(gIoMem[0x08 + bg * 2] | (gIoMem[0x09 + bg * 2] << 8))) & 3u);
@@ -1153,12 +1169,22 @@ static void CollectSprite(int oamIndex, bool obj1D) {
     int tilesW = width / 8;
     int tilesH = height / 8;
 
-    /* BLDCNT layer id 4 = OBJ. */
-    bool isFirstTarget = sBldEffect != 0 && BldIsFirstTarget(sIoBldcnt, 4);
+    /* BLDCNT layer id 4 = OBJ. A Semi-Transparent OBJ (attr0 mode 1) is
+     * ALWAYS a blend 1st target and ALWAYS uses alpha blending, whatever
+     * BLDCNT bit4 / bits 6-7 say (GBATEK). The Mother Brain eye is 16 such
+     * sprites over Samus on the elevator (BG1) and the eye glow (BG0);
+     * without this they draw opaque and hide both behind a solid blob. */
+    bool objSemiTransparent = (objMode == 1);
     BrightAdjust brightAdjust = BRIGHT_ADJUST_NONE;
-    if (isFirstTarget && sBldEffect == 2) brightAdjust = BRIGHT_ADJUST_BRIGHTEN;
-    else if (isFirstTarget && sBldEffect == 3) brightAdjust = BRIGHT_ADJUST_DARKEN;
-    bool blendAlpha = isFirstTarget && sBldEffect == 1;
+    bool blendAlpha;
+    if (objSemiTransparent) {
+        blendAlpha = true;
+    } else {
+        bool isFirstTarget = sBldEffect != 0 && BldIsFirstTarget(sIoBldcnt, 4);
+        if (isFirstTarget && sBldEffect == 2) brightAdjust = BRIGHT_ADJUST_BRIGHTEN;
+        else if (isFirstTarget && sBldEffect == 3) brightAdjust = BRIGHT_ADJUST_DARKEN;
+        blendAlpha = isFirstTarget && sBldEffect == 1;
+    }
 
     /* Priority inverted for the same reason as CollectBgLayer above
      * (0=highest/on top, 3=lowest/backmost). OBJ draws above any BG of
@@ -2036,7 +2062,11 @@ void Port_GpuRenderer_RenderFrame(void) {
             for (int oi = 0; oi < sDrawOrderCount; ++oi) {
                 const DrawItem* item = &sDrawItems[sDrawOrder[oi]];
                 if (!ItemPassesWindow(sWindowActive, item->winVis, insidePass)) continue;
-                bool wantBlend = item->blendAlpha && sBldEffect == 1;
+                /* item->blendAlpha already implies alpha mode: the BG/OBJ
+                 * collect paths only set it when sBldEffect==1, and a
+                 * Semi-Transparent OBJ sets it unconditionally (and must
+                 * blend even if BLDCNT is left in another mode). */
+                bool wantBlend = item->blendAlpha;
                 if (wantBlend != blendModeActive) {
                     C2D_Flush();
                     if (wantBlend) {

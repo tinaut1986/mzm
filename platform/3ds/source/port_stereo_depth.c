@@ -121,12 +121,17 @@ float PortStereoDepth_TierPxFor(int spread, int tier) {
 }
 
 int PortStereoDepth_BgTier(const PortStereoDepthState* st, int bgIndex) {
-    /* Outside gameplay BG0 genuinely IS the text/dialog overlay. In
-     * gameplay it is just another world layer whose priority the room
-     * picks -- Crateria room 8 puts the Chozo statue backdrop on it, and
-     * forcing that to the nearest tier shoved the statue in front of
-     * Samus the moment the slider came up. */
-    if (bgIndex == 0 && !st->inGameplay) return PORT_TIER_BG_OVERLAY;
+    /* BG0 gets the pop-forward overlay tier ONLY where it genuinely is the
+     * text/dialog/pause-map layer (bg0IsOverlayText). Two ways this used to
+     * be wrong:
+     *  - In gameplay BG0 is just another world layer whose priority the
+     *    room picks -- Crateria room 8 puts the Chozo statue backdrop on
+     *    it, and forcing that nearest shoved the statue in front of Samus.
+     *  - "Outside gameplay" is not enough: the Chozodia escape cutscene
+     *    puts the blue-ship artwork on BG0 (priority 0) while the
+     *    "mission accomplished" caption is OBJ sprites, so lifting BG0 here
+     *    floated the ship in front of its own caption. */
+    if (bgIndex == 0 && st->bg0IsOverlayText) return PORT_TIER_BG_OVERLAY;
     return PortStereoDepth_BgTierForPriority(st, st->priority[bgIndex]);
 }
 

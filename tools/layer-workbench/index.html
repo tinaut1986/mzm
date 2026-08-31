@@ -423,11 +423,21 @@
   }
 
   function decodeObj(C){
-    var b=C.b,dispcnt=u16(b,C.io),obj1d=(dispcnt>>6)&1,img=new Uint8ClampedArray(W*H*4);
+    var b=C.b,dispcnt=u16(b,C.io),obj1d=(dispcnt>>6)&1;
+    var img=new Uint8ClampedArray(W*H*4),simg=new Uint8ClampedArray(W*H*4),hasSemi=false;
     for(var i=127;i>=0;i--){
       var a0=u16(b,C.oam+i*8),a1=u16(b,C.oam+i*8+2),a2=u16(b,C.oam+i*8+4),aff=(a0>>8)&1;
       if(((a0>>9)&1)&&!aff)continue;
-      if(((a0>>10)&3)===2)continue;
+      var omode=(a0>>10)&3;
+      if(omode===2)continue;                 /* OBJ window: not a drawn sprite */
+      /* Semi-transparent OBJ (mode 1): on hardware it is ALWAYS a blend 1st
+         target with alpha, whatever BLDCNT says. Its pixels go to a separate
+         buffer that the compositor mixes with the live BLDALPHA (see drawObj).
+         Simplification: opaque vs semi sprites are two flat buffers, so their
+         mutual OAM order is lost -- fine here (the only mode-1 users, e.g. the
+         Mother Brain eye, don't overlap opaque sprites). */
+      var semi=omode===1,dst=semi?simg:img;
+      if(semi)hasSemi=true;
       var shape=(a0>>14)&3,size=(a1>>14)&3;if(shape===3)continue;
       var w=OBJW[shape][size],h=OBJH[shape][size];
       var x=a1&0x1FF,y=a0&0xFF;if(x>=256)x-=512;if(y>=160)y-=256;
@@ -440,11 +450,22 @@
         for(var yy=0;yy<8;yy++){var py=y+tyi*8+yy;if(py<0||py>=H)continue;
           for(var xx=0;xx<8;xx++){var pxx=x+txi*8+xx;if(pxx<0||pxx>=W)continue;
             var v=px4(b,off,xx,yy,hf,vf);if(!v)continue;
-            var c=C.objpal[bank*16+v],q=(py*W+pxx)*4;img[q]=c[0];img[q+1]=c[1];img[q+2]=c[2];img[q+3]=255;
+            var c=C.objpal[bank*16+v],q=(py*W+pxx)*4;dst[q]=c[0];dst[q+1]=c[1];dst[q+2]=c[2];dst[q+3]=255;
           }}
       }
     }
-    return {img:img};
+    return {img:img,semiImg:hasSemi?simg:null};
+  }
+
+  /* Composite the OBJ layer: opaque part straight over, then the
+     semi-transparent part alpha-blended with the capture's live BLDALPHA
+     (io+0x52) -- NOT state.blend, which is per-room and null in cutscenes. */
+  function drawObj(out,obj,C){
+    over(out,obj.img);
+    if(obj.semiImg){
+      var ba=u16(C.b,C.io+0x52),eva=ba&0x1F,evb=(ba>>8)&0x1F;
+      overBlend(out,obj.semiImg,eva>16?16:eva,evb>16?16:evb);
+    }
   }
 
   /* ---------- compositing ---------- */
@@ -533,7 +554,7 @@
         A.moved.forEach(function(m){ if(m.dest===bg) over(out,m.px); });
       }
     });
-    if(state.obj && vis.obj!==false) over(out,state.obj.img);
+    if(state.obj && vis.obj!==false) drawObj(out,state.obj,state.C);
     if(vis[4]!==false) A.moved.forEach(function(m){ if(m.dest===4) over(out,m.px); });
     return out;
   }
@@ -2205,7 +2226,7 @@
       ord.forEach(function(k){dec[k]=decodeBg(C,k);});
       ord.sort(function(a,b2){var pa=dec[a].prio,pb=dec[b2].prio;return pa!==pb?pb-pa:b2-a;})
          .forEach(function(k){over(out,dec[k].img);});
-      over(out,decodeObj(C).img);
+      drawObj(out,decodeObj(C),C);
       cv.width=W;cv.height=H;
       var id=cv.getContext("2d").createImageData(W,H);id.data.set(out);
       cv.getContext("2d").putImageData(id,0,0);
