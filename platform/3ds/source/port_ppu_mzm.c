@@ -1239,29 +1239,30 @@ void PortPpuMzm_DebugRevealAreaMap(int area) {
     Port_DebugLog("DEBUG: area map revealed");
 }
 
-/* ---- Minimap completion ---------------------------------------------- */
+/* ---- Minimap completion --------------------------------------------- *
+ * "Drawn map tile" = != MINIMAP_TILE_BACKGROUND in the tilemap after the
+ * download pass (pause_screen_map.c uses that exact test). The base has
+ * room tiles spread across several id ranges plus 0xF000-flag bits, so a
+ * plain id range misses most of them -- resolve first, then count. */
 static int sMapTileTotal[MAX_AMOUNT_OF_AREAS] = { [0 ... MAX_AMOUNT_OF_AREAS - 1] = -1 };
 
+static int MinimapAreaDrawnCount(int area, u16* resolved /*optional, 1024 u16*/) {
+    static u16 local[MINIMAP_SIZE * MINIMAP_SIZE];
+    u16* buf = resolved ? resolved : local;
+    MinimapAreaResolved(area, buf);
+    int n = 0;
+    for (int i = 0; i < MINIMAP_SIZE * MINIMAP_SIZE; ++i)
+        if (buf[i] != MINIMAP_TILE_BACKGROUND) ++n;
+    return n;
+}
 
 void PortPpuMzm_DebugGetAreaMapProgress(int area, int* outVisited, int* outTotal) {
     if (outVisited) *outVisited = 0;
     if (outTotal) *outTotal = 0;
     if (area < 0 || area >= MAX_AMOUNT_OF_AREAS) return;
 
-    if (sMapTileTotal[area] < 0) {
-        /* Total = room tiles in the raw base, by the same id test the game
-         * uses (MinimapCheckOnUnexploredTile): (tile & 0x3FF) in 0x141..0x15E.
-         * MarkAreaVisited marks exactly this set, so 100% is reachable. */
-        static u16 raw[MINIMAP_SIZE * MINIMAP_SIZE];
-        if (area == gCurrentArea) memcpy(raw, gDecompressedMinimapData, sizeof(raw));
-        else PauseScreenGetMinimapData((Area)area, raw);
-        int tot = 0;
-        for (int i = 0; i < MINIMAP_SIZE * MINIMAP_SIZE; ++i) {
-            u16 id = (u16)(raw[i] & 0x3FF);
-            if (id >= 0x141 && id <= 0x15E) ++tot;
-        }
-        sMapTileTotal[area] = tot;
-    }
+    if (sMapTileTotal[area] < 0)
+        sMapTileTotal[area] = MinimapAreaDrawnCount(area, NULL);
     int total = sMapTileTotal[area];
 
     int vis = 0;
@@ -1280,64 +1281,21 @@ int PortPpuMzm_DebugAreaMapPercent(int area) {
 }
 
 /* STATUS second tap: mark every drawn tile of the (downloaded) area
- * visited, so the whole outline fills green. */
+ * visited, so the whole outline fills in and the % reads 100. */
 void PortPpuMzm_DebugMarkAreaVisited(int area) {
     if (area < 0 || area >= MAX_AMOUNT_OF_AREAS) return;
     MinimapBackupArea(area);
-
-    /* --- diagnostics: raw base histogram --- */
-    static u16 raw[MINIMAP_SIZE * MINIMAP_SIZE];
-    if (area == gCurrentArea) memcpy(raw, gDecompressedMinimapData, sizeof(raw));
-    else PauseScreenGetMinimapData((Area)area, raw);
-    int hBg = 0, hRoom = 0, hOther = 0, hF3 = 0, hF12 = 0, hFraw = 0;
-    for (int i = 0; i < MINIMAP_SIZE * MINIMAP_SIZE; ++i) {
-        u16 t = raw[i], id = (u16)(t & 0x3FF);
-        if (t == 0x140) hBg++;
-        else if (id >= 0x141 && id <= 0x15E) hRoom++;
-        else hOther++;
-        if (t >= 0x3000) hF3++; else if (t & 0x3000) hF12++;
-        if (t & 0xF000) hFraw++;
-    }
-    int preVis = 0;
-    for (int r = 0; r < MINIMAP_SIZE; ++r) preVis += __builtin_popcount(gVisitedMinimapTiles[area][r]);
-
     gEquipment.downloadedMapStatus |= (u8)(1u << area);
+
     static u16 buf[MINIMAP_SIZE * MINIMAP_SIZE];
-    MinimapAreaResolved(area, buf);
-    int resNonBg = 0;
-    for (int i = 0; i < MINIMAP_SIZE * MINIMAP_SIZE; ++i)
-        if (buf[i] != MINIMAP_TILE_BACKGROUND) ++resNonBg;
-
-    /* Mark: use the RAW base room-id test (matches MinimapCheckOnUnexploredTile). */
-    int marked = 0;
+    int drawn = MinimapAreaDrawnCount(area, buf);
     for (int r = 0; r < MINIMAP_SIZE; ++r)
-        for (int c = 0; c < MINIMAP_SIZE; ++c) {
-            u16 id = (u16)(raw[r * MINIMAP_SIZE + c] & 0x3FF);
-            if (id >= 0x141 && id <= 0x15E) { gVisitedMinimapTiles[area][r] |= (1u << c); ++marked; }
-        }
-    int postVis = 0;
-    for (int r = 0; r < MINIMAP_SIZE; ++r) postVis += __builtin_popcount(gVisitedMinimapTiles[area][r]);
-
+        for (int c = 0; c < MINIMAP_SIZE; ++c)
+            if (buf[r * MINIMAP_SIZE + c] != MINIMAP_TILE_BACKGROUND)
+                gVisitedMinimapTiles[area][r] |= (1u << c);
+    sMapTileTotal[area] = drawn; /* keep total and marked set in lockstep */
     if (area == gCurrentArea) MinimapRefreshCurrent();
-
-    char m[192];
-    __builtin_snprintf(m, sizeof(m),
-        "MARK a%d raw{bg=%d room=%d oth=%d f>=3000=%d f12=%d fF000=%d} res_nonbg=%d preVis=%d marked=%d postVis=%d total=%d",
-        area, hBg, hRoom, hOther, hF3, hF12, hFraw, resNonBg, preVis, marked, postVis, sMapTileTotal[area]);
-    Port_DebugLog(m);
-}
-
-/* Show the area as if its map were NOT downloaded: real explored tiles
- * only, no outline -- even when the save really does have it downloaded.
- * (Fourth tap in the STATUS cycle.) */
-void PortPpuMzm_DebugHideAreaMap(int area) {
-    if (area < 0 || area >= MAX_AMOUNT_OF_AREAS) return;
-    if (sMapBackedUp[area])
-        for (int r = 0; r < MINIMAP_SIZE; ++r)
-            gVisitedMinimapTiles[area][r] = sMapBackup[area][r];
-    gEquipment.downloadedMapStatus &= (u8)~(1u << area);
-    if (area == gCurrentArea) MinimapRefreshCurrent();
-    Port_DebugLog("DEBUG: area map hidden");
+    Port_DebugLog("DEBUG: area marked fully visited");
 }
 
 /* STATUS first tap of a new cycle: restore the area to exactly what the

@@ -198,9 +198,12 @@ extern int PortPpuMzm_DebugRequestWarpToMapTile(int area, int tileX, int tileY);
 extern void PortPpuMzm_DebugRevealAllMaps(void);
 extern void PortPpuMzm_DebugRevealAreaMap(int area);
 extern void PortPpuMzm_DebugMarkAreaVisited(int area);
-extern void PortPpuMzm_DebugHideAreaMap(int area);
 extern void PortPpuMzm_DebugClearAreaMap(int area);
 extern int  PortPpuMzm_DebugAreaMapPercent(int area);
+
+/* Per-area STATUS map-box debug cycle: 0 actual, 1 forced-download, 2 forced-100%.
+ * Read by RenderStatusView to colour the box; advanced by the touch handler. */
+static uint8_t sMapDebugState[7] = { 0, 0, 0, 0, 0, 0, 0 };
 extern void PortPpuMzm_DebugSetGod(bool on);
 extern bool PortPpuMzm_DebugGetGod(void);
 extern void PortPpuMzm_DebugGetEquipment(unsigned* outBeams, unsigned* outMisc);
@@ -997,18 +1000,15 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
                         if (x >= bx && x <= bx + 92) { hit = i; break; } }
                 }
                 if (hit >= 0) {
-                    /* Unconditional 4-state cycle:
-                     *   0 actual (restore real state)
-                     *   1 revealed  (force downloaded / outline)
-                     *   2 marked    (force 100% visited / green)
-                     *   3 hidden    (real % but shown as NOT downloaded)
-                     * -> back to 0. No "wiped" step. */
-                    static uint8_t sMapDebugState[7] = { 0, 0, 0, 0, 0, 0, 0 };
+                    /* Unconditional 3-state cycle:
+                     *   0 actual   (restore real state)
+                     *   1 revealed (force downloaded / outline)
+                     *   2 marked   (force 100% visited)
+                     * -> back to 0. No "wiped" / "hidden" step. */
                     uint8_t* st = &sMapDebugState[hit];
-                    *st = (uint8_t)((*st + 1) % 4);
+                    *st = (uint8_t)((*st + 1) % 3);
                     if (*st == 1)      PortPpuMzm_DebugRevealAreaMap(hit);
                     else if (*st == 2) PortPpuMzm_DebugMarkAreaVisited(hit);
-                    else if (*st == 3) PortPpuMzm_DebugHideAreaMap(hit);
                     else               PortPpuMzm_DebugClearAreaMap(hit);
                     sCachedOtherArea = 0xFF;
                     Port_BottomUI_MarkDirty();
@@ -2865,8 +2865,13 @@ static void RenderStatusView(void) {
     C2D_DrawRectSolid(183.0f, 171.0f, 0.55f, 124.0f, 12.0f, C2D_Color32(12, 30, 60, 255));
     DrawTextCentered(245.0f, 173.0f, 1.0f, globBtn, C2D_Color32(255, 215, 0, 255));
 
-    /* dl = map downloaded; full = every room tile of the area visited.
-     * Downloaded -> blue, fully visited -> green. */
+    /* Box colour is driven by the per-area debug cycle state, not by % :
+     *   not downloaded            -> grey
+     *   really downloaded (save)  -> green   (cycle state 0 + real dl bit)
+     *   forced download  (debug)  -> purple  (cycle state 1)
+     *   forced 100%      (debug)  -> orange  (cycle state 2)
+     * In state 0 the downloaded bit reflects the genuine save (ClearAreaMap
+     * restores it from the backup), so it is safe to read here. */
     for (int row = 0; row < 2; ++row) {
         int i0 = row == 0 ? 0 : 4, i1 = row == 0 ? 4 : 7;
         float by = row == 0 ? 188.0f : 210.0f;
@@ -2874,19 +2879,28 @@ static void RenderStatusView(void) {
         float step = row == 0 ? 73.0f : 98.0f;
         for (int i = i0; i < i1; ++i) {
             bool dl = (gEquipment.downloadedMapStatus & (1 << i)) != 0;
+            int mst = 0;
 #ifdef PORT_DEBUG_TOOLS_ACTIVE
-            bool full = dl && Port_BottomUI_DebugTabVisible() &&
-                        PortPpuMzm_DebugAreaMapPercent(i) >= 100;
-#else
-            bool full = false;
+            if (Port_BottomUI_DebugTabVisible()) mst = sMapDebugState[i];
 #endif
             float bx = 14.0f + (float)(i - i0) * step;
-            uint32_t boxBg = full ? C2D_Color32(18, 62, 32, 255)
-                           : dl   ? C2D_Color32(16, 50, 95, 255) : C2D_Color32(22, 26, 38, 255);
-            uint32_t boxBorder = full ? C2D_Color32(70, 220, 110, 255)
-                               : dl   ? C2D_Color32(40, 160, 250, 255) : C2D_Color32(45, 52, 70, 255);
-            uint32_t textCol = (dl || full) ? C2D_Color32(255, 255, 255, 255)
-                                            : C2D_Color32(90, 100, 120, 255);
+            uint32_t boxBg, boxBorder;
+            bool lit;
+            if (mst == 2) {                 /* forced 100% -> orange */
+                boxBg = C2D_Color32(70, 45, 15, 255);
+                boxBorder = C2D_Color32(255, 170, 60, 255); lit = true;
+            } else if (mst == 1) {          /* forced download -> purple */
+                boxBg = C2D_Color32(45, 30, 70, 255);
+                boxBorder = C2D_Color32(170, 110, 240, 255); lit = true;
+            } else if (dl) {                /* genuinely downloaded -> green */
+                boxBg = C2D_Color32(18, 62, 32, 255);
+                boxBorder = C2D_Color32(70, 220, 110, 255); lit = true;
+            } else {                        /* not downloaded -> grey */
+                boxBg = C2D_Color32(22, 26, 38, 255);
+                boxBorder = C2D_Color32(45, 52, 70, 255); lit = false;
+            }
+            uint32_t textCol = lit ? C2D_Color32(255, 255, 255, 255)
+                                   : C2D_Color32(90, 100, 120, 255);
             C2D_DrawRectSolid(bx, by, 0.5f, bw, 18.0f, boxBorder);
             C2D_DrawRectSolid(bx + 1.0f, by + 1.0f, 0.55f, bw - 2.0f, 16.0f, boxBg);
             DrawTextCentered(bx + bw / 2.0f, by + 5.0f, 1.0f, AreaName(i), textCol);
