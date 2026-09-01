@@ -99,6 +99,17 @@
   .drop.over { border-color:var(--accent); background:var(--accent-soft); }
   .drop p { margin:8px 0 0; font-size:12px; color:var(--faint); }
 
+  #realscreen { position:fixed; right:14px; bottom:14px; z-index:80; background:var(--panel);
+                border:1px solid var(--line); border-radius:6px; padding:8px;
+                box-shadow:0 6px 24px rgba(0,0,0,.4); max-width:min(92vw,540px); }
+  #realscreen .rs-bar { display:flex; align-items:center; gap:8px; margin-bottom:6px;
+                        font-size:12px; font-weight:700; color:var(--ink); }
+  #realscreen .rs-bar .meta { font-weight:400; }
+  #realscreen #rs-close { margin-left:auto; padding:0 8px; cursor:pointer; }
+  #realscreen canvas { display:block; image-rendering:pixelated; background:#000;
+                       border:1px solid var(--line); max-width:100%; }
+  #realscreen .rs-hint { margin:6px 0 0; font-size:11px; color:var(--faint); max-width:520px; }
+
   .mmctl button { padding:1px 7px; font-size:10px; margin-left:4px; cursor:pointer; }
   .mmbody { padding:9px; overflow:auto; flex:1 1 0; min-height:0; }
   canvas.mm { image-rendering:pixelated; background:#000; border:1px solid var(--line);
@@ -282,7 +293,7 @@
 
   <div class="grp" role="group" aria-label="Datos">
     <label class="filebtn ui" tabindex="0">MAPAS<input type="file" id="mapsfile" accept=".json,.gz"></label>
-    <label class="filebtn ui" tabindex="0">GRABACIÓN<input type="file" id="file" accept=".bin"></label>
+    <label class="filebtn ui" tabindex="0">GRABACIÓN<input type="file" id="file" accept=".bin,.rgb"></label>
   </div>
 
   <div class="grp" role="group" aria-label="Vista">
@@ -336,6 +347,19 @@
 
 <div id="minbar" hidden></div>
 
+<div id="realscreen" hidden>
+  <div class="rs-bar">
+    <span id="rs-title">PANTALLA REAL (post-GPU)</span>
+    <span class="meta" id="rs-info"></span>
+    <button class="tab" id="rs-close" title="Cerrar">×</button>
+  </div>
+  <canvas id="rs-canvas"></canvas>
+  <p class="rs-hint">Suelta aquí (o en cualquier sitio) un <code>.rgb</code> del 3DS:
+     <code>mzm-dump-left.rgb</code> / <code>mzm-dump-bottom.rgb</code> /
+     <code>mzm-rec-shot-NNNN.rgb</code>. Es el fotograma tal cual sale de la GPU
+     a la pantalla, para comparar con lo que la 3DS recibe para dibujar.</p>
+</div>
+
 <script>
 (function () {
   "use strict";
@@ -366,11 +390,39 @@
    "side","tilebox","list","export",
    "copy","clear","save","zin","zout","zlab","relayout","torail","toside",
    "minbar","divrail","divside","restore","autobadge","load",
-   "mMap","mRec","mSprites"].forEach(function(id){els[id]=document.getElementById(id);});
+   "mMap","mRec","mSprites",
+   "realscreen","rs-canvas","rs-info","rs-close","rs-title"].forEach(function(id){els[id]=document.getElementById(id);});
 
   function u16(b,o){return b[o]|(b[o+1]<<8);}
   function u32(b,o){return (b[o]|(b[o+1]<<8)|(b[o+2]<<16)|(b[o+3]<<24))>>>0;}
   function hex4(v){return "0x"+v.toString(16).toUpperCase().padStart(4,"0");}
+
+  /* ---------- real screen dump (.rgb) ----------
+     The 3DS DEBUG -> HERRAMIENTAS -> DUMP button writes the actual GPU render
+     targets to sdmc:/3ds/mzm-dump-{left,right,bottom}.rgb (and the periodic
+     mzm-rec-shot-NNNN.rgb during a recording). They are raw RGB8, stored in
+     the framebuffer's native portrait layout: 240 px wide, and the displayed
+     image is that rotated 90deg CCW (so a 400x240 top screen is 240x400 in
+     the file, a 320x240 bottom screen is 240x320). This shows one such file
+     as-displayed, next to whatever the workbench is re-rendering from the raw
+     GBA state, so a port-side rendering bug (windows, fallback, palette) that
+     only shows on hardware can be compared frame-to-frame. */
+  function showRealScreen(buf, name){
+    var src=new Uint8Array(buf), SW=240, SH=(src.length/3/SW)|0;
+    if(SH*SW*3!==src.length){ els.meta.textContent=name+": no es un .rgb 240xN de 8 bits"; return; }
+    var DW=SH, DH=SW;                 /* 90deg CCW: dst(x,y)=src(sy=x, sx=DH-1-y) */
+    var cv=els["rs-canvas"]; cv.width=DW; cv.height=DH;
+    var ctx=cv.getContext("2d"), out=ctx.createImageData(DW,DH), o=out.data;
+    for(var sy=0;sy<SH;sy++)for(var sx=0;sx<SW;sx++){
+      var s=(sy*SW+sx)*3, dx=sy, dy=(SW-1)-sx, d=(dy*DW+dx)*4;
+      o[d]=src[s]; o[d+1]=src[s+1]; o[d+2]=src[s+2]; o[d+3]=255;
+    }
+    ctx.putImageData(out,0,0);
+    var kind = SH>=400 ? "arriba 400x240" : SH>=300 ? "abajo 320x240" : SH+" px alto";
+    els["rs-info"].textContent = name+"  ("+kind+")";
+    els.realscreen.hidden=false;
+  }
+  els["rs-close"].addEventListener("click",function(){ els.realscreen.hidden=true; });
 
   /* ---------- recording parsing ---------- */
   function scan(buf){
@@ -2614,7 +2666,9 @@
 
   /* ---------- wiring ---------- */
   els.file.addEventListener("change",function(e){
-    var f=e.target.files[0];if(!f)return;f.arrayBuffer().then(function(b){ingest(b,f.name);});});
+    var f=e.target.files[0];if(!f)return;f.arrayBuffer().then(function(b){
+      if(/\.rgb$/i.test(f.name))return showRealScreen(b,f.name);
+      ingest(b,f.name);});});
   els.mapsfile.addEventListener("change",function(e){
     var f=e.target.files[0];if(!f)return;f.arrayBuffer().then(function(b){ingestMaps(b,f.name);});});
   els.incfile.addEventListener("change",function(e){
@@ -2651,6 +2705,7 @@
   document.addEventListener("drop",function(e){
     var f=e.dataTransfer&&e.dataTransfer.files[0];if(!f)return;
     f.arrayBuffer().then(function(b){
+      if(/\.rgb$/i.test(f.name))return showRealScreen(b,f.name);
       if(/sprites\.json$/i.test(f.name)){ sprites=JSON.parse(new TextDecoder().decode(b));
         if(mode==="sprites")enterSprites(); return; }
       if(/\.(json|gz)$/i.test(f.name))return ingestMaps(b,f.name);
