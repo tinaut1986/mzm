@@ -24,6 +24,7 @@
 #include "structs/room.h"
 #include "constants/minimap.h"
 #include "minimap.h"
+#include "menus/pause_screen.h" /* PauseScreenGetMinimapData */
 #include "macros.h"
 #include "port_debug_tools.h" /* PORT_DEBUG_TOOLS_ACTIVE */
 
@@ -1180,22 +1181,206 @@ int PortPpuMzm_DebugRequestWarpToMapTile(int area, int tileX, int tileY) {
  * sequence MinimapCheckOnTransition uses (copy the raw map over it, then
  * MinimapSetDownloadedTiles), or the tiles the player is standing among
  * would stay dark until they walked to another area and back. */
-void PortPpuMzm_DebugRevealAllMaps(void) {
-    /* [area][row]: with USE_EWRAM_SYMBOLS off (this build), structs/minimap.h
-     * defines gVisitedMinimapTiles as a two-dimensional hardcoded-pointer
-     * cast, not the flat one-dimensional symbol the other variant declares. */
-    for (int a = 0; a < MAX_AMOUNT_OF_AREAS; ++a) {
-        for (int row = 0; row < MINIMAP_SIZE; ++row) {
-            gVisitedMinimapTiles[a][row] = 0xFFFFFFFFu;
-        }
-    }
-    gEquipment.downloadedMapStatus = 0xFF;
-
+/* Rebuild the current area's rendered tilemap from the base + the download
+ * + visited pass. The memcpy is essential: MinimapSetDownloadedTiles mutates
+ * its buffer in place (strips the "hidden" flag, adds the 0x1000 explored
+ * bit), so it has to start from the clean base each time or a second call is
+ * a no-op and nothing new appears. */
+static void MinimapRefreshCurrent(void) {
     memcpy(gDecompressedMinimapVisitedTiles, gDecompressedMinimapData,
            MINIMAP_SIZE * MINIMAP_SIZE * sizeof(u16));
     MinimapSetDownloadedTiles(gCurrentArea, gDecompressedMinimapVisitedTiles);
+}
 
+/* Fill `buf` with an area's minimap as it renders once downloaded: base
+ * decompress + item/boss icons + the downloaded-tiles pass. After this any
+ * cell != MINIMAP_TILE_BACKGROUND is a drawn map tile (pause_screen_map.c
+ * uses the same test). Forces the downloaded bit for the duration. */
+static void MinimapAreaResolved(int area, u16* buf) {
+    u8 saved = gEquipment.downloadedMapStatus;
+    gEquipment.downloadedMapStatus |= (u8)(1u << area);
+    if (area == gCurrentArea)
+        memcpy(buf, gDecompressedMinimapData, MINIMAP_SIZE * MINIMAP_SIZE * sizeof(u16));
+    else
+        PauseScreenGetMinimapData((Area)area, buf);
+    MinimapSetDownloadedTiles((Area)area, buf);
+    gEquipment.downloadedMapStatus = saved;
+}
+
+/* Snapshot of an area's real exploration, taken the first time a debug
+ * reveal/mark touches it, so "clear" (third tap) restores exactly what the
+ * player had rather than wiping it. */
+static u32  sMapBackup[MAX_AMOUNT_OF_AREAS][MINIMAP_SIZE];
+static u8   sMapBackupDl[MAX_AMOUNT_OF_AREAS];
+static bool sMapBackedUp[MAX_AMOUNT_OF_AREAS];
+
+static void MinimapBackupArea(int area) {
+    if (sMapBackedUp[area]) return;
+    for (int r = 0; r < MINIMAP_SIZE; ++r)
+        sMapBackup[area][r] = gVisitedMinimapTiles[area][r];
+    sMapBackupDl[area] = (u8)((gEquipment.downloadedMapStatus >> area) & 1u);
+    sMapBackedUp[area] = true;
+}
+
+/* Just the per-area "map downloaded" bit -- like touching a map station:
+ * the area outline appears, only tiles Samus actually walked read as
+ * explored (no whole-area green fill). */
+void PortPpuMzm_DebugRevealAllMaps(void) {
+    gEquipment.downloadedMapStatus = 0xFF;
+    MinimapRefreshCurrent();
     Port_DebugLog("DEBUG: all maps revealed");
+}
+
+void PortPpuMzm_DebugRevealAreaMap(int area) {
+    if (area < 0 || area >= MAX_AMOUNT_OF_AREAS) return;
+    MinimapBackupArea(area);
+    gEquipment.downloadedMapStatus |= (u8)(1u << area);
+    if (area == gCurrentArea) MinimapRefreshCurrent();
+    Port_DebugLog("DEBUG: area map revealed");
+}
+
+/* ---- Minimap completion --------------------------------------------- *
+ * "Drawn map tile" = != MINIMAP_TILE_BACKGROUND in the tilemap after the
+ * download pass (pause_screen_map.c uses that exact test). The base has
+ * room tiles spread across several id ranges plus 0xF000-flag bits, so a
+ * plain id range misses most of them -- resolve first, then count. */
+static int sMapTileTotal[MAX_AMOUNT_OF_AREAS] = { [0 ... MAX_AMOUNT_OF_AREAS - 1] = -1 };
+
+static int MinimapAreaDrawnCount(int area, u16* resolved /*optional, 1024 u16*/) {
+    static u16 local[MINIMAP_SIZE * MINIMAP_SIZE];
+    u16* buf = resolved ? resolved : local;
+    MinimapAreaResolved(area, buf);
+    int n = 0;
+    for (int i = 0; i < MINIMAP_SIZE * MINIMAP_SIZE; ++i)
+        if (buf[i] != MINIMAP_TILE_BACKGROUND) ++n;
+    return n;
+}
+
+void PortPpuMzm_DebugGetAreaMapProgress(int area, int* outVisited, int* outTotal) {
+    if (outVisited) *outVisited = 0;
+    if (outTotal) *outTotal = 0;
+    if (area < 0 || area >= MAX_AMOUNT_OF_AREAS) return;
+
+    if (sMapTileTotal[area] < 0)
+        sMapTileTotal[area] = MinimapAreaDrawnCount(area, NULL);
+    int total = sMapTileTotal[area];
+
+    int vis = 0;
+    for (int r = 0; r < MINIMAP_SIZE; ++r)
+        vis += __builtin_popcount(gVisitedMinimapTiles[area][r]);
+    if (vis > total) vis = total;
+
+    if (outVisited) *outVisited = vis;
+    if (outTotal) *outTotal = total;
+}
+
+int PortPpuMzm_DebugAreaMapPercent(int area) {
+    int v = 0, t = 0;
+    PortPpuMzm_DebugGetAreaMapProgress(area, &v, &t);
+    return t > 0 ? (v * 100 + t / 2) / t : 0;
+}
+
+/* STATUS second tap: mark every drawn tile of the (downloaded) area
+ * visited, so the whole outline fills in and the % reads 100. */
+void PortPpuMzm_DebugMarkAreaVisited(int area) {
+    if (area < 0 || area >= MAX_AMOUNT_OF_AREAS) return;
+    MinimapBackupArea(area);
+    gEquipment.downloadedMapStatus |= (u8)(1u << area);
+
+    static u16 buf[MINIMAP_SIZE * MINIMAP_SIZE];
+    int drawn = MinimapAreaDrawnCount(area, buf);
+    for (int r = 0; r < MINIMAP_SIZE; ++r)
+        for (int c = 0; c < MINIMAP_SIZE; ++c)
+            if (buf[r * MINIMAP_SIZE + c] != MINIMAP_TILE_BACKGROUND)
+                gVisitedMinimapTiles[area][r] |= (1u << c);
+    sMapTileTotal[area] = drawn; /* keep total and marked set in lockstep */
+    if (area == gCurrentArea) MinimapRefreshCurrent();
+    Port_DebugLog("DEBUG: area marked fully visited");
+}
+
+/* STATUS first tap of a new cycle: restore the area to exactly what the
+ * player had before the debug reveal/mark (from MinimapBackupArea's
+ * snapshot). If there is no snapshot, fall back to a full clear. */
+void PortPpuMzm_DebugClearAreaMap(int area) {
+    if (area < 0 || area >= MAX_AMOUNT_OF_AREAS) return;
+    if (sMapBackedUp[area]) {
+        for (int r = 0; r < MINIMAP_SIZE; ++r)
+            gVisitedMinimapTiles[area][r] = sMapBackup[area][r];
+        if (sMapBackupDl[area]) gEquipment.downloadedMapStatus |= (u8)(1u << area);
+        else                    gEquipment.downloadedMapStatus &= (u8)~(1u << area);
+        sMapBackedUp[area] = false; /* re-snapshot on the next debug touch */
+    } else {
+        for (int r = 0; r < MINIMAP_SIZE; ++r)
+            gVisitedMinimapTiles[area][r] = 0;
+        gEquipment.downloadedMapStatus &= (u8)~(1u << area);
+    }
+    if (area == gCurrentArea) MinimapRefreshCurrent();
+    Port_DebugLog("DEBUG: area map restored");
+}
+
+/* ---- Cheat tick ----------------------------------------------------------
+ * God mode: forced from Port_BottomUI_FrameTick once per frame. While on,
+ * energy is held at max (invincible) and ammo counts are kept topped
+ * (infinite). Deliberately does NOT raise beam damage -- that would let
+ * every shot break blocks; a "one-shot bosses without breaking anything"
+ * cheat is a separate, later thing. */
+static bool sDebugGod = false;
+void PortPpuMzm_DebugSetGod(bool on) { sDebugGod = on; }
+bool PortPpuMzm_DebugGetGod(void) { return sDebugGod; }
+
+/* "Always active" forced continuous effects, keyed by SMF_* bit. Only
+ * SMF_SPEEDBOOSTER and SMF_SCREW_ATTACK are meaningful here. Independent of
+ * god mode: driven every frame from PortPpuMzm_DebugCheatTick. */
+static u8 sForcedEffects = 0;
+
+void PortPpuMzm_DebugSetForceEffect(unsigned smfBit, bool on) {
+    if (on) {
+        sForcedEffects |= (u8)smfBit;
+        gEquipment.suitMisc |= (u8)smfBit;
+        gEquipment.suitMiscActivation |= (u8)smfBit;
+    } else {
+        sForcedEffects &= (u8)~smfBit;
+    }
+}
+
+bool PortPpuMzm_DebugGetForceEffect(unsigned smfBit) {
+    return (sForcedEffects & smfBit) != 0;
+}
+
+void PortPpuMzm_DebugSetMisc(unsigned bit, bool on) {
+    if (on) {
+        gEquipment.suitMisc |= (u8)bit;
+        gEquipment.suitMiscActivation |= (u8)bit;
+    } else {
+        gEquipment.suitMisc &= (u8)~bit;
+        gEquipment.suitMiscActivation &= (u8)~bit;
+        sForcedEffects &= (u8)~bit;
+    }
+}
+
+void PortPpuMzm_DebugCheatTick(void) {
+    if (gMainGameMode != GM_INGAME) return;
+
+    if (sDebugGod) {
+        gEquipment.currentEnergy = gEquipment.maxEnergy;
+        gEquipment.currentMissiles = gEquipment.maxMissiles;
+        gEquipment.currentSuperMissiles = gEquipment.maxSuperMissiles;
+        gEquipment.currentPowerBombs = gEquipment.maxPowerBombs;
+    }
+
+    /* The continuous-effect forcing itself lives in PORT-guarded hooks in
+     * src/samus.c (SamusCheckShinesparking / ...AffectingEnvironment), which
+     * read PortPpuMzm_DebugGetForceEffect(). Here we only keep the owned/
+     * activation bits set so those hooks and the HUD stay consistent. */
+    if (sForcedEffects & SMF_SPEEDBOOSTER) {
+        gEquipment.suitMisc |= SMF_SPEEDBOOSTER;
+        gEquipment.suitMiscActivation |= SMF_SPEEDBOOSTER;
+    }
+    if (sForcedEffects & SMF_SCREW_ATTACK) {
+        /* Also grant Space Jump so the aerial spinning-screw is sustained. */
+        gEquipment.suitMisc |= (SMF_SCREW_ATTACK | SMF_SPACE_JUMP);
+        gEquipment.suitMiscActivation |= (SMF_SCREW_ATTACK | SMF_SPACE_JUMP);
+    }
 }
 
 /* ---- Equipment -------------------------------------------------------
@@ -1224,6 +1409,7 @@ void PortPpuMzm_DebugToggleMisc(unsigned bit) {
     if (gEquipment.suitMisc & bit) {
         gEquipment.suitMisc &= (u8)~bit;
         gEquipment.suitMiscActivation &= (u8)~bit;
+        sForcedEffects &= (u8)~bit;
     } else {
         gEquipment.suitMisc |= (u8)bit;
         gEquipment.suitMiscActivation |= (u8)bit;

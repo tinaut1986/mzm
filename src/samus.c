@@ -197,6 +197,22 @@ void SamusCheckScrewSpeedboosterAffectingEnvironment(struct SamusData* pData, st
     if (pData->speedboostingShinesparking)
         action += DESTRUCTING_ACTION_SPEED;
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+    /* Debug "always active" effects: apply the screw / speedbooster
+     * destruction to the environment regardless of pose or speed, so the
+     * contact damage and wall-breaking work even while Samus moves normally.
+     * The spinning-ball graphic and the boost velocity ramp are left to the
+     * vanilla logic (screw stays jump-only; the boost still needs a run-up). */
+    if (pData->pose != SPOSE_DYING)
+    {
+        extern bool PortPpuMzm_DebugGetForceEffect(unsigned smfBit);
+        if (PortPpuMzm_DebugGetForceEffect(SMF_SCREW_ATTACK) && !(action & DESTRUCTING_ACTION_SCREW))
+            action += DESTRUCTING_ACTION_SCREW;
+        if (PortPpuMzm_DebugGetForceEffect(SMF_SPEEDBOOSTER) && !(action & DESTRUCTING_ACTION_SPEED))
+            action += DESTRUCTING_ACTION_SPEED;
+    }
+#endif
+
     if (action == DESTRUCTING_ACTION_NONE)
         return;
 
