@@ -101,18 +101,21 @@
 
   #realscreen { position:fixed; right:14px; bottom:14px; z-index:80; background:var(--panel);
                 border:1px solid var(--line); border-radius:6px; padding:8px;
-                box-shadow:0 6px 24px rgba(0,0,0,.4); }
-  #realscreen .rs-bar { display:flex; align-items:center; gap:8px; margin-bottom:6px;
+                box-shadow:0 6px 24px rgba(0,0,0,.4);
+                display:flex; flex-direction:column; gap:6px;
+                width:440px; height:340px; min-width:220px; min-height:150px;
+                max-width:96vw; max-height:92vh; resize:both; overflow:hidden; }
+  #realscreen .rs-bar { display:flex; align-items:center; gap:8px; flex:0 0 auto;
                         font-size:12px; font-weight:700; color:var(--ink); cursor:move;
                         user-select:none; }
   #realscreen .rs-bar .meta { font-weight:400; }
   #realscreen .rs-bar button { padding:0 7px; cursor:pointer; }
   #realscreen #rs-zout { margin-left:auto; }
   #realscreen #rs-zlab { min-width:28px; text-align:center; }
-  #realscreen #rs-scroll { width:420px; height:270px; resize:both; overflow:auto;
+  #realscreen #rs-scroll { flex:1 1 0; min-height:0; overflow:auto;
                            border:1px solid var(--line); background:#000; }
   #realscreen canvas { display:block; image-rendering:pixelated; }
-  #realscreen .rs-hint { margin:6px 0 0; font-size:11px; color:var(--faint); max-width:420px; }
+  #realscreen .rs-hint { margin:0; flex:0 0 auto; font-size:11px; color:var(--faint); }
 
   .mmctl button { padding:1px 7px; font-size:10px; margin-left:4px; cursor:pointer; }
   .mmbody { padding:9px; overflow:auto; flex:1 1 0; min-height:0; }
@@ -361,10 +364,9 @@
     <button class="tab" id="rs-close" title="Cerrar">×</button>
   </div>
   <div id="rs-scroll"><canvas id="rs-canvas"></canvas></div>
-  <p class="rs-hint">Suelta aquí (o en cualquier sitio) un <code>.rgb</code> del 3DS:
-     <code>mzm-dump-left.rgb</code> / <code>mzm-dump-bottom.rgb</code> /
-     <code>mzm-rec-shot-NNNN.rgb</code>. Es el fotograma tal cual sale de la GPU
-     a la pantalla, para comparar con lo que la 3DS recibe para dibujar.</p>
+  <p class="rs-hint">Suelta un <code>.rgb</code> del 3DS (<code>mzm-dump-*.rgb</code> o varios
+     <code>mzm-rec-shot-NNNN.rgb</code> para emparejar con la grabación). Es el
+     fotograma tal cual sale de la GPU a la pantalla.</p>
 </div>
 
 <script>
