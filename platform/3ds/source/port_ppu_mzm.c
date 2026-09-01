@@ -1181,64 +1181,91 @@ int PortPpuMzm_DebugRequestWarpToMapTile(int area, int tileX, int tileY) {
  * sequence MinimapCheckOnTransition uses (copy the raw map over it, then
  * MinimapSetDownloadedTiles), or the tiles the player is standing among
  * would stay dark until they walked to another area and back. */
-/* Set the per-area "map downloaded" bit -- same effect as touching a map
- * station in-game: the area outline appears, but tiles Samus has actually
- * walked stay the only ones drawn as explored. Deliberately does NOT fill
- * gVisitedMinimapTiles (that painted the whole area as personally explored
- * -- the "green squares" a map station never produces). */
+/* Rebuild the current area's rendered tilemap from the base + the download
+ * + visited pass. The memcpy is essential: MinimapSetDownloadedTiles mutates
+ * its buffer in place (strips the "hidden" flag, adds the 0x1000 explored
+ * bit), so it has to start from the clean base each time or a second call is
+ * a no-op and nothing new appears. */
+static void MinimapRefreshCurrent(void) {
+    memcpy(gDecompressedMinimapVisitedTiles, gDecompressedMinimapData,
+           MINIMAP_SIZE * MINIMAP_SIZE * sizeof(u16));
+    MinimapSetDownloadedTiles(gCurrentArea, gDecompressedMinimapVisitedTiles);
+}
+
+/* Fill `buf` with an area's minimap as it renders once downloaded: base
+ * decompress + item/boss icons + the downloaded-tiles pass. After this any
+ * cell != MINIMAP_TILE_BACKGROUND is a drawn map tile (pause_screen_map.c
+ * uses the same test). Forces the downloaded bit for the duration. */
+static void MinimapAreaResolved(int area, u16* buf) {
+    u8 saved = gEquipment.downloadedMapStatus;
+    gEquipment.downloadedMapStatus |= (u8)(1u << area);
+    if (area == gCurrentArea)
+        memcpy(buf, gDecompressedMinimapData, MINIMAP_SIZE * MINIMAP_SIZE * sizeof(u16));
+    else
+        PauseScreenGetMinimapData((Area)area, buf);
+    MinimapSetDownloadedTiles((Area)area, buf);
+    gEquipment.downloadedMapStatus = saved;
+}
+
+/* Just the per-area "map downloaded" bit -- like touching a map station:
+ * the area outline appears, only tiles Samus actually walked read as
+ * explored (no whole-area green fill). */
 void PortPpuMzm_DebugRevealAllMaps(void) {
     gEquipment.downloadedMapStatus = 0xFF;
-    MinimapSetDownloadedTiles(gCurrentArea, gDecompressedMinimapVisitedTiles);
+    MinimapRefreshCurrent();
     Port_DebugLog("DEBUG: all maps revealed");
 }
 
-/* One area (the STATUS-page per-area tap). */
 void PortPpuMzm_DebugRevealAreaMap(int area) {
     if (area < 0 || area >= MAX_AMOUNT_OF_AREAS) return;
     gEquipment.downloadedMapStatus |= (u8)(1u << area);
-    if (area == gCurrentArea)
-        MinimapSetDownloadedTiles(gCurrentArea, gDecompressedMinimapVisitedTiles);
+    if (area == gCurrentArea) MinimapRefreshCurrent();
     Port_DebugLog("DEBUG: area map revealed");
 }
 
-/* ---- Minimap completion ------------------------------------------------
- * A "room tile" is a drawn minimap cell: id (low 10 bits) in 0x141..0x15E,
- * matching MinimapCheckOnUnexploredTile (src/minimap.c). "Visited" is the
- * per-tile bit in gVisitedMinimapTiles[area]. Total per area never changes,
- * so it's cached; the visited count is cheap to re-derive. */
-static int sMapRoomTotal[MAX_AMOUNT_OF_AREAS] = { [0 ... MAX_AMOUNT_OF_AREAS - 1] = -1 };
-
-static void MinimapAreaBase(int area, u16* buf) {
-    if (area == gCurrentArea) {
-        memcpy(buf, gDecompressedMinimapData, MINIMAP_SIZE * MINIMAP_SIZE * sizeof(u16));
-    } else {
-        PauseScreenGetMinimapData((Area)area, buf);
-    }
-}
-
-static bool MinimapTileIsRoom(u16 t) {
-    u16 id = (u16)(t & 0x3FF);
-    return id >= 0x141 && id <= 0x15E;
-}
+/* ---- Minimap completion ---------------------------------------------- */
+static int sMapTileTotal[MAX_AMOUNT_OF_AREAS] = { [0 ... MAX_AMOUNT_OF_AREAS - 1] = -1 };
 
 void PortPpuMzm_DebugGetAreaMapProgress(int area, int* outVisited, int* outTotal) {
     if (outVisited) *outVisited = 0;
     if (outTotal) *outTotal = 0;
     if (area < 0 || area >= MAX_AMOUNT_OF_AREAS) return;
 
-    /* Total room tiles never change: decompress the base map once per area.
-     * Visited count is just the popcount of gVisitedMinimapTiles[area] -- the
-     * game only ever sets bits for tiles Samus stood on (all rooms), so no
-     * per-bit room check is needed on the hot path. */
-    if (sMapRoomTotal[area] < 0) {
+    if (sMapTileTotal[area] < 0) {
         static u16 buf[MINIMAP_SIZE * MINIMAP_SIZE];
-        MinimapAreaBase(area, buf);
-        int tot = 0;
-        for (int i = 0; i < MINIMAP_SIZE * MINIMAP_SIZE; ++i)
-            if (MinimapTileIsRoom(buf[i])) ++tot;
-        sMapRoomTotal[area] = tot;
+        /* one-shot tile-value histogram of the raw base, to nail the
+         * encoding of hidden room tiles */
+        u16 raw[MINIMAP_SIZE * MINIMAP_SIZE];
+        if (area == gCurrentArea)
+            memcpy(raw, gDecompressedMinimapData, sizeof(raw));
+        else
+            PauseScreenGetMinimapData((Area)area, raw);
+        int rbg = 0, rroom = 0, rhi = 0, rflag12 = 0, rflag3 = 0;
+        for (int i = 0; i < MINIMAP_SIZE * MINIMAP_SIZE; ++i) {
+            u16 t = raw[i];
+            if (t == 0x140) rbg++;
+            else if ((t & 0x3FF) >= 0x141 && (t & 0x3FF) <= 0x15E) rroom++;
+            else rhi++;
+            if (t >= 0x3000) rflag3++;
+            else if (t & 0x3000) rflag12++;
+        }
+        char m[128];
+        __builtin_snprintf(m, sizeof(m),
+            "MAPDBG a%d raw: bg=%d room=%d other=%d flag>=3000=%d flag12=%d",
+            area, rbg, rroom, rhi, rflag3, rflag12);
+        Port_DebugLog(m);
+
+        MinimapAreaResolved(area, buf);
+        int tot = 0, tgreen = 0;
+        for (int i = 0; i < MINIMAP_SIZE * MINIMAP_SIZE; ++i) {
+            if (buf[i] != MINIMAP_TILE_BACKGROUND) ++tot;
+            if (buf[i] & 0x1000) ++tgreen;
+        }
+        __builtin_snprintf(m, sizeof(m), "MAPDBG a%d resolved: drawn=%d green=%d", area, tot, tgreen);
+        Port_DebugLog(m);
+        sMapTileTotal[area] = tot;
     }
-    int total = sMapRoomTotal[area];
+    int total = sMapTileTotal[area];
 
     int vis = 0;
     for (int r = 0; r < MINIMAP_SIZE; ++r)
@@ -1255,31 +1282,28 @@ int PortPpuMzm_DebugAreaMapPercent(int area) {
     return t > 0 ? (v * 100 + t / 2) / t : 0;
 }
 
-/* Mark every room tile of an area visited (the STATUS second tap). Also
- * sets the downloaded bit, so it's a superset of RevealAreaMap. */
+/* STATUS second tap: mark every drawn tile of the (downloaded) area
+ * visited, so the whole outline fills green. */
 void PortPpuMzm_DebugMarkAreaVisited(int area) {
     if (area < 0 || area >= MAX_AMOUNT_OF_AREAS) return;
+    gEquipment.downloadedMapStatus |= (u8)(1u << area);
     static u16 buf[MINIMAP_SIZE * MINIMAP_SIZE];
-    MinimapAreaBase(area, buf);
+    MinimapAreaResolved(area, buf);
     for (int r = 0; r < MINIMAP_SIZE; ++r)
         for (int c = 0; c < MINIMAP_SIZE; ++c)
-            if (MinimapTileIsRoom(buf[r * MINIMAP_SIZE + c]))
+            if (buf[r * MINIMAP_SIZE + c] != MINIMAP_TILE_BACKGROUND)
                 gVisitedMinimapTiles[area][r] |= (1u << c);
-    gEquipment.downloadedMapStatus |= (u8)(1u << area);
-    if (area == gCurrentArea)
-        MinimapSetDownloadedTiles(gCurrentArea, gDecompressedMinimapVisitedTiles);
+    if (area == gCurrentArea) MinimapRefreshCurrent();
     Port_DebugLog("DEBUG: area marked fully visited");
 }
 
-/* Undo: forget the download and every visited tile for an area (STATUS
- * third tap, so the cycle loops). */
+/* STATUS third tap: forget the download and every visited tile. */
 void PortPpuMzm_DebugClearAreaMap(int area) {
     if (area < 0 || area >= MAX_AMOUNT_OF_AREAS) return;
     for (int r = 0; r < MINIMAP_SIZE; ++r)
         gVisitedMinimapTiles[area][r] = 0;
     gEquipment.downloadedMapStatus &= (u8)~(1u << area);
-    if (area == gCurrentArea)
-        MinimapSetDownloadedTiles(gCurrentArea, gDecompressedMinimapVisitedTiles);
+    if (area == gCurrentArea) MinimapRefreshCurrent();
     Port_DebugLog("DEBUG: area map cleared");
 }
 
