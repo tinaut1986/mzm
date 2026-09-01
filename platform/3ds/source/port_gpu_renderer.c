@@ -2074,9 +2074,21 @@ void Port_GpuRenderer_RenderFrame(void) {
                 if (wantBlend != blendModeActive) {
                     C2D_Flush();
                     if (wantBlend) {
-                        C3D_BlendingColor(C2D_Color32(0, 0, 0, (u32)((sBldEva * 255) / 16)));
-                        C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_CONSTANT_ALPHA, GPU_ONE_MINUS_CONSTANT_ALPHA,
-                                       GPU_CONSTANT_ALPHA, GPU_ONE_MINUS_CONSTANT_ALPHA);
+                        /* GBA alpha blend (GBATEK): out = min(31, src*EVA/16 + dst*EVB/16),
+                         * with EVA and EVB independent. Pack EVA/16 into the blend
+                         * colour's RGB and EVB/16 into its alpha, then take the src
+                         * side from GPU_CONSTANT_COLOR and the dst side from
+                         * GPU_CONSTANT_ALPHA so each gets its own coefficient.
+                         * GPU_BLEND_ADD saturates in [0,1], matching GBA's clamp to 31.
+                         * The old code used dst factor 1-EVA/16 (a normalised lerp that
+                         * ignored EVB) -- correct only where EVA+EVB==16, but wrong for
+                         * the transparency 0x08-0x17 rooms where EVB is forced to 16
+                         * (sum > 16, additive), which came out far too dark. */
+                        u32 evaByte = (u32)((sBldEva * 255) / 16);
+                        u32 evbByte = (u32)((sBldEvb * 255) / 16);
+                        C3D_BlendingColor(C2D_Color32(evaByte, evaByte, evaByte, evbByte));
+                        C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_CONSTANT_COLOR, GPU_CONSTANT_ALPHA,
+                                       GPU_CONSTANT_COLOR, GPU_CONSTANT_ALPHA);
                     } else {
                         /* Opaque mode: ONE/ZERO, see the comment above the
                          * initial C3D_AlphaBlend call before this loop. */
