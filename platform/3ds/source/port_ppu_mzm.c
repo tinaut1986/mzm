@@ -1368,17 +1368,16 @@ void PortPpuMzm_DebugCheatTick(void) {
         gEquipment.currentPowerBombs = gEquipment.maxPowerBombs;
     }
 
+    /* The continuous-effect forcing itself lives in PORT-guarded hooks in
+     * src/samus.c (SamusCheckShinesparking / ...AffectingEnvironment), which
+     * read PortPpuMzm_DebugGetForceEffect(). Here we only keep the owned/
+     * activation bits set so those hooks and the HUD stay consistent. */
     if (sForcedEffects & SMF_SPEEDBOOSTER) {
         gEquipment.suitMisc |= SMF_SPEEDBOOSTER;
         gEquipment.suitMiscActivation |= SMF_SPEEDBOOSTER;
-        /* Skip the run-up: max the charge timer so the velocity cap lifts
-         * and the boost engages as soon as Samus is running. */
-        if (gSamusData.pose == SPOSE_RUNNING)
-            gSamusData.timer = 160;
     }
     if (sForcedEffects & SMF_SCREW_ATTACK) {
-        /* Screw attack already fires on any spin jump once owned; adding
-         * space jump makes it a sustained aerial effect. */
+        /* Also grant Space Jump so the aerial spinning-screw is sustained. */
         gEquipment.suitMisc |= (SMF_SCREW_ATTACK | SMF_SPACE_JUMP);
         gEquipment.suitMiscActivation |= (SMF_SCREW_ATTACK | SMF_SPACE_JUMP);
     }

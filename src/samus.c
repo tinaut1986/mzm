@@ -197,6 +197,19 @@ void SamusCheckScrewSpeedboosterAffectingEnvironment(struct SamusData* pData, st
     if (pData->speedboostingShinesparking)
         action += DESTRUCTING_ACTION_SPEED;
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+    /* Debug "always active" screw attack: apply screw damage to the
+     * environment even when not in a spin pose (e.g. walking into screw
+     * blocks). The spinning ball graphic itself is a jump-only pose in the
+     * engine and is not forced here. */
+    {
+        extern bool PortPpuMzm_DebugGetForceEffect(unsigned smfBit);
+        if (action == DESTRUCTING_ACTION_NONE && pData->pose != SPOSE_DYING &&
+            PortPpuMzm_DebugGetForceEffect(SMF_SCREW_ATTACK))
+            action = DESTRUCTING_ACTION_SCREW;
+    }
+#endif
+
     if (action == DESTRUCTING_ACTION_NONE)
         return;
 
@@ -3796,6 +3809,17 @@ void SamusCheckShinesparking(struct SamusData* pData)
         // Can't speedboost if dead
         pData->speedboostingShinesparking = FALSE;
     }
+
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+    /* Debug "always active" speed booster: hold the boost state on regardless
+     * of velocity so the glow / after-image / contact damage apply while
+     * standing, and the first step is already at boost speed. */
+    {
+        extern bool PortPpuMzm_DebugGetForceEffect(unsigned smfBit);
+        if (pData->pose != SPOSE_DYING && PortPpuMzm_DebugGetForceEffect(SMF_SPEEDBOOSTER))
+            pData->speedboostingShinesparking = TRUE;
+    }
+#endif
 
     // Check stop speedbooster sound
     if (!pData->speedboostingShinesparking)
