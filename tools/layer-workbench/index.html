@@ -82,6 +82,9 @@
   .shot[aria-current="true"] { border-left-color:var(--accent); background:var(--accent-soft); color:var(--ink); }
   .shot canvas { width:68px; height:45px; border:1px solid var(--line); }
   .shot .n { font-size:11px; font-variant-numeric:tabular-nums; }
+  .shot[data-rgb="1"] .n::after { content:"\25CF"; color:#5cc46b; margin-left:5px; font-size:9px;
+                                  vertical-align:1px; }
+  .shot[data-rgb="1"][aria-current="true"] .n::after { color:#8ff09a; }
   .shot.room { justify-content:space-between; padding:4px 11px; }
   .shot.room .dim { font-size:10px; color:var(--faint); }
   .shot.room .dim i { font-style:normal; color:var(--warn); }
@@ -434,6 +437,10 @@
     ctx.putImageData(out,0,0);
     var kind = SH>=400 ? "arriba 400x240" : SH>=300 ? "abajo 320x240" : SH+" px alto";
     els["rs-info"].textContent = name+"  ("+kind+")";
+    if(!/rec-shot-0*\d+\.rgb$/i.test(name)){
+      els["rs-title"].textContent="PANTALLA REAL (post-GPU)";
+      els["rs-title"].style.color="";
+    }
     els.realscreen.hidden=false;
     rsApplyZoom();
   }
@@ -457,12 +464,21 @@
      only taken every few samples, so a scrub lands on the newest shot <= the
      current sample). Non-indexed dumps (mzm-dump-*.rgb) show straight away. */
   var rsShots={};
+  /* Green dot on every rail thumbnail that has a matching .rgb, so the
+     pairing is visible at a glance. */
+  function rsMarkRail(){
+    if(!els.shots)return;
+    Array.prototype.forEach.call(els.shots.children,function(b,n){
+      b.setAttribute("data-rgb", rsShots[n] ? "1" : "0");
+    });
+  }
   function rsAddShot(buf,name){
     var m=/rec-shot-0*(\d+)\.rgb$/i.exec(name);
     if(!m){ showRealScreen(buf,name); return; }
     rsShots[+m[1]]={buf:buf,name:name};
-    var keys=Object.keys(rsShots);
-    els.meta.textContent=keys.length+" captura(s) .rgb emparejadas con la grabación";
+    var keys=Object.keys(rsShots).map(Number).sort(function(a,b){return a-b;});
+    els.meta.textContent=keys.length+" .rgb emparejadas · frames "+keys.join(", ");
+    rsMarkRail();
     if(mode==="rec") rsSyncToSample(lastSample);
     else showRealScreen(buf,name);
   }
@@ -471,8 +487,12 @@
     Object.keys(rsShots).forEach(function(k){k=+k;if(k<=i&&k>best)best=k;});
     if(best<0){ Object.keys(rsShots).forEach(function(k){k=+k;if(best<0||k<best)best=k;}); }
     if(best<0)return;
-    var s=rsShots[best];
-    showRealScreen(s.buf,s.name+(best===i?"":"  (frame "+best+" ≤ "+i+")"));
+    var s=rsShots[best], exact=(best===i);
+    els["rs-title"].textContent = exact
+      ? "PANTALLA REAL · frame "+i
+      : "PANTALLA REAL · frame "+i+" → .rgb del "+best;
+    els["rs-title"].style.color = exact ? "" : "var(--warn)";
+    showRealScreen(s.buf, s.name);
   }
 
   /* Drag the panel by its title bar. Switches from the bottom-right anchor to
@@ -2359,6 +2379,7 @@
       b.addEventListener("click",function(){loadSample(i);});
       els.shots.appendChild(b);
     });
+    rsMarkRail();
   }
 
   function ingest(buf,name){
