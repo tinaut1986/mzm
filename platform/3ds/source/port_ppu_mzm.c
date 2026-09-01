@@ -1328,13 +1328,60 @@ static bool sDebugGod = false;
 void PortPpuMzm_DebugSetGod(bool on) { sDebugGod = on; }
 bool PortPpuMzm_DebugGetGod(void) { return sDebugGod; }
 
+/* "Always active" forced continuous effects, keyed by SMF_* bit. Only
+ * SMF_SPEEDBOOSTER and SMF_SCREW_ATTACK are meaningful here. Independent of
+ * god mode: driven every frame from PortPpuMzm_DebugCheatTick. */
+static u8 sForcedEffects = 0;
+
+void PortPpuMzm_DebugSetForceEffect(unsigned smfBit, bool on) {
+    if (on) {
+        sForcedEffects |= (u8)smfBit;
+        gEquipment.suitMisc |= (u8)smfBit;
+        gEquipment.suitMiscActivation |= (u8)smfBit;
+    } else {
+        sForcedEffects &= (u8)~smfBit;
+    }
+}
+
+bool PortPpuMzm_DebugGetForceEffect(unsigned smfBit) {
+    return (sForcedEffects & smfBit) != 0;
+}
+
+void PortPpuMzm_DebugSetMisc(unsigned bit, bool on) {
+    if (on) {
+        gEquipment.suitMisc |= (u8)bit;
+        gEquipment.suitMiscActivation |= (u8)bit;
+    } else {
+        gEquipment.suitMisc &= (u8)~bit;
+        gEquipment.suitMiscActivation &= (u8)~bit;
+        sForcedEffects &= (u8)~bit;
+    }
+}
+
 void PortPpuMzm_DebugCheatTick(void) {
-    if (!sDebugGod) return;
     if (gMainGameMode != GM_INGAME) return;
-    gEquipment.currentEnergy = gEquipment.maxEnergy;
-    gEquipment.currentMissiles = gEquipment.maxMissiles;
-    gEquipment.currentSuperMissiles = gEquipment.maxSuperMissiles;
-    gEquipment.currentPowerBombs = gEquipment.maxPowerBombs;
+
+    if (sDebugGod) {
+        gEquipment.currentEnergy = gEquipment.maxEnergy;
+        gEquipment.currentMissiles = gEquipment.maxMissiles;
+        gEquipment.currentSuperMissiles = gEquipment.maxSuperMissiles;
+        gEquipment.currentPowerBombs = gEquipment.maxPowerBombs;
+    }
+
+    if (sForcedEffects & SMF_SPEEDBOOSTER) {
+        gEquipment.suitMisc |= SMF_SPEEDBOOSTER;
+        gEquipment.suitMiscActivation |= SMF_SPEEDBOOSTER;
+        /* Skip the run-up: max the charge timer so the velocity cap lifts
+         * and the boost engages as soon as Samus is running. */
+        if (gSamusData.pose == SPOSE_RUNNING)
+            gSamusData.timer = 160;
+    }
+    if (sForcedEffects & SMF_SCREW_ATTACK) {
+        /* Screw attack already fires on any spin jump once owned; adding
+         * space jump makes it a sustained aerial effect. */
+        gEquipment.suitMisc |= (SMF_SCREW_ATTACK | SMF_SPACE_JUMP);
+        gEquipment.suitMiscActivation |= (SMF_SCREW_ATTACK | SMF_SPACE_JUMP);
+    }
 }
 
 /* ---- Equipment -------------------------------------------------------
@@ -1363,6 +1410,7 @@ void PortPpuMzm_DebugToggleMisc(unsigned bit) {
     if (gEquipment.suitMisc & bit) {
         gEquipment.suitMisc &= (u8)~bit;
         gEquipment.suitMiscActivation &= (u8)~bit;
+        sForcedEffects &= (u8)~bit;
     } else {
         gEquipment.suitMisc |= (u8)bit;
         gEquipment.suitMiscActivation |= (u8)bit;

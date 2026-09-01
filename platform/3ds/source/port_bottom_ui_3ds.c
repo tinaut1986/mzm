@@ -204,11 +204,18 @@ extern int  PortPpuMzm_DebugAreaMapPercent(int area);
 /* Per-area STATUS map-box debug cycle: 0 actual, 1 forced-download, 2 forced-100%.
  * Read by RenderStatusView to colour the box; advanced by the touch handler. */
 static uint8_t sMapDebugState[7] = { 0, 0, 0, 0, 0, 0, 0 };
+
+/* STATUS suit rows: per-row cycle position. Only index 1 (Speed Booster) and
+ * index 3 (Screw Attack) use all three steps (none / owned / always-active). */
+static uint8_t sSuitCycle[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
 extern void PortPpuMzm_DebugSetGod(bool on);
 extern bool PortPpuMzm_DebugGetGod(void);
 extern void PortPpuMzm_DebugGetEquipment(unsigned* outBeams, unsigned* outMisc);
 extern void PortPpuMzm_DebugToggleBeam(unsigned bit);
 extern void PortPpuMzm_DebugToggleMisc(unsigned bit);
+extern void PortPpuMzm_DebugSetMisc(unsigned bit, bool on);
+extern void PortPpuMzm_DebugSetForceEffect(unsigned smfBit, bool on);
+extern bool PortPpuMzm_DebugGetForceEffect(unsigned smfBit);
 extern void PortPpuMzm_DebugSetAllEquipment(bool on);
 extern void PortPpuMzm_DebugSetAmmo(bool full);
 extern void PortPpuMzm_DebugRefillAmmo(void);
@@ -980,7 +987,18 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
                 for (int i = 0; i < 8; ++i) {
                     int py = 91 + i * 9;
                     if (y >= py && y <= py + 9) {
-                        PortPpuMzm_DebugToggleMisc(kStatusSuitBits[i]);
+                        /* Speed Booster (i=1) and Screw Attack (i=3) get a
+                         * 3-state cycle: none -> owned -> always-active.
+                         * Every other row is a plain owned/not toggle. */
+                        if (i == 1 || i == 3) {
+                            unsigned smf = kStatusSuitBits[i];
+                            uint8_t* st = &sSuitCycle[i];
+                            *st = (uint8_t)((*st + 1) % 3);
+                            PortPpuMzm_DebugSetMisc(smf, *st != 0);
+                            PortPpuMzm_DebugSetForceEffect(smf, *st == 2);
+                        } else {
+                            PortPpuMzm_DebugToggleMisc(kStatusSuitBits[i]);
+                        }
                         Port_BottomUI_MarkDirty();
                         return;
                     }
@@ -2824,8 +2842,16 @@ static void RenderStatusView(void) {
                 statusStr = "??";
                 col = C2D_Color32(255, 180, 50, 255);
             } else if (active) {
-                statusStr = "OK";
-                col = C2D_Color32(80, 255, 120, 255);
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
+                if (Port_BottomUI_DebugTabVisible() && PortPpuMzm_DebugGetForceEffect(flag)) {
+                    statusStr = "AUTO";
+                    col = C2D_Color32(120, 220, 255, 255);
+                } else
+#endif
+                {
+                    statusStr = "OK";
+                    col = C2D_Color32(80, 255, 120, 255);
+                }
             } else {
                 statusStr = "OFF";
                 col = C2D_Color32(220, 160, 60, 255);
