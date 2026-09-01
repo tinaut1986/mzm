@@ -105,9 +105,12 @@
   #realscreen .rs-bar { display:flex; align-items:center; gap:8px; margin-bottom:6px;
                         font-size:12px; font-weight:700; color:var(--ink); }
   #realscreen .rs-bar .meta { font-weight:400; }
-  #realscreen #rs-close { margin-left:auto; padding:0 8px; cursor:pointer; }
-  #realscreen canvas { display:block; image-rendering:pixelated; background:#000;
-                       border:1px solid var(--line); max-width:100%; }
+  #realscreen .rs-bar button { padding:0 7px; cursor:pointer; }
+  #realscreen #rs-zout { margin-left:auto; }
+  #realscreen #rs-zlab { min-width:28px; text-align:center; }
+  #realscreen #rs-scroll { max-width:min(88vw,900px); max-height:70vh; overflow:auto;
+                           border:1px solid var(--line); background:#000; }
+  #realscreen canvas { display:block; image-rendering:pixelated; }
   #realscreen .rs-hint { margin:6px 0 0; font-size:11px; color:var(--faint); max-width:520px; }
 
   .mmctl button { padding:1px 7px; font-size:10px; margin-left:4px; cursor:pointer; }
@@ -351,9 +354,12 @@
   <div class="rs-bar">
     <span id="rs-title">PANTALLA REAL (post-GPU)</span>
     <span class="meta" id="rs-info"></span>
+    <button class="tab" id="rs-zout" title="Alejar">−</button>
+    <span class="meta" id="rs-zlab">1×</span>
+    <button class="tab" id="rs-zin" title="Acercar">+</button>
     <button class="tab" id="rs-close" title="Cerrar">×</button>
   </div>
-  <canvas id="rs-canvas"></canvas>
+  <div id="rs-scroll"><canvas id="rs-canvas"></canvas></div>
   <p class="rs-hint">Suelta aquí (o en cualquier sitio) un <code>.rgb</code> del 3DS:
      <code>mzm-dump-left.rgb</code> / <code>mzm-dump-bottom.rgb</code> /
      <code>mzm-rec-shot-NNNN.rgb</code>. Es el fotograma tal cual sale de la GPU
@@ -391,7 +397,8 @@
    "copy","clear","save","zin","zout","zlab","relayout","torail","toside",
    "minbar","divrail","divside","restore","autobadge","load",
    "mMap","mRec","mSprites",
-   "realscreen","rs-canvas","rs-info","rs-close","rs-title"].forEach(function(id){els[id]=document.getElementById(id);});
+   "realscreen","rs-canvas","rs-info","rs-close","rs-title","rs-scroll",
+   "rs-zin","rs-zout","rs-zlab"].forEach(function(id){els[id]=document.getElementById(id);});
 
   function u16(b,o){return b[o]|(b[o+1]<<8);}
   function u32(b,o){return (b[o]|(b[o+1]<<8)|(b[o+2]<<16)|(b[o+3]<<24))>>>0;}
@@ -425,7 +432,21 @@
     var kind = SH>=400 ? "arriba 400x240" : SH>=300 ? "abajo 320x240" : SH+" px alto";
     els["rs-info"].textContent = name+"  ("+kind+")";
     els.realscreen.hidden=false;
+    rsApplyZoom();
   }
+  var rsZoom=1;
+  function rsApplyZoom(){
+    var cv=els["rs-canvas"];
+    cv.style.width=(cv.width*rsZoom)+"px";
+    cv.style.height=(cv.height*rsZoom)+"px";
+    els["rs-zlab"].textContent=rsZoom+"×";
+  }
+  function rsSetZoom(z){ rsZoom=Math.max(1,Math.min(8,z)); rsApplyZoom(); }
+  els["rs-zin"].addEventListener("click",function(){ rsSetZoom(rsZoom+1); });
+  els["rs-zout"].addEventListener("click",function(){ rsSetZoom(rsZoom-1); });
+  els["rs-canvas"].addEventListener("wheel",function(e){
+    e.preventDefault(); rsSetZoom(rsZoom+(e.deltaY<0?1:-1));
+  },{passive:false});
   els["rs-close"].addEventListener("click",function(){ els.realscreen.hidden=true; });
 
   /* ---------- recording parsing ---------- */
