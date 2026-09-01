@@ -101,17 +101,18 @@
 
   #realscreen { position:fixed; right:14px; bottom:14px; z-index:80; background:var(--panel);
                 border:1px solid var(--line); border-radius:6px; padding:8px;
-                box-shadow:0 6px 24px rgba(0,0,0,.4); max-width:min(92vw,540px); }
+                box-shadow:0 6px 24px rgba(0,0,0,.4); }
   #realscreen .rs-bar { display:flex; align-items:center; gap:8px; margin-bottom:6px;
-                        font-size:12px; font-weight:700; color:var(--ink); }
+                        font-size:12px; font-weight:700; color:var(--ink); cursor:move;
+                        user-select:none; }
   #realscreen .rs-bar .meta { font-weight:400; }
   #realscreen .rs-bar button { padding:0 7px; cursor:pointer; }
   #realscreen #rs-zout { margin-left:auto; }
   #realscreen #rs-zlab { min-width:28px; text-align:center; }
-  #realscreen #rs-scroll { max-width:min(88vw,900px); max-height:70vh; overflow:auto;
+  #realscreen #rs-scroll { width:420px; height:270px; resize:both; overflow:auto;
                            border:1px solid var(--line); background:#000; }
   #realscreen canvas { display:block; image-rendering:pixelated; }
-  #realscreen .rs-hint { margin:6px 0 0; font-size:11px; color:var(--faint); max-width:520px; }
+  #realscreen .rs-hint { margin:6px 0 0; font-size:11px; color:var(--faint); max-width:420px; }
 
   .mmctl button { padding:1px 7px; font-size:10px; margin-left:4px; cursor:pointer; }
   .mmbody { padding:9px; overflow:auto; flex:1 1 0; min-height:0; }
@@ -296,7 +297,7 @@
 
   <div class="grp" role="group" aria-label="Datos">
     <label class="filebtn ui" tabindex="0">MAPAS<input type="file" id="mapsfile" accept=".json,.gz"></label>
-    <label class="filebtn ui" tabindex="0">GRABACIÓN<input type="file" id="file" accept=".bin,.rgb"></label>
+    <label class="filebtn ui" tabindex="0">GRABACIÓN<input type="file" id="file" accept=".bin,.rgb" multiple></label>
   </div>
 
   <div class="grp" role="group" aria-label="Vista">
@@ -448,6 +449,48 @@
     e.preventDefault(); rsSetZoom(rsZoom+(e.deltaY<0?1:-1));
   },{passive:false});
   els["rs-close"].addEventListener("click",function(){ els.realscreen.hidden=true; });
+
+  /* Pair mzm-rec-shot-NNNN.rgb frames with the loaded recording: NNNN is the
+     0-indexed sample number the 3DS embedded when it wrote the shot (they are
+     only taken every few samples, so a scrub lands on the newest shot <= the
+     current sample). Non-indexed dumps (mzm-dump-*.rgb) show straight away. */
+  var rsShots={};
+  function rsAddShot(buf,name){
+    var m=/rec-shot-0*(\d+)\.rgb$/i.exec(name);
+    if(!m){ showRealScreen(buf,name); return; }
+    rsShots[+m[1]]={buf:buf,name:name};
+    var keys=Object.keys(rsShots);
+    els.meta.textContent=keys.length+" captura(s) .rgb emparejadas con la grabación";
+    if(mode==="rec") rsSyncToSample(lastSample);
+    else showRealScreen(buf,name);
+  }
+  function rsSyncToSample(i){
+    var best=-1;
+    Object.keys(rsShots).forEach(function(k){k=+k;if(k<=i&&k>best)best=k;});
+    if(best<0){ Object.keys(rsShots).forEach(function(k){k=+k;if(best<0||k<best)best=k;}); }
+    if(best<0)return;
+    var s=rsShots[best];
+    showRealScreen(s.buf,s.name+(best===i?"":"  (frame "+best+" ≤ "+i+")"));
+  }
+
+  /* Drag the panel by its title bar. Switches from the bottom-right anchor to
+     free left/top placement on first drag. */
+  (function(){
+    var bar=els.realscreen.querySelector(".rs-bar"),dragging=false,ox=0,oy=0;
+    bar.addEventListener("mousedown",function(e){
+      if(e.target.tagName==="BUTTON")return;
+      var r=els.realscreen.getBoundingClientRect();
+      dragging=true; ox=e.clientX-r.left; oy=e.clientY-r.top;
+      els.realscreen.style.right="auto"; els.realscreen.style.bottom="auto";
+      e.preventDefault();
+    });
+    window.addEventListener("mousemove",function(e){
+      if(!dragging)return;
+      els.realscreen.style.left=Math.max(0,e.clientX-ox)+"px";
+      els.realscreen.style.top=Math.max(0,e.clientY-oy)+"px";
+    });
+    window.addEventListener("mouseup",function(){ dragging=false; });
+  })();
 
   /* ---------- recording parsing ---------- */
   function scan(buf){
@@ -2288,6 +2331,7 @@
     Array.prototype.forEach.call(els.shots.children,function(s,n){
       s.setAttribute("aria-current",n===i?"true":"false");});
     buildMain();reanchor();renderSide();renderList();redraw();
+    if(Object.keys(rsShots).length) rsSyncToSample(i);
   }
 
   function buildRail(){
@@ -2691,9 +2735,12 @@
 
   /* ---------- wiring ---------- */
   els.file.addEventListener("change",function(e){
-    var f=e.target.files[0];if(!f)return;f.arrayBuffer().then(function(b){
-      if(/\.rgb$/i.test(f.name))return showRealScreen(b,f.name);
-      ingest(b,f.name);});});
+    var fl=e.target.files;if(!fl||!fl.length)return;
+    if([].every.call(fl,function(f){return /\.rgb$/i.test(f.name);})){
+      [].forEach.call(fl,function(f){f.arrayBuffer().then(function(b){rsAddShot(b,f.name);});});
+      return;
+    }
+    fl[0].arrayBuffer().then(function(b){ingest(b,fl[0].name);});});
   els.mapsfile.addEventListener("change",function(e){
     var f=e.target.files[0];if(!f)return;f.arrayBuffer().then(function(b){ingestMaps(b,f.name);});});
   els.incfile.addEventListener("change",function(e){
@@ -2728,9 +2775,13 @@
   /* Un solo sitio donde soltar: se decide por el nombre, que en los dos casos
      es el que la herramienta que lo generó le puso. */
   document.addEventListener("drop",function(e){
-    var f=e.dataTransfer&&e.dataTransfer.files[0];if(!f)return;
+    var fl=e.dataTransfer&&e.dataTransfer.files;if(!fl||!fl.length)return;
+    if([].every.call(fl,function(f){return /\.rgb$/i.test(f.name);})){
+      [].forEach.call(fl,function(f){f.arrayBuffer().then(function(b){rsAddShot(b,f.name);});});
+      return;
+    }
+    var f=fl[0];
     f.arrayBuffer().then(function(b){
-      if(/\.rgb$/i.test(f.name))return showRealScreen(b,f.name);
       if(/sprites\.json$/i.test(f.name)){ sprites=JSON.parse(new TextDecoder().decode(b));
         if(mode==="sprites")enterSprites(); return; }
       if(/\.(json|gz)$/i.test(f.name))return ingestMaps(b,f.name);
