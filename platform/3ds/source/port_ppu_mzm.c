@@ -1207,6 +1207,21 @@ static void MinimapAreaResolved(int area, u16* buf) {
     gEquipment.downloadedMapStatus = saved;
 }
 
+/* Snapshot of an area's real exploration, taken the first time a debug
+ * reveal/mark touches it, so "clear" (third tap) restores exactly what the
+ * player had rather than wiping it. */
+static u32  sMapBackup[MAX_AMOUNT_OF_AREAS][MINIMAP_SIZE];
+static u8   sMapBackupDl[MAX_AMOUNT_OF_AREAS];
+static bool sMapBackedUp[MAX_AMOUNT_OF_AREAS];
+
+static void MinimapBackupArea(int area) {
+    if (sMapBackedUp[area]) return;
+    for (int r = 0; r < MINIMAP_SIZE; ++r)
+        sMapBackup[area][r] = gVisitedMinimapTiles[area][r];
+    sMapBackupDl[area] = (u8)((gEquipment.downloadedMapStatus >> area) & 1u);
+    sMapBackedUp[area] = true;
+}
+
 /* Just the per-area "map downloaded" bit -- like touching a map station:
  * the area outline appears, only tiles Samus actually walked read as
  * explored (no whole-area green fill). */
@@ -1218,6 +1233,7 @@ void PortPpuMzm_DebugRevealAllMaps(void) {
 
 void PortPpuMzm_DebugRevealAreaMap(int area) {
     if (area < 0 || area >= MAX_AMOUNT_OF_AREAS) return;
+    MinimapBackupArea(area);
     gEquipment.downloadedMapStatus |= (u8)(1u << area);
     if (area == gCurrentArea) MinimapRefreshCurrent();
     Port_DebugLog("DEBUG: area map revealed");
@@ -1225,6 +1241,7 @@ void PortPpuMzm_DebugRevealAreaMap(int area) {
 
 /* ---- Minimap completion ---------------------------------------------- */
 static int sMapTileTotal[MAX_AMOUNT_OF_AREAS] = { [0 ... MAX_AMOUNT_OF_AREAS - 1] = -1 };
+
 
 void PortPpuMzm_DebugGetAreaMapProgress(int area, int* outVisited, int* outTotal) {
     if (outVisited) *outVisited = 0;
@@ -1286,6 +1303,7 @@ int PortPpuMzm_DebugAreaMapPercent(int area) {
  * visited, so the whole outline fills green. */
 void PortPpuMzm_DebugMarkAreaVisited(int area) {
     if (area < 0 || area >= MAX_AMOUNT_OF_AREAS) return;
+    MinimapBackupArea(area);
     gEquipment.downloadedMapStatus |= (u8)(1u << area);
     static u16 buf[MINIMAP_SIZE * MINIMAP_SIZE];
     MinimapAreaResolved(area, buf);
@@ -1297,14 +1315,24 @@ void PortPpuMzm_DebugMarkAreaVisited(int area) {
     Port_DebugLog("DEBUG: area marked fully visited");
 }
 
-/* STATUS third tap: forget the download and every visited tile. */
+/* STATUS third tap: restore the area to exactly what the player had before
+ * the debug reveal/mark (from MinimapBackupArea's snapshot). If there is no
+ * snapshot, fall back to a full clear. */
 void PortPpuMzm_DebugClearAreaMap(int area) {
     if (area < 0 || area >= MAX_AMOUNT_OF_AREAS) return;
-    for (int r = 0; r < MINIMAP_SIZE; ++r)
-        gVisitedMinimapTiles[area][r] = 0;
-    gEquipment.downloadedMapStatus &= (u8)~(1u << area);
+    if (sMapBackedUp[area]) {
+        for (int r = 0; r < MINIMAP_SIZE; ++r)
+            gVisitedMinimapTiles[area][r] = sMapBackup[area][r];
+        if (sMapBackupDl[area]) gEquipment.downloadedMapStatus |= (u8)(1u << area);
+        else                    gEquipment.downloadedMapStatus &= (u8)~(1u << area);
+        sMapBackedUp[area] = false; /* re-snapshot on the next debug touch */
+    } else {
+        for (int r = 0; r < MINIMAP_SIZE; ++r)
+            gVisitedMinimapTiles[area][r] = 0;
+        gEquipment.downloadedMapStatus &= (u8)~(1u << area);
+    }
     if (area == gCurrentArea) MinimapRefreshCurrent();
-    Port_DebugLog("DEBUG: area map cleared");
+    Port_DebugLog("DEBUG: area map restored");
 }
 
 /* ---- Cheat tick ----------------------------------------------------------

@@ -996,13 +996,22 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
                         if (x >= bx && x <= bx + 92) { hit = i; break; } }
                 }
                 if (hit >= 0) {
+                    /* Explicit 3-state cycle so it advances even if
+                     * "mark visited" can't quite reach 100%:
+                     *   0 nothing -> reveal -> 2 marked -> restore -> 0
+                     * An area already downloaded when first tapped jumps
+                     * straight to "marked". */
+                    static uint8_t sMapDebugState[7] = { 0, 0, 0, 0, 0, 0, 0 };
+                    uint8_t* st = &sMapDebugState[hit];
                     bool dl = (gEquipment.downloadedMapStatus & (1 << hit)) != 0;
-                    if (!dl)
-                        PortPpuMzm_DebugRevealAreaMap(hit);
-                    else if (PortPpuMzm_DebugAreaMapPercent(hit) < 100)
-                        PortPpuMzm_DebugMarkAreaVisited(hit);
-                    else
-                        PortPpuMzm_DebugClearAreaMap(hit);
+                    if (*st == 0) {
+                        if (dl) { *st = 2; PortPpuMzm_DebugMarkAreaVisited(hit); }
+                        else    { *st = 1; PortPpuMzm_DebugRevealAreaMap(hit); }
+                    } else if (*st == 1) {
+                        *st = 2; PortPpuMzm_DebugMarkAreaVisited(hit);
+                    } else {
+                        *st = 0; PortPpuMzm_DebugClearAreaMap(hit);
+                    }
                     sCachedOtherArea = 0xFF;
                     Port_BottomUI_MarkDirty();
                     return;
