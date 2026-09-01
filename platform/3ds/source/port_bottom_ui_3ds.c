@@ -174,6 +174,8 @@ static uint32_t sDebugToolsMsgUntil = 0;
 
 extern void PortPpuMzm_DebugKillSamus(void);
 extern void Port_GpuRenderer_DumpAtlas(const char* ppmPath, const char* csvPath);
+extern bool Port_GpuRenderer_IsActive(void);
+extern void Port_GpuRenderer_SetActive(bool active);
 extern void Port_DebugLog(const char* msg);
 extern void PortStereoDepth_SetSpread(int spread);
 extern int PortStereoDepth_GetSpread(void);
@@ -3053,7 +3055,13 @@ static void RenderOptionsView(void) {
 #define DBGTOOL_GRID_PITCH 26
 #define DBGTOOL_CELL_H    24
 #define DBGTOOL_GRID_ROWS 6
+/* Cell 11 (RENDERER GPU/CPU) only exists when the GPU tile renderer is
+ * compiled in -- a RENDERER=cpu build has nothing to switch to. */
+#ifdef PORT_GPU_TILE_RENDERER
+#define DBGTOOL_COUNT     12
+#else
 #define DBGTOOL_COUNT     11
+#endif
 
 #define DBGTOOL_CELL_Y(r) ((float)(DBGTOOL_GRID_Y0 + (r) * DBGTOOL_GRID_PITCH))
 #define DBGTOOL_CELL_X(c) ((float)((c) == 0 ? DBGTOOL_COL_L_X : DBGTOOL_COL_R_X))
@@ -3209,6 +3217,18 @@ static void RenderDebugToolsModal(int lang) {
     DrawDebugCell(10, (lang == 6) ? "LOG EN BUFFER" : "LOG BUFFERING",
                   logBuf ? onTxt : offTxt, logBuf ? colOn : colAct);
 
+#ifdef PORT_GPU_TILE_RENDERER
+    /* Force the whole top screen through the CPU scanline renderer
+     * (port/ppu/src/mode1.c) instead of the PICA200 tile renderer, to
+     * isolate renderer-specific bugs without a RENDERER=cpu rebuild. The
+     * per-frame CanRenderFrame() fallback still applies on top of this. */
+    {
+        const bool gpuOn = Port_GpuRenderer_IsActive();
+        DrawDebugCell(11, (lang == 6) ? "RENDERER" : "RENDERER",
+                      gpuOn ? "GPU" : "CPU", gpuOn ? colAct : colOn);
+    }
+#endif
+
     if (sDebugToolsMsg[0] && sFrameCounter < sDebugToolsMsgUntil) {
         DrawTextCentered(160.0f, 204.0f, 1.0f, sDebugToolsMsg, C2D_Color32(120, 255, 160, 255));
     }
@@ -3310,6 +3330,16 @@ static bool HandleDebugToolsModalTouch(int x, int y) {
             DebugToolsSetMsg(buf ? "LOG EN BUFFER" : "LOG DIRECTO");
             break;
         }
+#ifdef PORT_GPU_TILE_RENDERER
+        case 11: {
+            const bool gpuOn = !Port_GpuRenderer_IsActive();
+            Port_GpuRenderer_SetActive(gpuOn);
+            Port_DebugLog(gpuOn ? "USER MARK: renderer -> GPU"
+                                : "USER MARK: renderer -> CPU");
+            DebugToolsSetMsg(gpuOn ? "RENDERER: GPU" : "RENDERER: CPU");
+            break;
+        }
+#endif
         default:
             break;
     }
