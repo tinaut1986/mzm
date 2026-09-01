@@ -140,6 +140,23 @@ static const uint8_t* StatusGlyph(char c) {
     return NULL;
 }
 
+/* The single on-screen "FPS NN" overlay, drawn identically no matter which
+ * path (GPU tile renderer or CPU scanline fallback) produced this frame, so
+ * an intermittent fallback doesn't flip its size/position/font. `eyeXOffset`
+ * is the per-eye horizontal shift (0 for mono / left, parallax for right).
+ * Gated by the same MOSTRAR FPS config toggle as before. Must be called
+ * inside an active C2D scene, after ConfigureAbgr/AtlasTextureEnv. */
+void PlatformGpu3DS_DrawFpsOverlay(float eyeXOffset) {
+    if (!Port_Config_GetShowFps()) return;
+    char label[20];
+    double fps = Port_PPU_3DS_CurrentFps();
+    unsigned rounded = fps > 0.0 ? (unsigned)(fps + 0.5) : 0u;
+    if (rounded > 999u) rounded = 999u;
+    snprintf(label, sizeof(label), "FPS %u", rounded);
+    C2D_DrawRectSolid(5.0f + eyeXOffset, 216.0f, 0.7f, 65.0f, 18.0f, C2D_Color32(0, 0, 0, 200));
+    PlatformGpu3DS_DrawStatusText(8.0f + eyeXOffset, 220.0f, 1.5f, label);
+}
+
 void PlatformGpu3DS_DrawStatusText(float x, float y, float scale, const char* text) {
     const uint32_t color = C2D_Color32(255, 255, 255, 255);
     for (; *text; ++text, x += 6.0f * scale) {
@@ -448,30 +465,14 @@ static void DrawTopImageStereo(const uint32_t* leftPixels, const uint32_t* right
     C2D_SceneBegin(sTopTarget);
     C2D_DrawImage(imageLeft, &params, NULL);
     PlatformGpu3DS_ConfigureAbgrTextureEnv();
-    if (Port_Config_GetShowFps()) {
-        char label[20];
-        double fps = Port_PPU_3DS_CurrentFps();
-        unsigned rounded = fps > 0.0 ? (unsigned)(fps + 0.5) : 0u;
-        if (rounded > 999u) rounded = 999u;
-        snprintf(label, sizeof(label), "FPS %u", rounded);
-        C2D_DrawRectSolid(5.0f, 216.0f, 0.7f, 100.0f, 20.0f, C2D_Color32(0, 0, 0, 210));
-        PlatformGpu3DS_DrawStatusText(10.0f, 219.0f, 2.0f, label);
-    }
+    PlatformGpu3DS_DrawFpsOverlay(0.0f);
 
     if (sTopRightTarget) {
         C2D_TargetClear(sTopRightTarget, C2D_Color32(0, 0, 0, 255));
         C2D_SceneBegin(sTopRightTarget);
         C2D_DrawImage(imageRight, &params, NULL);
         PlatformGpu3DS_ConfigureAbgrTextureEnv();
-        if (Port_Config_GetShowFps()) {
-            char label[20];
-            double fps = Port_PPU_3DS_CurrentFps();
-            unsigned rounded = fps > 0.0 ? (unsigned)(fps + 0.5) : 0u;
-            if (rounded > 999u) rounded = 999u;
-            snprintf(label, sizeof(label), "FPS %u", rounded);
-            C2D_DrawRectSolid(5.0f, 216.0f, 0.7f, 100.0f, 20.0f, C2D_Color32(0, 0, 0, 210));
-            PlatformGpu3DS_DrawStatusText(10.0f, 219.0f, 2.0f, label);
-        }
+        PlatformGpu3DS_DrawFpsOverlay(0.0f);
     }
 }
 

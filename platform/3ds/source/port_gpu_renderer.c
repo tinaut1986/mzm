@@ -2183,21 +2183,11 @@ void Port_GpuRenderer_RenderFrame(void) {
             }
         }
 
-        if (Port_Config_GetShowFps()) {
-            char label[20];
-            double fps = Port_PPU_3DS_CurrentFps();
-            unsigned rounded = fps > 0.0 ? (unsigned)(fps + 0.5) : 0u;
-            if (rounded > 999u) rounded = 999u;
-            snprintf(label, sizeof(label), "FPS %u", rounded);
-            /* Parallax past the frontmost world tier (HUD, +2.0px) and
-             * pixel-snapped like the tile layers, so the debug counter
-             * always reads as being in front of everything -- health bar,
-             * message banners, dialog overlay -- rather than swimming at
-             * their depth. */
-            float fpsEyeOffset = floorf(eyeSign * slider3d * (+2.5f) + 0.5f);
-            C2D_DrawRectSolid(5.0f + fpsEyeOffset, 216.0f, 0.7f, 65.0f, 18.0f, C2D_Color32(0, 0, 0, 200));
-            PlatformGpu3DS_DrawStatusText(8.0f + fpsEyeOffset, 220.0f, 1.5f, label);
-        }
+        /* Shared overlay so a CPU fallback frame draws the exact same box
+         * (see PlatformGpu3DS_DrawFpsOverlay). Parallax past the frontmost
+         * world tier (HUD, +2.0px) and pixel-snapped like the tile layers,
+         * so the counter always reads as being in front of everything. */
+        PlatformGpu3DS_DrawFpsOverlay(floorf(eyeSign * slider3d * (+2.5f) + 0.5f));
 #ifdef PORT_DEBUG_TOOLS_ACTIVE
         {
             /* One counter per eye -- a single shared counter with an even
