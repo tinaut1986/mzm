@@ -1842,15 +1842,19 @@ void Port_GpuRenderer_RenderFrame(void) {
      * sObjWinCovered BEFORE the BG/OBJ collection loops below run, since
      * CollectBgLayer/CollectSprite need it ready to resolve per-tile
      * visibility as they go. */
-    sObjWindowActive = !sWindowActive && (dispcnt & (1u << 15)) != 0u;
-    if (sObjWindowActive) {
-        uint16_t winout = (uint16_t)(gIoMem[0x4A] | (gIoMem[0x4B] << 8));
-        uint8_t insideMask = (uint8_t)((winout >> 8) & 0xFFu);
-        uint8_t outsideMask = (uint8_t)(winout & 0xFFu);
-        for (int l = 0; l < 4; ++l) sLayerWinVis[l] = ComputeLayerWinVis(insideMask, outsideMask, l);
-        sLayerWinVis[4] = ComputeLayerWinVis(insideMask, outsideMask, 4);
-        ComputeObjWinMask(obj1D);
-    }
+    /* OBJWIN is deliberately treated as NON-clipping here (no-op), matching
+     * the CPU rasterizer / layer-workbench re-render. Its only confirmed use
+     * is the pause SUIT screen (wireframe Samus as its own mask). There the
+     * game sets WINOUT-high = BG3|OBJ, which a literal reading turns into
+     * "inside the silhouette hide BG0-2, show BG3" -- and BG3 there is the
+     * unrelated minimap tilemap (green squares), so on hardware that data
+     * bled through Samus's outline (issue #16). The intended look is BG0-3
+     * unaffected by the mask (BG2's opaque hexagon motif covers BG3
+     * everywhere, inside the silhouette and out), which is exactly what
+     * leaving every layer at WIN_VIS_ALWAYS produces. If a scene ever turns
+     * up that needs OBJWIN to actually clip, this is where to revisit it. */
+    sObjWindowActive = false;
+    (void)ComputeObjWinMask;
 
     /* Depth depends on register state the collection loops below read one
      * layer at a time, so it is snapshotted once, up front, for all of them. */
