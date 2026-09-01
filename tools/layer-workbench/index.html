@@ -99,6 +99,24 @@
   .drop.over { border-color:var(--accent); background:var(--accent-soft); }
   .drop p { margin:8px 0 0; font-size:12px; color:var(--faint); }
 
+  #realscreen { position:fixed; right:14px; bottom:14px; z-index:80; background:var(--panel);
+                border:1px solid var(--line); border-radius:6px; padding:8px;
+                box-shadow:0 6px 24px rgba(0,0,0,.4);
+                display:flex; flex-direction:column; gap:6px;
+                width:440px; height:340px; min-width:220px; min-height:150px;
+                max-width:96vw; max-height:92vh; resize:both; overflow:hidden; }
+  #realscreen .rs-bar { display:flex; align-items:center; gap:8px; flex:0 0 auto;
+                        font-size:12px; font-weight:700; color:var(--ink); cursor:move;
+                        user-select:none; }
+  #realscreen .rs-bar .meta { font-weight:400; }
+  #realscreen .rs-bar button { padding:0 7px; cursor:pointer; }
+  #realscreen #rs-zout { margin-left:auto; }
+  #realscreen #rs-zlab { min-width:28px; text-align:center; }
+  #realscreen #rs-scroll { flex:1 1 0; min-height:0; overflow:auto;
+                           border:1px solid var(--line); background:#000; }
+  #realscreen canvas { display:block; image-rendering:pixelated; }
+  #realscreen .rs-hint { margin:0; flex:0 0 auto; font-size:11px; color:var(--faint); }
+
   .mmctl button { padding:1px 7px; font-size:10px; margin-left:4px; cursor:pointer; }
   .mmbody { padding:9px; overflow:auto; flex:1 1 0; min-height:0; }
   canvas.mm { image-rendering:pixelated; background:#000; border:1px solid var(--line);
@@ -282,7 +300,7 @@
 
   <div class="grp" role="group" aria-label="Datos">
     <label class="filebtn ui" tabindex="0">MAPAS<input type="file" id="mapsfile" accept=".json,.gz"></label>
-    <label class="filebtn ui" tabindex="0">GRABACIÓN<input type="file" id="file" accept=".bin"></label>
+    <label class="filebtn ui" tabindex="0">GRABACIÓN<input type="file" id="file" accept=".bin,.rgb" multiple></label>
   </div>
 
   <div class="grp" role="group" aria-label="Vista">
@@ -336,6 +354,21 @@
 
 <div id="minbar" hidden></div>
 
+<div id="realscreen" hidden>
+  <div class="rs-bar">
+    <span id="rs-title">PANTALLA REAL (post-GPU)</span>
+    <span class="meta" id="rs-info"></span>
+    <button class="tab" id="rs-zout" title="Alejar">−</button>
+    <span class="meta" id="rs-zlab">1×</span>
+    <button class="tab" id="rs-zin" title="Acercar">+</button>
+    <button class="tab" id="rs-close" title="Cerrar">×</button>
+  </div>
+  <div id="rs-scroll"><canvas id="rs-canvas"></canvas></div>
+  <p class="rs-hint">Suelta un <code>.rgb</code> del 3DS (<code>mzm-dump-*.rgb</code> o varios
+     <code>mzm-rec-shot-NNNN.rgb</code> para emparejar con la grabación). Es el
+     fotograma tal cual sale de la GPU a la pantalla.</p>
+</div>
+
 <script>
 (function () {
   "use strict";
@@ -366,11 +399,100 @@
    "side","tilebox","list","export",
    "copy","clear","save","zin","zout","zlab","relayout","torail","toside",
    "minbar","divrail","divside","restore","autobadge","load",
-   "mMap","mRec","mSprites"].forEach(function(id){els[id]=document.getElementById(id);});
+   "mMap","mRec","mSprites",
+   "realscreen","rs-canvas","rs-info","rs-close","rs-title","rs-scroll",
+   "rs-zin","rs-zout","rs-zlab"].forEach(function(id){els[id]=document.getElementById(id);});
 
   function u16(b,o){return b[o]|(b[o+1]<<8);}
   function u32(b,o){return (b[o]|(b[o+1]<<8)|(b[o+2]<<16)|(b[o+3]<<24))>>>0;}
   function hex4(v){return "0x"+v.toString(16).toUpperCase().padStart(4,"0");}
+
+  /* ---------- real screen dump (.rgb) ----------
+     The 3DS DEBUG -> HERRAMIENTAS -> DUMP button writes the actual GPU render
+     targets to sdmc:/3ds/mzm-dump-{left,right,bottom}.rgb (and the periodic
+     mzm-rec-shot-NNNN.rgb during a recording). They are raw RGB8, stored in
+     the framebuffer's native portrait layout: 240 px wide, and the displayed
+     image is that rotated 90deg CCW (so a 400x240 top screen is 240x400 in
+     the file, a 320x240 bottom screen is 240x320). This shows one such file
+     as-displayed, next to whatever the workbench is re-rendering from the raw
+     GBA state, so a port-side rendering bug (windows, fallback, palette) that
+     only shows on hardware can be compared frame-to-frame. */
+  function showRealScreen(buf, name){
+    var src=new Uint8Array(buf), SW=240, SH=(src.length/3/SW)|0;
+    if(SH*SW*3!==src.length){ els.meta.textContent=name+": no es un .rgb 240xN de 8 bits"; return; }
+    var DW=SH, DH=SW;                 /* 90deg CCW: dst(x,y)=src(sy=x, sx=DH-1-y) */
+    var cv=els["rs-canvas"]; cv.width=DW; cv.height=DH;
+    var ctx=cv.getContext("2d"), out=ctx.createImageData(DW,DH), o=out.data;
+    /* The GX display transfer that writes the .rgb (RGBA8 target -> RGB8 out)
+       emits the bytes in B,G,R order for this port's render targets, so a
+       straight RGB read comes out with red/blue swapped (Samus reads cyan
+       instead of yellow). Swap them back here. */
+    for(var sy=0;sy<SH;sy++)for(var sx=0;sx<SW;sx++){
+      var s=(sy*SW+sx)*3, dx=sy, dy=(SW-1)-sx, d=(dy*DW+dx)*4;
+      o[d]=src[s+2]; o[d+1]=src[s+1]; o[d+2]=src[s]; o[d+3]=255;
+    }
+    ctx.putImageData(out,0,0);
+    var kind = SH>=400 ? "arriba 400x240" : SH>=300 ? "abajo 320x240" : SH+" px alto";
+    els["rs-info"].textContent = name+"  ("+kind+")";
+    els.realscreen.hidden=false;
+    rsApplyZoom();
+  }
+  var rsZoom=1;
+  function rsApplyZoom(){
+    var cv=els["rs-canvas"];
+    cv.style.width=(cv.width*rsZoom)+"px";
+    cv.style.height=(cv.height*rsZoom)+"px";
+    els["rs-zlab"].textContent=rsZoom+"×";
+  }
+  function rsSetZoom(z){ rsZoom=Math.max(1,Math.min(8,z)); rsApplyZoom(); }
+  els["rs-zin"].addEventListener("click",function(){ rsSetZoom(rsZoom+1); });
+  els["rs-zout"].addEventListener("click",function(){ rsSetZoom(rsZoom-1); });
+  els["rs-canvas"].addEventListener("wheel",function(e){
+    e.preventDefault(); rsSetZoom(rsZoom+(e.deltaY<0?1:-1));
+  },{passive:false});
+  els["rs-close"].addEventListener("click",function(){ els.realscreen.hidden=true; });
+
+  /* Pair mzm-rec-shot-NNNN.rgb frames with the loaded recording: NNNN is the
+     0-indexed sample number the 3DS embedded when it wrote the shot (they are
+     only taken every few samples, so a scrub lands on the newest shot <= the
+     current sample). Non-indexed dumps (mzm-dump-*.rgb) show straight away. */
+  var rsShots={};
+  function rsAddShot(buf,name){
+    var m=/rec-shot-0*(\d+)\.rgb$/i.exec(name);
+    if(!m){ showRealScreen(buf,name); return; }
+    rsShots[+m[1]]={buf:buf,name:name};
+    var keys=Object.keys(rsShots);
+    els.meta.textContent=keys.length+" captura(s) .rgb emparejadas con la grabación";
+    if(mode==="rec") rsSyncToSample(lastSample);
+    else showRealScreen(buf,name);
+  }
+  function rsSyncToSample(i){
+    var best=-1;
+    Object.keys(rsShots).forEach(function(k){k=+k;if(k<=i&&k>best)best=k;});
+    if(best<0){ Object.keys(rsShots).forEach(function(k){k=+k;if(best<0||k<best)best=k;}); }
+    if(best<0)return;
+    var s=rsShots[best];
+    showRealScreen(s.buf,s.name+(best===i?"":"  (frame "+best+" ≤ "+i+")"));
+  }
+
+  /* Drag the panel by its title bar. Switches from the bottom-right anchor to
+     free left/top placement on first drag. */
+  (function(){
+    var bar=els.realscreen.querySelector(".rs-bar"),dragging=false,ox=0,oy=0;
+    bar.addEventListener("mousedown",function(e){
+      if(e.target.tagName==="BUTTON")return;
+      var r=els.realscreen.getBoundingClientRect();
+      dragging=true; ox=e.clientX-r.left; oy=e.clientY-r.top;
+      els.realscreen.style.right="auto"; els.realscreen.style.bottom="auto";
+      e.preventDefault();
+    });
+    window.addEventListener("mousemove",function(e){
+      if(!dragging)return;
+      els.realscreen.style.left=Math.max(0,e.clientX-ox)+"px";
+      els.realscreen.style.top=Math.max(0,e.clientY-oy)+"px";
+    });
+    window.addEventListener("mouseup",function(){ dragging=false; });
+  })();
 
   /* ---------- recording parsing ---------- */
   function scan(buf){
@@ -2211,6 +2333,7 @@
     Array.prototype.forEach.call(els.shots.children,function(s,n){
       s.setAttribute("aria-current",n===i?"true":"false");});
     buildMain();reanchor();renderSide();renderList();redraw();
+    if(Object.keys(rsShots).length) rsSyncToSample(i);
   }
 
   function buildRail(){
@@ -2614,7 +2737,12 @@
 
   /* ---------- wiring ---------- */
   els.file.addEventListener("change",function(e){
-    var f=e.target.files[0];if(!f)return;f.arrayBuffer().then(function(b){ingest(b,f.name);});});
+    var fl=e.target.files;if(!fl||!fl.length)return;
+    if([].every.call(fl,function(f){return /\.rgb$/i.test(f.name);})){
+      [].forEach.call(fl,function(f){f.arrayBuffer().then(function(b){rsAddShot(b,f.name);});});
+      return;
+    }
+    fl[0].arrayBuffer().then(function(b){ingest(b,fl[0].name);});});
   els.mapsfile.addEventListener("change",function(e){
     var f=e.target.files[0];if(!f)return;f.arrayBuffer().then(function(b){ingestMaps(b,f.name);});});
   els.incfile.addEventListener("change",function(e){
@@ -2649,7 +2777,12 @@
   /* Un solo sitio donde soltar: se decide por el nombre, que en los dos casos
      es el que la herramienta que lo generó le puso. */
   document.addEventListener("drop",function(e){
-    var f=e.dataTransfer&&e.dataTransfer.files[0];if(!f)return;
+    var fl=e.dataTransfer&&e.dataTransfer.files;if(!fl||!fl.length)return;
+    if([].every.call(fl,function(f){return /\.rgb$/i.test(f.name);})){
+      [].forEach.call(fl,function(f){f.arrayBuffer().then(function(b){rsAddShot(b,f.name);});});
+      return;
+    }
+    var f=fl[0];
     f.arrayBuffer().then(function(b){
       if(/sprites\.json$/i.test(f.name)){ sprites=JSON.parse(new TextDecoder().decode(b));
         if(mode==="sprites")enterSprites(); return; }
