@@ -413,9 +413,13 @@
     var DW=SH, DH=SW;                 /* 90deg CCW: dst(x,y)=src(sy=x, sx=DH-1-y) */
     var cv=els["rs-canvas"]; cv.width=DW; cv.height=DH;
     var ctx=cv.getContext("2d"), out=ctx.createImageData(DW,DH), o=out.data;
+    /* The GX display transfer that writes the .rgb (RGBA8 target -> RGB8 out)
+       emits the bytes in B,G,R order for this port's render targets, so a
+       straight RGB read comes out with red/blue swapped (Samus reads cyan
+       instead of yellow). Swap them back here. */
     for(var sy=0;sy<SH;sy++)for(var sx=0;sx<SW;sx++){
       var s=(sy*SW+sx)*3, dx=sy, dy=(SW-1)-sx, d=(dy*DW+dx)*4;
-      o[d]=src[s]; o[d+1]=src[s+1]; o[d+2]=src[s+2]; o[d+3]=255;
+      o[d]=src[s+2]; o[d+1]=src[s+1]; o[d+2]=src[s]; o[d+3]=255;
     }
     ctx.putImageData(out,0,0);
     var kind = SH>=400 ? "arriba 400x240" : SH>=300 ? "abajo 320x240" : SH+" px alto";
