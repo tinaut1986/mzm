@@ -198,6 +198,7 @@ extern int PortPpuMzm_DebugRequestWarpToMapTile(int area, int tileX, int tileY);
 extern void PortPpuMzm_DebugRevealAllMaps(void);
 extern void PortPpuMzm_DebugRevealAreaMap(int area);
 extern void PortPpuMzm_DebugMarkAreaVisited(int area);
+extern void PortPpuMzm_DebugHideAreaMap(int area);
 extern void PortPpuMzm_DebugClearAreaMap(int area);
 extern int  PortPpuMzm_DebugAreaMapPercent(int area);
 extern void PortPpuMzm_DebugSetGod(bool on);
@@ -996,16 +997,18 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
                         if (x >= bx && x <= bx + 92) { hit = i; break; } }
                 }
                 if (hit >= 0) {
-                    /* Unconditional 3-state cycle:
-                     *   0 actual (restore) -> 1 revealed -> 2 marked -> 0 ...
-                     * State 0 restores exactly what the player had (the
-                     * snapshot taken on the first reveal/mark), so there is
-                     * no "wiped" state. */
+                    /* Unconditional 4-state cycle:
+                     *   0 actual (restore real state)
+                     *   1 revealed  (force downloaded / outline)
+                     *   2 marked    (force 100% visited / green)
+                     *   3 hidden    (real % but shown as NOT downloaded)
+                     * -> back to 0. No "wiped" step. */
                     static uint8_t sMapDebugState[7] = { 0, 0, 0, 0, 0, 0, 0 };
                     uint8_t* st = &sMapDebugState[hit];
-                    *st = (uint8_t)((*st + 1) % 3);
+                    *st = (uint8_t)((*st + 1) % 4);
                     if (*st == 1)      PortPpuMzm_DebugRevealAreaMap(hit);
                     else if (*st == 2) PortPpuMzm_DebugMarkAreaVisited(hit);
+                    else if (*st == 3) PortPpuMzm_DebugHideAreaMap(hit);
                     else               PortPpuMzm_DebugClearAreaMap(hit);
                     sCachedOtherArea = 0xFF;
                     Port_BottomUI_MarkDirty();
