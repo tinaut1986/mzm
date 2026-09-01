@@ -243,7 +243,19 @@ void SamusCheckScrewSpeedboosterAffectingEnvironment(struct SamusData* pData, st
     if (pPhysics->standingStatus == STANDING_GROUND)
     {
         hitboxBottom += ONE_SUB_PIXEL;
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+        /* Keep screw damage on the ground row too when the debug "always
+         * active" screw effect is forcing it (vanilla downgrades the ground
+         * checks to speed-on-ground). */
+        {
+            extern bool PortPpuMzm_DebugGetForceEffect(unsigned smfBit);
+            if (!(action == DESTRUCTING_ACTION_SCREW &&
+                  PortPpuMzm_DebugGetForceEffect(SMF_SCREW_ATTACK)))
+                action = DESTRUCTING_ACTION_SPEED_ON_GROUND;
+        }
+#else
         action = DESTRUCTING_ACTION_SPEED_ON_GROUND;
+#endif
     }
 
     BlockSamusApplyScrewSpeedboosterDamageToEnvironment(hitboxLeft, hitboxBottom, action);
@@ -3813,11 +3825,22 @@ void SamusCheckShinesparking(struct SamusData* pData)
 #if defined(MZM_3DS) || defined(PORT_NATIVE)
     /* Debug "always active" speed booster: hold the boost state on regardless
      * of velocity so the glow / after-image / contact damage apply while
-     * standing, and the first step is already at boost speed. */
+     * standing. Also pin the run velocity to the boost cap while a direction
+     * is held so landing from a boost jump keeps running instead of braking
+     * and re-accelerating (the vanilla "velocity too small" cancel). */
     {
         extern bool PortPpuMzm_DebugGetForceEffect(unsigned smfBit);
         if (pData->pose != SPOSE_DYING && PortPpuMzm_DebugGetForceEffect(SMF_SPEEDBOOSTER))
+        {
             pData->speedboostingShinesparking = TRUE;
+            if (pData->pose == SPOSE_RUNNING && !gSamusPhysics.slowedByLiquid)
+            {
+                if (gButtonInput & KEY_RIGHT)
+                    pData->xVelocity = SAMUS_X_SPEEDBOOST_VELOCITY_CAP;
+                else if (gButtonInput & KEY_LEFT)
+                    pData->xVelocity = -SAMUS_X_SPEEDBOOST_VELOCITY_CAP;
+            }
+        }
     }
 #endif
 

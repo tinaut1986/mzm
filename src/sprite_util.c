@@ -2358,6 +2358,10 @@ DamageContactType SpriteUtilSpriteTakeDamageFromSamusContact(struct SpriteData* 
     u16 damage;
     boolu8 isDead;
     u8 isft;
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+    extern bool PortPpuMzm_DebugGetForceEffect(unsigned smfBit);
+    boolu8 portForceScrew = PortPpuMzm_DebugGetForceEffect(SMF_SCREW_ATTACK);
+#endif
 
     dct = DCT_NONE;
 
@@ -2381,6 +2385,14 @@ DamageContactType SpriteUtilSpriteTakeDamageFromSamusContact(struct SpriteData* 
         else
             dct = DCT_SPEEDBOOSTER;
     }
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+    else if (portForceScrew)
+    {
+        /* Debug "always active" screw attack: contact-kill screw-weak
+         * enemies even when not in a spin pose. */
+        dct = DCT_SCREW_ATTACK;
+    }
+#endif
     else
     {
         switch (pData->pose)
