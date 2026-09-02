@@ -17,6 +17,7 @@
 #include "port_stereo_depth.h"
 #include "port_layer_fixes.h"
 #include "port_sprite_depth_oam.h"
+#include "port_haze_3ds.h"
 #include "platform_gpu_3ds.h"
 #include "port_debug_tools.h" /* PORT_DEBUG_TOOLS_ACTIVE */
 
@@ -101,6 +102,22 @@ static void ConfigureAtlasTextureEnv(void) {
     C3D_TexEnvOpRgb(env, GPU_TEVOP_RGB_SRC_G, GPU_TEVOP_RGB_SRC_COLOR, GPU_TEVOP_RGB_SRC_COLOR);
     C3D_TexEnvFunc(env, C3D_RGB, GPU_MULTIPLY_ADD);
     C3D_TexEnvColor(env, C2D_Color32(0, 0, 255, 255));
+}
+
+/* Plain pass-through texenv: output = texture0, verbatim, single stage.
+ * Used by the issue #29 strip blit. sHazeTex is a GPU render target: the
+ * rasterizer writes GPU_RGBA8 in the byte order that re-samples straight
+ * (unlike the CPU-decoded atlas, which needs ConfigureAtlasTextureEnv's
+ * 3-stage channel-unswizzle -- see that function). If BG3 still comes out
+ * with permuted channels on hardware, the round-trip assumption is wrong:
+ * call ConfigureAtlasTextureEnv() from HazeBlitStrips instead of this. */
+static void ConfigurePlainTextureEnv(void) {
+    C3D_TexEnv* env = C3D_GetTexEnv(0);
+    C3D_TexEnvInit(env);
+    C3D_TexEnvSrc(env, C3D_Both, GPU_TEXTURE0, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR);
+    C3D_TexEnvFunc(env, C3D_Both, GPU_REPLACE);
+    C3D_TexEnvInit(C3D_GetTexEnv(1));
+    C3D_TexEnvInit(C3D_GetTexEnv(2));
 }
 
 /* Tile atlas: every unique (source tile bytes + palette bank + hflip/vflip)
@@ -188,6 +205,43 @@ static DrawItem sDrawItems[MAX_DRAW_ITEMS];
 static int sDrawItemCount;
 static bool sAnyDirtySlot;
 static int sLastObjItemCount;
+
+/* --- issue #29: per-scanline BG3 ripple (water / lava / acid / heat haze) ---
+ *
+ * The GBA rewrites REG_BG3HOFS every scanline via an HBlank DMA; this port
+ * has neither HBlank DMA nor per-line IO, so BG3 renders flat. Option C:
+ * render BG3 once into an offscreen texture at the frame-level scroll, then
+ * blit it to the screen as 160 one-scanline horizontal strips, each shifted
+ * by rowDelta[y] from port_haze_3ds. BG3 is the backmost layer
+ * in every affected room, so the strip blit is laid down first (opaque) and
+ * the normal BG0-2 / OBJ pass composites on top -- including BG0's alpha
+ * blend, which reads BG3 back from the framebuffer.
+ *
+ * Only the single-layer BG3 case exists in the shipped game (every
+ * EFFECT_WATER / LAVA / WEAK_ACID / STRONG_ACID / LAVA_HEAT_HAZE room);
+ * PortHaze_Bg3RowScroll() returns false for anything else and BG3 then
+ * renders normally (flat) as before. */
+enum { HAZE_RT_DIM = 256, HAZE_MARGIN = 8, HAZE_MAX_TILES = 21 * 34 };
+/* Double-buffered: frame N renders BG3 into sHaze*[N&1^...] and the eye
+ * passes SAMPLE the other buffer -- the one rendered last frame, so a full
+ * C3D_FrameEnd/FrameBegin has flushed it and both eyes see identical,
+ * complete data (an in-frame render-to-texture then sample raced the GPU
+ * write: one eye got 8x8-block garbage). sHazeCur = buffer the eyes read
+ * this frame; the offscreen pass writes sHazeCur^1, then sHazeCur flips at
+ * end of frame. */
+static C3D_Tex sHazeTex[2];
+static C3D_RenderTarget *sHazeRT[2];
+static bool sHazeRtReady;
+static int sHazeCur;
+static bool sHazeBufReady[2];
+static int16_t sHazeBakedRowDelta[2][160]; /* per-line shift baked with each buffer */
+static bool sHazeActive; /* recomputed per frame in Port_GpuRenderer_RenderFrame */
+static int16_t sHazeRowDelta[160];
+static int16_t sHazeBakeHofs;
+static Tex3DS_SubTexture sHazeStripSubtex; /* mutated per strip by HazeBlitStrips */
+typedef struct { C2D_Image img; float x, y; } HazeTile;
+static HazeTile sHazeTiles[HAZE_MAX_TILES];
+static int sHazeTileCount;
 
 /* O(1)-amortized tile cache lookup, replacing a linear scan over
  * sCacheKeys[0..sCacheCount) that used to run once per tile REFERENCE (not
@@ -477,6 +531,18 @@ bool Port_GpuRenderer_Init(void) {
     FlushAtlasRange(sAtlasTexture.data, ATLAS_DIM * ATLAS_DIM * sizeof(u32));
     C3D_TexSetFilter(&sAtlasTexture, GPU_NEAREST, GPU_NEAREST);
 
+    /* Offscreen BG3 target for the issue #29 per-scanline ripple. VRAM-backed
+     * (it is a GPU render target, never CPU-written). Non-fatal on failure --
+     * sHazeRtReady stays false and haze rooms just render BG3 flat. */
+    sHazeRtReady = true;
+    for (int b = 0; b < 2; ++b) {
+        if (!C3D_TexInitVRAM(&sHazeTex[b], HAZE_RT_DIM, HAZE_RT_DIM, GPU_RGBA8)) { sHazeRtReady = false; break; }
+        C3D_TexSetFilter(&sHazeTex[b], GPU_NEAREST, GPU_NEAREST);
+        C3D_TexSetWrap(&sHazeTex[b], GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
+        sHazeRT[b] = C3D_RenderTargetCreateFromTex(&sHazeTex[b], GPU_TEXFACE_2D, 0, -1);
+        if (!sHazeRT[b]) { C3D_TexDelete(&sHazeTex[b]); sHazeRtReady = false; break; }
+    }
+
     InitSlotSubtexTable();
 
     for (int i = 0; i < HASH_BUCKETS; ++i) sHashBucketHead[i] = -1;
@@ -489,6 +555,14 @@ bool Port_GpuRenderer_Init(void) {
 void Port_GpuRenderer_Shutdown(void) {
     if (!sInitialized) return;
     C3D_TexDelete(&sAtlasTexture); /* also frees the linearAlloc'd backing store */
+    if (sHazeRtReady) {
+        for (int b = 0; b < 2; ++b) {
+            C3D_RenderTargetDelete(sHazeRT[b]);
+            C3D_TexDelete(&sHazeTex[b]);
+            sHazeRT[b] = NULL;
+        }
+        sHazeRtReady = false;
+    }
     sInitialized = false;
     sGpuRendererActive = false;
 }
@@ -1101,6 +1175,120 @@ static void CollectBgLayer(int bgIndex) {
             PushItem(slot, drawX, drawY, sortKey, depthTier, blendAlpha, rectWinVis);
         }
     }
+}
+
+/* Issue #29: gather BG3's visible tiles into sHazeTiles[] for the offscreen
+ * ripple pass instead of pushing them to sDrawItems. A stripped-down
+ * CollectBgLayer(3): BG3 in every affected room is the backmost, opaque,
+ * non-windowed, non-first-target layer, so priority / depth tier / window
+ * tags / blend / brighten-darken / layer-fix redirection are all dropped.
+ * The frame-level scroll (sHazeBakeHofs, from PortHaze_Bg3RowScroll) is
+ * baked in here; the per-scanline delta is applied later in HazeBlitStrips. */
+static void CollectHazeBg3(void) {
+    sHazeTileCount = 0;
+
+    const int bgIndex = 3;
+    uint16_t bgcnt = (uint16_t)(gIoMem[0x08 + bgIndex * 2] | (gIoMem[0x09 + bgIndex * 2] << 8));
+    uint32_t charBase = (uint32_t)((bgcnt >> 2) & 3u) * 0x4000u;
+    bool bpp8 = ((bgcnt >> 7) & 1u) != 0;
+    uint32_t screenBase = (uint32_t)((bgcnt >> 8) & 0x1Fu) * 0x800u;
+    uint16_t sizeFlag = (uint16_t)((bgcnt >> 14) & 3u);
+    int mapWidthTiles = (sizeFlag & 1u) ? 64 : 32;
+    int mapHeightTiles = (sizeFlag & 2u) ? 64 : 32;
+    int blocksPerRow = mapWidthTiles / 32;
+
+    int scrollX = (int)(sHazeBakeHofs & 0x1FF);
+    int scrollY = (int)((uint16_t)(gIoMem[0x1E] | (gIoMem[0x1F] << 8)) & 0x1FFu);
+
+    const uint16_t *pal = (const uint16_t *)gBgPltt;
+    const int bytesPerTile = bpp8 ? 64 : 32;
+    int startTileX = scrollX / 8;
+    int startTileY = scrollY / 8;
+    int fineX = scrollX % 8;
+    int fineY = scrollY % 8;
+
+    for (int ty = 0; ty <= 20; ++ty) {
+        int tileRow = (startTileY + ty) & (mapHeightTiles - 1);
+        int screenBlockY = tileRow / 32;
+        int localRow = tileRow % 32;
+        for (int tx = -1; tx <= 31; ++tx) {
+            int tileCol = (startTileX + tx) & (mapWidthTiles - 1);
+            int screenBlockX = tileCol / 32;
+            int localCol = tileCol % 32;
+            int screenBlockIndex = screenBlockX + screenBlockY * blocksPerRow;
+            uint32_t mapAddr = screenBase + (uint32_t)screenBlockIndex * 0x800u +
+                               (uint32_t)(localRow * 32 + localCol) * 2u;
+            uint16_t entry = (uint16_t)(gVram[mapAddr] | (gVram[mapAddr + 1] << 8));
+            uint16_t tileId = entry & 0x3FFu;
+            bool hflip = (entry & 0x0400u) != 0;
+            bool vflip = (entry & 0x0800u) != 0;
+            int palBank = (entry >> 12) & 0x0Fu;
+            float drawX = (float)(tx * 8 - fineX);
+            float drawY = (float)(ty * 8 - fineY);
+            if (drawY <= -8.0f || drawY >= 160.0f || drawX <= -16.0f || drawX >= 248.0f) continue;
+
+            uint32_t byteOffset = charBase + (uint32_t)tileId * bytesPerTile;
+            if (!TileHasOpaquePixel(byteOffset, bpp8)) continue;
+
+            int slot = GetOrDecodeTileSlot(byteOffset, bpp8, pal, palBank, hflip, vflip, false,
+                                           BRIGHT_ADJUST_NONE);
+            if (slot < 0 || sHazeTileCount >= HAZE_MAX_TILES) continue;
+            sHazeTiles[sHazeTileCount].img.tex = &sAtlasTexture;
+            sHazeTiles[sHazeTileCount].img.subtex = &sSlotSubtexTable[slot];
+            sHazeTiles[sHazeTileCount].x = drawX;
+            sHazeTiles[sHazeTileCount].y = drawY;
+            ++sHazeTileCount;
+        }
+    }
+}
+
+/* Issue #29: draw the baked BG3 offscreen texture to `target` as 160
+ * one-scanline horizontal strips, strip y sampled at U offset rowDelta[y]
+ * (already relative to the scroll baked into the texture) so each line
+ * scrolls independently -- the wobble the HBlank DMA produces on hardware.
+ * Called first in the per-eye pass
+ * (BG3 is backmost), opaque. */
+static void HazeBlitStrips(int buf, float baseX, float baseY, float scaleX, float scaleY,
+                           const int16_t *rowDelta) {
+    C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
+    ConfigurePlainTextureEnv();
+
+    C2D_Image img = { &sHazeTex[buf], &sHazeStripSubtex };
+    bool reasserted = false;
+    /* One quad per scanline. (Coalescing runs of equal shift was tried and
+     * read as blocky "squares" instead of a wave -- a tall quad over a
+     * multi-row V span sampled wrong with NEAREST; per-line is what looked
+     * right in testing.) */
+    for (int y = 0; y < 160; ++y) {
+        int delta = (int)rowDelta[y];
+        if (delta < -HAZE_MARGIN) delta = -HAZE_MARGIN;
+        else if (delta > HAZE_MARGIN) delta = HAZE_MARGIN;
+
+        float uL = (float)(HAZE_MARGIN + delta) / (float)HAZE_RT_DIM;
+        float uR = (float)(HAZE_MARGIN + delta + 240) / (float)HAZE_RT_DIM;
+        float vT = (float)y / (float)HAZE_RT_DIM;
+        float vB = (float)(y + 1) / (float)HAZE_RT_DIM;
+        /* Non-rotated subtex; PICA texture origin is bottom-left, so the top
+         * edge is the larger V. If BG3 comes out vertically mirrored on
+         * hardware, swap the 1.0f-vT / 1.0f-vB pair. */
+        sHazeStripSubtex.width = 240;
+        sHazeStripSubtex.height = 1;
+        sHazeStripSubtex.left = uL;
+        sHazeStripSubtex.right = uR;
+        sHazeStripSubtex.top = 1.0f - vT;
+        sHazeStripSubtex.bottom = 1.0f - vB;
+        C2D_DrawParams p = {
+            { baseX, baseY + (float)y * scaleY, 240.0f * scaleX, scaleY + 0.5f },
+            { 0.0f, 0.0f }, 0.5f, 0.0f
+        };
+        C2D_DrawImage(img, &p, NULL);
+        /* citro2d re-inits the texenv on the first C2D_DrawImage of a scene
+         * (see the sDrawOrder loop's reassertedTexEnv workaround) -- undo
+         * that stomp so the rest of the strips keep the plain env. */
+        if (!reasserted) { ConfigurePlainTextureEnv(); reasserted = true; }
+    }
+    C2D_Flush();
+    ConfigureAtlasTextureEnv(); /* restore for the BG0-2 / OBJ pass that follows */
 }
 
 /* Multi-tile OBJ blit: walks the sprite's width/height in 8x8 tiles and
@@ -1860,8 +2048,18 @@ void Port_GpuRenderer_RenderFrame(void) {
      * layer at a time, so it is snapshotted once, up front, for all of them. */
     ComputeDepthState(dispcnt);
 
+    /* Issue #29: is this frame the single-layer BG3 ripple? If so, collect
+     * BG3 for the offscreen strip pass and keep it out of the normal
+     * back-to-front list. Windowed / power-bomb-flash frames fall through to
+     * the flat path (kept simple: those never coincide with a ripple room). */
+    sHazeActive = sHazeRtReady && (dispcnt & (1u << 11)) && !sWindowActive && !sPbFlashActive &&
+                  PortHaze_Bg3RowScroll(sHazeRowDelta, &sHazeBakeHofs);
+    if (sHazeActive) CollectHazeBg3();
+
     for (int bg = 3; bg >= 0; --bg) {
-        if (dispcnt & (1u << (8 + bg))) CollectBgLayer(bg);
+        if (!(dispcnt & (1u << (8 + bg)))) continue;
+        if (sHazeActive && bg == 3) continue; /* drawn via the offscreen strip pass */
+        CollectBgLayer(bg);
     }
     if (dispcnt & (1u << 12)) {
         for (int i = 127; i >= 0; --i) CollectSprite(i, obj1D);
@@ -2018,6 +2216,34 @@ void Port_GpuRenderer_RenderFrame(void) {
     C3D_RenderTarget* leftTarget = PlatformGpu3DS_GetTopLeftTarget();
     C3D_RenderTarget* rightTarget = (slider3d > 0.01f) ? PlatformGpu3DS_GetTopRightTarget() : NULL;
 
+    /* Issue #29: render this frame's BG3 into the BACK buffer (sHazeCur^1).
+     * The eye passes below sample the FRONT buffer (sHazeCur), which was
+     * rendered last frame and is guaranteed finished. No in-frame
+     * render-to-texture race, and both eyes read the same complete buffer.
+     * The buffers flip at the end of the frame. */
+    const int sHazeBack = sHazeCur ^ 1;
+    if (sHazeActive) {
+        C2D_SceneBegin(sHazeRT[sHazeBack]);
+        /* C3D_CLEAR_COLOR only -- no depth buffer on these targets. */
+        C3D_RenderTargetClear(sHazeRT[sHazeBack], C3D_CLEAR_COLOR, 0, 0);
+        C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_ALL);
+        C3D_AlphaTest(true, GPU_GREATER, 0);
+        C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
+        ConfigureAtlasTextureEnv();
+        for (int i = 0; i < sHazeTileCount; ++i) {
+            C2D_DrawImageAt(sHazeTiles[i].img, (float)HAZE_MARGIN + sHazeTiles[i].x,
+                            sHazeTiles[i].y, 0.0f, NULL, 1.0f, 1.0f);
+            /* citro2d re-inits the texenv on the first draw of a scene --
+             * without undoing that stomp, tiles 1..N land with citro2d's
+             * default env, which channel-permutes our RGBA8 atlas (green/red
+             * grid where BG3 should be). */
+            if (i == 0) ConfigureAtlasTextureEnv();
+        }
+        C2D_Flush();
+        memcpy(sHazeBakedRowDelta[sHazeBack], sHazeRowDelta, sizeof(sHazeBakedRowDelta[sHazeBack]));
+        sHazeBufReady[sHazeBack] = true;
+    }
+
 #ifdef PORT_DEBUG_TOOLS_ACTIVE
     {
         static unsigned sEyeLogCounter;
@@ -2044,6 +2270,18 @@ void Port_GpuRenderer_RenderFrame(void) {
          * to avoid reading back the destination framebuffer from VRAM, saving
          * massive memory bandwidth during scaled / full-screen rendering. */
         C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
+
+        /* Issue #29: lay the rippled BG3 down first (it is the backmost
+         * layer in every affected room); BG0-2 / OBJ composite on top.
+         * Give it the same stereo parallax offset BG3 would get in the
+         * normal pass -- without it the strips sit at screen depth while the
+         * parallaxed BG0-2 recede behind, so BG3 reads as being in FRONT. */
+        if (sHazeActive && sHazeBufReady[sHazeCur]) {
+            float eyeOffBg3 = floorf(eyeSign * slider3d *
+                                     PortStereoDepth_TierPx(PortStereoDepth_BgTier(&sDepthState, 3)) + 0.5f);
+            HazeBlitStrips(sHazeCur, screenBaseX + eyeOffBg3, screenBaseY, scaleX, scaleY,
+                           sHazeBakedRowDelta[sHazeCur]);
+        }
 
         /* Single pass over sDrawOrder (true back-to-front GBA priority
          * order, opaque and blend items interleaved), toggling the GPU
@@ -2219,6 +2457,11 @@ void Port_GpuRenderer_RenderFrame(void) {
         }
 #endif
     }
+
+    /* Issue #29: flip the haze buffers -- the back buffer we just rendered
+     * becomes next frame's read buffer, by which point C3D_FrameEnd has
+     * flushed it. */
+    if (sHazeActive) sHazeCur = sHazeBack;
 
     u64 tEnd = svcGetSystemTick();
     sLastDrawMs = (float)((double)(tEnd - tAfterCollect) / PORT_GPU_RENDERER_CPU_TICKS_PER_MSEC);

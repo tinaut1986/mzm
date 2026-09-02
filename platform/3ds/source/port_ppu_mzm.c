@@ -25,6 +25,7 @@
 #include "constants/minimap.h"
 #include "minimap.h"
 #include "menus/pause_screen.h" /* PauseScreenGetMinimapData */
+#include "port_haze_3ds.h"
 #include "macros.h"
 #include "port_debug_tools.h" /* PORT_DEBUG_TOOLS_ACTIVE */
 
@@ -666,6 +667,11 @@ void Port_PPU_RenderFrame(void) {
     const bool forceSyncPresent = true;
 #else
     const bool forceSyncPresent = false;
+    /* Issue #29: on CPU-rendered frames, replay the per-scanline haze scroll
+     * table into the IO regs line by line (the HBlank DMA this port can't
+     * emulate). No-op unless a ripple effect is active. The GPU path does
+     * its own thing (offscreen BG3 + strip re-blit), so keep it off there. */
+    PortHaze_SetCpuPerLine(!useGpuRenderer);
     if (!useGpuRenderer) {
         virtuappu_mode1_set_output_buffer(sLogicTop[sLogicWriteSlot], TOP_PITCH);
         if (sTopRightBuffer) {
