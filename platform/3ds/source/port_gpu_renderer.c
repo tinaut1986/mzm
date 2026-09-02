@@ -16,6 +16,8 @@
 #include "port_gpu_renderer.h"
 #include "port_stereo_depth.h"
 #include "port_layer_fixes.h"
+#include "port_sprite_depth_oam.h"
+#include "port_haze_3ds.h"
 #include "platform_gpu_3ds.h"
 #include "port_debug_tools.h" /* PORT_DEBUG_TOOLS_ACTIVE */
 
@@ -100,6 +102,22 @@ static void ConfigureAtlasTextureEnv(void) {
     C3D_TexEnvOpRgb(env, GPU_TEVOP_RGB_SRC_G, GPU_TEVOP_RGB_SRC_COLOR, GPU_TEVOP_RGB_SRC_COLOR);
     C3D_TexEnvFunc(env, C3D_RGB, GPU_MULTIPLY_ADD);
     C3D_TexEnvColor(env, C2D_Color32(0, 0, 255, 255));
+}
+
+/* Plain pass-through texenv: output = texture0, verbatim, single stage.
+ * Used by the issue #29 strip blit. sHazeTex is a GPU render target: the
+ * rasterizer writes GPU_RGBA8 in the byte order that re-samples straight
+ * (unlike the CPU-decoded atlas, which needs ConfigureAtlasTextureEnv's
+ * 3-stage channel-unswizzle -- see that function). If BG3 still comes out
+ * with permuted channels on hardware, the round-trip assumption is wrong:
+ * call ConfigureAtlasTextureEnv() from HazeBlitStrips instead of this. */
+static void ConfigurePlainTextureEnv(void) {
+    C3D_TexEnv* env = C3D_GetTexEnv(0);
+    C3D_TexEnvInit(env);
+    C3D_TexEnvSrc(env, C3D_Both, GPU_TEXTURE0, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR);
+    C3D_TexEnvFunc(env, C3D_Both, GPU_REPLACE);
+    C3D_TexEnvInit(C3D_GetTexEnv(1));
+    C3D_TexEnvInit(C3D_GetTexEnv(2));
 }
 
 /* Tile atlas: every unique (source tile bytes + palette bank + hflip/vflip)
@@ -187,6 +205,43 @@ static DrawItem sDrawItems[MAX_DRAW_ITEMS];
 static int sDrawItemCount;
 static bool sAnyDirtySlot;
 static int sLastObjItemCount;
+
+/* --- issue #29: per-scanline BG3 ripple (water / lava / acid / heat haze) ---
+ *
+ * The GBA rewrites REG_BG3HOFS every scanline via an HBlank DMA; this port
+ * has neither HBlank DMA nor per-line IO, so BG3 renders flat. Option C:
+ * render BG3 once into an offscreen texture at the frame-level scroll, then
+ * blit it to the screen as 160 one-scanline horizontal strips, each shifted
+ * by rowDelta[y] from port_haze_3ds. BG3 is the backmost layer
+ * in every affected room, so the strip blit is laid down first (opaque) and
+ * the normal BG0-2 / OBJ pass composites on top -- including BG0's alpha
+ * blend, which reads BG3 back from the framebuffer.
+ *
+ * Only the single-layer BG3 case exists in the shipped game (every
+ * EFFECT_WATER / LAVA / WEAK_ACID / STRONG_ACID / LAVA_HEAT_HAZE room);
+ * PortHaze_Bg3RowScroll() returns false for anything else and BG3 then
+ * renders normally (flat) as before. */
+enum { HAZE_RT_DIM = 256, HAZE_MARGIN = 8, HAZE_MAX_TILES = 21 * 34 };
+/* Double-buffered: frame N renders BG3 into sHaze*[N&1^...] and the eye
+ * passes SAMPLE the other buffer -- the one rendered last frame, so a full
+ * C3D_FrameEnd/FrameBegin has flushed it and both eyes see identical,
+ * complete data (an in-frame render-to-texture then sample raced the GPU
+ * write: one eye got 8x8-block garbage). sHazeCur = buffer the eyes read
+ * this frame; the offscreen pass writes sHazeCur^1, then sHazeCur flips at
+ * end of frame. */
+static C3D_Tex sHazeTex[2];
+static C3D_RenderTarget *sHazeRT[2];
+static bool sHazeRtReady;
+static int sHazeCur;
+static bool sHazeBufReady[2];
+static int16_t sHazeBakedRowDelta[2][160]; /* per-line shift baked with each buffer */
+static bool sHazeActive; /* recomputed per frame in Port_GpuRenderer_RenderFrame */
+static int16_t sHazeRowDelta[160];
+static int16_t sHazeBakeHofs;
+static Tex3DS_SubTexture sHazeStripSubtex; /* mutated per strip by HazeBlitStrips */
+typedef struct { C2D_Image img; float x, y; } HazeTile;
+static HazeTile sHazeTiles[HAZE_MAX_TILES];
+static int sHazeTileCount;
 
 /* O(1)-amortized tile cache lookup, replacing a linear scan over
  * sCacheKeys[0..sCacheCount) that used to run once per tile REFERENCE (not
@@ -385,8 +440,27 @@ static void UpdateLayerFixRoom(void) {
 
 static void ComputeDepthState(uint16_t dispcnt) {
     extern s16 gMainGameMode;
+    extern u8 gSamusOnTopOfBackgrounds;
     (void)dispcnt;
     sDepthState.inGameplay = (gMainGameMode == 4);
+    sDepthState.samusOnTopOfBackgrounds =
+        sDepthState.inGameplay && gSamusOnTopOfBackgrounds != 0;
+    /* BG0 is the pop-forward overlay layer for menus / dialogs / the pause
+     * map -- i.e. everywhere outside gameplay EXCEPT the cutscenes that
+     * draw scene artwork on BG0 while their caption is OBJ sprites:
+     *   7  GM_CHOZODIA_ESCAPE  ("mission accomplished" over the blue ship)
+     *   10 GM_CUTSCENE         (in-game story cutscenes: Kraid rising, ...)
+     * Those keep BG0 on its priority-based tier so the caption is not left
+     * behind its own backdrop. */
+    switch (gMainGameMode) {
+        case 7:
+        case 10:
+            sDepthState.bg0IsOverlayText = false;
+            break;
+        default:
+            sDepthState.bg0IsOverlayText = !sDepthState.inGameplay;
+            break;
+    }
     for (int bg = 0; bg < 4; ++bg) {
         sDepthState.priority[bg] =
             (uint8_t)(((uint16_t)(gIoMem[0x08 + bg * 2] | (gIoMem[0x09 + bg * 2] << 8))) & 3u);
@@ -457,6 +531,18 @@ bool Port_GpuRenderer_Init(void) {
     FlushAtlasRange(sAtlasTexture.data, ATLAS_DIM * ATLAS_DIM * sizeof(u32));
     C3D_TexSetFilter(&sAtlasTexture, GPU_NEAREST, GPU_NEAREST);
 
+    /* Offscreen BG3 target for the issue #29 per-scanline ripple. VRAM-backed
+     * (it is a GPU render target, never CPU-written). Non-fatal on failure --
+     * sHazeRtReady stays false and haze rooms just render BG3 flat. */
+    sHazeRtReady = true;
+    for (int b = 0; b < 2; ++b) {
+        if (!C3D_TexInitVRAM(&sHazeTex[b], HAZE_RT_DIM, HAZE_RT_DIM, GPU_RGBA8)) { sHazeRtReady = false; break; }
+        C3D_TexSetFilter(&sHazeTex[b], GPU_NEAREST, GPU_NEAREST);
+        C3D_TexSetWrap(&sHazeTex[b], GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
+        sHazeRT[b] = C3D_RenderTargetCreateFromTex(&sHazeTex[b], GPU_TEXFACE_2D, 0, -1);
+        if (!sHazeRT[b]) { C3D_TexDelete(&sHazeTex[b]); sHazeRtReady = false; break; }
+    }
+
     InitSlotSubtexTable();
 
     for (int i = 0; i < HASH_BUCKETS; ++i) sHashBucketHead[i] = -1;
@@ -469,6 +555,14 @@ bool Port_GpuRenderer_Init(void) {
 void Port_GpuRenderer_Shutdown(void) {
     if (!sInitialized) return;
     C3D_TexDelete(&sAtlasTexture); /* also frees the linearAlloc'd backing store */
+    if (sHazeRtReady) {
+        for (int b = 0; b < 2; ++b) {
+            C3D_RenderTargetDelete(sHazeRT[b]);
+            C3D_TexDelete(&sHazeTex[b]);
+            sHazeRT[b] = NULL;
+        }
+        sHazeRtReady = false;
+    }
     sInitialized = false;
     sGpuRendererActive = false;
 }
@@ -485,6 +579,20 @@ static inline u32 Bgr555ToRgba8(uint16_t color, bool transparent) {
      * directly, no texenv swizzle hack needed at draw time (unlike the
      * CPU-composited buffer's ABGR quirk in platform_gpu_3ds.c). */
     return (255u << 24) | (b << 16) | (g << 8) | r;
+}
+
+/* The GBA backdrop (BG palette entry 0) as a C2D clear colour. C2D_Color32
+ * takes r,g,b,a as arguments, so unlike Bgr555ToRgba8 -- which packs bytes
+ * for the atlas texture's own layout -- the channels go in straight. Same
+ * 5->8 bit expansion, so a backdrop-coloured clear and a backdrop-coloured
+ * tile match to the byte. */
+static inline u32 BackdropClearColor(void) {
+    const uint16_t color = (uint16_t)(gBgPltt[0] | ((uint16_t)gBgPltt[1] << 8));
+    u32 r = color & 0x1Fu, g = (color >> 5) & 0x1Fu, b = (color >> 10) & 0x1Fu;
+    r = (r << 3) | (r >> 2);
+    g = (g << 3) | (g >> 2);
+    b = (b << 3) | (b >> 2);
+    return C2D_Color32((u8)r, (u8)g, (u8)b, 255);
 }
 
 /* GBA brightness increase/decrease on 5-bit channels, byte-for-byte the same
@@ -1083,6 +1191,120 @@ static void CollectBgLayer(int bgIndex) {
     }
 }
 
+/* Issue #29: gather BG3's visible tiles into sHazeTiles[] for the offscreen
+ * ripple pass instead of pushing them to sDrawItems. A stripped-down
+ * CollectBgLayer(3): BG3 in every affected room is the backmost, opaque,
+ * non-windowed, non-first-target layer, so priority / depth tier / window
+ * tags / blend / brighten-darken / layer-fix redirection are all dropped.
+ * The frame-level scroll (sHazeBakeHofs, from PortHaze_Bg3RowScroll) is
+ * baked in here; the per-scanline delta is applied later in HazeBlitStrips. */
+static void CollectHazeBg3(void) {
+    sHazeTileCount = 0;
+
+    const int bgIndex = 3;
+    uint16_t bgcnt = (uint16_t)(gIoMem[0x08 + bgIndex * 2] | (gIoMem[0x09 + bgIndex * 2] << 8));
+    uint32_t charBase = (uint32_t)((bgcnt >> 2) & 3u) * 0x4000u;
+    bool bpp8 = ((bgcnt >> 7) & 1u) != 0;
+    uint32_t screenBase = (uint32_t)((bgcnt >> 8) & 0x1Fu) * 0x800u;
+    uint16_t sizeFlag = (uint16_t)((bgcnt >> 14) & 3u);
+    int mapWidthTiles = (sizeFlag & 1u) ? 64 : 32;
+    int mapHeightTiles = (sizeFlag & 2u) ? 64 : 32;
+    int blocksPerRow = mapWidthTiles / 32;
+
+    int scrollX = (int)(sHazeBakeHofs & 0x1FF);
+    int scrollY = (int)((uint16_t)(gIoMem[0x1E] | (gIoMem[0x1F] << 8)) & 0x1FFu);
+
+    const uint16_t *pal = (const uint16_t *)gBgPltt;
+    const int bytesPerTile = bpp8 ? 64 : 32;
+    int startTileX = scrollX / 8;
+    int startTileY = scrollY / 8;
+    int fineX = scrollX % 8;
+    int fineY = scrollY % 8;
+
+    for (int ty = 0; ty <= 20; ++ty) {
+        int tileRow = (startTileY + ty) & (mapHeightTiles - 1);
+        int screenBlockY = tileRow / 32;
+        int localRow = tileRow % 32;
+        for (int tx = -1; tx <= 31; ++tx) {
+            int tileCol = (startTileX + tx) & (mapWidthTiles - 1);
+            int screenBlockX = tileCol / 32;
+            int localCol = tileCol % 32;
+            int screenBlockIndex = screenBlockX + screenBlockY * blocksPerRow;
+            uint32_t mapAddr = screenBase + (uint32_t)screenBlockIndex * 0x800u +
+                               (uint32_t)(localRow * 32 + localCol) * 2u;
+            uint16_t entry = (uint16_t)(gVram[mapAddr] | (gVram[mapAddr + 1] << 8));
+            uint16_t tileId = entry & 0x3FFu;
+            bool hflip = (entry & 0x0400u) != 0;
+            bool vflip = (entry & 0x0800u) != 0;
+            int palBank = (entry >> 12) & 0x0Fu;
+            float drawX = (float)(tx * 8 - fineX);
+            float drawY = (float)(ty * 8 - fineY);
+            if (drawY <= -8.0f || drawY >= 160.0f || drawX <= -16.0f || drawX >= 248.0f) continue;
+
+            uint32_t byteOffset = charBase + (uint32_t)tileId * bytesPerTile;
+            if (!TileHasOpaquePixel(byteOffset, bpp8)) continue;
+
+            int slot = GetOrDecodeTileSlot(byteOffset, bpp8, pal, palBank, hflip, vflip, false,
+                                           BRIGHT_ADJUST_NONE);
+            if (slot < 0 || sHazeTileCount >= HAZE_MAX_TILES) continue;
+            sHazeTiles[sHazeTileCount].img.tex = &sAtlasTexture;
+            sHazeTiles[sHazeTileCount].img.subtex = &sSlotSubtexTable[slot];
+            sHazeTiles[sHazeTileCount].x = drawX;
+            sHazeTiles[sHazeTileCount].y = drawY;
+            ++sHazeTileCount;
+        }
+    }
+}
+
+/* Issue #29: draw the baked BG3 offscreen texture to `target` as 160
+ * one-scanline horizontal strips, strip y sampled at U offset rowDelta[y]
+ * (already relative to the scroll baked into the texture) so each line
+ * scrolls independently -- the wobble the HBlank DMA produces on hardware.
+ * Called first in the per-eye pass
+ * (BG3 is backmost), opaque. */
+static void HazeBlitStrips(int buf, float baseX, float baseY, float scaleX, float scaleY,
+                           const int16_t *rowDelta) {
+    C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
+    ConfigurePlainTextureEnv();
+
+    C2D_Image img = { &sHazeTex[buf], &sHazeStripSubtex };
+    bool reasserted = false;
+    /* One quad per scanline. (Coalescing runs of equal shift was tried and
+     * read as blocky "squares" instead of a wave -- a tall quad over a
+     * multi-row V span sampled wrong with NEAREST; per-line is what looked
+     * right in testing.) */
+    for (int y = 0; y < 160; ++y) {
+        int delta = (int)rowDelta[y];
+        if (delta < -HAZE_MARGIN) delta = -HAZE_MARGIN;
+        else if (delta > HAZE_MARGIN) delta = HAZE_MARGIN;
+
+        float uL = (float)(HAZE_MARGIN + delta) / (float)HAZE_RT_DIM;
+        float uR = (float)(HAZE_MARGIN + delta + 240) / (float)HAZE_RT_DIM;
+        float vT = (float)y / (float)HAZE_RT_DIM;
+        float vB = (float)(y + 1) / (float)HAZE_RT_DIM;
+        /* Non-rotated subtex; PICA texture origin is bottom-left, so the top
+         * edge is the larger V. If BG3 comes out vertically mirrored on
+         * hardware, swap the 1.0f-vT / 1.0f-vB pair. */
+        sHazeStripSubtex.width = 240;
+        sHazeStripSubtex.height = 1;
+        sHazeStripSubtex.left = uL;
+        sHazeStripSubtex.right = uR;
+        sHazeStripSubtex.top = 1.0f - vT;
+        sHazeStripSubtex.bottom = 1.0f - vB;
+        C2D_DrawParams p = {
+            { baseX, baseY + (float)y * scaleY, 240.0f * scaleX, scaleY + 0.5f },
+            { 0.0f, 0.0f }, 0.5f, 0.0f
+        };
+        C2D_DrawImage(img, &p, NULL);
+        /* citro2d re-inits the texenv on the first C2D_DrawImage of a scene
+         * (see the sDrawOrder loop's reassertedTexEnv workaround) -- undo
+         * that stomp so the rest of the strips keep the plain env. */
+        if (!reasserted) { ConfigurePlainTextureEnv(); reasserted = true; }
+    }
+    C2D_Flush();
+    ConfigureAtlasTextureEnv(); /* restore for the BG0-2 / OBJ pass that follows */
+}
+
 /* Multi-tile OBJ blit: walks the sprite's width/height in 8x8 tiles and
  * pushes one atlas quad per subtile, honoring 1D/2D OBJ char mapping
  * (DISPCNT bit 6) and whole-sprite hflip/vflip (subtile position AND
@@ -1149,12 +1371,22 @@ static void CollectSprite(int oamIndex, bool obj1D) {
     int tilesW = width / 8;
     int tilesH = height / 8;
 
-    /* BLDCNT layer id 4 = OBJ. */
-    bool isFirstTarget = sBldEffect != 0 && BldIsFirstTarget(sIoBldcnt, 4);
+    /* BLDCNT layer id 4 = OBJ. A Semi-Transparent OBJ (attr0 mode 1) is
+     * ALWAYS a blend 1st target and ALWAYS uses alpha blending, whatever
+     * BLDCNT bit4 / bits 6-7 say (GBATEK). The Mother Brain eye is 16 such
+     * sprites over Samus on the elevator (BG1) and the eye glow (BG0);
+     * without this they draw opaque and hide both behind a solid blob. */
+    bool objSemiTransparent = (objMode == 1);
     BrightAdjust brightAdjust = BRIGHT_ADJUST_NONE;
-    if (isFirstTarget && sBldEffect == 2) brightAdjust = BRIGHT_ADJUST_BRIGHTEN;
-    else if (isFirstTarget && sBldEffect == 3) brightAdjust = BRIGHT_ADJUST_DARKEN;
-    bool blendAlpha = isFirstTarget && sBldEffect == 1;
+    bool blendAlpha;
+    if (objSemiTransparent) {
+        blendAlpha = true;
+    } else {
+        bool isFirstTarget = sBldEffect != 0 && BldIsFirstTarget(sIoBldcnt, 4);
+        if (isFirstTarget && sBldEffect == 2) brightAdjust = BRIGHT_ADJUST_BRIGHTEN;
+        else if (isFirstTarget && sBldEffect == 3) brightAdjust = BRIGHT_ADJUST_DARKEN;
+        blendAlpha = isFirstTarget && sBldEffect == 1;
+    }
 
     /* Priority inverted for the same reason as CollectBgLayer above
      * (0=highest/on top, 3=lowest/backmost). OBJ draws above any BG of
@@ -1284,11 +1516,31 @@ static void CollectSprite(int oamIndex, bool obj1D) {
              * handles GM_MAP_SCREEN, and everywhere else these are world
              * sprites. */
             bool isRealHud = gMainGameMode == 4 && oamIndex < Port_Hud_GetOamCount();
+            /* In-game message / area-name banners (and the save cursor) are
+             * ordinary sprites, so isRealHud never catches them, yet they
+             * are an overlay and draw at OAM priority 0 in 2D. SpriteDraw
+             * tags their OAM slots (port_overlay_text_oam.c); lift them to
+             * the same front tier as the HUD so stereo does not sink the
+             * flat text into Samus. */
+            extern int Port_OverlayText_IsSlot(int oamIndex);
+            bool isOverlayText = gMainGameMode == 4 && Port_OverlayText_IsSlot(oamIndex);
+            /* Per-sprite depth override (port_sprite_depth_oam.c): a few
+             * sprite TYPES are authored to composite with a specific BG --
+             * the Kraid/Ridley statues set their OAM priority to BG1's so
+             * the sprite face blends with the BG that carries the top of
+             * the head. SpriteDraw tags their slots; honour that here
+             * instead of the one forced world-sprite plane. */
+            int spriteDepthCode = (gMainGameMode == 4) ? Port_SpriteDepth_SlotCode(oamIndex)
+                                                       : PORT_SPRITE_DEPTH_NONE;
             int depthTier;
             if (inMapOrPauseScreen) {
                 depthTier = (priority == 0) ? 5 : 6;
-            } else if (isRealHud) {
+            } else if (isRealHud || isOverlayText) {
                 depthTier = 5;
+            } else if (spriteDepthCode == PORT_SPRITE_DEPTH_BG_COPLANAR) {
+                depthTier = PortStereoDepth_BgTierForPriority(&sDepthState, priority);
+            } else if (spriteDepthCode >= 0) {
+                depthTier = spriteDepthCode;
             } else {
                 /* World sprites: parallax must follow the same ordering the
                  * 2D compositor already uses. An OBJ of priority p draws in
@@ -1466,31 +1718,26 @@ bool Port_GpuRenderer_CanRenderFrame(void) {
         }
     }
 
-    /* Issue #17 workaround: Samus's death animation (SPOSE_DYING's
-     * walljumpTimer flash phase, src/samus.c) renders as fragmented,
-     * disconnected color blocks through this renderer on real hardware --
-     * confirmed root cause NOT found after two full investigation sessions
-     * (see docs/3ds-issue17-session-2026-08-25.md): tile decode content,
-     * cache-slot bookkeeping, UV/draw placement, and CPU/GPU frame-overlap
-     * synchronization were all individually verified correct on real
-     * hardware and the bug persists regardless. The CPU scanline renderer
-     * (port/ppu/src/mode1.c) has been confirmed correct for this exact
-     * scene throughout -- that's how the bug was first isolated as
-     * GPU-renderer-specific to begin with. Falling back for just this
-     * scene's distinctive DISPCNT signature (only OBJ+WIN1 active, WIN1
-     * used purely as a BLDCNT-effect gate per the comment above, no BG
-     * layer at all, Samus pose == SPOSE_DYING -- confirmed via the same
-     * L+R+X/scene-recorder sessions that diagnosed this bug) is a narrow,
-     * low-risk fix for the visible symptom while the real GPU-side cause
-     * remains open.
-     * Note: previously this checked only (dispcnt & 0xF00u) == 0u && (dispcnt & (1u << 12)) != 0u,
-     * which erroneously matched the intro noise/communication static scene
-     * (issue #27) and caused severe FPS drops. Checking win1On and
-     * PortPpuMzm_IsSamusDying restricts the fallback strictly to Samus's death. */
-    extern bool PortPpuMzm_IsSamusDying(void);
-    if ((dispcnt & 0xF00u) == 0u && (dispcnt & (1u << 12)) != 0u && win1On && PortPpuMzm_IsSamusDying()) {
-        REJECT("issue #17 death-scene workaround");
-    }
+    /* Issue #17 (Samus's death animation rendering wrong through this
+     * renderer on real hardware) used to force a CPU-scanline fallback here
+     * for the death scene's DISPCNT signature. RESOLVED at the source and
+     * the workaround removed -- the scene renders correctly on the GPU path
+     * now, confirmed on hardware. Two independent bugs, both of which the
+     * death scene is simply the worst case for; see
+     * docs/3ds-issue17-session-2026-09-02.md for the recording that
+     * separated them:
+     *   1. The eye targets were cleared to hardcoded black instead of the
+     *      GBA backdrop (BG palette entry 0). Invisible while BG tiles
+     *      cover the screen; this scene enables no BG layer at all and
+     *      fades the backdrop to white through palette RAM, so the whole
+     *      fade was dropped. See BackdropClearColor's use in
+     *      Port_GpuRenderer_RenderFrame.
+     *   2. The PICA200's texture cache was never invalidated after an
+     *      in-place atlas redecode, so slots whose palette changed kept
+     *      drawing stale texels. Hidden in ordinary frames, which thrash
+     *      that cache; exposed by this scene's tiny working set plus a
+     *      palette rewritten every frame. See the C3D_TexBind call after
+     *      the dirty-row flush in Port_GpuRenderer_RenderFrame. */
 
     return true;
 }
@@ -1792,22 +2039,36 @@ void Port_GpuRenderer_RenderFrame(void) {
      * sObjWinCovered BEFORE the BG/OBJ collection loops below run, since
      * CollectBgLayer/CollectSprite need it ready to resolve per-tile
      * visibility as they go. */
-    sObjWindowActive = !sWindowActive && (dispcnt & (1u << 15)) != 0u;
-    if (sObjWindowActive) {
-        uint16_t winout = (uint16_t)(gIoMem[0x4A] | (gIoMem[0x4B] << 8));
-        uint8_t insideMask = (uint8_t)((winout >> 8) & 0xFFu);
-        uint8_t outsideMask = (uint8_t)(winout & 0xFFu);
-        for (int l = 0; l < 4; ++l) sLayerWinVis[l] = ComputeLayerWinVis(insideMask, outsideMask, l);
-        sLayerWinVis[4] = ComputeLayerWinVis(insideMask, outsideMask, 4);
-        ComputeObjWinMask(obj1D);
-    }
+    /* OBJWIN is deliberately treated as NON-clipping here (no-op), matching
+     * the CPU rasterizer / layer-workbench re-render. Its only confirmed use
+     * is the pause SUIT screen (wireframe Samus as its own mask). There the
+     * game sets WINOUT-high = BG3|OBJ, which a literal reading turns into
+     * "inside the silhouette hide BG0-2, show BG3" -- and BG3 there is the
+     * unrelated minimap tilemap (green squares), so on hardware that data
+     * bled through Samus's outline (issue #16). The intended look is BG0-3
+     * unaffected by the mask (BG2's opaque hexagon motif covers BG3
+     * everywhere, inside the silhouette and out), which is exactly what
+     * leaving every layer at WIN_VIS_ALWAYS produces. If a scene ever turns
+     * up that needs OBJWIN to actually clip, this is where to revisit it. */
+    sObjWindowActive = false;
+    (void)ComputeObjWinMask;
 
     /* Depth depends on register state the collection loops below read one
      * layer at a time, so it is snapshotted once, up front, for all of them. */
     ComputeDepthState(dispcnt);
 
+    /* Issue #29: is this frame the single-layer BG3 ripple? If so, collect
+     * BG3 for the offscreen strip pass and keep it out of the normal
+     * back-to-front list. Windowed / power-bomb-flash frames fall through to
+     * the flat path (kept simple: those never coincide with a ripple room). */
+    sHazeActive = sHazeRtReady && (dispcnt & (1u << 11)) && !sWindowActive && !sPbFlashActive &&
+                  PortHaze_Bg3RowScroll(sHazeRowDelta, &sHazeBakeHofs);
+    if (sHazeActive) CollectHazeBg3();
+
     for (int bg = 3; bg >= 0; --bg) {
-        if (dispcnt & (1u << (8 + bg))) CollectBgLayer(bg);
+        if (!(dispcnt & (1u << (8 + bg)))) continue;
+        if (sHazeActive && bg == 3) continue; /* drawn via the offscreen strip pass */
+        CollectBgLayer(bg);
     }
     if (dispcnt & (1u << 12)) {
         for (int i = 127; i >= 0; --i) CollectSprite(i, obj1D);
@@ -1916,6 +2177,41 @@ void Port_GpuRenderer_RenderFrame(void) {
             mask &= ~(((1ull << runLength) - 1ull) << startRow);
         }
         sDirtyRowMask = 0;
+
+        /* Issue #17: flushing the CPU data cache above only makes the new
+         * texels visible in MEMORY -- it says nothing to the PICA200's own
+         * texture cache, which sits in front of it. citro2d binds a texture
+         * (C3D_TexBind) only when the texture POINTER changes between draw
+         * calls, and every draw in this renderer uses this one atlas: so
+         * after the very first frame the bind never happens again, and the
+         * texture-unit config write it triggers -- the write that carries
+         * GPUREG_TEXUNIT_CONFIG's texture-cache-clear bit -- is never
+         * re-issued either. Any slot redecoded IN PLACE (see
+         * GetOrDecodeTileSlot: changed VRAM bytes, changed palette colors,
+         * or changed evy) then keeps drawing with whatever texels the GPU
+         * cached the last time it sampled that slot.
+         *
+         * Normally invisible: a gameplay frame samples hundreds of distinct
+         * atlas tiles spread over a 1MB texture, so the GPU's cache is
+         * thrashed constantly and stale entries are evicted before anyone
+         * notices. It becomes visible exactly when the working set is tiny
+         * and the palette is what's changing -- which is Samus's death
+         * animation: no BG layers at all, a handful of sprite tiles whose
+         * VRAM bytes never change, and a palette rewritten every single
+         * frame. Confirmed against the 2026-09-02 scene recording: within a
+         * SINGLE captured frame, Samus's on-screen colors came from two
+         * different earlier palette phases at once (some tiles frozen at
+         * the recording's sample ~97-102, others at ~109-119), never the
+         * current one -- per-slot staleness in the GPU's cache, not in
+         * ours, whose palette-hash check (sCachePalHash) had already
+         * redecoded them correctly in memory.
+         *
+         * Re-binding the atlas is the cheap fix: C3D_TexBind sets citro3d's
+         * per-unit dirty flag, and the next draw re-emits the texture-unit
+         * config -- cache-clear bit included -- before anything samples the
+         * atlas this frame. Once per frame, and only on frames that
+         * actually rewrote a slot. */
+        C3D_TexBind(0, &sAtlasTexture);
     }
 
     u64 tAfterCollect = svcGetSystemTick();
@@ -1964,6 +2260,34 @@ void Port_GpuRenderer_RenderFrame(void) {
     C3D_RenderTarget* leftTarget = PlatformGpu3DS_GetTopLeftTarget();
     C3D_RenderTarget* rightTarget = (slider3d > 0.01f) ? PlatformGpu3DS_GetTopRightTarget() : NULL;
 
+    /* Issue #29: render this frame's BG3 into the BACK buffer (sHazeCur^1).
+     * The eye passes below sample the FRONT buffer (sHazeCur), which was
+     * rendered last frame and is guaranteed finished. No in-frame
+     * render-to-texture race, and both eyes read the same complete buffer.
+     * The buffers flip at the end of the frame. */
+    const int sHazeBack = sHazeCur ^ 1;
+    if (sHazeActive) {
+        C2D_SceneBegin(sHazeRT[sHazeBack]);
+        /* C3D_CLEAR_COLOR only -- no depth buffer on these targets. */
+        C3D_RenderTargetClear(sHazeRT[sHazeBack], C3D_CLEAR_COLOR, 0, 0);
+        C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_ALL);
+        C3D_AlphaTest(true, GPU_GREATER, 0);
+        C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
+        ConfigureAtlasTextureEnv();
+        for (int i = 0; i < sHazeTileCount; ++i) {
+            C2D_DrawImageAt(sHazeTiles[i].img, (float)HAZE_MARGIN + sHazeTiles[i].x,
+                            sHazeTiles[i].y, 0.0f, NULL, 1.0f, 1.0f);
+            /* citro2d re-inits the texenv on the first draw of a scene --
+             * without undoing that stomp, tiles 1..N land with citro2d's
+             * default env, which channel-permutes our RGBA8 atlas (green/red
+             * grid where BG3 should be). */
+            if (i == 0) ConfigureAtlasTextureEnv();
+        }
+        C2D_Flush();
+        memcpy(sHazeBakedRowDelta[sHazeBack], sHazeRowDelta, sizeof(sHazeBakedRowDelta[sHazeBack]));
+        sHazeBufReady[sHazeBack] = true;
+    }
+
 #ifdef PORT_DEBUG_TOOLS_ACTIVE
     {
         static unsigned sEyeLogCounter;
@@ -1981,7 +2305,19 @@ void Port_GpuRenderer_RenderFrame(void) {
         if (!target) continue;
         float eyeSign = (eye == 0) ? 1.0f : -1.0f;
 
-        C2D_TargetClear(target, C2D_Color32(0, 0, 0, 255));
+        /* Issue #17: the GBA shows BG palette entry 0 -- the backdrop --
+         * wherever no enabled layer draws, which this renderer used to
+         * replace with a hardcoded black. Usually harmless (rooms fill the
+         * screen with BG tiles), but Samus's death animation enables no BG
+         * layer at all: the whole screen IS the backdrop, and the game
+         * fades it to white through palette RAM. Clearing to black dropped
+         * that entire fade. port/ppu/src/mode1.c uses mode1_bg_abgr_lut[0]
+         * raw for the same purpose (no BLDCNT brighten/darken applied to
+         * the backdrop), so this matches it exactly. The letterbox/
+         * pillarbox masks drawn at the end of this pass re-blacken
+         * everything outside the 240x160 GBA frame, so filling the whole
+         * target here is safe for every display style. */
+        C2D_TargetClear(target, BackdropClearColor());
         C2D_SceneBegin(target);
         ConfigureAtlasTextureEnv();
         C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_ALL);
@@ -1990,6 +2326,18 @@ void Port_GpuRenderer_RenderFrame(void) {
          * to avoid reading back the destination framebuffer from VRAM, saving
          * massive memory bandwidth during scaled / full-screen rendering. */
         C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
+
+        /* Issue #29: lay the rippled BG3 down first (it is the backmost
+         * layer in every affected room); BG0-2 / OBJ composite on top.
+         * Give it the same stereo parallax offset BG3 would get in the
+         * normal pass -- without it the strips sit at screen depth while the
+         * parallaxed BG0-2 recede behind, so BG3 reads as being in FRONT. */
+        if (sHazeActive && sHazeBufReady[sHazeCur]) {
+            float eyeOffBg3 = floorf(eyeSign * slider3d *
+                                     PortStereoDepth_TierPx(PortStereoDepth_BgTier(&sDepthState, 3)) + 0.5f);
+            HazeBlitStrips(sHazeCur, screenBaseX + eyeOffBg3, screenBaseY, scaleX, scaleY,
+                           sHazeBakedRowDelta[sHazeCur]);
+        }
 
         /* Single pass over sDrawOrder (true back-to-front GBA priority
          * order, opaque and blend items interleaved), toggling the GPU
@@ -2012,13 +2360,29 @@ void Port_GpuRenderer_RenderFrame(void) {
             for (int oi = 0; oi < sDrawOrderCount; ++oi) {
                 const DrawItem* item = &sDrawItems[sDrawOrder[oi]];
                 if (!ItemPassesWindow(sWindowActive, item->winVis, insidePass)) continue;
-                bool wantBlend = item->blendAlpha && sBldEffect == 1;
+                /* item->blendAlpha already implies alpha mode: the BG/OBJ
+                 * collect paths only set it when sBldEffect==1, and a
+                 * Semi-Transparent OBJ sets it unconditionally (and must
+                 * blend even if BLDCNT is left in another mode). */
+                bool wantBlend = item->blendAlpha;
                 if (wantBlend != blendModeActive) {
                     C2D_Flush();
                     if (wantBlend) {
-                        C3D_BlendingColor(C2D_Color32(0, 0, 0, (u32)((sBldEva * 255) / 16)));
-                        C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_CONSTANT_ALPHA, GPU_ONE_MINUS_CONSTANT_ALPHA,
-                                       GPU_CONSTANT_ALPHA, GPU_ONE_MINUS_CONSTANT_ALPHA);
+                        /* GBA alpha blend (GBATEK): out = min(31, src*EVA/16 + dst*EVB/16),
+                         * with EVA and EVB independent. Pack EVA/16 into the blend
+                         * colour's RGB and EVB/16 into its alpha, then take the src
+                         * side from GPU_CONSTANT_COLOR and the dst side from
+                         * GPU_CONSTANT_ALPHA so each gets its own coefficient.
+                         * GPU_BLEND_ADD saturates in [0,1], matching GBA's clamp to 31.
+                         * The old code used dst factor 1-EVA/16 (a normalised lerp that
+                         * ignored EVB) -- correct only where EVA+EVB==16, but wrong for
+                         * the transparency 0x08-0x17 rooms where EVB is forced to 16
+                         * (sum > 16, additive), which came out far too dark. */
+                        u32 evaByte = (u32)((sBldEva * 255) / 16);
+                        u32 evbByte = (u32)((sBldEvb * 255) / 16);
+                        C3D_BlendingColor(C2D_Color32(evaByte, evaByte, evaByte, evbByte));
+                        C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_CONSTANT_COLOR, GPU_CONSTANT_ALPHA,
+                                       GPU_CONSTANT_COLOR, GPU_CONSTANT_ALPHA);
                     } else {
                         /* Opaque mode: ONE/ZERO, see the comment above the
                          * initial C3D_AlphaBlend call before this loop. */
@@ -2125,16 +2489,11 @@ void Port_GpuRenderer_RenderFrame(void) {
             }
         }
 
-        if (Port_Config_GetShowFps()) {
-            char label[20];
-            double fps = Port_PPU_3DS_CurrentFps();
-            unsigned rounded = fps > 0.0 ? (unsigned)(fps + 0.5) : 0u;
-            if (rounded > 999u) rounded = 999u;
-            snprintf(label, sizeof(label), "FPS %u", rounded);
-            float fpsEyeOffset = eyeSign * slider3d * (+1.0f);
-            C2D_DrawRectSolid(5.0f + fpsEyeOffset, 216.0f, 0.7f, 65.0f, 18.0f, C2D_Color32(0, 0, 0, 200));
-            PlatformGpu3DS_DrawStatusText(8.0f + fpsEyeOffset, 220.0f, 1.5f, label);
-        }
+        /* Shared overlay so a CPU fallback frame draws the exact same box
+         * (see PlatformGpu3DS_DrawFpsOverlay). Parallax past the frontmost
+         * world tier (HUD, +2.0px) and pixel-snapped like the tile layers,
+         * so the counter always reads as being in front of everything. */
+        PlatformGpu3DS_DrawFpsOverlay(floorf(eyeSign * slider3d * (+2.5f) + 0.5f));
 #ifdef PORT_DEBUG_TOOLS_ACTIVE
         {
             /* One counter per eye -- a single shared counter with an even
@@ -2154,6 +2513,11 @@ void Port_GpuRenderer_RenderFrame(void) {
         }
 #endif
     }
+
+    /* Issue #29: flip the haze buffers -- the back buffer we just rendered
+     * becomes next frame's read buffer, by which point C3D_FrameEnd has
+     * flushed it. */
+    if (sHazeActive) sHazeCur = sHazeBack;
 
     u64 tEnd = svcGetSystemTick();
     sLastDrawMs = (float)((double)(tEnd - tAfterCollect) / PORT_GPU_RENDERER_CPU_TICKS_PER_MSEC);

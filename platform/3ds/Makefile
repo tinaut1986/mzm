@@ -100,10 +100,13 @@ SRCS_3DS := \
 	$(CURDIR)/source/port_stereo_depth.c \
 	$(CURDIR)/source/port_layer_fixes.c \
 	$(CURDIR)/source/port_hud_oam.c \
+	$(CURDIR)/source/port_overlay_text_oam.c \
+	$(CURDIR)/source/port_sprite_depth_oam.c \
 	$(CURDIR)/source/port_mzm_audio_3ds.c \
 	$(CURDIR)/source/port_retroachievements_3ds.c \
 	$(CURDIR)/source/port_ra_iwram_map.c \
-	$(CURDIR)/source/port_ra_badges_data.c
+	$(CURDIR)/source/port_ra_badges_data.c \
+	$(CURDIR)/source/port_haze_3ds.c
 
 # rcheevos: the official RetroAchievements library, vendored under
 # third_party/rcheevos (see its VERSION.txt for the commit, and for which of
@@ -293,8 +296,18 @@ LDFLAGS  := -specs=3dsx.specs -g $(ARCH) -Wl,-Map,$(BUILD)/mzm-3ds.map -Wl,--gc-
 LIBS     := -L$(CTRULIB)/lib -L$(PORTLIBS)/lib -lcitro2d -lcitro3d -lctru -lm
 
 
+# The committed tools/bin/{makerom,bannertool} are Linux x86-64 ELF binaries,
+# bundled for reproducible CI builds. On Windows they fail with "Exec format
+# error" (make Error 126), so there we must skip them and use the .exe that
+# ships with devkitPro instead. devkitPro's Windows make is an Msys build and
+# scrubs $(OS), so detect via `uname -o` (Msys / Cygwin) rather than $(OS).
+ifneq (,$(filter Msys Cygwin,$(shell uname -o 2>/dev/null)))
+MAKEROM    ?= $(firstword $(wildcard $(DEVKITPRO)/tools/bin/makerom.exe) $(shell which makerom.exe 2>/dev/null))
+BANNERTOOL ?= $(firstword $(wildcard $(DEVKITPRO)/tools/bin/bannertool.exe) $(shell which bannertool.exe 2>/dev/null))
+else
 MAKEROM    ?= $(firstword $(wildcard $(ROOT)/tools/bin/makerom $(HOME)/tools/bin/makerom $(DEVKITPRO)/tools/bin/makerom $(shell which makerom 2>/dev/null)))
 BANNERTOOL ?= $(firstword $(wildcard $(ROOT)/tools/bin/bannertool $(HOME)/tools/bin/bannertool $(DEVKITPRO)/tools/bin/bannertool $(shell which bannertool 2>/dev/null)))
+endif
 
 .PHONY: all clean cia elf 3dsx print-version ftp test
 

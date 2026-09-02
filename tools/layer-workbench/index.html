@@ -82,6 +82,9 @@
   .shot[aria-current="true"] { border-left-color:var(--accent); background:var(--accent-soft); color:var(--ink); }
   .shot canvas { width:68px; height:45px; border:1px solid var(--line); }
   .shot .n { font-size:11px; font-variant-numeric:tabular-nums; }
+  .shot[data-rgb="1"] .n::after { content:"\25CF"; color:#5cc46b; margin-left:5px; font-size:9px;
+                                  vertical-align:1px; }
+  .shot[data-rgb="1"][aria-current="true"] .n::after { color:#8ff09a; }
   .shot.room { justify-content:space-between; padding:4px 11px; }
   .shot.room .dim { font-size:10px; color:var(--faint); }
   .shot.room .dim i { font-style:normal; color:var(--warn); }
@@ -98,6 +101,24 @@
           color:var(--dim); background:var(--panel); }
   .drop.over { border-color:var(--accent); background:var(--accent-soft); }
   .drop p { margin:8px 0 0; font-size:12px; color:var(--faint); }
+
+  #realscreen { position:fixed; right:14px; bottom:14px; z-index:80; background:var(--panel);
+                border:1px solid var(--line); border-radius:6px; padding:8px;
+                box-shadow:0 6px 24px rgba(0,0,0,.4);
+                display:flex; flex-direction:column; gap:6px;
+                width:440px; height:340px; min-width:220px; min-height:150px;
+                max-width:96vw; max-height:92vh; resize:both; overflow:hidden; }
+  #realscreen .rs-bar { display:flex; align-items:center; gap:8px; flex:0 0 auto;
+                        font-size:12px; font-weight:700; color:var(--ink); cursor:move;
+                        user-select:none; }
+  #realscreen .rs-bar .meta { font-weight:400; }
+  #realscreen .rs-bar button { padding:0 7px; cursor:pointer; }
+  #realscreen #rs-zout { margin-left:auto; }
+  #realscreen #rs-zlab { min-width:28px; text-align:center; }
+  #realscreen #rs-scroll { flex:1 1 0; min-height:0; overflow:auto;
+                           border:1px solid var(--line); background:#000; }
+  #realscreen canvas { display:block; image-rendering:pixelated; }
+  #realscreen .rs-hint { margin:0; flex:0 0 auto; font-size:11px; color:var(--faint); }
 
   .mmctl button { padding:1px 7px; font-size:10px; margin-left:4px; cursor:pointer; }
   .mmbody { padding:9px; overflow:auto; flex:1 1 0; min-height:0; }
@@ -211,6 +232,38 @@
   .dests { display:flex; flex-direction:column; gap:4px; margin-top:9px; }
   .dests button { text-align:left; display:flex; justify-content:space-between; gap:8px; }
   .dests button[aria-pressed="true"] { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+
+  .grp.modes button[aria-pressed="true"] { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+
+  /* modo sprites */
+  #spfilter { width:100%; box-sizing:border-box; margin:7px 11px; width:calc(100% - 22px);
+    font-size:11px; padding:3px 6px; background:var(--sunk); color:var(--ink);
+    border:1px solid var(--line); border-radius:3px; font-family:"JetBrains Mono",monospace; }
+  .shot.sprite { justify-content:space-between; padding:4px 11px; font-family:"JetBrains Mono",monospace;
+    font-size:10.5px; }
+  .shot.sprite .nm { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .shot.sprite .cb { flex:0 0 auto; font-size:9px; font-weight:700; padding:0 4px; border-radius:3px;
+    background:var(--accent-soft); color:var(--accent); }
+  .shot.sprite .cb.none { display:none; }
+  .sppanel { padding:16px 20px; max-width:640px; font-size:13px; line-height:1.55; }
+  .sppanel h2 { font-size:14px; margin:0 0 4px; }
+  .sppanel .who { font-family:"JetBrains Mono",monospace; font-size:12px; color:var(--dim); margin-bottom:14px; }
+  .sppanel select { font-size:12px; padding:4px 8px; background:var(--sunk); color:var(--ink);
+    border:1px solid var(--line); border-radius:3px; width:100%; max-width:360px; }
+  .sppanel .note { color:var(--faint); font-size:11.5px; margin-top:14px; }
+  .spprev { margin:14px 0 4px; display:flex; gap:14px; align-items:flex-start; flex-wrap:wrap; }
+  .spprev .frame { border:1px solid var(--line); background:var(--sunk);
+    background-image:
+      linear-gradient(45deg,var(--line) 25%,transparent 25%,transparent 75%,var(--line) 75%),
+      linear-gradient(45deg,var(--line) 25%,transparent 25%,transparent 75%,var(--line) 75%);
+    background-size:12px 12px; background-position:0 0,6px 6px;
+    display:flex; align-items:center; justify-content:center; padding:8px;
+    min-width:96px; min-height:96px; }
+  .spprev canvas, .spprev img { image-rendering:pixelated; image-rendering:crisp-edges; display:block; }
+  .spprev .cap { font-family:"JetBrains Mono",monospace; font-size:10.5px; color:var(--dim);
+    line-height:1.5; max-width:230px; }
+  .spprev .cap b { color:var(--ink); font-weight:600; }
+  .spprev label { display:block; margin-top:6px; font-size:10.5px; color:var(--faint); cursor:pointer; }
   .dests button small { font-weight:500; opacity:.75; font-family:"JetBrains Mono",monospace; font-size:10px; }
   .zoomwrap { display:flex; gap:10px; align-items:flex-start; }
   .zoomwrap canvas { width:88px; height:88px; border:1px solid var(--line); background:var(--sunk); }
@@ -242,9 +295,15 @@
 <div class="top">
   <div class="brand">BANCO DE <span>CAPAS</span></div>
 
+  <div class="grp modes" role="group" aria-label="Modo">
+    <button id="mMap" aria-pressed="true">MAPA</button>
+    <button id="mRec" aria-pressed="false">GRABACIÓN</button>
+    <button id="mSprites" aria-pressed="false">SPRITES</button>
+  </div>
+
   <div class="grp" role="group" aria-label="Datos">
     <label class="filebtn ui" tabindex="0">MAPAS<input type="file" id="mapsfile" accept=".json,.gz"></label>
-    <label class="filebtn ui" tabindex="0">GRABACIÓN<input type="file" id="file" accept=".bin"></label>
+    <label class="filebtn ui" tabindex="0">GRABACIÓN<input type="file" id="file" accept=".bin,.rgb" multiple></label>
   </div>
 
   <div class="grp" role="group" aria-label="Vista">
@@ -298,6 +357,21 @@
 
 <div id="minbar" hidden></div>
 
+<div id="realscreen" hidden>
+  <div class="rs-bar">
+    <span id="rs-title">PANTALLA REAL (post-GPU)</span>
+    <span class="meta" id="rs-info"></span>
+    <button class="tab" id="rs-zout" title="Alejar">−</button>
+    <span class="meta" id="rs-zlab">1×</span>
+    <button class="tab" id="rs-zin" title="Acercar">+</button>
+    <button class="tab" id="rs-close" title="Cerrar">×</button>
+  </div>
+  <div id="rs-scroll"><canvas id="rs-canvas"></canvas></div>
+  <p class="rs-hint">Suelta un <code>.rgb</code> del 3DS (<code>mzm-dump-*.rgb</code> o varios
+     <code>mzm-rec-shot-NNNN.rgb</code> para emparejar con la grabación). Es el
+     fotograma tal cual sale de la GPU a la pantalla.</p>
+</div>
+
 <script>
 (function () {
   "use strict";
@@ -313,6 +387,10 @@
             {v:1,name:"BG1",note:""},{v:2,name:"BG2",note:""},{v:3,name:"BG3",note:"el más al fondo"}];
 
   var samples=[],state=null,sel=null,fixes={},zoom=2,fileName="";
+  /* Modo activo del shell y lo propio del modo sprites (ver el bloque
+     "modos" más abajo). El catálogo y sus overrides viven aquí para que
+     cambiar de vista no pierda nada. */
+  var mode="map",lastSample=0,sprites=null,spriteFixes={},spriteSel=null,spFilter="",spPrevTimer=0;
   /* sel es el ancla -- la que manda en el panel de la derecha -- y selMore el
      resto del conjunto. El conjunto PUEDE mezclar capas: desde el resultado se
      coge lo que haya en esa posición en todas ellas, que es como se ve el
@@ -323,11 +401,118 @@
   ["file","incfile","mapsfile","mapsbadge","railTitle","meta","shots","main","drop",
    "side","tilebox","list","export",
    "copy","clear","save","zin","zout","zlab","relayout","torail","toside",
-   "minbar","divrail","divside","restore","autobadge","load"].forEach(function(id){els[id]=document.getElementById(id);});
+   "minbar","divrail","divside","restore","autobadge","load",
+   "mMap","mRec","mSprites",
+   "realscreen","rs-canvas","rs-info","rs-close","rs-title","rs-scroll",
+   "rs-zin","rs-zout","rs-zlab"].forEach(function(id){els[id]=document.getElementById(id);});
 
   function u16(b,o){return b[o]|(b[o+1]<<8);}
   function u32(b,o){return (b[o]|(b[o+1]<<8)|(b[o+2]<<16)|(b[o+3]<<24))>>>0;}
   function hex4(v){return "0x"+v.toString(16).toUpperCase().padStart(4,"0");}
+
+  /* ---------- real screen dump (.rgb) ----------
+     The 3DS DEBUG -> HERRAMIENTAS -> DUMP button writes the actual GPU render
+     targets to sdmc:/3ds/mzm-dump-{left,right,bottom}.rgb (and the periodic
+     mzm-rec-shot-NNNN.rgb during a recording). They are raw RGB8, stored in
+     the framebuffer's native portrait layout: 240 px wide, and the displayed
+     image is that rotated 90deg CCW (so a 400x240 top screen is 240x400 in
+     the file, a 320x240 bottom screen is 240x320). This shows one such file
+     as-displayed, next to whatever the workbench is re-rendering from the raw
+     GBA state, so a port-side rendering bug (windows, fallback, palette) that
+     only shows on hardware can be compared frame-to-frame. */
+  function showRealScreen(buf, name){
+    var src=new Uint8Array(buf), SW=240, SH=(src.length/3/SW)|0;
+    if(SH*SW*3!==src.length){ els.meta.textContent=name+": no es un .rgb 240xN de 8 bits"; return; }
+    var DW=SH, DH=SW;                 /* 90deg CCW: dst(x,y)=src(sy=x, sx=DH-1-y) */
+    var cv=els["rs-canvas"]; cv.width=DW; cv.height=DH;
+    var ctx=cv.getContext("2d"), out=ctx.createImageData(DW,DH), o=out.data;
+    /* The GX display transfer that writes the .rgb (RGBA8 target -> RGB8 out)
+       emits the bytes in B,G,R order for this port's render targets, so a
+       straight RGB read comes out with red/blue swapped (Samus reads cyan
+       instead of yellow). Swap them back here. */
+    for(var sy=0;sy<SH;sy++)for(var sx=0;sx<SW;sx++){
+      var s=(sy*SW+sx)*3, dx=sy, dy=(SW-1)-sx, d=(dy*DW+dx)*4;
+      o[d]=src[s+2]; o[d+1]=src[s+1]; o[d+2]=src[s]; o[d+3]=255;
+    }
+    ctx.putImageData(out,0,0);
+    var kind = SH>=400 ? "arriba 400x240" : SH>=300 ? "abajo 320x240" : SH+" px alto";
+    els["rs-info"].textContent = name+"  ("+kind+")";
+    if(!/rec-shot-0*\d+\.rgb$/i.test(name)){
+      els["rs-title"].textContent="PANTALLA REAL (post-GPU)";
+      els["rs-title"].style.color="";
+    }
+    els.realscreen.hidden=false;
+    rsApplyZoom();
+  }
+  var rsZoom=1;
+  function rsApplyZoom(){
+    var cv=els["rs-canvas"];
+    cv.style.width=(cv.width*rsZoom)+"px";
+    cv.style.height=(cv.height*rsZoom)+"px";
+    els["rs-zlab"].textContent=rsZoom+"×";
+  }
+  function rsSetZoom(z){ rsZoom=Math.max(1,Math.min(8,z)); rsApplyZoom(); }
+  els["rs-zin"].addEventListener("click",function(){ rsSetZoom(rsZoom+1); });
+  els["rs-zout"].addEventListener("click",function(){ rsSetZoom(rsZoom-1); });
+  els["rs-canvas"].addEventListener("wheel",function(e){
+    e.preventDefault(); rsSetZoom(rsZoom+(e.deltaY<0?1:-1));
+  },{passive:false});
+  els["rs-close"].addEventListener("click",function(){ els.realscreen.hidden=true; });
+
+  /* Pair mzm-rec-shot-NNNN.rgb frames with the loaded recording: NNNN is the
+     0-indexed sample number the 3DS embedded when it wrote the shot (they are
+     only taken every few samples, so a scrub lands on the newest shot <= the
+     current sample). Non-indexed dumps (mzm-dump-*.rgb) show straight away. */
+  var rsShots={};
+  /* Green dot on every rail thumbnail that has a matching .rgb, so the
+     pairing is visible at a glance. */
+  function rsMarkRail(){
+    if(!els.shots)return;
+    Array.prototype.forEach.call(els.shots.children,function(b,n){
+      b.setAttribute("data-rgb", rsShots[n] ? "1" : "0");
+    });
+  }
+  function rsAddShot(buf,name){
+    var m=/rec-shot-0*(\d+)\.rgb$/i.exec(name);
+    if(!m){ showRealScreen(buf,name); return; }
+    rsShots[+m[1]]={buf:buf,name:name};
+    var keys=Object.keys(rsShots).map(Number).sort(function(a,b){return a-b;});
+    els.meta.textContent=keys.length+" .rgb emparejadas · frames "+keys.join(", ");
+    rsMarkRail();
+    if(mode==="rec") rsSyncToSample(lastSample);
+    else showRealScreen(buf,name);
+  }
+  function rsSyncToSample(i){
+    var best=-1;
+    Object.keys(rsShots).forEach(function(k){k=+k;if(k<=i&&k>best)best=k;});
+    if(best<0){ Object.keys(rsShots).forEach(function(k){k=+k;if(best<0||k<best)best=k;}); }
+    if(best<0)return;
+    var s=rsShots[best], exact=(best===i);
+    els["rs-title"].textContent = exact
+      ? "PANTALLA REAL · frame "+i
+      : "PANTALLA REAL · frame "+i+" → .rgb del "+best;
+    els["rs-title"].style.color = exact ? "" : "var(--warn)";
+    showRealScreen(s.buf, s.name);
+  }
+
+  /* Drag the panel by its title bar. Switches from the bottom-right anchor to
+     free left/top placement on first drag. */
+  (function(){
+    var bar=els.realscreen.querySelector(".rs-bar"),dragging=false,ox=0,oy=0;
+    bar.addEventListener("mousedown",function(e){
+      if(e.target.tagName==="BUTTON")return;
+      var r=els.realscreen.getBoundingClientRect();
+      dragging=true; ox=e.clientX-r.left; oy=e.clientY-r.top;
+      els.realscreen.style.right="auto"; els.realscreen.style.bottom="auto";
+      e.preventDefault();
+    });
+    window.addEventListener("mousemove",function(e){
+      if(!dragging)return;
+      els.realscreen.style.left=Math.max(0,e.clientX-ox)+"px";
+      els.realscreen.style.top=Math.max(0,e.clientY-oy)+"px";
+    });
+    window.addEventListener("mouseup",function(){ dragging=false; });
+  })();
 
   /* ---------- recording parsing ---------- */
   function scan(buf){
@@ -380,11 +565,21 @@
   }
 
   function decodeObj(C){
-    var b=C.b,dispcnt=u16(b,C.io),obj1d=(dispcnt>>6)&1,img=new Uint8ClampedArray(W*H*4);
+    var b=C.b,dispcnt=u16(b,C.io),obj1d=(dispcnt>>6)&1;
+    var img=new Uint8ClampedArray(W*H*4),simg=new Uint8ClampedArray(W*H*4),hasSemi=false;
     for(var i=127;i>=0;i--){
       var a0=u16(b,C.oam+i*8),a1=u16(b,C.oam+i*8+2),a2=u16(b,C.oam+i*8+4),aff=(a0>>8)&1;
       if(((a0>>9)&1)&&!aff)continue;
-      if(((a0>>10)&3)===2)continue;
+      var omode=(a0>>10)&3;
+      if(omode===2)continue;                 /* OBJ window: not a drawn sprite */
+      /* Semi-transparent OBJ (mode 1): on hardware it is ALWAYS a blend 1st
+         target with alpha, whatever BLDCNT says. Its pixels go to a separate
+         buffer that the compositor mixes with the live BLDALPHA (see drawObj).
+         Simplification: opaque vs semi sprites are two flat buffers, so their
+         mutual OAM order is lost -- fine here (the only mode-1 users, e.g. the
+         Mother Brain eye, don't overlap opaque sprites). */
+      var semi=omode===1,dst=semi?simg:img;
+      if(semi)hasSemi=true;
       var shape=(a0>>14)&3,size=(a1>>14)&3;if(shape===3)continue;
       var w=OBJW[shape][size],h=OBJH[shape][size];
       var x=a1&0x1FF,y=a0&0xFF;if(x>=256)x-=512;if(y>=160)y-=256;
@@ -397,11 +592,22 @@
         for(var yy=0;yy<8;yy++){var py=y+tyi*8+yy;if(py<0||py>=H)continue;
           for(var xx=0;xx<8;xx++){var pxx=x+txi*8+xx;if(pxx<0||pxx>=W)continue;
             var v=px4(b,off,xx,yy,hf,vf);if(!v)continue;
-            var c=C.objpal[bank*16+v],q=(py*W+pxx)*4;img[q]=c[0];img[q+1]=c[1];img[q+2]=c[2];img[q+3]=255;
+            var c=C.objpal[bank*16+v],q=(py*W+pxx)*4;dst[q]=c[0];dst[q+1]=c[1];dst[q+2]=c[2];dst[q+3]=255;
           }}
       }
     }
-    return {img:img};
+    return {img:img,semiImg:hasSemi?simg:null};
+  }
+
+  /* Composite the OBJ layer: opaque part straight over, then the
+     semi-transparent part alpha-blended with the capture's live BLDALPHA
+     (io+0x52) -- NOT state.blend, which is per-room and null in cutscenes. */
+  function drawObj(out,obj,C){
+    over(out,obj.img);
+    if(obj.semiImg){
+      var ba=u16(C.b,C.io+0x52),eva=ba&0x1F,evb=(ba>>8)&0x1F;
+      overBlend(out,obj.semiImg,eva>16?16:eva,evb>16?16:evb);
+    }
   }
 
   /* ---------- compositing ---------- */
@@ -490,7 +696,7 @@
         A.moved.forEach(function(m){ if(m.dest===bg) over(out,m.px); });
       }
     });
-    if(state.obj && vis.obj!==false) over(out,state.obj.img);
+    if(state.obj && vis.obj!==false) drawObj(out,state.obj,state.C);
     if(vis[4]!==false) A.moved.forEach(function(m){ if(m.dest===4) over(out,m.px); });
     return out;
   }
@@ -1798,9 +2004,11 @@
       els.mapsbadge.textContent=Object.keys(maps.areas)
         .reduce(function(n,a){return n+maps.areas[a].length;},0)+" salas";
       els.mapsbadge.className="meta okbox";
-      buildMapRail();
-      if(!state||state.kind==="map")loadRoom(curArea||Object.keys(maps.areas)[0],0);
-      else { renderSide();renderList(); }   // una grabación ya cargada gana la clave
+      /* Soltar un maps.json es "quiero mapas": entra en modo mapa salvo que
+         se esté mirando una grabación a propósito, en cuyo caso sólo queda
+         disponible para cuando se pulse MAPA. */
+      if(mode==="map"||!samples.length){ setMode("map"); }
+      else { buildMapRail(); renderSide(); renderList(); }
     };
     var head=new Uint8Array(buf,0,2);
     if(head[0]===0x1f&&head[1]===0x8b){
@@ -2127,6 +2335,7 @@
 
   /* ---------- sample loading ---------- */
   function loadSample(i){
+    lastSample=i;
     var C=ctxOf(samples[i]),dispcnt=u16(C.b,C.io),on=[],bg={},prio=[];
     for(var k=0;k<4;k++){
       /* La prioridad se lee de BGCNT aunque la capa esté apagada: sigue siendo
@@ -2144,6 +2353,7 @@
     Array.prototype.forEach.call(els.shots.children,function(s,n){
       s.setAttribute("aria-current",n===i?"true":"false");});
     buildMain();reanchor();renderSide();renderList();redraw();
+    if(Object.keys(rsShots).length) rsSyncToSample(i);
   }
 
   function buildRail(){
@@ -2159,7 +2369,7 @@
       ord.forEach(function(k){dec[k]=decodeBg(C,k);});
       ord.sort(function(a,b2){var pa=dec[a].prio,pb=dec[b2].prio;return pa!==pb?pb-pa:b2-a;})
          .forEach(function(k){over(out,dec[k].img);});
-      over(out,decodeObj(C).img);
+      drawObj(out,decodeObj(C),C);
       cv.width=W;cv.height=H;
       var id=cv.getContext("2d").createImageData(W,H);id.data.set(out);
       cv.getContext("2d").putImageData(id,0,0);
@@ -2169,27 +2379,410 @@
       b.addEventListener("click",function(){loadSample(i);});
       els.shots.appendChild(b);
     });
+    rsMarkRail();
   }
 
   function ingest(buf,name){
     var f=scan(buf);
     if(!f||!f.length){els.meta.textContent="no parece un mzm-rec.bin";return;}
-    samples=f;fileName=name;
+    samples=f;fileName=name;lastSample=0;
     els.meta.textContent=name+" · "+f.length+" capturas · "+(f[0].magic===0x344D5A4D?"MZM4":"MZM3");
-    buildRail();loadSample(0);
+    setMode("rec");
   }
+
+  /* ===================== modos: mapa / grabación / sprites ================
+     Un solo shell, tres vistas. Antes, cargar una grabación encerraba en ese
+     modo (había que cerrar y reabrir). El selector de arriba cambia de vista
+     sin recargar y sin perder lo cargado: maps.json, la grabación y el
+     catálogo de sprites conviven en memoria. */
+  function mainHint(html){
+    els.main.innerHTML="";
+    var d=document.createElement("div");d.className="drop";d.style.cursor="default";
+    d.innerHTML=html;els.main.appendChild(d);
+    els.drop=d;
+  }
+
+  function setMode(m){
+    mode=m;
+    els.mMap.setAttribute("aria-pressed",String(m==="map"));
+    els.mRec.setAttribute("aria-pressed",String(m==="rec"));
+    els.mSprites.setAttribute("aria-pressed",String(m==="sprites"));
+    if(m==="map")      enterMap();
+    else if(m==="rec") enterRec();
+    else               enterSprites();
+    updateFixButtons();
+  }
+
+  function enterMap(){
+    if(!maps){
+      els.railTitle.textContent="Salas";els.shots.innerHTML="";
+      mainHint('<div class="ui" style="font-size:15px;font-weight:700;color:var(--ink)">Sin maps.json</div>'+
+        '<p>Genera <code>maps.json</code> con <code>python3 tools/layer-workbench/build_maps.py</code> '+
+        'y súbelo con <b>MAPAS</b>, o suéltalo aquí.</p>');
+      autoloadMaps();
+      return;
+    }
+    buildMapRail();
+    loadRoom(curArea||Object.keys(maps.areas)[0], curRoom||0);
+  }
+
+  function enterRec(){
+    if(!samples.length){
+      els.railTitle.textContent="Capturas";els.shots.innerHTML="";
+      mainHint('<div class="ui" style="font-size:15px;font-weight:700;color:var(--ink)">Sin grabación</div>'+
+        '<p>En la consola: <b>DEBUG → HERRAMIENTAS → GRAB. ESCENA</b>. Queda en '+
+        '<code>sdmc:/3ds/mzm-rec.bin</code>. Súbelo con <b>GRABACIÓN</b> o suéltalo aquí.</p>');
+      return;
+    }
+    buildRail();
+    loadSample(Math.min(lastSample, samples.length-1));
+  }
+
+  /* ---------- modo sprites ---------- */
+  var SP_TIERLABEL={
+    "PORT_TIER_BG_FAR":"BG_FAR · fondo lejano",
+    "PORT_TIER_BG_MID":"BG_MID · fondo medio",
+    "PORT_TIER_BG_PLAY":"BG_PLAY · plano de juego",
+    "PORT_TIER_BG_OVERLAY":"BG_OVERLAY · encima de todo (menús)",
+    "PORT_TIER_OBJ_P1":"OBJ_P1 · plano de Samus",
+    "PORT_TIER_OBJ_HUD":"OBJ_HUD · HUD, delante de todo",
+    "PORT_TIER_OBJ_MAP":"OBJ_MAP · mapa/pausa"
+  };
+  function spCodeToken(code){
+    if(!sprites)return String(code);
+    var s=sprites.specialCodes.filter(function(c){return c.value===code;})[0];
+    if(s)return s.name;
+    var t=sprites.tiers.filter(function(c){return c.value===code;})[0];
+    return t?t.name:String(code);
+  }
+  function spTokenToCode(tok){
+    tok=(tok||"").trim();
+    if(/^-?\d+$/.test(tok))return parseInt(tok,10);
+    if(!sprites)return -1;
+    var m=sprites.specialCodes.concat(sprites.tiers)
+      .filter(function(c){return c.name===tok;})[0];
+    return m?m.value:-1;
+  }
+  function spCodeShort(code){
+    return spCodeToken(code).replace("PORT_SPRITE_DEPTH_","").replace("PORT_TIER_","");
+  }
+  function spKey(name,sec){ return (sec?"S:":"P:")+name; }
+  function spriteCatalog(){
+    if(!sprites)return [];
+    return sprites.primary.map(function(s){return {name:s.name,id:s.id,sec:0};})
+      .concat(sprites.secondary.map(function(s){return {name:s.name,id:s.id,sec:1};}));
+  }
+
+  function enterSprites(){
+    els.railTitle.textContent="Sprites";
+    if(!sprites){
+      els.shots.innerHTML="";
+      mainHint('<div class="ui" style="font-size:15px;font-weight:700;color:var(--ink)">Cargando catálogo…</div>'+
+        '<p>Si no aparece, genera <code>sprites.json</code> con '+
+        '<code>python3 tools/layer-workbench/build_sprites.py</code> y usa <code>serve.py</code>.</p>');
+      loadSprites().then(function(){ if(mode==="sprites")enterSprites(); });
+      return;
+    }
+    buildSpriteRail();
+    renderSpritePanel();
+    renderSpriteList();
+  }
+
+  function loadSprites(){
+    if(location.protocol==="file:")return Promise.resolve();
+    return fetch("sprites.json",{cache:"no-store"}).then(function(r){
+      if(!r.ok)throw 0; return r.json();
+    }).then(function(j){
+      sprites=j;
+      return loadSpriteFixesFromServer(true);
+    }).catch(function(){ sprites=null; });
+  }
+
+  function buildSpriteRail(){
+    els.shots.innerHTML="";
+    var q=document.createElement("input");
+    q.id="spfilter";q.placeholder="filtrar…  p.ej. STATUE";q.value=spFilter;
+    q.addEventListener("input",function(){ spFilter=q.value; fillSpriteRail(); });
+    els.shots.appendChild(q);
+    var list=document.createElement("div");list.id="splist";els.shots.appendChild(list);
+    fillSpriteRail();
+  }
+  function fillSpriteRail(){
+    var list=document.getElementById("splist");if(!list)return;
+    list.innerHTML="";
+    var f=spFilter.trim().toUpperCase(),shown=0;
+    spriteCatalog().forEach(function(s){
+      if(f&&s.name.indexOf(f)<0)return;
+      if(++shown>400)return;
+      var b=document.createElement("button");b.className="shot sprite";
+      b.dataset.k=spKey(s.name,s.sec);
+      var fx=spriteFixes[b.dataset.k];
+      var nm=document.createElement("span");nm.className="nm";
+      nm.textContent=(s.sec?"s":"p")+String(s.id).padStart(3,"0")+" "+s.name.replace(/^[PS]SPRITE_/,"");
+      var cb=document.createElement("span");cb.className="cb"+(fx?"":" none");
+      cb.textContent=fx?spCodeShort(fx.code):"";
+      b.appendChild(nm);b.appendChild(cb);
+      b.setAttribute("aria-current",String(!!(spriteSel&&spriteSel.k===b.dataset.k)));
+      b.addEventListener("click",function(){
+        spriteSel={k:b.dataset.k,name:s.name,id:s.id,sec:s.sec};
+        renderSpritePanel();fillSpriteRail();
+      });
+      list.appendChild(b);
+    });
+    if(f&&shown>400){
+      var more=document.createElement("div");more.className="empty";
+      more.textContent="… afina el filtro";list.appendChild(more);
+    }
+  }
+
+  function stopSpritePreview(){
+    if(spPrevTimer){clearTimeout(spPrevTimer);spPrevTimer=0;}
+  }
+
+  /* Thumbnail for the selected sprite: the animation assembled from the .c's
+     OAM_ENTRY list (a filmstrip PNG), or the tile sheet when there is none.
+     build_sprite_thumbs.py generates them; they live in thumbs/. */
+  function buildSpritePreview(entry){
+    var t=entry&&entry.thumb;
+    if(!t)return null;
+    var wrap=document.createElement("div");wrap.className="spprev";
+    var box=document.createElement("div");box.className="frame";
+    var cap=document.createElement("div");cap.className="cap";
+    wrap.appendChild(box);wrap.appendChild(cap);
+
+    var showSheet={v:!t.anim};
+    function scaleFor(w,h){ return Math.max(2,Math.min(9,Math.round(150/Math.max(w,h)))); }
+    function draw(){
+      box.innerHTML="";stopSpritePreview();
+      if(showSheet.v||!t.anim){
+        var S=scaleFor(t.sw,t.sh);
+        var im=new Image();im.src=t.sheet;
+        im.style.width=(t.sw*S)+"px";im.style.height=(t.sh*S)+"px";
+        box.appendChild(im);
+        cap.innerHTML="<b>hoja de gráficos</b><br>"+t.tiles+" tiles · "+t.sw+"×"+t.sh+
+          " px<br>los tiles del sprite en la rejilla OBJ de 32 de ancho: sus "+
+          "partes salen casi montadas.";
+      }else{
+        var a=t.anim,SCALE=scaleFor(a.cw,a.ch),cv=document.createElement("canvas");
+        cv.width=a.cw;cv.height=a.ch;
+        cv.style.width=(a.cw*SCALE)+"px";cv.style.height=(a.ch*SCALE)+"px";
+        box.appendChild(cv);
+        var g=cv.getContext("2d"),strip=new Image(),fi=0;
+        strip.onload=function(){
+          function step(){
+            g.clearRect(0,0,a.cw,a.ch);
+            g.drawImage(strip,fi*a.cw,0,a.cw,a.ch,0,0,a.cw,a.ch);
+            var d=(a.delays&&a.delays[fi])||6;
+            fi=(fi+1)%a.n;
+            spPrevTimer=setTimeout(step,Math.max(60,d*1000/60));
+          }
+          step();
+        };
+        strip.src=a.img;
+        cap.innerHTML="<b>"+a.group.replace(/^s\w*Oam_?/,"").replace(/_/g," ")+"</b><br>"+
+          a.n+" fotogramas · "+a.cw+"×"+a.ch+" px<br>"+
+          "montado de los OAM del .c; la base de tile es aproximada.";
+      }
+      if(t.anim){
+        var lab=document.createElement("label");
+        lab.innerHTML="<input type=checkbox"+(showSheet.v?" checked":"")+"> ver hoja de tiles";
+        lab.querySelector("input").addEventListener("change",function(){
+          showSheet.v=this.checked;draw();
+        });
+        cap.appendChild(lab);
+      }
+    }
+    draw();
+    return wrap;
+  }
+
+  function renderSpritePanel(){
+    stopSpritePreview();
+    els.main.innerHTML="";
+    var p=document.createElement("div");p.className="sppanel";
+    if(!spriteSel){
+      p.innerHTML="<h2>Profundidad estéreo por tipo de sprite</h2>"+
+        "<p>Elige un sprite a la izquierda y dile a qué plano va <i>forzado</i> "+
+        "en el 3D. Se escribe en <code>platform/3ds/source/port_sprite_depth.inc</code>.</p>"+
+        "<p class=note>El catálogo son los tipos <code>PSPRITE_*</code> / "+
+        "<code>SSPRITE_*</code>. Cada primario trae una miniatura para "+
+        "reconocerlo (montada de sus <code>OAM_ENTRY</code>); la pose y la "+
+        "prioridad reales las fija su IA, así que para ver el problema real "+
+        "míralo en una <b>grabación</b> y vuelve aquí a asignarlo.</p>";
+      els.main.appendChild(p);return;
+    }
+    var cur=spriteFixes[spriteSel.k],curCode=cur?cur.code:-1;
+    var opts=[{v:-1,t:"— sin override (plano único de sprites) —"}];
+    sprites.specialCodes.forEach(function(c){
+      if(c.value===-1)return;
+      opts.push({v:c.value,t:c.name.replace("PORT_SPRITE_DEPTH_","")+
+        (c.value===-2?" · coplanar con el BG de su prioridad OAM":"")});
+    });
+    sprites.tiers.forEach(function(c){ opts.push({v:c.value,t:(SP_TIERLABEL[c.name]||c.name)}); });
+    var sel2=document.createElement("select");
+    opts.forEach(function(o){
+      var op=document.createElement("option");op.value=String(o.v);op.textContent=o.t;
+      if(o.v===curCode)op.selected=true;sel2.appendChild(op);
+    });
+    sel2.addEventListener("change",function(){
+      var v=parseInt(sel2.value,10);
+      if(v===-1)delete spriteFixes[spriteSel.k];
+      else spriteFixes[spriteSel.k]={name:spriteSel.name,sec:spriteSel.sec,id:spriteSel.id,code:v};
+      markSpriteDirty();fillSpriteRail();renderSpriteList();
+    });
+    p.innerHTML="<h2>"+spriteSel.name.replace(/^[PS]SPRITE_/,"")+"</h2>"+
+      "<div class=who>"+spriteSel.name+" · id "+spriteSel.id+" · "+
+      (spriteSel.sec?"secundario":"primario")+"</div>";
+
+    var prev=null;
+    if(!spriteSel.sec&&sprites.primary[spriteSel.id])
+      prev=buildSpritePreview(sprites.primary[spriteSel.id]);
+    if(prev){
+      p.appendChild(prev);
+    }else{
+      var np=document.createElement("p");np.className="note";
+      np.innerHTML=spriteSel.sec
+        ? "Sin miniatura: un secundario hereda el hueco de gráficos de su padre, "+
+          "no hay forma de saber su hoja sin la sala. Míralo en una <b>grabación</b>."
+        : "Sin miniatura para este tipo (graficos que la IA compone por partes o "+
+          "carga por streaming). Míralo en una <b>grabación</b>.";
+      p.appendChild(np);
+    }
+
+    p.appendChild(sel2);
+    var note=document.createElement("p");note.className="note";
+    note.innerHTML="La miniatura es sólo para reconocer el bicho; la pose y la "+
+      "prioridad reales las fija la IA. <b>coplanar</b> = al plano del BG cuya "+
+      "prioridad coincide con la prioridad OAM que el propio sprite fija (lo que "+
+      "quieren las estatuas). Un tier explícito lo clava ahí pase lo que pase.";
+    p.appendChild(note);
+    els.main.appendChild(p);
+  }
+
+  function renderSpriteList(){
+    var keys=Object.keys(spriteFixes).sort();
+    els.list.innerHTML="";
+    if(!keys.length){els.list.innerHTML='<p class="empty">Ningún override todavía.</p>';}
+    keys.forEach(function(k){
+      var fx=spriteFixes[k],row=document.createElement("div");row.className="row";
+      var j=document.createElement("button");j.className="jump";
+      j.textContent=fx.name.replace(/^[PS]SPRITE_/,"");j.title=fx.name;
+      j.addEventListener("click",function(){
+        spriteSel={k:k,name:fx.name,id:fx.id,sec:fx.sec};
+        spFilter="";buildSpriteRail();renderSpritePanel();
+      });
+      var c=document.createElement("code");c.textContent=spCodeShort(fx.code);
+      var x=document.createElement("button");x.textContent="✕";x.title="quitar";
+      x.addEventListener("click",function(){
+        delete spriteFixes[k];markSpriteDirty();
+        fillSpriteRail();renderSpriteList();renderSpritePanel();
+      });
+      row.appendChild(j);row.appendChild(c);row.appendChild(x);
+      els.list.appendChild(row);
+    });
+    els.export.textContent=keys.length?spriteExportText():"(vacío)";
+    updateFixButtons();
+  }
+
+  function spriteExportText(){
+    var out=[
+      "/* Overrides de profundidad estereoscópica por TIPO de sprite, para el port 3DS.",
+      " * Generado por tools/layer-workbench (modo SPRITES) -- recárgalo ahí para editar.",
+      " *",
+      " * PORT_SPRITE_DEPTH(spriteId, esSecundario, code)",
+      " *   code: PORT_SPRITE_DEPTH_BG_COPLANAR  -> al plano del BG de su prioridad OAM",
+      " *         PORT_SPRITE_DEPTH_NONE         -> sin override",
+      " *         PORT_TIER_*                    -> un plano fijo",
+      " */"];
+    Object.keys(spriteFixes).sort().forEach(function(k){
+      var f=spriteFixes[k];
+      out.push("PORT_SPRITE_DEPTH("+f.name+", "+(f.sec?1:0)+", "+spCodeToken(f.code)+")");
+    });
+    return out.join("\n")+"\n";
+  }
+  function spriteImportText(txt){
+    spriteFixes={};
+    var byName={};
+    if(sprites){
+      sprites.primary.forEach(function(s){byName["P:"+s.name]=s.id;});
+      sprites.secondary.forEach(function(s){byName["S:"+s.name]=s.id;});
+    }
+    var re=/PORT_SPRITE_DEPTH\(\s*([A-Za-z_]\w*)\s*,\s*([01])\s*,\s*([A-Za-z_]\w*|-?\d+)\s*\)/g,m,n=0;
+    while((m=re.exec(txt))){
+      var name=m[1],sec=+m[2],code=spTokenToCode(m[3]);
+      if(code===-1)continue;
+      var k=spKey(name,sec);
+      spriteFixes[k]={name:name,sec:sec,id:byName[k]!==undefined?byName[k]:0,code:code};
+      n++;
+    }
+    return n;
+  }
+
+  var serverSpriteFixes=false,lastSpriteSaved=null;
+  function loadSpriteFixesFromServer(quiet){
+    if(location.protocol==="file:")return Promise.resolve();
+    return fetch("sprite-fixes",{cache:"no-store"}).then(function(r){
+      serverSpriteFixes=true;
+      if(r.status===404)return null;
+      if(!r.ok)throw 0;
+      return r.text();
+    }).then(function(t){
+      spriteFixes={};
+      if(t)spriteImportText(t);
+      lastSpriteSaved=spriteExportText();
+      if(!quiet&&mode==="sprites"){buildSpriteRail();renderSpriteList();renderSpritePanel();}
+    }).catch(function(){ serverSpriteFixes=false; });
+  }
+  function saveSpriteFixesToServer(){
+    var body=spriteExportText();
+    return fetch("sprite-fixes",{method:"PUT",body:body,headers:{"Content-Type":"text/plain"}})
+      .then(function(r){ if(!r.ok)throw 0; lastSpriteSaved=body; badge("sprites: guardado"); })
+      .catch(function(){ badge("sprites: error al guardar","warn"); });
+  }
+  function markSpriteDirty(){
+    if(serverSpriteFixes&&lastSpriteSaved!==null&&spriteExportText()!==lastSpriteSaved)
+      badge("sprites: sin guardar","warn");
+  }
+
+  function updateFixButtons(){
+    if(mode!=="sprites")return;   // map/rec: renderList/renderSide ya lo hacen
+    var has=Object.keys(spriteFixes).length;
+    els.save.disabled=!serverSpriteFixes&&!has;
+    els.copy.disabled=!has;
+    els.clear.disabled=!has;
+  }
+
+  els.mMap.addEventListener("click",function(){setMode("map");});
+  els.mRec.addEventListener("click",function(){setMode("rec");});
+  els.mSprites.addEventListener("click",function(){setMode("sprites");});
 
   /* ---------- wiring ---------- */
   els.file.addEventListener("change",function(e){
-    var f=e.target.files[0];if(!f)return;f.arrayBuffer().then(function(b){ingest(b,f.name);});});
+    var fl=e.target.files;if(!fl||!fl.length)return;
+    if([].every.call(fl,function(f){return /\.rgb$/i.test(f.name);})){
+      [].forEach.call(fl,function(f){f.arrayBuffer().then(function(b){rsAddShot(b,f.name);});});
+      return;
+    }
+    fl[0].arrayBuffer().then(function(b){ingest(b,fl[0].name);});});
   els.mapsfile.addEventListener("change",function(e){
     var f=e.target.files[0];if(!f)return;f.arrayBuffer().then(function(b){ingestMaps(b,f.name);});});
   els.incfile.addEventListener("change",function(e){
     var f=e.target.files[0];if(!f)return;
-    f.text().then(function(t){fixes={};importText(t);});});
+    f.text().then(function(t){
+      if(mode==="sprites"||/PORT_SPRITE_DEPTH\(/.test(t)){
+        if(mode!=="sprites")setMode("sprites");
+        spriteImportText(t);buildSpriteRail();renderSpriteList();renderSpritePanel();
+        els.meta.textContent=Object.keys(spriteFixes).length+" overrides de sprite";
+      } else { fixes={};importText(t); }
+    });});
   /* Con servidor, CARGAR relee el .inc de su ruta -- por si se ha tocado
      fuera --; sin él, abre el diálogo de archivos. */
   els.load.addEventListener("click",function(){
+    if(mode==="sprites"){
+      if(serverSpriteFixes)loadSpriteFixesFromServer();
+      else els.incfile.click();
+      return;
+    }
     if(serverFixes)loadFixesFromServer();
     else els.incfile.click();
   });
@@ -2205,11 +2798,25 @@
   /* Un solo sitio donde soltar: se decide por el nombre, que en los dos casos
      es el que la herramienta que lo generó le puso. */
   document.addEventListener("drop",function(e){
-    var f=e.dataTransfer&&e.dataTransfer.files[0];if(!f)return;
+    var fl=e.dataTransfer&&e.dataTransfer.files;if(!fl||!fl.length)return;
+    if([].every.call(fl,function(f){return /\.rgb$/i.test(f.name);})){
+      [].forEach.call(fl,function(f){f.arrayBuffer().then(function(b){rsAddShot(b,f.name);});});
+      return;
+    }
+    var f=fl[0];
     f.arrayBuffer().then(function(b){
-      if(/\.(json|gz)$/i.test(f.name))ingestMaps(b,f.name);
-      else if(/\.(inc|txt)$/i.test(f.name))importText(new TextDecoder().decode(b));
-      else ingest(b,f.name);
+      if(/sprites\.json$/i.test(f.name)){ sprites=JSON.parse(new TextDecoder().decode(b));
+        if(mode==="sprites")enterSprites(); return; }
+      if(/\.(json|gz)$/i.test(f.name))return ingestMaps(b,f.name);
+      if(/\.(inc|txt)$/i.test(f.name)){
+        var t=new TextDecoder().decode(b);
+        if(/PORT_SPRITE_DEPTH\(/.test(t)){
+          if(mode!=="sprites")setMode("sprites");
+          spriteImportText(t);buildSpriteRail();renderSpriteList();renderSpritePanel();
+        } else importText(t);
+        return;
+      }
+      ingest(b,f.name);
     });});
 
   els.relayout.addEventListener("click",function(){ layoutPanels(true);ensureSelVisible(); });
@@ -2268,12 +2875,35 @@
   els.zout.addEventListener("click",function(){setZoom(zoom-1);});
 
   els.copy.addEventListener("click",function(){
-    navigator.clipboard.writeText(exportText()).then(function(){
+    navigator.clipboard.writeText(mode==="sprites"?spriteExportText():exportText()).then(function(){
       els.copy.textContent="COPIADO";setTimeout(function(){els.copy.textContent="COPIAR";},1400);});});
-  els.clear.addEventListener("click",function(){fixes={};renderList();renderSide();redraw();});
+  els.clear.addEventListener("click",function(){
+    if(mode==="sprites"){ spriteFixes={};markSpriteDirty();
+      fillSpriteRail();renderSpriteList();renderSpritePanel();return; }
+    fixes={};renderList();renderSide();redraw();});
 
-  var handle=null;
+  var handle=null,spHandle=null;
   els.save.addEventListener("click",function(){
+    if(mode==="sprites"){
+      var st=spriteExportText();
+      if(serverSpriteFixes){ saveSpriteFixesToServer();return; }
+      if(window.showSaveFilePicker){
+        (spHandle?Promise.resolve(spHandle):window.showSaveFilePicker({
+          suggestedName:"port_sprite_depth.inc",
+          types:[{description:"Overrides de sprite",accept:{"text/plain":[".inc"]}}]
+        })).then(function(h){ spHandle=h;return h.createWritable(); })
+          .then(function(w){return w.write(st).then(function(){return w.close();});})
+          .then(function(){els.save.textContent="GUARDADO";
+            setTimeout(function(){els.save.textContent="GUARDAR";},1400);})
+          .catch(function(){});
+      } else {
+        var sa=document.createElement("a");
+        sa.href=URL.createObjectURL(new Blob([st],{type:"text/plain"}));
+        sa.download="port_sprite_depth.inc";sa.click();
+        setTimeout(function(){URL.revokeObjectURL(sa.href);},2000);
+      }
+      return;
+    }
     var text=exportText();
     if(serverFixes){ saveFixesToServer();return; }
     if(window.showSaveFilePicker){
@@ -2300,7 +2930,10 @@
                decodeBg:decodeBg,ctxOf:ctxOf,get samples(){return samples;},
                get maps(){return maps;},loadRoom:loadRoom,verifyCell:verifyCell,
                importText:importText,exportText:exportText,
-               selectionReport:selectionReport};
+               selectionReport:selectionReport,
+               get mode(){return mode;},setMode:setMode,
+               get sprites(){return sprites;},get spriteFixes(){return spriteFixes;},
+               spriteImportText:spriteImportText,spriteExportText:spriteExportText};
 
   /* ================= autocomprobación =====================================
      index.html?test corre unas afirmaciones sobre la lógica del visor y deja
@@ -2381,6 +3014,44 @@
     ok(compNo0!==null,"composite con BG0 desactivada");
     state.stageLayers={0:true,1:true,2:true,3:true,obj:true,4:true};
 
+    /* Modo sprites: ida y vuelta del .inc y los códigos van y vuelven. */
+    if(sprites){
+      var spSaved=JSON.stringify(spriteFixes);
+      spriteImportText(
+        "PORT_SPRITE_DEPTH(PSPRITE_KRAID_STATUE, 0, PORT_SPRITE_DEPTH_BG_COPLANAR)\n"+
+        "PORT_SPRITE_DEPTH(PSPRITE_RIDLEY_STATUE, 0, PORT_TIER_BG_MID)\n");
+      eq(Object.keys(spriteFixes).length,2,"sprites: dos entradas leídas");
+      eq(spriteFixes["P:PSPRITE_KRAID_STATUE"].code,-2,"sprites: BG_COPLANAR = -2");
+      eq(spriteFixes["P:PSPRITE_RIDLEY_STATUE"].code,1,"sprites: BG_MID = 1");
+      var spTxt=spriteExportText();
+      spriteImportText(spTxt);
+      eq(spriteExportText(),spTxt,"sprites: el .inc va y vuelve igual");
+      ok(/PORT_SPRITE_DEPTH_BG_COPLANAR/.test(spTxt),"sprites: escribe el token simbólico");
+      spriteFixes=JSON.parse(spSaved);
+
+      /* Thumbnails: at least one primary has a well-formed sheet and animation,
+         and drop / colour-variant sprites get distinct thumbnails. */
+      var withThumb=sprites.primary.filter(function(e){return e.thumb;});
+      ok(withThumb.length>50,"sprites: la mayoría de primarios tienen miniatura ("+withThumb.length+")");
+      var t0=(sprites.primary.filter(function(e){
+        return e.name==="PSPRITE_GERUTA_RED";})[0]||{}).thumb;
+      ok(t0&&/^thumbs\//.test(t0.sheet)&&t0.sw>0&&t0.sh>0,"sprites: la hoja de Geruta tiene tamaño");
+      ok(t0&&t0.anim&&t0.anim.n>0&&t0.anim.cw>0&&Array.isArray(t0.anim.delays),
+         "sprites: la animación de Geruta está bien formada");
+      var zy=(sprites.primary.filter(function(e){return e.name==="PSPRITE_ZOOMER_YELLOW";})[0]||{}).thumb,
+          zr=(sprites.primary.filter(function(e){return e.name==="PSPRITE_ZOOMER_RED";})[0]||{}).thumb;
+      ok(zy&&zr&&zy.sheet!==zr.sheet,
+         "sprites: zoomer rojo usa otra fila de paleta que el amarillo");
+      var drops=["LARGE_ENERGY_DROP","SMALL_ENERGY_DROP","MISSILE_DROP",
+                 "SUPER_MISSILE_DROP","POWER_BOMB_DROP"].map(function(s){
+        var e=sprites.primary.filter(function(x){return x.name==="PSPRITE_"+s;})[0];
+        return e&&e.thumb&&e.thumb.sheet;});
+      ok(drops.every(Boolean)&&new Set(drops).size===5,
+         "sprites: los 5 drops tienen miniaturas distintas (bloque común)");
+    } else {
+      ok(true,"sprites.json no cargado, se salta el test de sprites");
+    }
+
     fixes={};clearSel();
     return {n:n,fallos:fallos};
   }
@@ -2399,7 +3070,7 @@
     window.__selftest=r;
   }
 
-  setZoom(2);renderList();autoloadMaps();loadFixesFromServer(true);
+  setZoom(2);renderList();autoloadMaps();loadFixesFromServer(true);loadSprites();
   if(/[?&]test\b/.test(location.search)){
     /* Tras la carga de maps.json, que es asíncrona. */
     var espera=setInterval(function(){

@@ -140,6 +140,23 @@ static const uint8_t* StatusGlyph(char c) {
     return NULL;
 }
 
+/* The single on-screen "FPS NN" overlay, drawn identically no matter which
+ * path (GPU tile renderer or CPU scanline fallback) produced this frame, so
+ * an intermittent fallback doesn't flip its size/position/font. `eyeXOffset`
+ * is the per-eye horizontal shift (0 for mono / left, parallax for right).
+ * Gated by the same MOSTRAR FPS config toggle as before. Must be called
+ * inside an active C2D scene, after ConfigureAbgr/AtlasTextureEnv. */
+void PlatformGpu3DS_DrawFpsOverlay(float eyeXOffset) {
+    if (!Port_Config_GetShowFps()) return;
+    char label[20];
+    double fps = Port_PPU_3DS_CurrentFps();
+    unsigned rounded = fps > 0.0 ? (unsigned)(fps + 0.5) : 0u;
+    if (rounded > 999u) rounded = 999u;
+    snprintf(label, sizeof(label), "FPS %u", rounded);
+    C2D_DrawRectSolid(5.0f + eyeXOffset, 216.0f, 0.7f, 65.0f, 18.0f, C2D_Color32(0, 0, 0, 200));
+    PlatformGpu3DS_DrawStatusText(8.0f + eyeXOffset, 220.0f, 1.5f, label);
+}
+
 void PlatformGpu3DS_DrawStatusText(float x, float y, float scale, const char* text) {
     const uint32_t color = C2D_Color32(255, 255, 255, 255);
     for (; *text; ++text, x += 6.0f * scale) {
@@ -448,30 +465,14 @@ static void DrawTopImageStereo(const uint32_t* leftPixels, const uint32_t* right
     C2D_SceneBegin(sTopTarget);
     C2D_DrawImage(imageLeft, &params, NULL);
     PlatformGpu3DS_ConfigureAbgrTextureEnv();
-    if (Port_Config_GetShowFps()) {
-        char label[20];
-        double fps = Port_PPU_3DS_CurrentFps();
-        unsigned rounded = fps > 0.0 ? (unsigned)(fps + 0.5) : 0u;
-        if (rounded > 999u) rounded = 999u;
-        snprintf(label, sizeof(label), "FPS %u", rounded);
-        C2D_DrawRectSolid(5.0f, 216.0f, 0.7f, 100.0f, 20.0f, C2D_Color32(0, 0, 0, 210));
-        PlatformGpu3DS_DrawStatusText(10.0f, 219.0f, 2.0f, label);
-    }
+    PlatformGpu3DS_DrawFpsOverlay(0.0f);
 
     if (sTopRightTarget) {
         C2D_TargetClear(sTopRightTarget, C2D_Color32(0, 0, 0, 255));
         C2D_SceneBegin(sTopRightTarget);
         C2D_DrawImage(imageRight, &params, NULL);
         PlatformGpu3DS_ConfigureAbgrTextureEnv();
-        if (Port_Config_GetShowFps()) {
-            char label[20];
-            double fps = Port_PPU_3DS_CurrentFps();
-            unsigned rounded = fps > 0.0 ? (unsigned)(fps + 0.5) : 0u;
-            if (rounded > 999u) rounded = 999u;
-            snprintf(label, sizeof(label), "FPS %u", rounded);
-            C2D_DrawRectSolid(5.0f, 216.0f, 0.7f, 100.0f, 20.0f, C2D_Color32(0, 0, 0, 210));
-            PlatformGpu3DS_DrawStatusText(10.0f, 219.0f, 2.0f, label);
-        }
+        PlatformGpu3DS_DrawFpsOverlay(0.0f);
     }
 }
 
@@ -704,9 +705,10 @@ static void WriteBlob(const char* path, const void* data, size_t size) {
 
 /* Scene recorder: L+R+START (see Platform3DS_PollKeysIntoGba) toggles this
  * on/off. Unlike PlatformGpu3DS_DumpScreens' one-shot dump, this samples the
- * emulated GBA state (VRAM/OAM/palettes/IO + a bit of Samus state) every
- * kRecordEveryNFrames frames and appends each sample to one growing file on
- * the SD card -- built for tracking down issue #17, where a single L+R+X
+ * emulated GBA state (VRAM/OAM/palettes/IO + a bit of Samus state) at the
+ * rate the selected kRecPresets entry picks, appending each sample either
+ * straight to a growing SD file or into a RAM buffer flushed on stop (see
+ * kRecPresets) -- built for tracking down issue #17, where a single L+R+X
  * press couldn't catch the exact moment the death animation actually breaks
  * (as opposed to the correct green-flash frames right after it starts).
  * Deliberately skips the RGB screenshots DumpScreens takes (each is ~800KB
@@ -743,9 +745,78 @@ static u64 sRecLastFrameTicks;
 
 extern u64 Platform3DS_SystemTick(void);
 extern u64 Platform3DS_TicksPerSecond(void);
-static const unsigned kRecordEveryNFrames = 4; /* ~15Hz at 60fps */
-static const unsigned kRecordMaxSamples = 450; /* ~30s at 15Hz */
+static const unsigned kRecordMaxSamples = 450; /* streaming-mode cap (~30s at 15Hz) */
 static const unsigned kRecordScreenshotEverySamples = 4; /* ~1 screenshot/sec */
+/* Upper bound of one sample: header + IO + BgPltt + ObjPltt + OAM + VRAM +
+ * the clip block (<=256). RAM slot stride in RING mode. */
+static const size_t kRecordSampleMaxBytes =
+    64 + 1024 + 512 + 512 + 1024 + 0x18000 + 256;
+
+/* Runtime-selectable recorder presets, cycled from the bottom-screen debug
+ * button (PlatformGpu3DS_CycleRecordPreset). One build, chosen live:
+ *
+ *   everyN : sample 1 in N emulated frames. 1 = every frame (needed to see
+ *            a one-frame glitch); 4 ~= 15Hz.
+ *   bufMB  : 0  -> stream each ~100KB sample straight to the SD card while
+ *                  recording (original behaviour; the ~1.5MB/s write slows
+ *                  the game and masks transient hitches).
+ *            >0 -> bufMB MB of linear RAM used as a RING buffer holding the
+ *                  last N samples; flushed to SD oldest-first when recording
+ *                  STOPS. No SD I/O and no screenshots during the capture,
+ *                  and it never auto-stops -- so you press stop right AFTER
+ *                  seeing the glitch and keep the run-up to it. 16MB / ~100KB
+ *                  ~= 165 frames ~= 2.7s at 60fps. */
+typedef struct { const char* label; unsigned everyN; unsigned bufMB; } RecPreset;
+static const RecPreset kRecPresets[] = {
+    { "15Hz>SD",  4, 0  },
+    { "60Hz 8M",  1, 8  },
+    { "60Hz 16M", 1, 16 },
+    { "60Hz 32M", 1, 32 },
+    { "30Hz 32M", 2, 32 },
+};
+static unsigned sRecPreset; /* index into kRecPresets */
+
+unsigned PlatformGpu3DS_CycleRecordPreset(void) {
+    if (!sRecording) /* don't change mid-capture */
+        sRecPreset = (sRecPreset + 1u) % (sizeof(kRecPresets) / sizeof(kRecPresets[0]));
+    return sRecPreset;
+}
+const char* PlatformGpu3DS_RecordPresetLabel(void) {
+    return kRecPresets[sRecPreset].label;
+}
+
+/* RAM-buffer mode (sRecBuf != NULL): a fixed-slot RING buffer. Every frame
+ * overwrites the oldest slot, so recording never auto-stops and never
+ * overwrites a good take by racing an auto-stop -- on stop you get the last
+ * N seconds that fit, flushed to SD oldest-first. Slots are padded to
+ * kRecordSampleMaxBytes in RAM; only the real sample bytes are written to
+ * the file, so its stride is unchanged and existing parsers need no
+ * change. */
+static u8* sRecBuf;
+static size_t sRecBufCap;
+static size_t sRecSlotSize;     /* RAM stride per slot */
+static unsigned sRecSlots;      /* slot capacity of the ring */
+static unsigned sRecHead;       /* next slot to write */
+static unsigned sRecCount;      /* valid slots, 0..sRecSlots */
+static size_t sRecSlotUsed;     /* bytes into the in-progress slot */
+static size_t sRecSampleBytes;  /* real size of a completed sample (constant) */
+static char sRecLastFile[24];   /* basename of the last buffered flush */
+
+const char* PlatformGpu3DS_RecordLastFile(void) { return sRecLastFile; }
+
+/* One sample chunk: into the current ring slot if buffering, else straight
+ * to the open file. */
+static void RecWrite(const void* p, size_t n) {
+    if (sRecBuf) {
+        u8* base = sRecBuf + (size_t)sRecHead * sRecSlotSize;
+        if (sRecSlotUsed + n <= sRecSlotSize) {
+            memcpy(base + sRecSlotUsed, p, n);
+            sRecSlotUsed += n;
+        }
+    } else if (sRecFile) {
+        fwrite(p, 1, n, sRecFile);
+    }
+}
 
 bool PlatformGpu3DS_IsRecording(void) { return sRecording; }
 
@@ -834,18 +905,69 @@ void PlatformGpu3DS_PerfRecordTick(void) {
 
 void PlatformGpu3DS_ToggleRecording(void) {
     if (sRecording) {
-        if (sRecFile) { fclose(sRecFile); sRecFile = NULL; }
         sRecording = false;
+        if (sRecBuf) {
+            /* Flush the ring oldest-first. First take keeps the canonical
+             * name; later ones get mzm-rec-2.bin, -3.bin ... so a re-record
+             * never clobbers a good take. */
+            char path[64] = "sdmc:/3ds/mzm-rec.bin";
+            for (unsigned seq = 2; seq < 100; ++seq) {
+                FILE* ex = fopen(path, "rb");
+                if (!ex) break;
+                fclose(ex);
+                __builtin_snprintf(path, sizeof(path), "sdmc:/3ds/mzm-rec-%u.bin", seq);
+            }
+            FILE* f = fopen(path, "wb");
+            if (f) {
+                unsigned first = (sRecCount < sRecSlots) ? 0u : sRecHead;
+                for (unsigned i = 0; i < sRecCount; ++i) {
+                    unsigned s = (first + i) % sRecSlots;
+                    fwrite(sRecBuf + (size_t)s * sRecSlotSize, 1, sRecSampleBytes, f);
+                }
+                fclose(f);
+            }
+            __builtin_snprintf(sRecLastFile, sizeof(sRecLastFile), "%s", path + 10 /* skip "sdmc:/3ds/" */);
+            extern void Port_DebugLog(const char* msg);
+            char msg[96];
+            __builtin_snprintf(msg, sizeof(msg), "REC: %u frames (%u KB) -> %s",
+                               sRecCount, (unsigned)((sRecCount * sRecSampleBytes) >> 10), sRecLastFile);
+            Port_DebugLog(msg);
+            linearFree(sRecBuf);
+            sRecBuf = NULL;
+            sRecBufCap = sRecSlotSize = 0;
+            sRecSlots = sRecHead = sRecCount = 0;
+            sRecSlotUsed = sRecSampleBytes = 0;
+        } else if (sRecFile) {
+            fclose(sRecFile);
+            sRecFile = NULL;
+        }
         return;
+    }
+
+    sRecFrameCounter = 0;
+    sRecSampleCount = 0;
+    sRecLastTick = 0;
+    sRecLastFrameTicks = 0;
+
+    const unsigned bufMB = kRecPresets[sRecPreset].bufMB;
+    if (bufMB > 0) {
+        sRecBufCap = (size_t)bufMB << 20;
+        sRecSlotSize = kRecordSampleMaxBytes;
+        sRecSlots = (unsigned)(sRecBufCap / sRecSlotSize);
+        sRecHead = sRecCount = 0;
+        sRecSlotUsed = sRecSampleBytes = 0;
+        sRecBuf = (sRecSlots > 0) ? (u8*)linearAlloc(sRecBufCap) : NULL;
+        if (sRecBuf) { sRecording = true; return; }
+        /* Alloc failed: fall through to streaming so a capture still happens. */
+        extern void Port_DebugLog(const char* msg);
+        Port_DebugLog("REC: RAM buffer alloc failed, streaming to SD instead");
+        sRecBufCap = sRecSlotSize = 0;
+        sRecSlots = 0;
     }
 
     sRecFile = fopen("sdmc:/3ds/mzm-rec.bin", "wb");
     if (!sRecFile) return;
     sRecording = true;
-    sRecFrameCounter = 0;
-    sRecSampleCount = 0;
-    sRecLastTick = 0;
-    sRecLastFrameTicks = 0;
 }
 
 void PlatformGpu3DS_RecordTick(void) {
@@ -855,10 +977,14 @@ void PlatformGpu3DS_RecordTick(void) {
     if (sRecLastTick != 0) sRecLastFrameTicks = now - sRecLastTick;
     sRecLastTick = now;
 
-    if (sRecFrameCounter++ % kRecordEveryNFrames != 0) return;
+    if (sRecFrameCounter++ % kRecPresets[sRecPreset].everyN != 0) return;
 
-    if (sRecSampleCount >= kRecordMaxSamples) {
-        PlatformGpu3DS_ToggleRecording();
+    if (sRecBuf) {
+        /* Ring buffer: start a fresh slot, overwriting the oldest. Never
+         * auto-stops -- the user stops when they've seen the glitch. */
+        sRecSlotUsed = 0;
+    } else if (sRecSampleCount >= kRecordMaxSamples) {
+        PlatformGpu3DS_ToggleRecording(); /* streaming cap */
         return;
     }
     sRecSampleCount++;
@@ -923,12 +1049,12 @@ void PlatformGpu3DS_RecordTick(void) {
     header[14] = 0; /* reserved */
     header[15] = 0; /* reserved */
 
-    fwrite(header, sizeof(header), 1, sRecFile);
-    fwrite(gIoMem, 1, sizeof(gIoMem), sRecFile);
-    fwrite(gBgPltt, 1, sizeof(gBgPltt), sRecFile);
-    fwrite(gObjPltt, 1, sizeof(gObjPltt), sRecFile);
-    fwrite(gOamMem, 1, sizeof(gOamMem), sRecFile);
-    fwrite(gVram, 1, sizeof(gVram), sRecFile);
+    RecWrite(header, sizeof(header));
+    RecWrite(gIoMem, sizeof(gIoMem));
+    RecWrite(gBgPltt, sizeof(gBgPltt));
+    RecWrite(gObjPltt, sizeof(gObjPltt));
+    RecWrite(gOamMem, sizeof(gOamMem));
+    RecWrite(gVram, sizeof(gVram));
 
     /* Clip/camera block -- see PortPpuMzm_GetClipRecordBlock. Small (220
      * bytes against the sample's ~99KB), so it costs nothing next to VRAM. */
@@ -938,15 +1064,25 @@ void PlatformGpu3DS_RecordTick(void) {
         if (clipSize > (int)sizeof(clipBlock)) clipSize = (int)sizeof(clipBlock);
         memset(clipBlock, 0, sizeof(clipBlock));
         PortPpuMzm_GetClipRecordBlock(clipBlock);
-        fwrite(clipBlock, 1, (size_t)clipSize, sRecFile);
+        RecWrite(clipBlock, (size_t)clipSize);
+    }
+
+    if (sRecBuf) {
+        /* Slot complete: advance the ring. All samples are the same size,
+         * so record it once for the flush. */
+        sRecSampleBytes = sRecSlotUsed;
+        sRecHead = (sRecHead + 1u) % sRecSlots;
+        if (sRecCount < sRecSlots) sRecCount++;
     }
 
     /* sRecSampleCount was already incremented above, so sample #1 (the
      * first one written this recording) always gets a screenshot too. File
      * name embeds the sample index so it lines up with mzm-rec.bin's Nth
      * record (0-indexed, matching the Python splitting snippet in
-     * docs/3ds-debug-tools.md) without needing to also parse frameCounter. */
-    if ((sRecSampleCount - 1) % kRecordScreenshotEverySamples == 0) {
+     * docs/3ds-debug-tools.md) without needing to also parse frameCounter.
+     * Skipped in RAM-buffer mode: DumpOneTarget does a GPU sync + SD write,
+     * exactly the stall the buffer exists to avoid. */
+    if (!sRecBuf && (sRecSampleCount - 1) % kRecordScreenshotEverySamples == 0) {
         char path[64];
         snprintf(path, sizeof(path), "sdmc:/3ds/mzm-rec-shot-%04u.rgb", sRecSampleCount - 1);
         DumpOneTarget(sTopTarget, path);

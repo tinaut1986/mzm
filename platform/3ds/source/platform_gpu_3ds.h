@@ -40,6 +40,7 @@ void PlatformGpu3DS_SubmitLock_Acquire(void);
 void PlatformGpu3DS_SubmitLock_Release(void);
 
 void PlatformGpu3DS_DrawStatusText(float x, float y, float scale, const char* text);
+void PlatformGpu3DS_DrawFpsOverlay(float eyeXOffset);
 void PlatformGpu3DS_BeginTopStereo(const uint32_t* leftPixels, const uint32_t* rightPixels, unsigned width);
 /* Returns true only when a Citro3D frame was active and submitted. */
 bool PlatformGpu3DS_EndBottom(const uint32_t* pixels, bool changed);
@@ -67,6 +68,16 @@ void PlatformGpu3DS_DumpScreens(void);
 void PlatformGpu3DS_ToggleRecording(void);
 void PlatformGpu3DS_RecordTick(void);
 bool PlatformGpu3DS_IsRecording(void);
+
+/* Scene-recorder preset, cycled live from the debug menu (tap the right edge
+ * of the SCENE RECORDER cell). Selects sample rate (every Nth frame) and
+ * whether samples stream to SD or are held in a RAM buffer flushed on stop.
+ * Cycling is ignored while a recording is in progress. */
+unsigned PlatformGpu3DS_CycleRecordPreset(void);
+const char* PlatformGpu3DS_RecordPresetLabel(void);
+/* Basename of the last buffered-mode flush (e.g. "mzm-rec.bin" or
+ * "mzm-rec-2.bin"); "" before the first one. */
+const char* PlatformGpu3DS_RecordLastFile(void);
 
 /* Perf-only frame-time recorder (L+R+A, issue #20): samples every emulated
  * frame's duration + OAM census into a RAM buffer with no SD I/O while

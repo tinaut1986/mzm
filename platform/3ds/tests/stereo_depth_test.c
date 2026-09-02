@@ -216,10 +216,364 @@ static void TestDepthIsPerLayer(void) {
     }
 }
 
+/* ------------------------------------------------------------------ *
+ * Test 5: outside gameplay, cutscene sprites do not sit behind their own
+ * BG backdrops.
+ *
+ * In gameplay the one world-sprite plane is deliberately just behind the
+ * BG play plane (Test 1 pins that). Outside gameplay the only sprites that
+ * reach PortStereoDepth_ObjTier are cutscene actors -- the HUD and pause
+ * map are assigned directly by the renderer -- and a cutscene paints its
+ * actor OVER its BG backdrops, never behind an equal/higher-priority one.
+ * So there the sprite plane must not be farther than a priority-0/1 BG.
+ * ------------------------------------------------------------------ */
+static void TestCutsceneSpriteNotBehindBackdrop(void) {
+    printf("policy: outside gameplay, sprites are not farther than a "
+           "priority-0/1 BG backdrop\n");
+    for (int spread = 0; spread < PORT_STEREO_SPREAD_COUNT; ++spread) {
+        PortStereoDepthState st;
+        memset(&st, 0, sizeof(st));
+        st.inGameplay = false;
+        /* Ridley-landing layout: sky far, mountains behind the ship on a
+         * priority-1 BG, ground overlay on BG0. */
+        st.priority[0] = 0; st.priority[1] = 1; st.priority[2] = 2; st.priority[3] = 3;
+
+        float objPx = PortStereoDepth_TierPxFor(
+            spread, PortStereoDepth_ObjTier(&st, 1));
+        for (int bg = 1; bg <= 2; ++bg) { /* the priority-1 and priority-2 BGs */
+            int bgTier = PortStereoDepth_BgTier(&st, bg);
+            if (bgTier != PORT_TIER_BG_PLAY) continue;
+            float bgPx = PortStereoDepth_TierPxFor(spread, bgTier);
+            CHECK(objPx >= bgPx,
+                  "cutscene sprite (%+.2f) must not sit behind its "
+                  "BG%d play-plane backdrop (%+.2f)",
+                  (double)objPx, bg, (double)bgPx);
+        }
+    }
+
+    /* The gap this missed on hardware: the sprite's own-BG backdrop can be
+     * BG0. The Chozodia escape "mission accomplished" scene draws the blue
+     * ship on BG0 (priority 0) and the caption as OBJ priority 0. BG0 must
+     * NOT take the pop-forward overlay tier there (bg0IsOverlayText is
+     * false), or the ship floats in front of its own caption while the 2D
+     * compositor still paints the caption on top. */
+    for (int spread = 0; spread < PORT_STEREO_SPREAD_COUNT; ++spread) {
+        PortStereoDepthState st;
+        memset(&st, 0, sizeof(st));
+        st.inGameplay = false;
+        st.bg0IsOverlayText = false; /* scene art on BG0, not dialog text */
+        st.priority[0] = 0; st.priority[1] = 1; st.priority[2] = 2;
+        st.priority[3] = 3;
+
+        float objPx = PortStereoDepth_TierPxFor(
+            spread, PortStereoDepth_ObjTier(&st, 0));
+        float bg0Px = PortStereoDepth_TierPxFor(
+            spread, PortStereoDepth_BgTier(&st, 0));
+        CHECK(objPx >= bg0Px,
+              "Chozodia escape: caption OBJ prio 0 (%+.2f) must not sit "
+              "behind its own BG0 ship art (%+.2f)",
+              (double)objPx, (double)bg0Px);
+    }
+
+    /* But a real dialog/menu context still lifts BG0 forward. */
+    for (int gp = 0; gp < 2; ++gp) {
+        PortStereoDepthState st;
+        memset(&st, 0, sizeof(st));
+        st.inGameplay = (gp != 0);
+        st.bg0IsOverlayText = true;
+        st.priority[0] = 0; st.priority[1] = 1; st.priority[2] = 2;
+        st.priority[3] = 3;
+        CHECK(PortStereoDepth_BgTier(&st, 0) == PORT_TIER_BG_OVERLAY,
+              "bg0IsOverlayText: BG0 keeps the pop-forward overlay tier "
+              "(inGameplay=%d)", gp);
+    }
+
+    /* In gameplay the plane is unchanged: still the one world-sprite tier. */
+    PortStereoDepthState g;
+    memset(&g, 0, sizeof(g));
+    g.inGameplay = true;
+    for (int q = 0; q < 4; ++q) {
+        CHECK(PortStereoDepth_ObjTier(&g, q) == PORT_TIER_OBJ_P1,
+              "in gameplay world OBJ prio %d keeps the one world-sprite plane", q);
+    }
+}
+
+/* ------------------------------------------------------------------ *
+ * Test 6: samusOnTopOfBackgrounds splits the priority-0/1 merge.
+ *
+ * The merge is right for a normal room and wrong for the handful of
+ * transparency configs that set gSamusOnTopOfBackgrounds: there priority 1
+ * is scenery Samus stands in FRONT of (the priority numbers say so, and the
+ * sprite pipeline bumps every sprite one nearer to match), yet the merge
+ * leaves it on the play plane in front of her while she draws over it.
+ *
+ * With the flag set: priority 0 stays on the play plane (the room's only
+ * foreground layer), priority 1 drops to the mid plane -- strictly behind
+ * the one world-sprite tier. With the flag clear: byte-identical to before,
+ * so a normal room is untouched. Neither case may invert two BGs against
+ * the 2D compositor, comparing on the effective priority (1 -> 2 when the
+ * flag is set).
+ * ------------------------------------------------------------------ */
+static int EffPrio(const PortStereoDepthState* st, int bg) {
+    int p = st->priority[bg];
+    return (st->samusOnTopOfBackgrounds && p == 1) ? 2 : p;
+}
+
+static void TestSamusOnTopSplitsMerge(void) {
+    printf("policy: samusOnTopOfBackgrounds drops priority-1 scenery behind "
+           "the sprite plane\n");
+
+    for (int spread = 0; spread < PORT_STEREO_SPREAD_COUNT; ++spread) {
+        for (unsigned packed = 0; packed < 256u; ++packed) {
+            PortStereoDepthState on, off;
+            memset(&on, 0, sizeof(on));
+            memset(&off, 0, sizeof(off));
+            on.inGameplay = off.inGameplay = true;
+            on.samusOnTopOfBackgrounds = true;
+            off.samusOnTopOfBackgrounds = false;
+            for (int bg = 0; bg < 4; ++bg) {
+                uint8_t p = (uint8_t)((packed >> (bg * 2)) & 3u);
+                on.priority[bg] = off.priority[bg] = p;
+            }
+
+            float objPx = PortStereoDepth_TierPxFor(
+                spread, PortStereoDepth_ObjTier(&on, 1));
+
+            for (int bg = 0; bg < 4; ++bg) {
+                /* Flag clear == the original merge: 0/1 -> PLAY, 2 -> MID,
+                 * 3 -> FAR. Pinned so the split cannot leak into normal rooms. */
+                int p = off.priority[bg];
+                int want = (p <= 1) ? PORT_TIER_BG_PLAY
+                         : (p == 2) ? PORT_TIER_BG_MID
+                                    : PORT_TIER_BG_FAR;
+                CHECK(PortStereoDepth_BgTier(&off, bg) == want,
+                      "flag clear: BG%d priority %d keeps its original plane", bg, p);
+                int onTier = PortStereoDepth_BgTier(&on, bg);
+                float onPx = PortStereoDepth_TierPxFor(spread, onTier);
+
+                if (on.priority[bg] == 0) {
+                    CHECK(onTier == PORT_TIER_BG_PLAY,
+                          "flag set: priority-0 BG%d stays on the play plane", bg);
+                    CHECK(onPx > objPx,
+                          "flag set: priority-0 BG%d (%+.2f) stays in front of "
+                          "the sprite plane (%+.2f)", bg, (double)onPx, (double)objPx);
+                } else if (on.priority[bg] == 1) {
+                    CHECK(onTier == PORT_TIER_BG_MID,
+                          "flag set: priority-1 BG%d drops to the mid plane", bg);
+                    CHECK(onPx < objPx,
+                          "flag set: priority-1 BG%d (%+.2f) sits behind the "
+                          "sprite plane (%+.2f)", bg, (double)onPx, (double)objPx);
+                }
+
+                /* No BG inverts against the compositor, on effective priority. */
+                for (int other = 0; other < 4; ++other) {
+                    if (EffPrio(&on, bg) >= EffPrio(&on, other)) continue;
+                    float otherPx = PortStereoDepth_TierPxFor(
+                        spread, PortStereoDepth_BgTier(&on, other));
+                    CHECK(onPx > otherPx,
+                          "flag set: BG%d eff-prio %d draws over BG%d eff-prio %d "
+                          "but sits farther (%+.2f vs %+.2f)",
+                          bg, EffPrio(&on, bg), other, EffPrio(&on, other),
+                          (double)onPx, (double)otherPx);
+                }
+            }
+        }
+    }
+
+    /* The Chozodia sala 3 layout, spelled out: BG0=2, BG1=0, BG2=1, BG3 off.
+     * Samus (OBJ_P1) must end up between BG1 in front and BG2 behind. */
+    PortStereoDepthState st;
+    memset(&st, 0, sizeof(st));
+    st.inGameplay = true;
+    st.samusOnTopOfBackgrounds = true;
+    st.priority[0] = 2; st.priority[1] = 0; st.priority[2] = 1; st.priority[3] = 3;
+    for (int spread = 0; spread < PORT_STEREO_SPREAD_COUNT; ++spread) {
+        float bg1 = PortStereoDepth_TierPxFor(spread, PortStereoDepth_BgTier(&st, 1));
+        float bg2 = PortStereoDepth_TierPxFor(spread, PortStereoDepth_BgTier(&st, 2));
+        float obj = PortStereoDepth_TierPxFor(spread, PortStereoDepth_ObjTier(&st, 2));
+        CHECK(bg1 > obj, "Chozodia s3: BG1 foreground (%+.2f) in front of Samus (%+.2f)",
+              (double)bg1, (double)obj);
+        CHECK(obj > bg2, "Chozodia s3: Samus (%+.2f) in front of BG2 scenery (%+.2f)",
+              (double)obj, (double)bg2);
+    }
+}
+
+/* ------------------------------------------------------------------ *
+ * Test 7: BgTierForPriority is the BgTier mapping keyed on a raw priority.
+ *
+ * A sprite that matches a BG's priority to composite with it (the boss
+ * statues) is placed with this, so it must agree with BgTier for a BG that
+ * actually has that priority -- overlay rule aside -- with and without the
+ * samusOnTopOfBackgrounds split.
+ * ------------------------------------------------------------------ */
+static void TestBgTierForPriorityMatchesBgTier(void) {
+    printf("policy: BgTierForPriority tracks BgTier for the same priority\n");
+    for (int flag = 0; flag < 2; ++flag) {
+        for (int p = 0; p < 4; ++p) {
+            PortStereoDepthState st;
+            memset(&st, 0, sizeof(st));
+            st.inGameplay = true;
+            st.samusOnTopOfBackgrounds = (flag != 0);
+            /* Put that priority on BG1 (never the BG0 overlay special case). */
+            st.priority[1] = (uint8_t)p;
+            CHECK(PortStereoDepth_BgTierForPriority(&st, p) ==
+                      PortStereoDepth_BgTier(&st, 1),
+                  "flag %d priority %d: %s vs %s", flag, p,
+                  TierName(PortStereoDepth_BgTierForPriority(&st, p)),
+                  TierName(PortStereoDepth_BgTier(&st, 1)));
+        }
+    }
+    /* The split still shows through: priority 1 differs by the flag. */
+    PortStereoDepthState a, b;
+    memset(&a, 0, sizeof(a));
+    memset(&b, 0, sizeof(b));
+    a.inGameplay = b.inGameplay = true;
+    b.samusOnTopOfBackgrounds = true;
+    CHECK(PortStereoDepth_BgTierForPriority(&a, 1) == PORT_TIER_BG_PLAY,
+          "no flag: priority 1 -> play plane");
+    CHECK(PortStereoDepth_BgTierForPriority(&b, 1) == PORT_TIER_BG_MID,
+          "flag: priority 1 -> mid plane");
+}
+
+/* ------------------------------------------------------------------ *
+ * Test 8: the register of scenes that carry a known "particularity".
+ *
+ * The exhaustive tests above prove the general mapping. This one is a
+ * curated list of specific scenes whose layer layout was read off a real
+ * capture (recorder dump / GBATEK), each pinned so that a future change
+ * tuned for one of them -- or for a brand new scene -- cannot silently
+ * reintroduce the contradiction in another. Add a row when a scene needs a
+ * special case; do not delete rows.
+ *
+ * Per row we check the one invariant that every past bug violated: the
+ * scene's key sprite (its caption or its actor) is stereoscopically
+ *   - no farther than any BG it draws OVER  (GBA: sprite wins prio ties)
+ *   - no nearer than any BG it draws UNDER
+ * and the BGs do not invert against each other (0/1 merge aside).
+ * ------------------------------------------------------------------ */
+struct NamedScene {
+    const char* name;
+    bool inGameplay;
+    bool samusOnTop;
+    bool bg0IsOverlayText;
+    uint8_t prio[4];   /* BGCNT priority per BG; 0xFF = BG disabled */
+    int objPriority;    /* OAM priority of the scene's caption / actor */
+    const char* note;
+};
+
+static const struct NamedScene kNamedScenes[] = {
+    { "chozodia-escape/mission-accomplished",
+      false, false, false, { 0, 1, 2, 0xFF }, 0,
+      "blue-ship art on BG0 p0; caption is OBJ p0; BG0 is NOT dialog text" },
+    { "in-game-story-cutscene (GM_CUTSCENE)",
+      false, false, false, { 0, 1, 2, 3 }, 0,
+      "full-screen BG art, actor is OBJ p0 painted over all of it" },
+    { "ridley-landing/mothership",
+      false, false, false, { 0, 1, 2, 3 }, 1,
+      "sky far, mountains on p1 behind the ship OBJ, ground overlay on BG0 p0" },
+    { "crateria-room-8/chozo-statue-backdrop",
+      true, false, false, { 1, 0, 2, 3 }, 1,
+      "gameplay: statue backdrop on BG0 p1, platforms on BG1 p0, Samus OBJ p1" },
+    { "chozodia-sala-3/samusOnTopOfBackgrounds",
+      true, true, false, { 2, 0, 1, 3 }, 2,
+      "flag set: BG1 p0 foreground, BG2 p1 scenery Samus stands in front of" },
+    { "menu-dialog/pause-map",
+      false, false, true, { 0, 1, 2, 3 }, 0xFF,
+      "BG0 genuinely carries the text overlay -> keeps the pop-forward tier" },
+};
+
+static int EffPrioP(bool samusOnTop, int p) {
+    return (samusOnTop && p == 1) ? 2 : p;
+}
+
+static void TestNamedParticularScenes(void) {
+    printf("register: known scenes with layer particularities stay consistent\n");
+    for (size_t s = 0; s < sizeof(kNamedScenes) / sizeof(kNamedScenes[0]); ++s) {
+        const struct NamedScene* sc = &kNamedScenes[s];
+        PortStereoDepthState st;
+        memset(&st, 0, sizeof(st));
+        st.inGameplay = sc->inGameplay;
+        st.samusOnTopOfBackgrounds = sc->samusOnTop;
+        st.bg0IsOverlayText = sc->bg0IsOverlayText;
+        for (int bg = 0; bg < 4; ++bg) {
+            /* A disabled BG is never queried below; give it a defined value. */
+            st.priority[bg] = (sc->prio[bg] == 0xFF) ? 0 : sc->prio[bg];
+        }
+
+        for (int spread = 0; spread < PORT_STEREO_SPREAD_COUNT; ++spread) {
+            /* BG-vs-BG: never invert against the 2D compositor. */
+            for (int a = 0; a < 4; ++a) {
+                if (sc->prio[a] == 0xFF) continue;
+                float aPx = PortStereoDepth_TierPxFor(spread, PortStereoDepth_BgTier(&st, a));
+                for (int b = 0; b < 4; ++b) {
+                    if (b == a || sc->prio[b] == 0xFF) continue;
+                    int pa = EffPrioP(sc->samusOnTop, sc->prio[a]);
+                    int pb = EffPrioP(sc->samusOnTop, sc->prio[b]);
+                    if (pa >= pb) continue; /* a draws over b */
+                    float bPx = PortStereoDepth_TierPxFor(spread, PortStereoDepth_BgTier(&st, b));
+                    bool merged = (pa <= 1 && pb <= 1);
+                    CHECK(merged ? (aPx >= bPx) : (aPx > bPx),
+                          "%s [%s]: BG%d eff-prio %d draws over BG%d eff-prio %d "
+                          "but sits farther (%+.2f vs %+.2f)",
+                          sc->name, PortStereoDepth_SpreadName(spread),
+                          a, pa, b, pb, (double)aPx, (double)bPx);
+                }
+            }
+
+            /* Gameplay rows: the world-sprite plane is DELIBERATELY behind
+             * the BG play plane (Test 1's accepted trade-off -- platforms
+             * read with thickness in front of Samus), so the sprite-vs-BG
+             * occlusion check does not apply. What must hold is that a
+             * gameplay BG0 is never lifted to the pop-forward overlay tier
+             * (that shoved the Crateria r8 statue backdrop in front of
+             * Samus). */
+            if (sc->inGameplay) {
+                CHECK(PortStereoDepth_BgTier(&st, 0) != PORT_TIER_BG_OVERLAY,
+                      "%s: gameplay BG0 must not take the overlay tier", sc->name);
+                continue;
+            }
+
+            if (sc->objPriority == 0xFF) {
+                /* Pure BG scene (the menu row): pin BG0's tier directly. */
+                CHECK(PortStereoDepth_BgTier(&st, 0) ==
+                          (sc->bg0IsOverlayText ? PORT_TIER_BG_OVERLAY : PORT_TIER_BG_PLAY),
+                      "%s: BG0 tier", sc->name);
+                continue;
+            }
+
+            /* Cutscene rows: the caption / actor is painted OVER its own
+             * backdrops, so parallax must agree with that occlusion. */
+            float objPx = PortStereoDepth_TierPxFor(
+                spread, PortStereoDepth_ObjTier(&st, sc->objPriority));
+            for (int bg = 0; bg < 4; ++bg) {
+                if (sc->prio[bg] == 0xFF) continue;
+                float bgPx = PortStereoDepth_TierPxFor(spread, PortStereoDepth_BgTier(&st, bg));
+                if (sc->prio[bg] >= sc->objPriority) {
+                    CHECK(objPx >= bgPx,
+                          "%s [%s]: sprite p%d (%+.2f) draws over BG%d p%d "
+                          "but sits behind it (%+.2f)",
+                          sc->name, PortStereoDepth_SpreadName(spread),
+                          sc->objPriority, (double)objPx, bg, sc->prio[bg], (double)bgPx);
+                } else {
+                    CHECK(objPx <= bgPx,
+                          "%s [%s]: sprite p%d (%+.2f) draws under BG%d p%d "
+                          "but sits in front of it (%+.2f)",
+                          sc->name, PortStereoDepth_SpreadName(spread),
+                          sc->objPriority, (double)objPx, bg, sc->prio[bg], (double)bgPx);
+                }
+            }
+        }
+    }
+}
+
 int main(void) {
     TestNoContradictionExhaustive();
     TestDepthIsPriorityOnly();
     TestDepthIsPerLayer();
+    TestCutsceneSpriteNotBehindBackdrop();
+    TestSamusOnTopSplitsMerge();
+    TestBgTierForPriorityMatchesBgTier();
+    TestNamedParticularScenes();
 
     printf("\n%d checks, %d failures\n", sChecks, sFailures);
     if (sFailures > 20) printf("(only the first 20 failures shown)\n");

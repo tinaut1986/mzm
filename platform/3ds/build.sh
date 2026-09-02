@@ -2,7 +2,16 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-VERSION="$(tr -d '\r\n' < "${ROOT}/platform/3ds/version.txt")"
+
+# Version string: single source of truth is the Makefile's VERSION (git-derived,
+# see platform/3ds/Makefile GIT_VERSION). Both this cmake flow and the
+# Makefile / build_3ds.py flow must name artefacts identically no matter which
+# OS the build runs on. Fall back to version.txt, then a sentinel.
+VERSION="$(make -C "${ROOT}/platform/3ds" -s --no-print-directory print-version 2>/dev/null | tail -n1)"
+if [[ -z "${VERSION}" ]]; then
+  VERSION="$(tr -d '\r\n' < "${ROOT}/platform/3ds/version.txt" 2>/dev/null || true)"
+fi
+VERSION="${VERSION:-0.0-dev}"
 DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
 BUILD="${ROOT}/build-3ds/game"
 TOOLS_ROOT="${MZM3DS_TOOLS_ROOT:-${ROOT}/../Tools/bin}"
@@ -33,9 +42,13 @@ if [[ ! -x "${MAKEROM}" || ! -x "${BANNERTOOL}" ]]; then
   exit 0
 fi
 
+# Title / description / author kept identical to the Makefile (APP_TITLE,
+# APP_DESCRIPTION, APP_AUTHOR) so both build flows produce the same SMDH.
+SMDH_DESC="Native 3DS port of Metroid Zero Mission ${VERSION}"
+SMDH_DESC="${SMDH_DESC:0:64}"
 "${BANNERTOOL}" makesmdh \
-  -s "Metroid Zero Mission 3DS v${VERSION}" \
-  -l "Metroid Zero Mission 3DS v${VERSION}" \
+  -s "Metroid Zero Mission 3DS" \
+  -l "${SMDH_DESC}" \
   -p "metroidret + community" \
   -i "${ROOT}/platform/3ds/assets/icon-48.png" \
   -f visible,nosavebackups \
@@ -48,13 +61,17 @@ fi
 
 (
 cd "${ROOT}"
-"${MAKEROM}" -f cia -o "${BUILD}/mzm-3ds-v${VERSION}.cia" \
+"${MAKEROM}" -f cia -o "${BUILD}/mzm-3ds-${VERSION}.cia" \
   -DAPP_ROMFS="${BUILD#"${ROOT}/"}/romfs" \
   -rsf "${ROOT}/platform/3ds/cia/mzm3ds.rsf" -target t -exefslogo \
   -elf "${BUILD}/mzm-3ds.elf" -icon "${BUILD}/mzm-3ds.icn" \
   -banner "${BUILD}/mzm-3ds.bnr"
 )
 
-printf 'Ready:\n  %s\n  %s\n' \
-  "${BUILD}/mzm-3ds-v${VERSION}.3dsx" "${BUILD}/mzm-3ds-v${VERSION}.cia"
+CIA_OUT="${BUILD}/mzm-3ds-${VERSION}.cia"
+CIA_SIZE="$(du -h "${CIA_OUT}" 2>/dev/null | cut -f1)"
+printf 'Build successful.\n'
+printf '  CIA generated: %s (%s)\n' "$(basename "${CIA_OUT}")" "${CIA_SIZE:-unknown size}"
+printf '  Saved at:      %s\n' "${CIA_OUT}"
+printf '  3DSX:          %s\n' "${BUILD}/mzm-3ds-${VERSION}.3dsx"
 

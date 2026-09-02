@@ -940,8 +940,21 @@ void CutsceneUpdateScreenShake(u8 affectVertical, struct CutsceneScreenShake* pS
 
     // Check not overflowing
     size = sCutsceneScreenShakeOffsetSetSizes[pShake->set];
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+    /* [PORT] Upstream off-by-one: `size` is ARRAY_SIZE(...Set0) == 2, so
+     * `> size` lets currentSubSet reach 2 and then read
+     * sCutsceneScreenShakeOffsetSetPointers[set][2] -- one past the 2-entry
+     * s8 offsets array -- on every third shake tick. On the GBA the byte
+     * that follows happens to be harmless; with the port's data layout it
+     * is garbage, seen as a ~36px one-frame BG1 VOFS spike that reads as
+     * Samus's reflection teleporting up in the Mother Brain close-up now
+     * that the eye renders see-through. `>=` keeps it inside {-1, 1}. */
+    if (pShake->currentSubSet >= size)
+        pShake->currentSubSet = 0;
+#else
     if (pShake->currentSubSet > size)
         pShake->currentSubSet = 0;
+#endif
 
     // Get screen offset
     offset = sCutsceneScreenShakeOffsetSetPointers[pShake->set][pShake->currentSubSet];

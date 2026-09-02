@@ -7,6 +7,7 @@
 
 #include "platform_gpu_3ds.h"
 #include "port_debug_tools.h"
+#include "port_debug_log.h"
 
 /* GBA & MZM minimap and state globals */
 extern uint16_t gDecompressedMinimapVisitedTiles[32 * 32];
@@ -118,6 +119,9 @@ void Port_BottomUI_FrameTick(void) {
     extern void Port_RA_Update(void); /* port_retroachievements_3ds.h, included below */
     ++sFrameCounter;
     Port_RA_Update();
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
+    { extern void PortPpuMzm_DebugCheatTick(void); PortPpuMzm_DebugCheatTick(); }
+#endif
 }
 
 /* Whether Port_BottomUI_Render should run this frame. Has the side effect of
@@ -170,6 +174,8 @@ static uint32_t sDebugToolsMsgUntil = 0;
 
 extern void PortPpuMzm_DebugKillSamus(void);
 extern void Port_GpuRenderer_DumpAtlas(const char* ppmPath, const char* csvPath);
+extern bool Port_GpuRenderer_IsActive(void);
+extern void Port_GpuRenderer_SetActive(bool active);
 extern void Port_DebugLog(const char* msg);
 extern void PortStereoDepth_SetSpread(int spread);
 extern int PortStereoDepth_GetSpread(void);
@@ -192,9 +198,26 @@ extern void PortPpuMzm_DebugStepWarpDoor(int delta);
 extern bool PortPpuMzm_DebugRequestWarpToSelection(void);
 extern int PortPpuMzm_DebugRequestWarpToMapTile(int area, int tileX, int tileY);
 extern void PortPpuMzm_DebugRevealAllMaps(void);
+extern void PortPpuMzm_DebugRevealAreaMap(int area);
+extern void PortPpuMzm_DebugMarkAreaVisited(int area);
+extern void PortPpuMzm_DebugClearAreaMap(int area);
+extern int  PortPpuMzm_DebugAreaMapPercent(int area);
+
+/* Per-area STATUS map-box debug cycle: 0 actual, 1 forced-download, 2 forced-100%.
+ * Read by RenderStatusView to colour the box; advanced by the touch handler. */
+static uint8_t sMapDebugState[7] = { 0, 0, 0, 0, 0, 0, 0 };
+
+/* STATUS suit rows: per-row cycle position. Only index 1 (Speed Booster) and
+ * index 3 (Screw Attack) use all three steps (none / owned / always-active). */
+static uint8_t sSuitCycle[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+extern void PortPpuMzm_DebugSetGod(bool on);
+extern bool PortPpuMzm_DebugGetGod(void);
 extern void PortPpuMzm_DebugGetEquipment(unsigned* outBeams, unsigned* outMisc);
 extern void PortPpuMzm_DebugToggleBeam(unsigned bit);
 extern void PortPpuMzm_DebugToggleMisc(unsigned bit);
+extern void PortPpuMzm_DebugSetMisc(unsigned bit, bool on);
+extern void PortPpuMzm_DebugSetForceEffect(unsigned smfBit, bool on);
+extern bool PortPpuMzm_DebugGetForceEffect(unsigned smfBit);
 extern void PortPpuMzm_DebugSetAllEquipment(bool on);
 extern void PortPpuMzm_DebugSetAmmo(bool full);
 extern void PortPpuMzm_DebugRefillAmmo(void);
@@ -712,6 +735,51 @@ static bool GetActiveChozoTarget(uint8_t* outArea, uint8_t* outX, uint8_t* outY)
 
 extern void Port_Config_Save(void);
 
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
+/* Equipment bits per row of the STATUS page's two columns, in draw order --
+ * mirrors the beams[]/suits[] tables in RenderStatusView. Used by the debug
+ * tap-to-toggle in Port_BottomUI_HandleTouchDrag. */
+static const uint8_t kStatusBeamBits[6] = { 1u<<0, 1u<<1, 1u<<2, 1u<<3, 1u<<4, 1u<<7 };
+static const uint8_t kStatusSuitBits[8] = { 1u<<0, 1u<<1, 1u<<2, 1u<<3, 1u<<4, 1u<<5, 1u<<6, 1u<<7 };
+static bool sDebugStatsFull = false; /* the max<->min button's toggle state */
+
+/* Two small icon buttons to the right of the STATUS title (debug only):
+ *   0: vida+municion a tope <-> al minimo (up/down arrows)
+ *   1: god mode toggle (filled/tinted when on)
+ * Geometry shared with the touch handler. */
+#define STATUS_BTN_Y  27
+#define STATUS_BTN_W  16
+#define STATUS_BTN_H  14
+static const float kStatusBtnX[2] = { 274.0f, 294.0f };
+
+static int DebugStatusBtnHit(int x, int y) {
+    if (y < STATUS_BTN_Y || y > STATUS_BTN_Y + STATUS_BTN_H) return -1;
+    for (int i = 0; i < 2; ++i)
+        if ((float)x >= kStatusBtnX[i] && (float)x <= kStatusBtnX[i] + STATUS_BTN_W) return i;
+    return -1;
+}
+
+static void DrawStatusDebugButtons(void) {
+    const bool god = PortPpuMzm_DebugGetGod();
+    for (int i = 0; i < 2; ++i) {
+        float bx = kStatusBtnX[i], by = (float)STATUS_BTN_Y;
+        bool on = (i == 0) ? sDebugStatsFull : god;
+        C2D_DrawRectSolid(bx, by, 0.9f, (float)STATUS_BTN_W, (float)STATUS_BTN_H,
+                          on ? C2D_Color32(110, 85, 20, 255) : C2D_Color32(24, 34, 52, 255));
+        C2D_DrawRectSolid(bx, by, 0.91f, (float)STATUS_BTN_W, 1.0f, C2D_Color32(60, 90, 140, 255));
+        float mx = bx + STATUS_BTN_W * 0.5f, my = by + STATUS_BTN_H * 0.5f;
+        uint32_t c = on ? C2D_Color32(255, 220, 90, 255) : C2D_Color32(150, 190, 230, 255);
+        if (i == 0) {
+            C2D_DrawTriangle(mx - 4.0f, my - 1.5f, c, mx + 4.0f, my - 1.5f, c, mx, my - 6.0f, c, 0.92f);
+            C2D_DrawTriangle(mx - 4.0f, my + 1.5f, c, mx + 4.0f, my + 1.5f, c, mx, my + 6.0f, c, 0.92f);
+        } else {
+            C2D_DrawTriangle(mx, my - 6.0f, c, mx - 6.0f, my, c, mx + 6.0f, my, c, 0.92f);
+            C2D_DrawTriangle(mx, my + 6.0f, c, mx - 6.0f, my, c, mx + 6.0f, my, c, 0.92f);
+        }
+    }
+}
+#endif /* PORT_DEBUG_TOOLS_ACTIVE */
+
 void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
     /* Any stylus contact can move something (pan, button, modal); redraw the
      * next frame instead of waiting for the throttle. */
@@ -806,8 +874,10 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
         /* Map Canvas Dragging Area (Y: 48 to 236, X: 4 to 316) */
         if (y >= 48 && y <= 236 && x >= 4 && x <= 316) {
 #ifdef PORT_DEBUG_TOOLS_ACTIVE
-            /* Persistent WARP button tap toggle (bottom right of map canvas) */
-            if (isNewTap && x >= 236 && x <= 312 && y >= 204 && y <= 232) {
+            /* Persistent WARP button tap toggle (bottom right of map canvas;
+             * kept in sync with warpBtn* in RenderMapView -- 58x16 flush to
+             * the 312/232 corner, with a couple px of slack). */
+            if (isNewTap && x >= 252 && x <= 312 && y >= 214 && y <= 232) {
                 sDebugMapWarpArmed = !sDebugMapWarpArmed;
                 sLastTouchX = -1;
                 sLastTouchY = -1;
@@ -887,6 +957,86 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
             sShowCollectiblesModal = false;
             return;
         }
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
+        if (Port_BottomUI_DebugTabVisible()) {
+            /* Title-bar icon buttons */
+            int btn = DebugStatusBtnHit(x, y);
+            if (btn == 0) {
+                sDebugStatsFull = !sDebugStatsFull;
+                PortPpuMzm_DebugSetAmmo(sDebugStatsFull);
+                Port_BottomUI_MarkDirty();
+                return;
+            }
+            if (btn == 1) {
+                bool g = !PortPpuMzm_DebugGetGod();
+                PortPpuMzm_DebugSetGod(g);
+                Port_BottomUI_MarkDirty();
+                return;
+            }
+            /* Beams & bombs column: rows at py = 92 + i*11, x 8..156 */
+            if (x >= 8 && x <= 156) {
+                for (int i = 0; i < 6; ++i) {
+                    int py = 92 + i * 11;
+                    if (y >= py && y <= py + 11) {
+                        PortPpuMzm_DebugToggleBeam(kStatusBeamBits[i]);
+                        Port_BottomUI_MarkDirty();
+                        return;
+                    }
+                }
+            }
+            /* Suits & movement column: rows at py = 91 + i*9, x 164..312 */
+            if (x >= 164 && x <= 312) {
+                for (int i = 0; i < 8; ++i) {
+                    int py = 91 + i * 9;
+                    if (y >= py && y <= py + 9) {
+                        /* Speed Booster (i=1) and Screw Attack (i=3) get a
+                         * 3-state cycle: none -> owned -> always-active.
+                         * Every other row is a plain owned/not toggle. */
+                        if (i == 1 || i == 3) {
+                            unsigned smf = kStatusSuitBits[i];
+                            uint8_t* st = &sSuitCycle[i];
+                            *st = (uint8_t)((*st + 1) % 3);
+                            PortPpuMzm_DebugSetMisc(smf, *st != 0);
+                            PortPpuMzm_DebugSetForceEffect(smf, *st == 2);
+                        } else {
+                            PortPpuMzm_DebugToggleMisc(kStatusSuitBits[i]);
+                        }
+                        Port_BottomUI_MarkDirty();
+                        return;
+                    }
+                }
+            }
+            /* Downloaded-maps card: tapping an area box cycles it
+             *   nothing -> downloaded -> fully visited -> nothing
+             * (1st tap = get the map, 2nd = mark the whole area explored).
+             * The MAP tab's cache of the last non-current area is now stale. */
+            {
+                int hit = -1;
+                if (y >= 188 && y <= 206) {
+                    for (int i = 0; i < 4; ++i) { int bx = 14 + i * 73;
+                        if (x >= bx && x <= bx + 68) { hit = i; break; } }
+                } else if (y >= 210 && y <= 228) {
+                    for (int i = 4; i < 7; ++i) { int bx = 14 + (i - 4) * 98;
+                        if (x >= bx && x <= bx + 92) { hit = i; break; } }
+                }
+                if (hit >= 0) {
+                    /* Unconditional 3-state cycle:
+                     *   0 actual   (restore real state)
+                     *   1 revealed (force downloaded / outline)
+                     *   2 marked   (force 100% visited)
+                     * -> back to 0. No "wiped" / "hidden" step. */
+                    uint8_t* st = &sMapDebugState[hit];
+                    *st = (uint8_t)((*st + 1) % 3);
+                    if (*st == 1)      PortPpuMzm_DebugRevealAreaMap(hit);
+                    else if (*st == 2) PortPpuMzm_DebugMarkAreaVisited(hit);
+                    else               PortPpuMzm_DebugClearAreaMap(hit);
+                    sCachedOtherArea = 0xFF;
+                    Port_BottomUI_MarkDirty();
+                    return;
+                }
+            }
+        }
+#endif
         if (x >= 180 && x <= 310 && y >= 166 && y <= 186) {
             sShowCollectiblesModal = true;
             return;
@@ -2452,11 +2602,22 @@ static void RenderMapView(void) {
     }
 
 #ifdef PORT_DEBUG_TOOLS_ACTIVE
-    /* Persistent Tap-to-Warp toggle button on the map canvas */
-    const float warpBtnX = 236.0f;
-    const float warpBtnY = 206.0f;
-    const float warpBtnW = 74.0f;
-    const float warpBtnH = 24.0f;
+    /* Map completion badge, top-left of the canvas. */
+    if (Port_BottomUI_DebugTabVisible()) {
+        char pctBuf[16];
+        snprintf(pctBuf, sizeof(pctBuf), "%d%%", PortPpuMzm_DebugAreaMapPercent((int)sViewArea));
+        float bw = (float)(Utf8CharCount(pctBuf) * 6 + 8);
+        C2D_DrawRectSolid(canvasX + 3.0f, canvasY + 3.0f, 0.9f, bw, 12.0f, C2D_Color32(10, 16, 26, 220));
+        C2D_DrawRectSolid(canvasX + 3.0f, canvasY + 3.0f, 0.91f, bw, 1.0f, C2D_Color32(60, 90, 140, 255));
+        DrawText(canvasX + 7.0f, canvasY + 5.0f, 1.0f, pctBuf, C2D_Color32(120, 220, 255, 255));
+    }
+
+    /* Persistent Tap-to-Warp toggle button on the map canvas. Sized to the
+     * text ("WARP: OFF" == 8 chars * 6px) with a small margin. */
+    const float warpBtnW = 58.0f;
+    const float warpBtnH = 16.0f;
+    const float warpBtnX = 312.0f - warpBtnW;
+    const float warpBtnY = 232.0f - warpBtnH;
     uint32_t warpBtnBg = sDebugMapWarpArmed
         ? (((sFrameCounter & 0x10) != 0) ? C2D_Color32(190, 140, 15, 255) : C2D_Color32(140, 95, 10, 255))
         : C2D_Color32(16, 24, 40, 230);
@@ -2469,7 +2630,7 @@ static void RenderMapView(void) {
 
     C2D_DrawRectSolid(warpBtnX - 1.0f, warpBtnY - 1.0f, 0.94f, warpBtnW + 2.0f, warpBtnH + 2.0f, warpBtnBorder);
     C2D_DrawRectSolid(warpBtnX, warpBtnY, 0.95f, warpBtnW, warpBtnH, warpBtnBg);
-    DrawTextCentered(warpBtnX + warpBtnW / 2.0f, warpBtnY + 5.0f, 1.0f,
+    DrawTextCentered(warpBtnX + warpBtnW / 2.0f, warpBtnY + (warpBtnH - 8.0f) / 2.0f, 1.0f,
                      sDebugMapWarpArmed ? "WARP: ON" : "WARP: OFF", warpBtnTextCol);
 #endif
 }
@@ -2493,6 +2654,10 @@ static void RenderStatusView(void) {
         "SAMUS ARAN - ESTADO Y EQUIPAMIENTO"
     };
     DrawText(12.0f, 30.0f, 1.0f, titles[lang], C2D_Color32(100, 220, 255, 255));
+
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
+    if (Port_BottomUI_DebugTabVisible()) DrawStatusDebugButtons();
+#endif
 
     /* 1. Header Resource Card (X: 8, Y: 44 to 72, W: 304, H: 28) */
     C2D_DrawRectSolid(8.0f, 44.0f, 0.45f, 304.0f, 30.0f, C2D_Color32(20, 26, 40, 255));
@@ -2679,8 +2844,16 @@ static void RenderStatusView(void) {
                 statusStr = "??";
                 col = C2D_Color32(255, 180, 50, 255);
             } else if (active) {
-                statusStr = "OK";
-                col = C2D_Color32(80, 255, 120, 255);
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
+                if (Port_BottomUI_DebugTabVisible() && PortPpuMzm_DebugGetForceEffect(flag)) {
+                    statusStr = "AUTO";
+                    col = C2D_Color32(120, 220, 255, 255);
+                } else
+#endif
+                {
+                    statusStr = "OK";
+                    col = C2D_Color32(80, 255, 120, 255);
+                }
             } else {
                 statusStr = "OFF";
                 col = C2D_Color32(220, 160, 60, 255);
@@ -2720,32 +2893,46 @@ static void RenderStatusView(void) {
     C2D_DrawRectSolid(183.0f, 171.0f, 0.55f, 124.0f, 12.0f, C2D_Color32(12, 30, 60, 255));
     DrawTextCentered(245.0f, 173.0f, 1.0f, globBtn, C2D_Color32(255, 215, 0, 255));
 
-    /* Row 1: 4 areas (Brinstar, Kraid, Norfair, Ridley) */
-    for (int i = 0; i < 4; ++i) {
-        bool dl = (gEquipment.downloadedMapStatus & (1 << i)) != 0;
-        float bx = 14.0f + (float)i * 73.0f;
-        float by = 188.0f;
-        uint32_t boxBg = dl ? C2D_Color32(16, 50, 95, 255) : C2D_Color32(22, 26, 38, 255);
-        uint32_t boxBorder = dl ? C2D_Color32(40, 160, 250, 255) : C2D_Color32(45, 52, 70, 255);
-        uint32_t textCol = dl ? C2D_Color32(255, 255, 255, 255) : C2D_Color32(90, 100, 120, 255);
-
-        C2D_DrawRectSolid(bx, by, 0.5f, 68.0f, 18.0f, boxBorder);
-        C2D_DrawRectSolid(bx + 1.0f, by + 1.0f, 0.55f, 66.0f, 16.0f, boxBg);
-        DrawTextCentered(bx + 34.0f, by + 5.0f, 1.0f, AreaName(i), textCol);
-    }
-
-    /* Row 2: 3 areas (Tourian, Crateria, Chozodia) */
-    for (int i = 4; i < 7; ++i) {
-        bool dl = (gEquipment.downloadedMapStatus & (1 << i)) != 0;
-        float bx = 14.0f + (float)(i - 4) * 98.0f;
-        float by = 210.0f;
-        uint32_t boxBg = dl ? C2D_Color32(16, 50, 95, 255) : C2D_Color32(22, 26, 38, 255);
-        uint32_t boxBorder = dl ? C2D_Color32(40, 160, 250, 255) : C2D_Color32(45, 52, 70, 255);
-        uint32_t textCol = dl ? C2D_Color32(255, 255, 255, 255) : C2D_Color32(90, 100, 120, 255);
-
-        C2D_DrawRectSolid(bx, by, 0.5f, 92.0f, 18.0f, boxBorder);
-        C2D_DrawRectSolid(bx + 1.0f, by + 1.0f, 0.55f, 90.0f, 16.0f, boxBg);
-        DrawTextCentered(bx + 46.0f, by + 5.0f, 1.0f, AreaName(i), textCol);
+    /* Box colour is driven by the per-area debug cycle state, not by % :
+     *   not downloaded            -> grey
+     *   really downloaded (save)  -> green   (cycle state 0 + real dl bit)
+     *   forced download  (debug)  -> purple  (cycle state 1)
+     *   forced 100%      (debug)  -> orange  (cycle state 2)
+     * In state 0 the downloaded bit reflects the genuine save (ClearAreaMap
+     * restores it from the backup), so it is safe to read here. */
+    for (int row = 0; row < 2; ++row) {
+        int i0 = row == 0 ? 0 : 4, i1 = row == 0 ? 4 : 7;
+        float by = row == 0 ? 188.0f : 210.0f;
+        float bw = row == 0 ? 68.0f : 92.0f;
+        float step = row == 0 ? 73.0f : 98.0f;
+        for (int i = i0; i < i1; ++i) {
+            bool dl = (gEquipment.downloadedMapStatus & (1 << i)) != 0;
+            int mst = 0;
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
+            if (Port_BottomUI_DebugTabVisible()) mst = sMapDebugState[i];
+#endif
+            float bx = 14.0f + (float)(i - i0) * step;
+            uint32_t boxBg, boxBorder;
+            bool lit;
+            if (mst == 2) {                 /* forced 100% -> orange */
+                boxBg = C2D_Color32(70, 45, 15, 255);
+                boxBorder = C2D_Color32(255, 170, 60, 255); lit = true;
+            } else if (mst == 1) {          /* forced download -> purple */
+                boxBg = C2D_Color32(45, 30, 70, 255);
+                boxBorder = C2D_Color32(170, 110, 240, 255); lit = true;
+            } else if (dl) {                /* genuinely downloaded -> green */
+                boxBg = C2D_Color32(18, 62, 32, 255);
+                boxBorder = C2D_Color32(70, 220, 110, 255); lit = true;
+            } else {                        /* not downloaded -> grey */
+                boxBg = C2D_Color32(22, 26, 38, 255);
+                boxBorder = C2D_Color32(45, 52, 70, 255); lit = false;
+            }
+            uint32_t textCol = lit ? C2D_Color32(255, 255, 255, 255)
+                                   : C2D_Color32(90, 100, 120, 255);
+            C2D_DrawRectSolid(bx, by, 0.5f, bw, 18.0f, boxBorder);
+            C2D_DrawRectSolid(bx + 1.0f, by + 1.0f, 0.55f, bw - 2.0f, 16.0f, boxBg);
+            DrawTextCentered(bx + bw / 2.0f, by + 5.0f, 1.0f, AreaName(i), textCol);
+        }
     }
 
     if (sShowCollectiblesModal) {
@@ -2868,7 +3055,13 @@ static void RenderOptionsView(void) {
 #define DBGTOOL_GRID_PITCH 26
 #define DBGTOOL_CELL_H    24
 #define DBGTOOL_GRID_ROWS 6
+/* Cell 11 (RENDERER GPU/CPU) only exists when the GPU tile renderer is
+ * compiled in -- a RENDERER=cpu build has nothing to switch to. */
+#ifdef PORT_GPU_TILE_RENDERER
+#define DBGTOOL_COUNT     12
+#else
 #define DBGTOOL_COUNT     11
+#endif
 
 #define DBGTOOL_CELL_Y(r) ((float)(DBGTOOL_GRID_Y0 + (r) * DBGTOOL_GRID_PITCH))
 #define DBGTOOL_CELL_X(c) ((float)((c) == 0 ? DBGTOOL_COL_L_X : DBGTOOL_COL_R_X))
@@ -2884,6 +3077,45 @@ static void DrawDebugCell(int index, const char* label, const char* state, uint3
     DrawTextMaxWClipped(x + 6.0f, y + 2.0f, 1.0f, label, C2D_Color32(255, 255, 255, 255),
                         0.0f, 240.0f, (float)DBGTOOL_COL_W - 12.0f);
     if (state) DrawText(x + 6.0f, y + 13.0f, 1.0f, state, accent);
+}
+
+/* The right ~48px of a cell is a start/stop side button (DebugCellRightZoneHit):
+ * a divider, a tinted panel, and either a play triangle (idle) or a stop
+ * square (running). The button's colour is the only running indicator -- the
+ * cell's own label/state stays put. Drawn over the cell after it. */
+static void DrawDebugCellSideButton(int index, bool running) {
+    float xr = DBGTOOL_CELL_X(index & 1) + (float)DBGTOOL_COL_W;
+    float y = DBGTOOL_CELL_Y(index >> 1);
+    float cy = y + (float)DBGTOOL_CELL_H * 0.5f;
+    float bx = xr - 46.0f;                 /* panel left edge */
+    const uint32_t fg   = running ? C2D_Color32(255, 90, 90, 255)   /* red = tap to stop */
+                                  : C2D_Color32(120, 230, 140, 255);/* green = tap to start */
+    const uint32_t bg   = running ? C2D_Color32(70, 22, 22, 255)
+                                  : C2D_Color32(22, 44, 30, 255);
+    C2D_DrawRectSolid(bx - 2.0f, y + 3.0f, 0.92f, 1.0f, (float)DBGTOOL_CELL_H - 6.0f,
+                      C2D_Color32(90, 110, 150, 255));
+    C2D_DrawRectSolid(bx, y + 3.0f, 0.92f, 44.0f, (float)DBGTOOL_CELL_H - 6.0f, bg);
+    float mx = bx + 22.0f;                 /* glyph centre */
+    if (running) {
+        C2D_DrawRectSolid(mx - 5.0f, cy - 5.0f, 0.93f, 10.0f, 10.0f, fg);
+    } else {
+        C2D_DrawTriangle(mx - 4.0f, cy - 6.0f, fg,
+                         mx - 4.0f, cy + 6.0f, fg,
+                         mx + 6.0f, cy,        fg, 0.93f);
+    }
+}
+
+/* Stream the LOG A SD cell has selected (never NONE -- on/off is the side
+ * button). Middle taps cycle it; when logging is on it is applied live. */
+static PortDebugLogMode sLogSel = PORT_LOG_MODE_ALL;
+
+static const char* DebugLogSelName(void) {
+    switch (sLogSel) {
+        case PORT_LOG_MODE_GPU:   return "GPU";
+        case PORT_LOG_MODE_AUDIO: return "AUDIO";
+        case PORT_LOG_MODE_PERF:  return "PERF";
+        default:                  return "ALL";
+    }
 }
 
 /* Index of the grid cell a tap landed on, or -1. */
@@ -2954,8 +3186,12 @@ static void RenderDebugToolsModal(int lang) {
                   (lang == 6) ? "VOLCAR" : "DUMP", colAct);
     DrawDebugCell(1, (lang == 6) ? "MARCA EN EL LOG" : "LOG MARKER",
                   (lang == 6) ? "MARCAR" : "MARK", colAct);
+    /* Middle taps the state line to cycle the capture preset (always shown
+     * in yellow); the side button starts/stops -- its colour is the running
+     * indicator, so the cell text never changes. */
     DrawDebugCell(2, (lang == 6) ? "GRAB. ESCENA" : "SCENE RECORDER",
-                  rec ? onTxt : offTxt, rec ? colOn : colAct);
+                  PlatformGpu3DS_RecordPresetLabel(), colMenu);
+    DrawDebugCellSideButton(2, rec);
     DrawDebugCell(3, (lang == 6) ? "GRAB. RENDIMIENTO" : "PERF RECORDER",
                   perf ? onTxt : offTxt, perf ? colOn : colAct);
     DrawDebugCell(4, (lang == 6) ? "ATLAS GPU" : "GPU ATLAS",
@@ -2967,21 +3203,43 @@ static void RenderDebugToolsModal(int lang) {
     DrawDebugCell(8, (lang == 6) ? "REVELAR MAPAS" : "REVEAL MAPS",
                   (lang == 6) ? "REVELAR" : "REVEAL", colMenu);
 
-    /* The two log knobs. Nothing is written to the SD card while LOG is OFF
-     * even in a debug build (see port_debug_log.h). LOG cycles the stream
-     * filter -- OFF / ALL / GPU / AUDIO / PERF -- so a session captures only
-     * the stream it is chasing; BUFFER is "stop holding lines in RAM" for a
-     * hang. */
+    /* Nothing is written to the SD card while LOG is stopped even in a debug
+     * build (see port_debug_log.h). Tapping the middle of LOG A SD cycles
+     * the stream filter -- OFF / ALL / GPU / AUDIO / PERF (the label keeps
+     * showing the pick); the side button starts/stops logging and its
+     * colour is the running indicator. BUFFER is "stop holding lines in
+     * RAM" for a hang. */
     const bool logOn = Port_DebugLog_IsEnabled();
     const bool logBuf = Port_DebugLog_IsBuffered();
     DrawDebugCell(9, (lang == 6) ? "LOG A SD" : "SD LOGGING",
-                  Port_DebugLog_ModeName(), logOn ? colOn : colAct);
+                  DebugLogSelName(), colMenu);
+    DrawDebugCellSideButton(9, logOn);
     DrawDebugCell(10, (lang == 6) ? "LOG EN BUFFER" : "LOG BUFFERING",
                   logBuf ? onTxt : offTxt, logBuf ? colOn : colAct);
+
+#ifdef PORT_GPU_TILE_RENDERER
+    /* Force the whole top screen through the CPU scanline renderer
+     * (port/ppu/src/mode1.c) instead of the PICA200 tile renderer, to
+     * isolate renderer-specific bugs without a RENDERER=cpu rebuild. The
+     * per-frame CanRenderFrame() fallback still applies on top of this. */
+    {
+        const bool gpuOn = Port_GpuRenderer_IsActive();
+        DrawDebugCell(11, (lang == 6) ? "RENDERER" : "RENDERER",
+                      gpuOn ? "GPU" : "CPU", gpuOn ? colAct : colOn);
+    }
+#endif
 
     if (sDebugToolsMsg[0] && sFrameCounter < sDebugToolsMsgUntil) {
         DrawTextCentered(160.0f, 204.0f, 1.0f, sDebugToolsMsg, C2D_Color32(120, 255, 160, 255));
     }
+}
+
+/* True when the tap is in the right ~48px of grid cell `cell` -- the
+ * start/stop side button (DrawDebugCellSideButton). The rest of the cell
+ * cycles that cell's option. */
+static bool DebugCellRightZoneHit(int x, int cell) {
+    float cx = DBGTOOL_CELL_X(cell & 1);
+    return (float)x >= cx + (float)DBGTOOL_COL_W - 48.0f;
 }
 
 static bool HandleDebugToolsModalTouch(int x, int y) {
@@ -2989,7 +3247,31 @@ static bool HandleDebugToolsModalTouch(int x, int y) {
         sShowDebugToolsModal = false;
         return true;
     }
-    switch (DebugCellHit(x, y, DBGTOOL_COUNT)) {
+    int cell = DebugCellHit(x, y, DBGTOOL_COUNT);
+    /* SCENE RECORDER / SD LOGGING: the side button starts/stops; the rest of
+     * the cell cycles the option. */
+    if (cell == 2 && DebugCellRightZoneHit(x, 2)) {
+        PlatformGpu3DS_ToggleRecording();
+        const char* last = PlatformGpu3DS_RecordLastFile();
+        DebugToolsSetMsg(PlatformGpu3DS_IsRecording() ? "REC ON"
+                         : (last && last[0]) ? last : "REC OFF");
+        return true;
+    }
+    if (cell == 9 && DebugCellRightZoneHit(x, 9)) {
+        /* Side button: start/stop logging on the selected stream. */
+        if (Port_DebugLog_IsEnabled()) {
+            Port_DebugLog_SetMode(PORT_LOG_MODE_NONE);
+            DebugToolsSetMsg("LOG SD: OFF");
+        } else {
+            Port_DebugLog_SetMode(sLogSel);
+            Port_DebugLog("USER MARK: SD logging enabled");
+            char msg[24];
+            snprintf(msg, sizeof(msg), "LOG SD: %s", DebugLogSelName());
+            DebugToolsSetMsg(msg);
+        }
+        return true;
+    }
+    switch (cell) {
         case 0:
             PlatformGpu3DS_DumpScreens();
             DebugToolsSetMsg("DUMP -> sdmc:/3ds/");
@@ -2999,8 +3281,9 @@ static bool HandleDebugToolsModalTouch(int x, int y) {
             DebugToolsSetMsg("MARCA EN EL LOG");
             break;
         case 2:
-            PlatformGpu3DS_ToggleRecording();
-            DebugToolsSetMsg(PlatformGpu3DS_IsRecording() ? "REC ON" : "REC OFF");
+            /* Middle: cycle the capture preset (no-op while recording). */
+            PlatformGpu3DS_CycleRecordPreset();
+            DebugToolsSetMsg(PlatformGpu3DS_RecordPresetLabel());
             break;
         case 3:
             PlatformGpu3DS_TogglePerfRecording();
@@ -3030,10 +3313,14 @@ static bool HandleDebugToolsModalTouch(int x, int y) {
             DebugToolsSetMsg("MAPAS REVELADOS");
             break;
         case 9: {
-            Port_DebugLog_CycleMode();
-            if (Port_DebugLog_IsEnabled()) Port_DebugLog("USER MARK: SD logging enabled");
+            /* Middle: cycle the stream selection (ALL/GPU/AUDIO/PERF, no
+             * OFF -- the side button does on/off). Applied live if logging
+             * is running. */
+            sLogSel = (PortDebugLogMode)(sLogSel + 1);
+            if (sLogSel >= PORT_LOG_MODE_COUNT) sLogSel = PORT_LOG_MODE_ALL;
+            if (Port_DebugLog_IsEnabled()) Port_DebugLog_SetMode(sLogSel);
             char msg[24];
-            snprintf(msg, sizeof(msg), "LOG SD: %s", Port_DebugLog_ModeName());
+            snprintf(msg, sizeof(msg), "LOG SD: %s", DebugLogSelName());
             DebugToolsSetMsg(msg);
             break;
         }
@@ -3043,6 +3330,16 @@ static bool HandleDebugToolsModalTouch(int x, int y) {
             DebugToolsSetMsg(buf ? "LOG EN BUFFER" : "LOG DIRECTO");
             break;
         }
+#ifdef PORT_GPU_TILE_RENDERER
+        case 11: {
+            const bool gpuOn = !Port_GpuRenderer_IsActive();
+            Port_GpuRenderer_SetActive(gpuOn);
+            Port_DebugLog(gpuOn ? "USER MARK: renderer -> GPU"
+                                : "USER MARK: renderer -> CPU");
+            DebugToolsSetMsg(gpuOn ? "RENDERER: GPU" : "RENDERER: CPU");
+            break;
+        }
+#endif
         default:
             break;
     }
