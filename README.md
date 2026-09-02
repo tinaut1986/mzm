@@ -80,6 +80,8 @@ Two extras beyond the original game:
    | USA | `BMXE` | `5de8536afe1f0078ee6fe1089f890e8c7aa0a6e8` |
    | Japan | `BMXJ` | `096f07685a3dc9286e71aa0b761f233b5efa2fcd` |
 
+   > **Note:** While all three region ROMs are verified to work and supported, the port was primarily developed and playtested from start to finish on real hardware using the **European (EUR)** version.
+
    If several region ROMs are present, the port picks one deterministically — **EUR first, then USA, then JAP**, and the alphabetically first filename within a region. Keep only the ROM you want to play, or rename the others.
 
    The ROM is read from the SD card at run time and is never packaged inside the executable.
@@ -132,12 +134,17 @@ Outputs land in `platform/3ds/`: `mzm-3ds.cia`, `mzm-3ds.3dsx`, `mzm-3ds.elf`. T
 
 ### Tools: Layer Workbench
 
-To launch the map layer workbench viewer and visual editor:
+An in-browser visual inspection and tuning tool for the port's stereoscopic 3D layers:
 
 - **Linux / macOS**: `./run_workbench.sh`
 - **Windows**: `run_workbench.bat`
 
-(Runs local web server at `http://127.0.0.1:8731/` and opens your default browser).
+Runs a local web server at `http://127.0.0.1:8731/` and opens your browser. It includes three modes:
+- **MAP**: Inspect any of the game's 315 rooms layer-by-layer (BG0–BG3) and adjust block depths, syncing automatically to `platform/3ds/source/port_layer_fixes.inc`.
+- **SPRITES**: Visual catalogue of all primary and secondary sprites with thumbnails to configure forced 3D depth tiers (`platform/3ds/source/port_sprite_depth.inc`).
+- **REC**: Inspect on-device scene recording dumps (`mzm-rec.bin`) frame-by-frame.
+
+See [tools/layer-workbench/README.md](tools/layer-workbench/README.md) for full usage instructions and shortcuts.
 
 ### Region
 
@@ -154,7 +161,7 @@ make REGION=eu         # or us, jp
 make clean && make DEBUG_TOOLS=1
 ```
 
-Adds the `L + R + <button>` diagnostic combos (screen/state dump, scene recorder, atlas dump, log mark, instant kill) and the bottom-screen `DEBUG` tab. Production builds have no source-level path to them.
+Adds the bottom-screen `DEBUG` tab and its touch-activated diagnostic tools menu (screen/state dump, scene recorder, atlas dump, log mark, instant kill, warp, equipment editor). Production builds have no source-level path to them.
 
 For renderer selection, diagnostics flags and the rest of the build options, see [platform/3ds/README.md](platform/3ds/README.md).
 
@@ -181,4 +188,4 @@ This port is made possible thanks to the work of multiple open-source projects:
 
 ## License
 
-This project is licensed under the terms of the GNU General Public License v3.0 (GPL-3.0-or-later). See [LICENSE](LICENSE) for details.
+This project is licensed under the terms of the GNU General Public License v3.0 (GPL-3.0-or-later). See [LICENSE](LICENSE) for the full license text and [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md) for upstream and third-party notices and attributions.
