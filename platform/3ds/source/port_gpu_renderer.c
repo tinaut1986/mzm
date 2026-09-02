@@ -581,6 +581,20 @@ static inline u32 Bgr555ToRgba8(uint16_t color, bool transparent) {
     return (255u << 24) | (b << 16) | (g << 8) | r;
 }
 
+/* The GBA backdrop (BG palette entry 0) as a C2D clear colour. C2D_Color32
+ * takes r,g,b,a as arguments, so unlike Bgr555ToRgba8 -- which packs bytes
+ * for the atlas texture's own layout -- the channels go in straight. Same
+ * 5->8 bit expansion, so a backdrop-coloured clear and a backdrop-coloured
+ * tile match to the byte. */
+static inline u32 BackdropClearColor(void) {
+    const uint16_t color = (uint16_t)(gBgPltt[0] | ((uint16_t)gBgPltt[1] << 8));
+    u32 r = color & 0x1Fu, g = (color >> 5) & 0x1Fu, b = (color >> 10) & 0x1Fu;
+    r = (r << 3) | (r >> 2);
+    g = (g << 3) | (g >> 2);
+    b = (b << 3) | (b >> 2);
+    return C2D_Color32((u8)r, (u8)g, (u8)b, 255);
+}
+
 /* GBA brightness increase/decrease on 5-bit channels, byte-for-byte the same
  * formula as port/ppu/src/mode1.c's mode1_brighten/mode1_darken (GBATEK:
  * I = I +- I(or 31-I)*evy/16, truncating; evy pre-clamped 0..16). Operates
@@ -1704,31 +1718,26 @@ bool Port_GpuRenderer_CanRenderFrame(void) {
         }
     }
 
-    /* Issue #17 workaround: Samus's death animation (SPOSE_DYING's
-     * walljumpTimer flash phase, src/samus.c) renders as fragmented,
-     * disconnected color blocks through this renderer on real hardware --
-     * confirmed root cause NOT found after two full investigation sessions
-     * (see docs/3ds-issue17-session-2026-08-25.md): tile decode content,
-     * cache-slot bookkeeping, UV/draw placement, and CPU/GPU frame-overlap
-     * synchronization were all individually verified correct on real
-     * hardware and the bug persists regardless. The CPU scanline renderer
-     * (port/ppu/src/mode1.c) has been confirmed correct for this exact
-     * scene throughout -- that's how the bug was first isolated as
-     * GPU-renderer-specific to begin with. Falling back for just this
-     * scene's distinctive DISPCNT signature (only OBJ+WIN1 active, WIN1
-     * used purely as a BLDCNT-effect gate per the comment above, no BG
-     * layer at all, Samus pose == SPOSE_DYING -- confirmed via the same
-     * L+R+X/scene-recorder sessions that diagnosed this bug) is a narrow,
-     * low-risk fix for the visible symptom while the real GPU-side cause
-     * remains open.
-     * Note: previously this checked only (dispcnt & 0xF00u) == 0u && (dispcnt & (1u << 12)) != 0u,
-     * which erroneously matched the intro noise/communication static scene
-     * (issue #27) and caused severe FPS drops. Checking win1On and
-     * PortPpuMzm_IsSamusDying restricts the fallback strictly to Samus's death. */
-    extern bool PortPpuMzm_IsSamusDying(void);
-    if ((dispcnt & 0xF00u) == 0u && (dispcnt & (1u << 12)) != 0u && win1On && PortPpuMzm_IsSamusDying()) {
-        REJECT("issue #17 death-scene workaround");
-    }
+    /* Issue #17 (Samus's death animation rendering wrong through this
+     * renderer on real hardware) used to force a CPU-scanline fallback here
+     * for the death scene's DISPCNT signature. RESOLVED at the source and
+     * the workaround removed -- the scene renders correctly on the GPU path
+     * now, confirmed on hardware. Two independent bugs, both of which the
+     * death scene is simply the worst case for; see
+     * docs/3ds-issue17-session-2026-09-02.md for the recording that
+     * separated them:
+     *   1. The eye targets were cleared to hardcoded black instead of the
+     *      GBA backdrop (BG palette entry 0). Invisible while BG tiles
+     *      cover the screen; this scene enables no BG layer at all and
+     *      fades the backdrop to white through palette RAM, so the whole
+     *      fade was dropped. See BackdropClearColor's use in
+     *      Port_GpuRenderer_RenderFrame.
+     *   2. The PICA200's texture cache was never invalidated after an
+     *      in-place atlas redecode, so slots whose palette changed kept
+     *      drawing stale texels. Hidden in ordinary frames, which thrash
+     *      that cache; exposed by this scene's tiny working set plus a
+     *      palette rewritten every frame. See the C3D_TexBind call after
+     *      the dirty-row flush in Port_GpuRenderer_RenderFrame. */
 
     return true;
 }
@@ -2168,6 +2177,41 @@ void Port_GpuRenderer_RenderFrame(void) {
             mask &= ~(((1ull << runLength) - 1ull) << startRow);
         }
         sDirtyRowMask = 0;
+
+        /* Issue #17: flushing the CPU data cache above only makes the new
+         * texels visible in MEMORY -- it says nothing to the PICA200's own
+         * texture cache, which sits in front of it. citro2d binds a texture
+         * (C3D_TexBind) only when the texture POINTER changes between draw
+         * calls, and every draw in this renderer uses this one atlas: so
+         * after the very first frame the bind never happens again, and the
+         * texture-unit config write it triggers -- the write that carries
+         * GPUREG_TEXUNIT_CONFIG's texture-cache-clear bit -- is never
+         * re-issued either. Any slot redecoded IN PLACE (see
+         * GetOrDecodeTileSlot: changed VRAM bytes, changed palette colors,
+         * or changed evy) then keeps drawing with whatever texels the GPU
+         * cached the last time it sampled that slot.
+         *
+         * Normally invisible: a gameplay frame samples hundreds of distinct
+         * atlas tiles spread over a 1MB texture, so the GPU's cache is
+         * thrashed constantly and stale entries are evicted before anyone
+         * notices. It becomes visible exactly when the working set is tiny
+         * and the palette is what's changing -- which is Samus's death
+         * animation: no BG layers at all, a handful of sprite tiles whose
+         * VRAM bytes never change, and a palette rewritten every single
+         * frame. Confirmed against the 2026-09-02 scene recording: within a
+         * SINGLE captured frame, Samus's on-screen colors came from two
+         * different earlier palette phases at once (some tiles frozen at
+         * the recording's sample ~97-102, others at ~109-119), never the
+         * current one -- per-slot staleness in the GPU's cache, not in
+         * ours, whose palette-hash check (sCachePalHash) had already
+         * redecoded them correctly in memory.
+         *
+         * Re-binding the atlas is the cheap fix: C3D_TexBind sets citro3d's
+         * per-unit dirty flag, and the next draw re-emits the texture-unit
+         * config -- cache-clear bit included -- before anything samples the
+         * atlas this frame. Once per frame, and only on frames that
+         * actually rewrote a slot. */
+        C3D_TexBind(0, &sAtlasTexture);
     }
 
     u64 tAfterCollect = svcGetSystemTick();
@@ -2261,7 +2305,19 @@ void Port_GpuRenderer_RenderFrame(void) {
         if (!target) continue;
         float eyeSign = (eye == 0) ? 1.0f : -1.0f;
 
-        C2D_TargetClear(target, C2D_Color32(0, 0, 0, 255));
+        /* Issue #17: the GBA shows BG palette entry 0 -- the backdrop --
+         * wherever no enabled layer draws, which this renderer used to
+         * replace with a hardcoded black. Usually harmless (rooms fill the
+         * screen with BG tiles), but Samus's death animation enables no BG
+         * layer at all: the whole screen IS the backdrop, and the game
+         * fades it to white through palette RAM. Clearing to black dropped
+         * that entire fade. port/ppu/src/mode1.c uses mode1_bg_abgr_lut[0]
+         * raw for the same purpose (no BLDCNT brighten/darken applied to
+         * the backdrop), so this matches it exactly. The letterbox/
+         * pillarbox masks drawn at the end of this pass re-blacken
+         * everything outside the 240x160 GBA frame, so filling the whole
+         * target here is safe for every display style. */
+        C2D_TargetClear(target, BackdropClearColor());
         C2D_SceneBegin(target);
         ConfigureAtlasTextureEnv();
         C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_ALL);
