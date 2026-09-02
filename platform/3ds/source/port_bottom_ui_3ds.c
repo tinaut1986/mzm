@@ -144,6 +144,13 @@ static bool sShowRemapModal = false;
 static int sRemapSelectButtonIdx = -1; /* >= 0 when action picker popup is open */
 static bool sShowCollectiblesModal = false;
 static bool sShowAchievementsModal = false;
+/* Pack chooser shown ahead of the achievement list. Only ever opened when the
+ * game actually has more than one set -- with a single set a chooser with one
+ * entry in it is pure friction, so the LOGROS button goes straight to the
+ * list (see OpenAchievementsUi). sAchFromPacks records which way we came in so
+ * BACK returns to the chooser instead of closing the whole modal. */
+static bool sShowAchPacksModal = false;
+static bool sAchFromPacks = false;
 static bool sShowRASettingsModal = false;
 static bool sShowDisplayModal = false;
 
@@ -276,12 +283,165 @@ static int sZoomLevel = 1; /* 0 = 1x (Overview), 1 = 2x (Detail), 2 = 3x (Ultra)
 static float sScrollX = 0.0f;
 static float sScrollY = 0.0f;
 static float sAchievementsScrollY = 0.0f;
+static float sAchPacksScrollY = 0.0f;
+/* Latched on a press that actually lands on the achievements/pack scrollbar
+ * TRACK, and the only thing the drag path keys off afterwards. The hit test
+ * used to be a bare `x >= 300` on every move event, with no vertical bound:
+ * the whole right-hand column counted as the scrollbar, footer row included.
+ * Tapping the sort or direction button at x >= 300 fired the button on the
+ * press and then, while the finger was still down, the next move event was
+ * read as a scrollbar drag at y ~= 204 -- past the end of the 48..200 track,
+ * so it clamped and threw the list to the bottom. Latching on the press also
+ * means a drag that starts on the thumb keeps tracking when the finger
+ * wanders off the track, which the bare coordinate test got wrong the other
+ * way. */
+static bool sAchScrollbarDrag = false;
+
+/* ---- Achievements list geometry -------------------------------------
+ * The card height lives in ONE place because the render pass and the touch
+ * pass both need it and they used to disagree: rendering laid out fixed 34px
+ * cards while the hit-testing measured wrapped description text
+ * (24 + lines*9 + 6, min 38, +6 gap). The scroll extent was therefore
+ * computed for a taller list than was ever drawn, which is what let the
+ * content scroll down past the modal and collide with the BACK button
+ * (issue #32). Both passes call this now, so they cannot drift again. */
+#define ACH_LIST_CLIP_Y0 48.0f
+#define ACH_LIST_CLIP_Y1 200.0f
+#define ACH_CARD_H 34.0f
+
+static float AchievementsContentHeight(void) {
+    return (float)Port_RA_GetViewCount() * ACH_CARD_H;
+}
+
+static float AchievementsMaxScroll(void) {
+    float view = ACH_LIST_CLIP_Y1 - ACH_LIST_CLIP_Y0;
+    float content = AchievementsContentHeight();
+    return (content > view) ? (content - view) : 0.0f;
+}
+
+#define ACH_PACK_CARD_H 40.0f
+
+/* Touch Y on the scrollbar track -> scroll offset. The track spans the same
+ * band the cards are clipped to, so it is derived from that rather than from
+ * the 48.0f / 124.0f literals this was open-coded with in four places. */
+static float AchScrollbarValue(int touchY, float maxScroll) {
+    float trackH = ACH_LIST_CLIP_Y1 - ACH_LIST_CLIP_Y0;
+    float trackY = (float)touchY - ACH_LIST_CLIP_Y0;
+    if (trackY < 0.0f) trackY = 0.0f;
+    if (trackY > trackH) trackY = trackH;
+    return (trackY / trackH) * maxScroll;
+}
+
+static float AchPacksMaxScroll(void) {
+    float view = ACH_LIST_CLIP_Y1 - ACH_LIST_CLIP_Y0;
+    /* +1 for the "ALL SETS" entry that heads the chooser. */
+    float content = (float)(Port_RA_GetSubsetCount() + 1u) * ACH_PACK_CARD_H;
+    return (content > view) ? (content - view) : 0.0f;
+}
+
+/* A solid rect clipped to a vertical band. The card backgrounds used to be
+ * drawn unclipped while only their contents (badge, status pip, title) tested
+ * against the band, so a partially-scrolled card painted its full height over
+ * the modal chrome below. */
+static void DrawRectClipped(float x, float y, float depth, float w, float h, uint32_t color,
+                            float clipY0, float clipY1) {
+    float y0 = (y < clipY0) ? clipY0 : y;
+    float y1 = (y + h > clipY1) ? clipY1 : (y + h);
+    if (y1 <= y0) return;
+    C2D_DrawRectSolid(x, y0, depth, w, y1 - y0, color);
+}
+
+/* Opens the achievements UI from the OPTIONS tab, picking the entry point:
+ * the pack chooser when the game has more than one set, the flat list
+ * otherwise. */
+static void OpenAchievementsUi(void) {
+    sAchievementsScrollY = 0.0f;
+    sAchPacksScrollY = 0.0f;
+    if (Port_RA_GetSubsetCount() > 1u) {
+        sShowAchPacksModal = true;
+        sShowAchievementsModal = false;
+        sAchFromPacks = true;
+    } else {
+        Port_RA_SetListSubset(0);
+        sShowAchPacksModal = false;
+        sShowAchievementsModal = true;
+        sAchFromPacks = false;
+    }
+}
+
+
+/* BACK from the achievement list: to the pack chooser when we came in through
+ * it, otherwise straight out of the modal. */
+static void AchievementsBack(void) {
+    sShowAchievementsModal = false;
+    if (sAchFromPacks) {
+        sShowAchPacksModal = true;
+        Port_RA_SetListSubset(0);
+    }
+}
+
+static void CycleAchievementsSort(void) {
+    RetroAchievementSort next = (RetroAchievementSort)((Port_RA_GetListSort() + 1) % RA_SORT_COUNT);
+    Port_RA_SetListSort(next);
+    sAchievementsScrollY = 0.0f; /* the old offset means nothing in a new order */
+}
+
+static void ToggleAchievementsSortDir(void) {
+    Port_RA_SetListDescending(!Port_RA_GetListDescending());
+    sAchievementsScrollY = 0.0f;
+}
+
 static int sLastTouchX = -1;
 static int sLastTouchY = -1;
 static int sTouchStartX = -1;
 static int sTouchStartY = -1;
 static bool sIsDragging = false;
 static bool sIsTouchDragging = false;
+
+/* Pack chooser touch: same scroll/drag shape as the achievement list, with
+ * row 0 reserved for the "all sets" entry. */
+static void HandleAchPacksTouch(int x, int y, bool isNewTap) {
+    float maxScroll = AchPacksMaxScroll();
+
+    if (isNewTap) {
+        if (x >= 100 && x <= 220 && y >= 204 && y <= 230) {
+            sShowAchPacksModal = false;
+            sLastTouchX = -1;
+            sLastTouchY = -1;
+            return;
+        }
+        if (x >= 300 && (float)y >= ACH_LIST_CLIP_Y0 && (float)y < ACH_LIST_CLIP_Y1 &&
+            maxScroll > 0.0f) {
+            sAchScrollbarDrag = true;
+            sAchPacksScrollY = AchScrollbarValue(y, maxScroll);
+            sIsTouchDragging = true;
+            return;
+        }
+        /* Picking a set happens on RELEASE, in Port_BottomUI_TouchReleased,
+         * and only when the touch never turned into a drag -- the same shape
+         * the remap modal uses. Opening on the press instead would fire the
+         * moment a finger landed on a card to scroll the list. */
+        sTouchStartX = x;
+        sTouchStartY = y;
+        sLastTouchX = x;
+        sLastTouchY = y;
+        sIsTouchDragging = false;
+        return;
+    }
+
+    if (sAchScrollbarDrag && maxScroll > 0.0f) {
+        sAchPacksScrollY = AchScrollbarValue(y, maxScroll);
+        sIsTouchDragging = true;
+    } else if (!sAchScrollbarDrag && sLastTouchX >= 0 && sLastTouchY >= 0) {
+        float dy = (float)(sLastTouchY - y);
+        sAchPacksScrollY += dy;
+        if (sAchPacksScrollY < 0.0f) sAchPacksScrollY = 0.0f;
+        if (sAchPacksScrollY > maxScroll) sAchPacksScrollY = maxScroll;
+        sLastTouchX = x;
+        sLastTouchY = y;
+        sIsTouchDragging = true;
+    }
+}
 
 int Port_BottomUI_GetZoom(void) { return sZoomLevel; }
 void Port_BottomUI_SetZoom(int zoom) { if (zoom >= 0 && zoom <= 2) { sZoomLevel = zoom; Port_BottomUI_MarkDirty(); } }
@@ -532,34 +692,6 @@ static void DrawTextMaxWClipped(float x, float y, float scale, const char* text,
     }
 }
 
-static int MeasureWrappedTextLines(const char* text, float maxWidth, float scale) {
-    if (!text || !*text) return 1;
-    float charW = 6.0f * scale;
-    int maxCharsPerLine = (int)(maxWidth / charW);
-    if (maxCharsPerLine < 10) maxCharsPerLine = 10;
-
-    int lines = 1;
-    int curLineLen = 0;
-    const char* ptr = text;
-
-    while (*ptr) {
-        /* find next word */
-        const char* wordStart = ptr;
-        while (*ptr && *ptr != ' ') ++ptr;
-        int wordLen = (int)(ptr - wordStart);
-
-        if (curLineLen == 0) {
-            curLineLen = wordLen;
-        } else if (curLineLen + 1 + wordLen <= maxCharsPerLine) {
-            curLineLen += 1 + wordLen;
-        } else {
-            ++lines;
-            curLineLen = wordLen;
-        }
-        while (*ptr == ' ') ++ptr;
-    }
-    return lines;
-}
 
 static void DrawWrappedTextClipped(float x, float y, float scale, const char* text, float maxWidth, float lineHeight, uint32_t color, float clipY0, float clipY1) {
     if (!text || !*text) return;
@@ -1043,33 +1175,40 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
         }
     }
 
+    /* Modal: pack chooser (only reachable when the game has >1 set) */
+    if (sCurrentTab == BOTTOM_TAB_OPTIONS && sShowAchPacksModal) {
+        HandleAchPacksTouch(x, y, isNewTap);
+        return;
+    }
+
     /* Modal: Achievements View Scrolling & Close */
     if (sCurrentTab == BOTTOM_TAB_OPTIONS && sShowAchievementsModal) {
-        uint32_t achCount = Port_RA_GetAchievementCount();
-        float totalContentH = 0.0f;
-        for (uint32_t i = 0; i < achCount; ++i) {
-            const RetroAchievementItem* ach = Port_RA_GetAchievement(i);
-            if (!ach) continue;
-            int lines = MeasureWrappedTextLines(ach->description, 230.0f, 1.0f);
-            float cardH = 24.0f + (float)lines * 9.0f + 6.0f;
-            if (cardH < 38.0f) cardH = 38.0f;
-            totalContentH += cardH + 6.0f;
-        }
-        float maxAchScroll = (totalContentH > 154.0f) ? (totalContentH - 154.0f) : 0.0f;
+        float maxAchScroll = AchievementsMaxScroll();
 
         if (isNewTap) {
             if (x >= 100 && x <= 220 && y >= 204 && y <= 230) {
-                sShowAchievementsModal = false;
+                AchievementsBack();
                 sLastTouchX = -1;
                 sLastTouchY = -1;
                 return;
             }
-            /* Direct scrollbar touch on right (x >= 300) */
-            if (x >= 300 && maxAchScroll > 0.0f) {
-                float trackY = (float)y - 48.0f;
-                if (trackY < 0.0f) trackY = 0.0f;
-                if (trackY > 124.0f) trackY = 124.0f;
-                sAchievementsScrollY = (trackY / 124.0f) * maxAchScroll;
+            if (x >= 224 && x <= 286 && y >= 204 && y <= 230) {
+                CycleAchievementsSort();
+                sLastTouchX = -1;
+                sLastTouchY = -1;
+                return;
+            }
+            if (x >= 288 && x <= 306 && y >= 204 && y <= 230) {
+                ToggleAchievementsSortDir();
+                sLastTouchX = -1;
+                sLastTouchY = -1;
+                return;
+            }
+            /* Scrollbar press: on the track only -- see sAchScrollbarDrag. */
+            if (x >= 300 && (float)y >= ACH_LIST_CLIP_Y0 && (float)y < ACH_LIST_CLIP_Y1 &&
+                maxAchScroll > 0.0f) {
+                sAchScrollbarDrag = true;
+                sAchievementsScrollY = AchScrollbarValue(y, maxAchScroll);
                 sIsTouchDragging = true;
             } else {
                 sTouchStartX = x;
@@ -1078,14 +1217,11 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
                 sLastTouchY = y;
                 sIsTouchDragging = false;
             }
-        } else if (x >= 300 && maxAchScroll > 0.0f) {
-            /* Dragging scrollbar directly */
-            float trackY = (float)y - 48.0f;
-            if (trackY < 0.0f) trackY = 0.0f;
-            if (trackY > 124.0f) trackY = 124.0f;
-            sAchievementsScrollY = (trackY / 124.0f) * maxAchScroll;
+        } else if (sAchScrollbarDrag && maxAchScroll > 0.0f) {
+            /* Dragging the scrollbar, latched on the press */
+            sAchievementsScrollY = AchScrollbarValue(y, maxAchScroll);
             sIsTouchDragging = true;
-        } else if (sLastTouchX >= 0 && sLastTouchY >= 0) {
+        } else if (!sAchScrollbarDrag && sLastTouchX >= 0 && sLastTouchY >= 0) {
             float dy = (float)(sLastTouchY - y);
             sAchievementsScrollY += dy;
             if (sAchievementsScrollY < 0.0f) sAchievementsScrollY = 0.0f;
@@ -1255,44 +1391,45 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
             return;
         }
 
+        if (sShowAchPacksModal) {
+            HandleAchPacksTouch(x, y, isNewTap);
+            return;
+        }
+
         if (sShowAchievementsModal) {
             /* Achievements modal scrolling */
-            uint32_t achCount = Port_RA_GetAchievementCount();
-            float totalContentH = 0.0f;
-            for (uint32_t i = 0; i < achCount; ++i) {
-                const RetroAchievementItem* ach = Port_RA_GetAchievement(i);
-                if (!ach) continue;
-                int lines = MeasureWrappedTextLines(ach->description, 230.0f, 1.0f);
-                float cardH = 24.0f + (float)lines * 9.0f + 6.0f;
-                if (cardH < 38.0f) cardH = 38.0f;
-                totalContentH += cardH + 6.0f;
-            }
-            float maxAchScroll = (totalContentH > 154.0f) ? (totalContentH - 154.0f) : 0.0f;
+            float maxAchScroll = AchievementsMaxScroll();
 
             if (isNewTap) {
                 if (x >= 100 && x <= 220 && y >= 204 && y <= 230) {
-                    sShowAchievementsModal = false;
+                    AchievementsBack();
                     sLastTouchX = -1; sLastTouchY = -1;
                     return;
                 }
-                if (x >= 300 && maxAchScroll > 0.0f) {
-                    float trackY = (float)y - 48.0f;
-                    if (trackY < 0.0f) trackY = 0.0f;
-                    if (trackY > 124.0f) trackY = 124.0f;
-                    sAchievementsScrollY = (trackY / 124.0f) * maxAchScroll;
+                if (x >= 224 && x <= 286 && y >= 204 && y <= 230) {
+                    CycleAchievementsSort();
+                    sLastTouchX = -1; sLastTouchY = -1;
+                    return;
+                }
+                if (x >= 288 && x <= 306 && y >= 204 && y <= 230) {
+                    ToggleAchievementsSortDir();
+                    sLastTouchX = -1; sLastTouchY = -1;
+                    return;
+                }
+                if (x >= 300 && (float)y >= ACH_LIST_CLIP_Y0 && (float)y < ACH_LIST_CLIP_Y1 &&
+                    maxAchScroll > 0.0f) {
+                    sAchScrollbarDrag = true;
+                    sAchievementsScrollY = AchScrollbarValue(y, maxAchScroll);
                     sIsTouchDragging = true;
                 } else {
                     sTouchStartX = x; sTouchStartY = y;
                     sLastTouchX = x; sLastTouchY = y;
                     sIsTouchDragging = false;
                 }
-            } else if (x >= 300 && maxAchScroll > 0.0f) {
-                float trackY = (float)y - 48.0f;
-                if (trackY < 0.0f) trackY = 0.0f;
-                if (trackY > 124.0f) trackY = 124.0f;
-                sAchievementsScrollY = (trackY / 124.0f) * maxAchScroll;
+            } else if (sAchScrollbarDrag && maxAchScroll > 0.0f) {
+                sAchievementsScrollY = AchScrollbarValue(y, maxAchScroll);
                 sIsTouchDragging = true;
-            } else if (sLastTouchX >= 0 && sLastTouchY >= 0) {
+            } else if (!sAchScrollbarDrag && sLastTouchX >= 0 && sLastTouchY >= 0) {
                 float dy = (float)(sLastTouchY - y);
                 sAchievementsScrollY += dy;
                 if (sAchievementsScrollY < 0.0f) sAchievementsScrollY = 0.0f;
@@ -1311,8 +1448,7 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
                 if (x >= 16 && x <= 156) {
                     sShowRASettingsModal = true;
                 } else if (x >= 164 && x <= 304) {
-                    sShowAchievementsModal = true;
-                    sAchievementsScrollY = 0.0f;
+                    OpenAchievementsUi();
                 }
             } else if (x >= 16 && x <= 304 && y >= 124 && y <= 156) {
                 sShowRemapModal = true;
@@ -1350,6 +1486,32 @@ void Port_BottomUI_TouchReleased(void) {
     }
 #endif
 
+    /* Pack chooser: a release that never became a drag opens that set. Row 0
+     * is the "all sets" entry, so subsets start at row 1. */
+    if (sCurrentTab == BOTTOM_TAB_OPTIONS && sShowAchPacksModal) {
+        if (!sIsTouchDragging && sTouchStartX >= 16 && sTouchStartX <= 300 &&
+            (float)sTouchStartY >= ACH_LIST_CLIP_Y0 && (float)sTouchStartY < ACH_LIST_CLIP_Y1) {
+            float local = (float)sTouchStartY - ACH_LIST_CLIP_Y0 + sAchPacksScrollY;
+            uint32_t row = (uint32_t)(local / ACH_PACK_CARD_H);
+            bool open = false;
+            if (row == 0u) {
+                Port_RA_SetListSubset(0);
+                open = true;
+            } else {
+                const RetroAchievementSubset* subset = Port_RA_GetSubset(row - 1u);
+                if (subset) {
+                    Port_RA_SetListSubset(subset->id);
+                    open = true;
+                }
+            }
+            if (open) {
+                sShowAchPacksModal = false;
+                sShowAchievementsModal = true;
+                sAchievementsScrollY = 0.0f;
+            }
+        }
+    }
+
     /* Handle tap selection on remap modal without accidental drag triggering */
     if (sCurrentTab == BOTTOM_TAB_OPTIONS && sShowRemapModal && sRemapSelectButtonIdx < 0) {
         if (!sIsTouchDragging && sTouchStartX >= 0 && sTouchStartY >= 0) {
@@ -1377,6 +1539,7 @@ void Port_BottomUI_TouchReleased(void) {
     sTouchStartY = -1;
     sIsDragging = false;
     sIsTouchDragging = false;
+    sAchScrollbarDrag = false;
 }
 
 /* Render Navigation Bar (3 or 4 tabs depending on debug visibility) */
@@ -1861,29 +2024,141 @@ static void RenderCollectiblesModal(int lang) {
     DrawTextCentered(160.0f, 209.0f, 1.0f, closeCollectiblesLabels[lang], C2D_Color32(255, 255, 255, 255));
 }
 
+static const char* AchSortLabel(int lang) {
+    /* [sort mode][lang]; langs 0-2 English, 3 DE, 4 FR, 5 IT, 6 ES. */
+    static const char* labels[RA_SORT_COUNT][7] = {
+        { "DEFAULT", "DEFAULT", "DEFAULT", "STANDARD", "DEFAUT", "PREDEFINITO", "POR DEFECTO" },
+        { "A-Z", "A-Z", "A-Z", "A-Z", "A-Z", "A-Z", "A-Z" },
+        { "POINTS", "POINTS", "POINTS", "PUNKTE", "POINTS", "PUNTI", "PUNTOS" },
+        { "RECENT", "RECENT", "RECENT", "NEUESTE", "RECENTS", "RECENTI", "RECIENTES" },
+    };
+    RetroAchievementSort sort = Port_RA_GetListSort();
+    if (sort >= RA_SORT_COUNT) sort = RA_SORT_DEFAULT;
+    return labels[sort][lang];
+}
+
+/* Pack chooser: one card per set plus an "all sets" entry at the top. */
+static void RenderAchPacksModal(int lang) {
+    const float mX = 10.0f;
+    const float mY = 26.0f;
+    const float mW = 300.0f;
+    const float mH = 206.0f;
+    const float clipY0 = ACH_LIST_CLIP_Y0;
+    const float clipY1 = ACH_LIST_CLIP_Y1;
+
+    C2D_DrawRectSolid(mX, mY, 0.85f, mW, mH, C2D_Color32(10, 14, 24, 250));
+    C2D_DrawRectSolid(mX, mY, 0.84f, mW, mH, C2D_Color32(40, 70, 120, 255));
+
+    static const char* titles[7] = {
+        "ACHIEVEMENT SETS", "ACHIEVEMENT SETS", "ACHIEVEMENT SETS",
+        "ERFOLGSSAETZE", "SERIES DE SUCCES", "SERIE DI OBIETTIVI", "SERIES DE LOGROS"
+    };
+    DrawText(20.0f, 32.0f, 1.0f, titles[lang], C2D_Color32(255, 215, 0, 255));
+
+    static const char* allLabels[7] = {
+        "ALL SETS", "ALL SETS", "ALL SETS",
+        "ALLE SAETZE", "TOUTES LES SERIES", "TUTTE LE SERIE", "TODAS LAS SERIES"
+    };
+
+    float maxScroll = AchPacksMaxScroll();
+    if (sAchPacksScrollY > maxScroll) sAchPacksScrollY = maxScroll;
+
+    uint32_t subsetCount = Port_RA_GetSubsetCount();
+    for (uint32_t row = 0; row <= subsetCount; ++row) {
+        float py = clipY0 - sAchPacksScrollY + (float)row * ACH_PACK_CARD_H;
+        if (py + ACH_PACK_CARD_H <= clipY0 || py >= clipY1) continue;
+
+        const char* name;
+        uint32_t total, unlocked, hardcore;
+        if (row == 0) {
+            name = allLabels[lang];
+            total = Port_RA_GetAchievementCount();
+            unlocked = Port_RA_GetUnlockedCount();
+            hardcore = Port_RA_GetHardcoreUnlockedCount();
+        } else {
+            const RetroAchievementSubset* subset = Port_RA_GetSubset(row - 1u);
+            if (!subset) continue;
+            name = subset->title;
+            total = subset->total;
+            unlocked = subset->unlocked;
+            hardcore = subset->hardcoreUnlocked;
+        }
+
+        bool complete = (total > 0u && unlocked >= total);
+        uint32_t borderCol = complete ? C2D_Color32(160, 130, 30, 255) : C2D_Color32(35, 45, 65, 255);
+        uint32_t bgCol = complete ? C2D_Color32(40, 36, 16, 255) : C2D_Color32(18, 22, 34, 255);
+        DrawRectClipped(16.0f, py, 0.88f, 284.0f, ACH_PACK_CARD_H - 4.0f, borderCol, clipY0, clipY1);
+        DrawRectClipped(17.0f, py + 1.0f, 0.89f, 282.0f, ACH_PACK_CARD_H - 6.0f, bgCol, clipY0, clipY1);
+
+        DrawTextMaxWClipped(24.0f, py + 6.0f, 1.0f, name,
+                            complete ? C2D_Color32(255, 225, 80, 255) : C2D_Color32(220, 235, 255, 255),
+                            clipY0, clipY1, 270.0f);
+
+        char progressBuf[48];
+        if (hardcore > 0u) {
+            snprintf(progressBuf, sizeof(progressBuf), "%u/%u (%u HC)",
+                     (unsigned)unlocked, (unsigned)total, (unsigned)hardcore);
+        } else {
+            snprintf(progressBuf, sizeof(progressBuf), "%u/%u", (unsigned)unlocked, (unsigned)total);
+        }
+        DrawTextMaxWClipped(24.0f, py + 20.0f, 1.0f, progressBuf,
+                            complete ? C2D_Color32(255, 215, 0, 255) : C2D_Color32(80, 255, 120, 255),
+                            clipY0, clipY1, 270.0f);
+    }
+
+    if (maxScroll > 0.0f) {
+        float trackH = (clipY1 - clipY0);
+        float thumbH = 30.0f;
+        float thumbY = clipY0 + (sAchPacksScrollY / maxScroll) * (trackH - thumbH);
+        C2D_DrawRectSolid(306.0f, clipY0, 0.92f, 2.0f, trackH, C2D_Color32(255, 35, 55, 255));
+        C2D_DrawRectSolid(306.0f, thumbY, 0.94f, 2.0f, thumbH, C2D_Color32(80, 160, 240, 255));
+    }
+
+    static const char* backLabels[7] = {
+        "BACK", "BACK", "BACK", "ZURUECK", "RETOUR", "INDIETRO", "VOLVER"
+    };
+    C2D_DrawRectSolid(100.0f, 204.0f, 0.96f, 120.0f, 20.0f, C2D_Color32(20, 70, 130, 255));
+    DrawTextCentered(160.0f, 209.0f, 1.0f, backLabels[lang], C2D_Color32(255, 255, 255, 255));
+}
+
 /* Render RetroAchievements List Modal with Touch Scrolling */
 static void RenderAchievementsModal(int lang) {
     const float mX = 10.0f;
     const float mY = 26.0f;
     const float mW = 300.0f;
     const float mH = 206.0f;
-    const float clipY0 = mY + 22.0f; /* 48.0f */
-    const float clipY1 = mY + mH - 30.0f; /* 202.0f */
+    const float clipY0 = ACH_LIST_CLIP_Y0;
+    const float clipY1 = ACH_LIST_CLIP_Y1;
 
     C2D_DrawRectSolid(mX, mY, 0.85f, mW, mH, C2D_Color32(10, 14, 24, 250));
     C2D_DrawRectSolid(mX, mY, 0.84f, mW, mH, C2D_Color32(40, 70, 120, 255));
 
+    /* Header: the set's name when the list is filtered to one, the generic
+     * title when it is showing everything. */
     const char* titles[7] = {
         "RETROACHIEVEMENTS LIST", "RETROACHIEVEMENTS LIST", "RETROACHIEVEMENTS LIST",
         "ERFOLGSLISTE", "LISTE DES SUCCES", "LISTA DEGLI OBIETTIVI", "LISTA DE LOGROS"
     };
-    DrawText(20.0f, 32.0f, 1.0f, titles[lang], C2D_Color32(255, 215, 0, 255));
+    const char* header = titles[lang];
+    uint32_t filter = Port_RA_GetListSubset();
+    if (filter != 0u) {
+        for (uint32_t i = 0; i < Port_RA_GetSubsetCount(); ++i) {
+            const RetroAchievementSubset* subset = Port_RA_GetSubset(i);
+            if (subset && subset->id == filter) { header = subset->title; break; }
+        }
+    }
+    DrawTextMaxWClipped(20.0f, 32.0f, 1.0f, header, C2D_Color32(255, 215, 0, 255), 26.0f, 46.0f, 130.0f);
 
-    uint32_t count = Port_RA_GetAchievementCount();
-    uint32_t unlocked = Port_RA_GetUnlockedCount();
-    uint32_t hardcore = Port_RA_GetHardcoreUnlockedCount();
-    uint32_t totalPts = Port_RA_GetTotalPoints();
-    uint32_t unlPts = Port_RA_GetUnlockedPoints();
+    /* Counters follow the filter, so a set's card and its list agree. */
+    uint32_t count = Port_RA_GetViewCount();
+    uint32_t unlocked = 0, hardcore = 0, totalPts = 0, unlPts = 0;
+    for (uint32_t i = 0; i < count; ++i) {
+        const RetroAchievementItem* ach = Port_RA_GetViewAchievement(i);
+        if (!ach) continue;
+        totalPts += ach->points;
+        if (ach->unlocked) { ++unlocked; unlPts += ach->points; }
+        if (ach->hardcoreUnlocked) ++hardcore;
+    }
 
     char summaryBuf[64];
     if (hardcore > 0) {
@@ -1891,16 +2166,14 @@ static void RenderAchievementsModal(int lang) {
     } else {
         snprintf(summaryBuf, sizeof(summaryBuf), "%u/%u (%u/%u PTS)", (unsigned)unlocked, (unsigned)count, (unsigned)unlPts, (unsigned)totalPts);
     }
-    DrawText(160.0f, 32.0f, 1.0f, summaryBuf, hardcore > 0 ? C2D_Color32(255, 215, 0, 255) : C2D_Color32(80, 255, 120, 255));
+    DrawText(156.0f, 32.0f, 1.0f, summaryBuf, hardcore > 0 ? C2D_Color32(255, 215, 0, 255) : C2D_Color32(80, 255, 120, 255));
 
-    float cardH = 34.0f;
-    float contentH = (float)count * cardH;
-    float viewH = (clipY1 - clipY0);
-    float maxAchScroll = (contentH > viewH) ? (contentH - viewH) : 0.0f;
+    float cardH = ACH_CARD_H;
+    float maxAchScroll = AchievementsMaxScroll();
     if (sAchievementsScrollY > maxAchScroll) sAchievementsScrollY = maxAchScroll;
 
     for (uint32_t i = 0; i < count; ++i) {
-        const RetroAchievementItem* ach = Port_RA_GetAchievement(i);
+        const RetroAchievementItem* ach = Port_RA_GetViewAchievement(i);
         if (!ach) continue;
 
         float py = clipY0 - sAchievementsScrollY + (float)i * cardH;
@@ -1912,17 +2185,17 @@ static void RenderAchievementsModal(int lang) {
         uint32_t borderCol = ach->hardcoreUnlocked ? C2D_Color32(160, 130, 30, 255) :
                              (ach->unlocked ? C2D_Color32(35, 120, 65, 255) : C2D_Color32(35, 45, 65, 255));
 
-        C2D_DrawRectSolid(16.0f, py, 0.88f, 284.0f, cardH - 2.0f, borderCol);
-        C2D_DrawRectSolid(17.0f, py + 1.0f, 0.89f, 282.0f, cardH - 4.0f, bgCol);
+        DrawRectClipped(16.0f, py, 0.88f, 284.0f, cardH - 2.0f, borderCol, clipY0, clipY1);
+        DrawRectClipped(17.0f, py + 1.0f, 0.89f, 282.0f, cardH - 4.0f, bgCol, clipY0, clipY1);
 
         /* 1. Badge / Icon on Left (X: 19, Y: py + 3, W: 24, H: 24) */
         float iconX = 19.0f;
         float iconY = py + 3.0f;
-        if (iconY >= clipY0 && iconY + 24.0f <= clipY1) {
+        if (iconY + 24.0f > clipY0 && iconY < clipY1) {
             uint32_t iconBorder = ach->hardcoreUnlocked ? C2D_Color32(255, 215, 0, 255) :
                                   (ach->unlocked ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(60, 75, 100, 255));
-            C2D_DrawRectSolid(iconX, iconY, 0.91f, 24.0f, 24.0f, iconBorder);
-            C2D_DrawRectSolid(iconX + 1.0f, iconY + 1.0f, 0.92f, 22.0f, 22.0f, C2D_Color32(12, 16, 24, 255));
+            DrawRectClipped(iconX, iconY, 0.91f, 24.0f, 24.0f, iconBorder, clipY0, clipY1);
+            DrawRectClipped(iconX + 1.0f, iconY + 1.0f, 0.92f, 22.0f, 22.0f, C2D_Color32(12, 16, 24, 255), clipY0, clipY1);
 
             const uint32_t* badgePixels = Port_RA_GetBadgePixels(ach->badgeName);
             if (badgePixels) {
@@ -1945,14 +2218,14 @@ static void RenderAchievementsModal(int lang) {
                 }
             } else {
                 if (ach->hardcoreUnlocked) {
-                    C2D_DrawRectSolid(iconX + 4.0f, iconY + 4.0f, 0.93f, 14.0f, 14.0f, C2D_Color32(255, 200, 50, 255));
-                    DrawText(iconX + 8.0f, iconY + 7.0f, 1.0f, "H", C2D_Color32(20, 20, 20, 255));
+                    DrawRectClipped(iconX + 4.0f, iconY + 4.0f, 0.93f, 14.0f, 14.0f, C2D_Color32(255, 200, 50, 255), clipY0, clipY1);
+                    DrawTextMaxWClipped(iconX + 8.0f, iconY + 7.0f, 1.0f, "H", C2D_Color32(20, 20, 20, 255), clipY0, clipY1, 8.0f);
                 } else if (ach->unlocked) {
-                    C2D_DrawRectSolid(iconX + 4.0f, iconY + 4.0f, 0.93f, 14.0f, 14.0f, C2D_Color32(60, 200, 100, 255));
-                    DrawText(iconX + 8.0f, iconY + 7.0f, 1.0f, "*", C2D_Color32(255, 255, 255, 255));
+                    DrawRectClipped(iconX + 4.0f, iconY + 4.0f, 0.93f, 14.0f, 14.0f, C2D_Color32(60, 200, 100, 255), clipY0, clipY1);
+                    DrawTextMaxWClipped(iconX + 8.0f, iconY + 7.0f, 1.0f, "*", C2D_Color32(255, 255, 255, 255), clipY0, clipY1, 8.0f);
                 } else {
-                    C2D_DrawRectSolid(iconX + 4.0f, iconY + 4.0f, 0.93f, 14.0f, 14.0f, C2D_Color32(40, 50, 70, 255));
-                    DrawText(iconX + 8.0f, iconY + 7.0f, 1.0f, "?", C2D_Color32(120, 140, 170, 255));
+                    DrawRectClipped(iconX + 4.0f, iconY + 4.0f, 0.93f, 14.0f, 14.0f, C2D_Color32(40, 50, 70, 255), clipY0, clipY1);
+                    DrawTextMaxWClipped(iconX + 8.0f, iconY + 7.0f, 1.0f, "?", C2D_Color32(120, 140, 170, 255), clipY0, clipY1, 8.0f);
                 }
             }
         }
@@ -1960,31 +2233,31 @@ static void RenderAchievementsModal(int lang) {
         /* 2. Graphical Status Indicator on Top-Right */
         float statX = 286.0f;
         float statY = py + 4.0f;
-        if (statY >= clipY0 && statY + 8.0f <= clipY1) {
+        if (statY + 8.0f > clipY0 && statY < clipY1) {
             if (ach->hardcoreUnlocked) {
                 /* Hardcore Mini Crown (Gold) */
                 uint32_t cGold = C2D_Color32(255, 215, 0, 255);
-                C2D_DrawRectSolid(statX, statY + 3.0f, 0.93f, 8.0f, 4.0f, cGold);
-                C2D_DrawRectSolid(statX + 1.0f, statY + 1.0f, 0.93f, 2.0f, 2.0f, cGold);
-                C2D_DrawRectSolid(statX + 3.0f, statY, 0.93f, 2.0f, 2.0f, cGold);
-                C2D_DrawRectSolid(statX + 5.0f, statY + 1.0f, 0.93f, 2.0f, 2.0f, cGold);
+                DrawRectClipped(statX, statY + 3.0f, 0.93f, 8.0f, 4.0f, cGold, clipY0, clipY1);
+                DrawRectClipped(statX + 1.0f, statY + 1.0f, 0.93f, 2.0f, 2.0f, cGold, clipY0, clipY1);
+                DrawRectClipped(statX + 3.0f, statY, 0.93f, 2.0f, 2.0f, cGold, clipY0, clipY1);
+                DrawRectClipped(statX + 5.0f, statY + 1.0f, 0.93f, 2.0f, 2.0f, cGold, clipY0, clipY1);
             } else if (ach->unlocked) {
                 /* Softcore Unlocked Mini Padlock Open / Checkmark (Green) */
                 uint32_t cGreen = C2D_Color32(80, 255, 120, 255);
                 /* Open shackle */
-                C2D_DrawRectSolid(statX + 3.0f, statY, 0.93f, 4.0f, 1.0f, cGreen);
-                C2D_DrawRectSolid(statX + 6.0f, statY + 1.0f, 0.93f, 1.0f, 2.0f, cGreen);
+                DrawRectClipped(statX + 3.0f, statY, 0.93f, 4.0f, 1.0f, cGreen, clipY0, clipY1);
+                DrawRectClipped(statX + 6.0f, statY + 1.0f, 0.93f, 1.0f, 2.0f, cGreen, clipY0, clipY1);
                 /* Body */
-                C2D_DrawRectSolid(statX + 1.0f, statY + 3.0f, 0.93f, 6.0f, 4.0f, cGreen);
+                DrawRectClipped(statX + 1.0f, statY + 3.0f, 0.93f, 6.0f, 4.0f, cGreen, clipY0, clipY1);
             } else {
                 /* Locked Mini Padlock Closed (Slate Gray) */
                 uint32_t cLock = C2D_Color32(110, 130, 160, 255);
                 /* Closed shackle */
-                C2D_DrawRectSolid(statX + 2.0f, statY, 0.93f, 4.0f, 1.0f, cLock);
-                C2D_DrawRectSolid(statX + 2.0f, statY + 1.0f, 0.93f, 1.0f, 2.0f, cLock);
-                C2D_DrawRectSolid(statX + 5.0f, statY + 1.0f, 0.93f, 1.0f, 2.0f, cLock);
+                DrawRectClipped(statX + 2.0f, statY, 0.93f, 4.0f, 1.0f, cLock, clipY0, clipY1);
+                DrawRectClipped(statX + 2.0f, statY + 1.0f, 0.93f, 1.0f, 2.0f, cLock, clipY0, clipY1);
+                DrawRectClipped(statX + 5.0f, statY + 1.0f, 0.93f, 1.0f, 2.0f, cLock, clipY0, clipY1);
                 /* Body */
-                C2D_DrawRectSolid(statX + 1.0f, statY + 3.0f, 0.93f, 6.0f, 4.0f, cLock);
+                DrawRectClipped(statX + 1.0f, statY + 3.0f, 0.93f, 6.0f, 4.0f, cLock, clipY0, clipY1);
             }
         }
 
@@ -2011,6 +2284,29 @@ static void RenderAchievementsModal(int lang) {
     };
     C2D_DrawRectSolid(100.0f, 204.0f, 0.96f, 120.0f, 20.0f, C2D_Color32(20, 70, 130, 255));
     DrawTextCentered(160.0f, 209.0f, 1.0f, backLabels[lang], C2D_Color32(255, 255, 255, 255));
+
+    /* Sort cycler plus its direction arrow, on the footer bar beside BACK so
+     * neither can collide with the scrolling card band above them. */
+    static const char* sortLabels[7] = {
+        "SORT", "SORT", "SORT", "SORT", "TRI", "ORDINA", "ORDEN"
+    };
+    C2D_DrawRectSolid(224.0f, 204.0f, 0.96f, 62.0f, 20.0f, C2D_Color32(24, 40, 70, 255));
+    DrawTextCentered(255.0f, 206.0f, 1.0f, sortLabels[lang], C2D_Color32(120, 150, 190, 255));
+    DrawTextCentered(255.0f, 214.0f, 1.0f, AchSortLabel(lang), C2D_Color32(150, 200, 255, 255));
+
+    /* Direction toggle: a chevron pointing down for descending (Z-A, most
+     * points first, newest first) and up for ascending. Drawn as stacked
+     * rows because this UI has no glyph for it. */
+    bool descending = Port_RA_GetListDescending();
+    C2D_DrawRectSolid(288.0f, 204.0f, 0.96f, 18.0f, 20.0f, C2D_Color32(24, 40, 70, 255));
+    for (int row = 0; row < 4; ++row) {
+        /* Widest row at the flat end, narrowest at the point. */
+        int step = descending ? (3 - row) : row;
+        float w = 2.0f + (float)step * 2.0f;
+        float px = 297.0f - w * 0.5f;
+        float py = 209.0f + (float)row * 2.0f;
+        C2D_DrawRectSolid(px, py, 0.97f, w, 2.0f, C2D_Color32(150, 200, 255, 255));
+    }
 }
 
 /* Render Confirmation Dialog (hardcore enable / restart game) */
@@ -3037,6 +3333,7 @@ static void RenderOptionsView(void) {
     /* Render active modal on top */
     if (sShowDisplayModal) RenderDisplayModal(lang);
     else if (sShowRASettingsModal) RenderRASettingsModal(lang);
+    else if (sShowAchPacksModal) RenderAchPacksModal(lang);
     else if (sShowAchievementsModal) RenderAchievementsModal(lang);
     else if (sShowRemapModal) RenderRemapModal(lang);
     else if (sShowConfirmModal) RenderConfirmModal(lang);
