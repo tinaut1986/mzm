@@ -24,8 +24,34 @@ typedef enum {
     RA_ACH_TYPE_MISSABLE
 } RetroAchievementType;
 
+/* Ordering the bottom-screen list can be put in. DEFAULT keeps whatever
+ * order rcheevos handed us (grouped by lock state), which is what the list
+ * showed before sorting existed. */
+typedef enum {
+    RA_SORT_DEFAULT = 0,
+    RA_SORT_TITLE,      /* A-Z */
+    RA_SORT_POINTS,     /* most valuable first */
+    RA_SORT_RECENT,     /* most recently unlocked first, still-locked last */
+    RA_SORT_COUNT
+} RetroAchievementSort;
+
+/* One achievement set: the game's core set, or one of its subsets ("packs").
+ * The server returns them all in one response and rcheevos activates every
+ * one, so a game can legitimately have several. Counts are over this set
+ * only. */
 typedef struct {
     uint32_t id;
+    char title[64];
+    uint32_t total;
+    uint32_t unlocked;
+    uint32_t hardcoreUnlocked;
+    uint32_t totalPoints;
+    uint32_t unlockedPoints;
+} RetroAchievementSubset;
+
+typedef struct {
+    uint32_t id;
+    uint32_t subsetId; /* which set this belongs to; matches RetroAchievementSubset::id */
     char title[64];
     char description[128];
     char badgeName[16]; /* e.g. "255208" */
@@ -71,6 +97,28 @@ uint32_t Port_RA_GetHardcoreUnlockedCount(void);
 uint32_t Port_RA_GetTotalPoints(void);
 uint32_t Port_RA_GetUnlockedPoints(void);
 const RetroAchievementItem* Port_RA_GetAchievement(uint32_t index);
+
+/* Subsets ("packs"). A game with a single set reports a count of 1 -- the UI
+ * uses that to skip the pack chooser entirely rather than showing a menu with
+ * one entry in it. */
+uint32_t Port_RA_GetSubsetCount(void);
+const RetroAchievementSubset* Port_RA_GetSubset(uint32_t index);
+
+/* The filtered + sorted view the list UI walks, kept separate from the raw
+ * array above so the counters, toasts and unlock bookkeeping keep seeing
+ * every achievement regardless of what the list is currently showing.
+ * Port_RA_SetListSubset(0) means "all sets". Both setters are cheap and
+ * idempotent; the view is rebuilt only when the filter or order changed. */
+void Port_RA_SetListSubset(uint32_t subsetId);
+uint32_t Port_RA_GetListSubset(void);
+void Port_RA_SetListSort(RetroAchievementSort sort);
+RetroAchievementSort Port_RA_GetListSort(void);
+/* Direction the current order runs in. Every order is defined ascending --
+ * A-Z, cheapest first, oldest unlock first -- and this flips it. */
+void Port_RA_SetListDescending(bool descending);
+bool Port_RA_GetListDescending(void);
+uint32_t Port_RA_GetViewCount(void);
+const RetroAchievementItem* Port_RA_GetViewAchievement(uint32_t index);
 const uint32_t* Port_RA_GetBadgePixels(const char* badgeName);
 
 /* Toast Notification Overlay Render (e.g. top or bottom screen) */

@@ -24,6 +24,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h> /* strcasecmp, for the title sort */
 
 #include "md5.h"
 
@@ -548,12 +549,138 @@ static void DrainServerResponses(void) {
 static RetroAchievementItem sAchievements[MAX_RA_ACHIEVEMENTS];
 static uint32_t sAchievementCount = 0;
 
+/* Subsets ("packs"). Most games have only their core set; the server can
+ * return several in one response and rcheevos activates every one. 8 is far
+ * above anything seen in practice -- overflowing it just stops recording new
+ * sets, and every achievement still lists and unlocks normally. */
+#define MAX_RA_SUBSETS 8
+static RetroAchievementSubset sSubsets[MAX_RA_SUBSETS];
+static uint32_t sSubsetCount = 0;
+
+/* Filtered + sorted index into sAchievements, walked by the list UI. Kept
+ * separate from the raw array so the counters, toasts and unlock bookkeeping
+ * keep seeing every achievement whatever the list is filtered to. */
+static uint16_t sView[MAX_RA_ACHIEVEMENTS];
+static uint32_t sViewCount = 0;
+static uint32_t sViewSubset = 0; /* 0 = every set */
+static RetroAchievementSort sViewSort = RA_SORT_DEFAULT;
+static bool sViewDescending = false;
+
 static RetroAchievementType TranslateType(uint8_t type) {
     switch (type) {
         case RC_CLIENT_ACHIEVEMENT_TYPE_PROGRESSION: return RA_ACH_TYPE_PROGRESSION;
         case RC_CLIENT_ACHIEVEMENT_TYPE_WIN:         return RA_ACH_TYPE_WIN_CONDITION;
         case RC_CLIENT_ACHIEVEMENT_TYPE_MISSABLE:    return RA_ACH_TYPE_MISSABLE;
         default:                                     return RA_ACH_TYPE_STANDARD;
+    }
+}
+
+/* Per-subset totals, derived from the snapshot above rather than from
+ * rc_client_get_user_subset_summary: the two would have to agree anyway, and
+ * computing them here keeps the pack list and the achievement list from ever
+ * disagreeing about what a set contains. */
+static void RefreshSubsetList(void) {
+    rc_client_subset_list_t* list;
+    uint32_t i;
+
+    sSubsetCount = 0;
+    if (!sClient) return;
+
+    list = rc_client_create_subset_list(sClient);
+    if (!list) return;
+
+    for (i = 0; i < list->num_subsets && sSubsetCount < MAX_RA_SUBSETS; ++i) {
+        const rc_client_subset_t* source = list->subsets[i];
+        RetroAchievementSubset* subset = &sSubsets[sSubsetCount++];
+        uint32_t a;
+
+        memset(subset, 0, sizeof(*subset));
+        subset->id = source->id;
+        snprintf(subset->title, sizeof(subset->title), "%s", source->title ? source->title : "");
+
+        for (a = 0; a < sAchievementCount; ++a) {
+            const RetroAchievementItem* item = &sAchievements[a];
+            if (item->subsetId != subset->id) continue;
+            ++subset->total;
+            subset->totalPoints += item->points;
+            if (item->unlocked) {
+                ++subset->unlocked;
+                subset->unlockedPoints += item->points;
+            }
+            if (item->hardcoreUnlocked) ++subset->hardcoreUnlocked;
+        }
+    }
+
+    rc_client_destroy_subset_list(list);
+}
+
+/* qsort comparators over sView. All three are written ASCENDING and consult
+ * sViewDescending themselves rather than having RebuildView reverse the
+ * finished array: reversing wholesale would also flip the tiebreak (making
+ * equal entries shuffle rather than hold still) and, for the recent order,
+ * would drag every still-locked achievement to the top.
+ *
+ * The tiebreak is the entry's position in sAchievements, and it always runs
+ * ascending -- qsort is not stable, so without it two equal-points entries
+ * could swap places between rebuilds and make the list look like it shuffles
+ * itself. */
+static int ApplyDir(int cmp) { return sViewDescending ? -cmp : cmp; }
+
+static int CompareByTitle(const void* a, const void* b) {
+    uint16_t ia = *(const uint16_t*)a, ib = *(const uint16_t*)b;
+    int cmp = strcasecmp(sAchievements[ia].title, sAchievements[ib].title);
+    if (cmp != 0) return ApplyDir(cmp);
+    return (int)ia - (int)ib;
+}
+
+static int CompareByPoints(const void* a, const void* b) {
+    uint16_t ia = *(const uint16_t*)a, ib = *(const uint16_t*)b;
+    uint32_t pa = sAchievements[ia].points, pb = sAchievements[ib].points;
+    if (pa != pb) return ApplyDir((pa < pb) ? -1 : 1);
+    return (int)ia - (int)ib;
+}
+
+/* By unlock time. The unlocked-before-locked split is NOT reversed by the
+ * direction toggle: a still-locked achievement has no unlock time at all, so
+ * flipping it would just pile every locked entry on top and bury the thing
+ * the order exists to show. Only the time ordering within the unlocked ones
+ * flips. */
+static int CompareByRecent(const void* a, const void* b) {
+    uint16_t ia = *(const uint16_t*)a, ib = *(const uint16_t*)b;
+    const RetroAchievementItem* x = &sAchievements[ia];
+    const RetroAchievementItem* y = &sAchievements[ib];
+    if (x->unlocked != y->unlocked) return x->unlocked ? -1 : 1;
+    if (x->unlockTime != y->unlockTime) return ApplyDir((x->unlockTime < y->unlockTime) ? -1 : 1);
+    return (int)ia - (int)ib;
+}
+
+/* Applies sViewSubset + sViewSort + sViewDescending to sAchievements. A few
+ * hundred entries at most, so it just redoes the whole thing whenever any of
+ * them changes. */
+static void RebuildView(void) {
+    uint32_t i;
+
+    sViewCount = 0;
+    for (i = 0; i < sAchievementCount; ++i) {
+        if (sViewSubset != 0 && sAchievements[i].subsetId != sViewSubset) continue;
+        sView[sViewCount++] = (uint16_t)i;
+    }
+
+    switch (sViewSort) {
+        case RA_SORT_TITLE:  qsort(sView, sViewCount, sizeof(sView[0]), CompareByTitle);  break;
+        case RA_SORT_POINTS: qsort(sView, sViewCount, sizeof(sView[0]), CompareByPoints); break;
+        case RA_SORT_RECENT: qsort(sView, sViewCount, sizeof(sView[0]), CompareByRecent); break;
+        default:
+            /* RA_SORT_DEFAULT keeps rcheevos' own grouping, so there is no
+             * comparator to flip -- descending is the reversed array. */
+            if (sViewDescending) {
+                for (i = 0; i < sViewCount / 2u; ++i) {
+                    uint16_t tmp = sView[i];
+                    sView[i] = sView[sViewCount - 1u - i];
+                    sView[sViewCount - 1u - i] = tmp;
+                }
+            }
+            break;
     }
 }
 
@@ -596,6 +723,7 @@ static void RefreshAchievementList(void) {
             item = &sAchievements[sAchievementCount++];
 
             item->id = source->id;
+            item->subsetId = group->subset_id;
             snprintf(item->title, sizeof(item->title), "%s", source->title ? source->title : "");
             snprintf(item->description, sizeof(item->description), "%s",
                      source->description ? source->description : "");
@@ -613,6 +741,9 @@ static void RefreshAchievementList(void) {
     }
 
     rc_client_destroy_achievement_list(list);
+
+    RefreshSubsetList();
+    RebuildView();
 }
 
 /* ========================================================================= */
@@ -1124,6 +1255,42 @@ uint32_t Port_RA_GetUnlockedPoints(void) {
 
 const RetroAchievementItem* Port_RA_GetAchievement(uint32_t index) {
     return (index < sAchievementCount) ? &sAchievements[index] : NULL;
+}
+
+uint32_t Port_RA_GetSubsetCount(void) { return sSubsetCount; }
+
+const RetroAchievementSubset* Port_RA_GetSubset(uint32_t index) {
+    return (index < sSubsetCount) ? &sSubsets[index] : NULL;
+}
+
+void Port_RA_SetListSubset(uint32_t subsetId) {
+    if (sViewSubset == subsetId) return;
+    sViewSubset = subsetId;
+    RebuildView();
+}
+
+uint32_t Port_RA_GetListSubset(void) { return sViewSubset; }
+
+void Port_RA_SetListSort(RetroAchievementSort sort) {
+    if (sort >= RA_SORT_COUNT || sViewSort == sort) return;
+    sViewSort = sort;
+    RebuildView();
+}
+
+RetroAchievementSort Port_RA_GetListSort(void) { return sViewSort; }
+
+void Port_RA_SetListDescending(bool descending) {
+    if (sViewDescending == descending) return;
+    sViewDescending = descending;
+    RebuildView();
+}
+
+bool Port_RA_GetListDescending(void) { return sViewDescending; }
+
+uint32_t Port_RA_GetViewCount(void) { return sViewCount; }
+
+const RetroAchievementItem* Port_RA_GetViewAchievement(uint32_t index) {
+    return (index < sViewCount) ? &sAchievements[sView[index]] : NULL;
 }
 
 /* Toast Graphic & Text Drawing */
