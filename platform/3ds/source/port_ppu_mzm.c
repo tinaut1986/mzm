@@ -125,12 +125,19 @@ static void UpdateFpsWindow(void) {
 #include <stdio.h>
 
 static bool sShowFps = true;
-static int sAspectRatio = 0; /* 0 = WIDE, 1 = ORIGINAL, 2 = STRETCH */
-static int sDisplayStyle = 0; /* 0 = PIXEL PERFECT, 1 = SCALED, 2 = BLUR */
+static int sAspectRatio = 1; /* 1 = ORIGINAL, 2 = STRETCH (0 = WIDE retired -- not wired up yet) */
+static int sDisplayStyle = 0; /* 0 = PIXEL PERFECT, 1 = SCALED (2 = BLUR retired -- no effect on the GPU path) */
 static const char* const sConfigPath = "mzm3ds.ini";
 
 static bool sAutoHideHud = true;
 static bool sHideSpoilers = true;
+
+/* GBA-look top-screen effects, 0 = OFF, 1 = LOW, 2 = MEDIUM, 3 = HIGH.
+ * Implemented in port_gba_screen_fx.c and applied by platform_gpu_3ds.c;
+ * every effect at 0 is a full bypass. */
+static int sGbaFxGrade = 0;
+static int sGbaFxGrid = 0;
+static int sGbaFxVignette = 0;
 
 /* Button Actions:
  * 0 = NINGUNA (NONE)
@@ -189,11 +196,12 @@ void Port_Config_Save(void) {
     fprintf(file, "# Metroid Zero Mission 3DS runtime settings\n");
     fprintf(file, "aspect_ratio=%d\n", sAspectRatio);
     fprintf(file, "display_style=%d\n", sDisplayStyle);
-    extern int PortStereoDepth_GetSpread(void);
-    fprintf(file, "stereo_depth=%d\n", PortStereoDepth_GetSpread());
     fprintf(file, "show_fps=%u\n", sShowFps ? 1u : 0u);
     fprintf(file, "auto_hide_hud=%u\n", sAutoHideHud ? 1u : 0u);
     fprintf(file, "hide_spoilers=%u\n", sHideSpoilers ? 1u : 0u);
+    fprintf(file, "gba_fx_grade=%d\n", sGbaFxGrade);
+    fprintf(file, "gba_fx_grid=%d\n", sGbaFxGrid);
+    fprintf(file, "gba_fx_vignette=%d\n", sGbaFxVignette);
     fprintf(file, "btn_map_a=%d\n", sBtnRemap[0]);
     fprintf(file, "btn_map_b=%d\n", sBtnRemap[1]);
     fprintf(file, "btn_map_x=%d\n", sBtnRemap[2]);
@@ -259,18 +267,26 @@ void Port_Config_Load(void) {
                 SramWrite_Language();
             }
         } else if (strcmp(key, "aspect_ratio") == 0) {
-            if (val >= 0 && val < 3) sAspectRatio = val;
+            /* WIDE (0) retired -- clamp any old value into ORIGINAL/STRETCH. */
+            if (val >= 1 && val <= 2) sAspectRatio = val;
         } else if (strcmp(key, "display_style") == 0) {
-            if (val >= 0 && val < 3) sDisplayStyle = val;
+            /* BLUR (2) retired -- clamp any old value into PIXEL PERFECT/SCALED. */
+            if (val >= 0 && val <= 1) sDisplayStyle = val;
         } else if (strcmp(key, "stereo_depth") == 0 || strcmp(key, "stereo_spread") == 0) {
-            extern void PortStereoDepth_SetSpread(int);
-            if (val >= 0 && val < 3) PortStereoDepth_SetSpread(val);
+            /* 3D depth is fixed at BOLD now (the slider covers the rest) --
+             * accept and ignore the key for backward compatibility. */
         } else if (strcmp(key, "show_fps") == 0) {
             sShowFps = (val != 0);
         } else if (strcmp(key, "auto_hide_hud") == 0) {
             sAutoHideHud = (val != 0);
         } else if (strcmp(key, "hide_spoilers") == 0) {
             sHideSpoilers = (val != 0);
+        } else if (strcmp(key, "gba_fx_grade") == 0) {
+            if (val >= 0 && val < 4) sGbaFxGrade = val;
+        } else if (strcmp(key, "gba_fx_grid") == 0) {
+            if (val >= 0 && val < 4) sGbaFxGrid = val;
+        } else if (strcmp(key, "gba_fx_vignette") == 0) {
+            if (val >= 0 && val < 4) sGbaFxVignette = val;
         } else if (strcmp(key, "btn_map_a") == 0) {
             if (val >= 0 && val < BTN_ACTION_COUNT) sBtnRemap[0] = val;
         } else if (strcmp(key, "btn_map_b") == 0) {
@@ -320,6 +336,17 @@ void Port_Config_SetAutoHideHud(bool autoHide) { sAutoHideHud = autoHide; Port_C
 
 bool Port_Config_GetHideSpoilers(void) { return sHideSpoilers; }
 void Port_Config_SetHideSpoilers(bool hide) { sHideSpoilers = hide; Port_Config_Save(); }
+
+/* GBA screen-effect levels (0..3). Setters clamp and persist, matching the
+ * Get/Set pattern of the toggles above. */
+int Port_Config_GetGbaFxGrade(void) { return sGbaFxGrade; }
+void Port_Config_SetGbaFxGrade(int level) { if (level >= 0 && level < 4) { sGbaFxGrade = level; Port_Config_Save(); } }
+
+int Port_Config_GetGbaFxGrid(void) { return sGbaFxGrid; }
+void Port_Config_SetGbaFxGrid(int level) { if (level >= 0 && level < 4) { sGbaFxGrid = level; Port_Config_Save(); } }
+
+int Port_Config_GetGbaFxVignette(void) { return sGbaFxVignette; }
+void Port_Config_SetGbaFxVignette(int level) { if (level >= 0 && level < 4) { sGbaFxVignette = level; Port_Config_Save(); } }
 
 int Port_Config_GetBtnRemap(int btn) {
     if (btn >= 0 && btn < 10) return sBtnRemap[btn];
@@ -501,7 +528,8 @@ const char* Port_Config_Get3DSAspectRatioName(void) {
     return (sAspectRatio >= 0 && sAspectRatio < 3) ? names[sAspectRatio] : "WIDE";
 }
 void Port_Config_Cycle3DSAspectRatio(void) {
-    sAspectRatio = (sAspectRatio + 1) % 3;
+    /* Toggle ORIGINAL (1) <-> STRETCH (2); WIDE (0) is retired. */
+    sAspectRatio = (sAspectRatio >= 2) ? 1 : 2;
     Port_Config_Save();
 }
 
@@ -511,7 +539,8 @@ const char* Port_Config_Get3DSDisplayStyleName(void) {
     return (sDisplayStyle >= 0 && sDisplayStyle < 3) ? names[sDisplayStyle] : "PIXEL PERFECT";
 }
 void Port_Config_Cycle3DSDisplayStyle(void) {
-    sDisplayStyle = (sDisplayStyle + 1) % 3;
+    /* Toggle PIXEL PERFECT (0) <-> SCALED (1); BLUR (2) is retired. */
+    sDisplayStyle = (sDisplayStyle + 1) % 2;
     Port_Config_Save();
 }
 
@@ -780,20 +809,22 @@ void Port_PPU_RenderFrame(void) {
      * compositing on the PICA200. Adding all three CPU-side numbers doesn't
      * give total frame time (they overlap across threads); compare each one
      * individually against the 16.67ms/frame budget for 60 FPS. */
-    if ((sPresentFrameCount % 120u) == 0u) {
+    if ((sPresentFrameCount % 60u) == 0u) {
         VirtuaPPUMode13DSStats mode1Stats;
         virtuappu_mode1_get_3ds_stats(&mode1Stats);
         PlatformGpu3DSStats gpuStats;
         PlatformGpu3DS_GetStats(&gpuStats);
-        char msg[220];
+        extern unsigned PortGbaScreenFx_DebugLastSubmitUs(void);
+        char msg[240];
         __builtin_snprintf(msg, sizeof(msg),
-            "PERF[%u]: fps=%.1f main=%.2fms w0=%.2fms w1=%.2fms(workers=%lu) gpuDraw=%.2fms gpuProc=%.2fms",
+            "PERF[%u]: fps=%.1f main=%.2fms w0=%.2fms w1=%.2fms(workers=%lu) gpuDraw=%.2fms gpuProc=%.2fms gbaFxSubmit=%uus",
             sPresentFrameCount, sCurrentFps,
             (double)mode1Stats.mainLastTicks / PORT_PPU_PERF_CPU_TICKS_PER_MSEC,
             (double)mode1Stats.workerLastTicks[0] / PORT_PPU_PERF_CPU_TICKS_PER_MSEC,
             (double)mode1Stats.workerLastTicks[1] / PORT_PPU_PERF_CPU_TICKS_PER_MSEC,
             (unsigned long)mode1Stats.workerCount,
-            (double)gpuStats.drawingTime, (double)gpuStats.processingTime);
+            (double)gpuStats.drawingTime, (double)gpuStats.processingTime,
+            PortGbaScreenFx_DebugLastSubmitUs());
         extern void Port_DebugLog_Perf(const char* msg);
         Port_DebugLog_Perf(msg);
     }

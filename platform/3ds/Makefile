@@ -106,7 +106,8 @@ SRCS_3DS := \
 	$(CURDIR)/source/port_retroachievements_3ds.c \
 	$(CURDIR)/source/port_ra_iwram_map.c \
 	$(CURDIR)/source/port_ra_badges_data.c \
-	$(CURDIR)/source/port_haze_3ds.c
+	$(CURDIR)/source/port_haze_3ds.c \
+	$(CURDIR)/source/port_gba_screen_fx.c
 
 # rcheevos: the official RetroAchievements library, vendored under
 # third_party/rcheevos (see its VERSION.txt for the commit, and for which of

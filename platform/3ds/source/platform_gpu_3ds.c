@@ -1,5 +1,6 @@
 #include "platform_gpu_3ds.h"
 #include "port_debug_tools.h" /* PORT_DEBUG_TOOLS_ACTIVE */
+#include "port_gba_screen_fx.h"
 
 #include <3ds.h>
 #include <citro2d.h>
@@ -373,6 +374,7 @@ bool PlatformGpu3DS_Init(bool old3dsProfile) {
         Port_DebugLog_Gpu(msg);
     }
 #endif
+    PortGbaScreenFx_Init(); /* non-fatal: only disables the ghost effect on failure */
     sReady = true;
     return true;
 
@@ -513,6 +515,29 @@ bool PlatformGpu3DS_BeginTopSceneGpu(void) {
 C3D_RenderTarget* PlatformGpu3DS_GetTopLeftTarget(void) { return sTopTarget; }
 C3D_RenderTarget* PlatformGpu3DS_GetTopRightTarget(void) { return sTopRightTarget; }
 
+/* Where the emulated GBA image actually lands on the 400x240 top screen for
+ * the current display style / aspect -- the same rectangle DrawTopImageStereo
+ * and the GPU tile renderer draw into. Screen-space effects (port_gba_screen_fx)
+ * need this so they only touch the picture, not the letterbox. Native GBA
+ * width is fixed at 240 (TOP_NATIVE_W), matching both present paths. */
+void PlatformGpu3DS_GetTopImageRect(int* outX, int* outY, int* outW, int* outH) {
+    int w, h;
+    if (Port_Config_Get3DSDisplayStyle() == TOP_DISPLAY_PIXEL_PERFECT) {
+        w = 240; h = 160;
+    } else {
+        h = 240;
+        switch (Port_Config_Get3DSAspectRatio()) {
+            case TOP_ASPECT_STRETCH: w = 400; break;
+            case TOP_ASPECT_ORIGINAL: w = 360; break;
+            default: w = 360; break;
+        }
+    }
+    if (outX) *outX = (400 - w) / 2;
+    if (outY) *outY = (240 - h) / 2;
+    if (outW) *outW = w;
+    if (outH) *outH = h;
+}
+
 bool PlatformGpu3DS_EndBottom(const uint32_t* pixels, bool changed) {
     if (!sFrameActive || !pixels) return false;
 #ifdef PORT_DEBUG_TOOLS_ACTIVE
@@ -549,6 +574,17 @@ bool PlatformGpu3DS_EndBottom(const uint32_t* pixels, bool changed) {
      * immediately after any interaction. The persistent render target is
      * scanned out unchanged on the frames in between. */
     (void)changed;
+
+    /* GBA-look effects: a self-contained pass over the finished top target(s),
+     * here because both present paths (CPU scanline via DrawTopImageStereo,
+     * PICA tiler via Port_GpuRenderer_RenderFrame) converge on EndBottom with
+     * the frame still open and the bottom scene not yet bound. */
+    if (PortGbaScreenFx_Active()) {
+        C3D_RenderTarget* fxRight =
+            (PlatformGpu3DS_Get3DSlider() > 0.01f) ? sTopRightTarget : NULL;
+        PortGbaScreenFx_PostProcessTop(sTopTarget, fxRight);
+    }
+
     extern void Port_BottomUI_FrameTick(void);
     extern bool Port_BottomUI_WantsRedraw(void);
     Port_BottomUI_FrameTick();
@@ -644,6 +680,7 @@ void PlatformGpu3DS_Shutdown(void) {
         C3D_FrameEnd(GX_CMDLIST_FLUSH);
     }
     if (!aptShouldClose()) C3D_FrameSync();
+    PortGbaScreenFx_Shutdown();
     C3D_RenderTargetDelete(sBottomTarget);
     C3D_RenderTargetDelete(sTopTarget);
     C3D_TexDelete(&sBottomTexture);

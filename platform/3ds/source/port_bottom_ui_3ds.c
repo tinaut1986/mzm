@@ -184,10 +184,6 @@ extern void Port_GpuRenderer_DumpAtlas(const char* ppmPath, const char* csvPath)
 extern bool Port_GpuRenderer_IsActive(void);
 extern void Port_GpuRenderer_SetActive(bool active);
 extern void Port_DebugLog(const char* msg);
-extern void PortStereoDepth_SetSpread(int spread);
-extern int PortStereoDepth_GetSpread(void);
-extern const char* PortStereoDepth_SpreadName(int spread);
-extern const char* PortStereoDepth_SpreadNameLang(int spread, int lang);
 extern bool Port_DebugLog_IsEnabled(void);
 extern void Port_DebugLog_SetBuffered(bool buffered);
 extern bool Port_DebugLog_IsBuffered(void);
@@ -272,6 +268,14 @@ extern void Port_Config_ResetButtonMappingDefault(void);
 extern const char* Port_Config_GetActionName(int action, int lang);
 extern int Port_Config_GetCstickMode(void);
 extern void Port_Config_SetCstickMode(int mode);
+
+/* GBA-look top-screen effects: level 0..3 (OFF/LOW/MEDIUM/HIGH). */
+extern int Port_Config_GetGbaFxGrade(void);
+extern void Port_Config_SetGbaFxGrade(int level);
+extern int Port_Config_GetGbaFxGrid(void);
+extern void Port_Config_SetGbaFxGrid(int level);
+extern int Port_Config_GetGbaFxVignette(void);
+extern void Port_Config_SetGbaFxVignette(int level);
 
 /* RetroAchievements Helpers */
 #include "port_retroachievements_3ds.h"
@@ -458,6 +462,7 @@ static void Port_Config_CycleLanguage(void);
 static const char* GetAspectRatioDisplayName(int lang);
 static const char* GetDisplayStyleDisplayName(int lang);
 static const char* GetFpsOverlayDisplayName(int lang);
+static int DispCellHit(int x, int y);
 
 /* Cached buffer for viewing other areas */
 static uint16_t sOtherAreaTiles[32 * 32];
@@ -1366,26 +1371,26 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
 
         if (sShowDisplayModal) {
             if (isNewTap) {
-                if (x >= 100 && x <= 220 && y >= 204 && y <= 230) {
+                if (x >= 100 && x <= 220 && y >= 206 && y <= 230) {
                     sShowDisplayModal = false;
-                } else if (x >= 10 && x <= 308) {
-                    if (y >= 46 && y <= 67) {
-                        Port_Config_CycleLanguage();
-                    } else if (y >= 69 && y <= 90) {
-                        Port_Config_Cycle3DSAspectRatio();
-                    } else if (y >= 92 && y <= 113) {
-                        Port_Config_Cycle3DSDisplayStyle();
-                    } else if (y >= 115 && y <= 136) {
-                        int next = (PortStereoDepth_GetSpread() + 1) % 3;
-                        PortStereoDepth_SetSpread(next);
-                        Port_Config_Save();
-                    } else if (y >= 138 && y <= 159) {
-                        Port_Config_SetShowFps(!Port_Config_GetShowFps());
-                    } else if (y >= 161 && y <= 182) {
-                        Port_Config_SetAutoHideHud(!Port_Config_GetAutoHideHud());
-                    } else if (y >= 184 && y <= 204) {
-                        Port_Config_SetHideSpoilers(!Port_Config_GetHideSpoilers());
-                    }
+                    return;
+                }
+                /* Two-column grid: 0..2 cycle a display setting, 3..5 toggle,
+                 * 6..8 cycle a GBA effect through OFF/LOW/MED/HIGH. */
+                switch (DispCellHit(x, y)) {
+                    case 0: Port_Config_CycleLanguage(); break;
+                    case 1:
+                        /* Aspect is locked while PIXEL PERFECT is selected. */
+                        if (Port_Config_Get3DSDisplayStyle() != 0) Port_Config_Cycle3DSAspectRatio();
+                        break;
+                    case 2: Port_Config_Cycle3DSDisplayStyle(); break;
+                    case 3: Port_Config_SetShowFps(!Port_Config_GetShowFps()); break;
+                    case 4: Port_Config_SetAutoHideHud(!Port_Config_GetAutoHideHud()); break;
+                    case 5: Port_Config_SetHideSpoilers(!Port_Config_GetHideSpoilers()); break;
+                    case 6: Port_Config_SetGbaFxGrade((Port_Config_GetGbaFxGrade() + 1) % 4); break;
+                    case 7: Port_Config_SetGbaFxGrid((Port_Config_GetGbaFxGrid() + 1) % 4); break;
+                    case 8: Port_Config_SetGbaFxVignette((Port_Config_GetGbaFxVignette() + 1) % 4); break;
+                    default: break;
                 }
             }
             return;
@@ -1849,10 +1854,6 @@ static const char* GetDisplayStyleDisplayName(int lang) {
                 default: return "SCALED";
             }
     }
-}
-
-static const char* GetStereoDepthDisplayName(int lang) {
-    return PortStereoDepth_SpreadNameLang(PortStereoDepth_GetSpread(), lang);
 }
 
 static const char* GetFpsOverlayDisplayName(int lang) {
@@ -2363,91 +2364,111 @@ static void RenderConfirmModal(int lang) {
     DrawTextCentered(225.0f, 149.0f, 1.0f, cancelModalLabels[lang], C2D_Color32(255, 255, 255, 255));
 }
 
-/* Render Button Remap Modal */
+/* Two-column grid for the DISPLAY modal. Same geometry as the debug-tools
+ * grid (DBGTOOL_*), but defined here because that block only compiles in
+ * PORT_DEBUG_TOOLS_ACTIVE builds and this modal also ships in release. */
+#define DISP_COL_L_X    16
+#define DISP_COL_R_X    164
+#define DISP_COL_W      140
+#define DISP_GRID_Y0    46
+#define DISP_GRID_PITCH 26
+#define DISP_CELL_H     24
+#define DISP_GRID_ROWS  6
+#define DISP_CELL_COUNT 9
+
+/* One label line plus a value/state line under it, tinted by `valueCol`. */
+static void DispCell(int index, const char* label, const char* value, uint32_t valueCol) {
+    float x = (index & 1) ? (float)DISP_COL_R_X : (float)DISP_COL_L_X;
+    float y = (float)(DISP_GRID_Y0 + (index >> 1) * DISP_GRID_PITCH);
+    C2D_DrawRectSolid(x, y, 0.9f, (float)DISP_COL_W, (float)DISP_CELL_H, C2D_Color32(24, 32, 50, 255));
+    C2D_DrawRectSolid(x, y, 0.91f, (float)DISP_COL_W, 1.0f, C2D_Color32(50, 80, 130, 255));
+    DrawTextMaxWClipped(x + 6.0f, y + 2.0f, 1.0f, label, C2D_Color32(255, 255, 255, 255),
+                        0.0f, 240.0f, (float)DISP_COL_W - 12.0f);
+    if (value) DrawTextMaxWClipped(x + 6.0f, y + 13.0f, 1.0f, value, valueCol,
+                                   0.0f, 240.0f, (float)DISP_COL_W - 12.0f);
+}
+
+/* Index of the grid cell a tap landed on, or -1. */
+static int DispCellHit(int x, int y) {
+    int col;
+    if (x >= DISP_COL_L_X && x <= DISP_COL_L_X + DISP_COL_W) col = 0;
+    else if (x >= DISP_COL_R_X && x <= DISP_COL_R_X + DISP_COL_W) col = 1;
+    else return -1;
+    for (int r = 0; r < DISP_GRID_ROWS; ++r) {
+        int cy = DISP_GRID_Y0 + r * DISP_GRID_PITCH;
+        if (y < cy || y > cy + DISP_CELL_H) continue;
+        int idx = r * 2 + col;
+        return (idx < DISP_CELL_COUNT) ? idx : -1;
+    }
+    return -1;
+}
+
+/* OFF / LOW / MEDIUM / HIGH label for a GBA-effect level (0..3). */
+static const char* GbaFxLevelName(int lang, int level) {
+    switch (level) {
+        case 1:  return (lang == 6) ? "BAJO" : "LOW";
+        case 2:  return (lang == 6) ? "MEDIO" : "MED";
+        case 3:  return (lang == 6) ? "ALTO" : "HIGH";
+        default: return (lang == 6) ? "NO" : "OFF";
+    }
+}
+
+/* Render Display Settings Modal -- two-column grid so the GBA-look effect
+ * toggles fit alongside the existing rows without scrolling. */
 static void RenderDisplayModal(int lang) {
     C2D_DrawRectSolid(10.0f, 26.0f, 0.85f, 300.0f, 206.0f, C2D_Color32(10, 14, 24, 250));
     C2D_DrawRectSolid(10.0f, 26.0f, 0.84f, 300.0f, 206.0f, C2D_Color32(40, 70, 120, 255));
 
-    const char* displayTitles[7] = {
+    static const char* const titles[7] = {
         "DISPLAY SETTINGS", "DISPLAY SETTINGS", "DISPLAY SETTINGS",
         "BILDSCHIRMEINSTELLUNGEN", "PARAMETRES D'AFFICHAGE", "IMPOSTAZIONI SCHERMO", "CONFIGURACION DE PANTALLA"
     };
-    DrawText(20.0f, 30.0f, 1.0f, displayTitles[lang], C2D_Color32(255, 215, 0, 255));
+    DrawText(20.0f, 30.0f, 1.0f, titles[lang], C2D_Color32(255, 215, 0, 255));
 
-    /* Language row (Y: 46 to 67) */
-    C2D_DrawRectSolid(16.0f, 46.0f, 0.9f, 288.0f, 21.0f, C2D_Color32(24, 32, 50, 255));
-    const char* langLabels[7] = {
-        "LANGUAGE:", "LANGUAGE:", "LANGUAGE:",
-        "SPRACHE:", "LANGUE:", "LINGUA:", "IDIOMA:"
-    };
-    DrawText(24.0f, 50.0f, 1.0f, langLabels[lang], C2D_Color32(255, 255, 255, 255));
-    DrawText(160.0f, 50.0f, 1.0f, Port_Config_GetLanguageDisplayName(lang), C2D_Color32(255, 215, 0, 255));
+    const uint32_t valCol  = C2D_Color32(255, 215, 0, 255);
+    const uint32_t onCol   = C2D_Color32(80, 255, 120, 255);
+    const uint32_t offCol  = C2D_Color32(255, 100, 100, 255);
+    const uint32_t idleCol = C2D_Color32(150, 150, 150, 255);
 
-    /* Aspect Ratio row (Y: 69 to 90) */
-    C2D_DrawRectSolid(16.0f, 69.0f, 0.9f, 288.0f, 21.0f, C2D_Color32(24, 32, 50, 255));
-    const char* aspectLabels[7] = {
-        "ASPECT RATIO:", "ASPECT RATIO:", "ASPECT RATIO:",
-        "BILDVERHAELTNIS:", "FORMAT D'IMAGE:", "FORMATO:", "ASPECTO:"
-    };
-    DrawText(24.0f, 73.0f, 1.0f, aspectLabels[lang], C2D_Color32(255, 255, 255, 255));
-    DrawText(160.0f, 73.0f, 1.0f, GetAspectRatioDisplayName(lang), C2D_Color32(255, 215, 0, 255));
+    const char* onTxt  = (lang == 6) ? "ACTIVADO" : ((lang == 3) ? "EIN" : ((lang == 4) ? "ACTIVE" : ((lang == 5) ? "ATTIVO" : "ON")));
+    const char* offTxt = (lang == 6) ? "DESACT." : ((lang == 3) ? "AUS" : ((lang == 4) ? "DESACT." : ((lang == 5) ? "DISATT." : "OFF")));
 
-    /* Display Style row (Y: 92 to 113) */
-    C2D_DrawRectSolid(16.0f, 92.0f, 0.9f, 288.0f, 21.0f, C2D_Color32(24, 32, 50, 255));
-    const char* styleLabels[7] = {
-        "DISPLAY STYLE:", "DISPLAY STYLE:", "DISPLAY STYLE:",
-        "DARSTELLUNG:", "STYLE D'AFFICHAGE:", "STILE DISPLAY:", "ESTILO:"
-    };
-    DrawText(24.0f, 96.0f, 1.0f, styleLabels[lang], C2D_Color32(255, 255, 255, 255));
-    DrawText(160.0f, 96.0f, 1.0f, GetDisplayStyleDisplayName(lang), C2D_Color32(255, 215, 0, 255));
+    static const char* const langL[7]  = { "LANGUAGE","LANGUAGE","LANGUAGE","SPRACHE","LANGUE","LINGUA","IDIOMA" };
+    static const char* const aspL[7]   = { "ASPECT","ASPECT","ASPECT","BILDFORMAT","FORMAT","FORMATO","ASPECTO" };
+    static const char* const styL[7]   = { "DISPLAY STYLE","DISPLAY STYLE","DISPLAY STYLE","DARSTELLUNG","STYLE","STILE","ESTILO" };
+    static const char* const fpsL[7]   = { "SHOW FPS","SHOW FPS","SHOW FPS","FPS ANZEIGEN","AFFICHER FPS","MOSTRA FPS","MOSTRAR FPS" };
+    static const char* const hudL[7]   = { "AUTO-HIDE HUD","AUTO-HIDE HUD","AUTO-HIDE HUD","HUD AUTO-AUS","MASQUER HUD","NASCONDI HUD","AUTOOCULTAR HUD" };
+    static const char* const spoL[7]   = { "HIDE SPOILERS","HIDE SPOILERS","HIDE SPOILERS","SPOILER AUS","MASQ. SPOILERS","NASC. SPOILER","OCULTAR SPOILERS" };
 
-    /* 3D Depth row (Y: 115 to 136) */
-    C2D_DrawRectSolid(16.0f, 115.0f, 0.9f, 288.0f, 21.0f, C2D_Color32(24, 32, 50, 255));
-    const char* depthLabels[7] = {
-        "3D DEPTH:", "3D DEPTH:", "3D DEPTH:",
-        "3D-TIEFE:", "PROFONDEUR 3D:", "PROFONDITA 3D:", "PROFUNDIDAD 3D:"
-    };
-    DrawText(24.0f, 119.0f, 1.0f, depthLabels[lang], C2D_Color32(255, 255, 255, 255));
-    DrawText(160.0f, 119.0f, 1.0f, GetStereoDepthDisplayName(lang), C2D_Color32(255, 215, 0, 255));
+    DispCell(0, langL[lang], Port_Config_GetLanguageDisplayName(lang), valCol);
+    /* Aspect is meaningless at 1:1, so it is locked while PIXEL PERFECT is on. */
+    bool aspectLocked = (Port_Config_Get3DSDisplayStyle() == 0);
+    DispCell(1, aspL[lang],
+             aspectLocked ? ((lang == 6) ? "BLOQUEADO" : "LOCKED") : GetAspectRatioDisplayName(lang),
+             aspectLocked ? idleCol : valCol);
+    DispCell(2, styL[lang], GetDisplayStyleDisplayName(lang), valCol);
 
-    /* FPS Overlay toggle row (Y: 138 to 159) */
-    C2D_DrawRectSolid(16.0f, 138.0f, 0.9f, 288.0f, 21.0f, C2D_Color32(24, 32, 50, 255));
-    const char* fpsLabels[7] = {
-        "SHOW FPS:", "SHOW FPS:", "SHOW FPS:",
-        "FPS ANZEIGEN:", "AFFICHER FPS:", "MOSTRA FPS:", "MOSTRAR FPS:"
-    };
-    DrawText(24.0f, 142.0f, 1.0f, fpsLabels[lang], C2D_Color32(255, 255, 255, 255));
     bool fpsOn = Port_Config_GetShowFps();
-    DrawText(160.0f, 142.0f, 1.0f, GetFpsOverlayDisplayName(lang),
-             fpsOn ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 100, 100, 255));
-
-    /* Auto-Hide HUD toggle row (Y: 161 to 182) */
-    C2D_DrawRectSolid(16.0f, 161.0f, 0.9f, 288.0f, 21.0f, C2D_Color32(24, 32, 50, 255));
-    const char* hudLabels[7] = {
-        "AUTO-HIDE HUD:", "AUTO-HIDE HUD:", "AUTO-HIDE HUD:",
-        "HUD AUTOM. AUSBLENDEN:", "MASQUER HUD AUTO:", "NASCONDI HUD AUTO:", "AUTOESCONDER HUD:"
-    };
-    DrawText(24.0f, 165.0f, 1.0f, hudLabels[lang], C2D_Color32(255, 255, 255, 255));
+    DispCell(3, fpsL[lang], GetFpsOverlayDisplayName(lang), fpsOn ? onCol : offCol);
     bool ahOn = Port_Config_GetAutoHideHud();
-    DrawText(160.0f, 165.0f, 1.0f, ahOn ? ((lang == 6) ? "ACTIVADO" : ((lang == 3) ? "EIN" : ((lang == 4) ? "ACTIVE" : ((lang == 5) ? "ATTIVO" : "ON"))))
-                                         : ((lang == 6) ? "DESACTIVADO" : ((lang == 3) ? "AUS" : ((lang == 4) ? "DESACTIVE" : ((lang == 5) ? "DISATTIVO" : "OFF")))),
-             ahOn ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 100, 100, 255));
-
-    /* Hide Spoilers toggle row (Y: 184 to 204) */
-    C2D_DrawRectSolid(16.0f, 184.0f, 0.9f, 288.0f, 20.0f, C2D_Color32(24, 32, 50, 255));
-    const char* spoilerLabels[7] = {
-        "HIDE SPOILERS:", "HIDE SPOILERS:", "HIDE SPOILERS:",
-        "SPOILER VERBERGEN:", "MASQUER SPOILERS:", "NASCONDI SPOILER:", "OCULTAR SPOILERS:"
-    };
-    DrawText(24.0f, 187.0f, 1.0f, spoilerLabels[lang], C2D_Color32(255, 255, 255, 255));
+    DispCell(4, hudL[lang], ahOn ? onTxt : offTxt, ahOn ? onCol : offCol);
     bool spOn = Port_Config_GetHideSpoilers();
-    DrawText(160.0f, 187.0f, 1.0f, spOn ? ((lang == 6) ? "ACTIVADO" : ((lang == 3) ? "EIN" : ((lang == 4) ? "ACTIVE" : ((lang == 5) ? "ATTIVO" : "ON"))))
-                                         : ((lang == 6) ? "DESACTIVADO" : ((lang == 3) ? "AUS" : ((lang == 4) ? "DESACTIVE" : ((lang == 5) ? "DISATTIVO" : "OFF")))),
-             spOn ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 100, 100, 255));
+    DispCell(5, spoL[lang], spOn ? onTxt : offTxt, spOn ? onCol : offCol);
+
+    static const char* const gradeL[7] = { "GBA COLOR","GBA COLOR","GBA COLOR","GBA-FARBE","COULEUR GBA","COLORE GBA","COLOR GBA" };
+    static const char* const gridL[7]  = { "GBA GRID","GBA GRID","GBA GRID","GBA-GITTER","GRILLE GBA","GRIGLIA GBA","REJILLA GBA" };
+    static const char* const vigL[7]   = { "VIGNETTE","VIGNETTE","VIGNETTE","VIGNETTE","VIGNETTAGE","VIGNETTA","VINETA" };
+
+    int fx0 = Port_Config_GetGbaFxGrade();
+    int fx1 = Port_Config_GetGbaFxGrid();
+    int fx2 = Port_Config_GetGbaFxVignette();
+    DispCell(6, gradeL[lang], GbaFxLevelName(lang, fx0), fx0 ? onCol : idleCol);
+    DispCell(7, gridL[lang],  GbaFxLevelName(lang, fx1), fx1 ? onCol : idleCol);
+    DispCell(8, vigL[lang],   GbaFxLevelName(lang, fx2), fx2 ? onCol : idleCol);
 
     /* Close button (Y: 206 to 228) */
     C2D_DrawRectSolid(100.0f, 206.0f, 0.9f, 120.0f, 22.0f, C2D_Color32(20, 70, 130, 255));
-    const char* closeLabels[7] = {
+    static const char* const closeLabels[7] = {
         "CLOSE", "CLOSE", "CLOSE",
         "SCHLIESSEN", "FERMER", "CHIUDI", "CERRAR"
     };
