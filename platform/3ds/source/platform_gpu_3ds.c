@@ -1,6 +1,7 @@
 #include "platform_gpu_3ds.h"
 #include "port_debug_tools.h" /* PORT_DEBUG_TOOLS_ACTIVE */
 #include "port_gba_screen_fx.h"
+#include "port_gba_bezel.h"
 
 #include <3ds.h>
 #include <citro2d.h>
@@ -375,6 +376,7 @@ bool PlatformGpu3DS_Init(bool old3dsProfile) {
     }
 #endif
     PortGbaScreenFx_Init(); /* non-fatal: only disables the ghost effect on failure */
+    PortGbaBezel_Init();    /* non-fatal: only disables bezel on failure */
     sReady = true;
     return true;
 
@@ -466,6 +468,9 @@ static void DrawTopImageStereo(const uint32_t* leftPixels, const uint32_t* right
     C2D_TargetClear(sTopTarget, C2D_Color32(0, 0, 0, 255));
     C2D_SceneBegin(sTopTarget);
     C2D_DrawImage(imageLeft, &params, NULL);
+    if (PortGbaBezel_Active()) {
+        PortGbaBezel_Draw(sTopTarget);
+    }
     PlatformGpu3DS_ConfigureAbgrTextureEnv();
     PlatformGpu3DS_DrawFpsOverlay(0.0f);
 
@@ -473,6 +478,9 @@ static void DrawTopImageStereo(const uint32_t* leftPixels, const uint32_t* right
         C2D_TargetClear(sTopRightTarget, C2D_Color32(0, 0, 0, 255));
         C2D_SceneBegin(sTopRightTarget);
         C2D_DrawImage(imageRight, &params, NULL);
+        if (PortGbaBezel_Active()) {
+            PortGbaBezel_Draw(sTopRightTarget);
+        }
         PlatformGpu3DS_ConfigureAbgrTextureEnv();
         PlatformGpu3DS_DrawFpsOverlay(0.0f);
     }
@@ -680,6 +688,7 @@ void PlatformGpu3DS_Shutdown(void) {
         C3D_FrameEnd(GX_CMDLIST_FLUSH);
     }
     if (!aptShouldClose()) C3D_FrameSync();
+    PortGbaBezel_Shutdown();
     PortGbaScreenFx_Shutdown();
     C3D_RenderTargetDelete(sBottomTarget);
     C3D_RenderTargetDelete(sTopTarget);

@@ -85,6 +85,10 @@ extern void Port_Config_Cycle3DSAspectRatio(void);
 extern int Port_Config_Get3DSDisplayStyle(void);
 extern const char* Port_Config_Get3DSDisplayStyleName(void);
 extern void Port_Config_Cycle3DSDisplayStyle(void);
+extern bool Port_Config_GetHudOutside(void);
+extern void Port_Config_ToggleHudOutside(void);
+extern bool Port_Config_GetGbaBezel(void);
+extern void Port_Config_ToggleGbaBezel(void);
 
 extern bool Platform3DS_IsNew3DS(void);
 extern double Port_PPU_3DS_CurrentFps(void);
@@ -1390,6 +1394,12 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
                     case 6: Port_Config_SetGbaFxGrade((Port_Config_GetGbaFxGrade() + 1) % 4); break;
                     case 7: Port_Config_SetGbaFxGrid((Port_Config_GetGbaFxGrid() + 1) % 4); break;
                     case 8: Port_Config_SetGbaFxVignette((Port_Config_GetGbaFxVignette() + 1) % 4); break;
+                    case 9:
+                        if (Port_Config_Get3DSDisplayStyle() == 0) Port_Config_ToggleHudOutside();
+                        break;
+                    case 10:
+                        if (Port_Config_Get3DSDisplayStyle() == 0) Port_Config_ToggleGbaBezel();
+                        break;
                     default: break;
                 }
             }
@@ -2374,7 +2384,7 @@ static void RenderConfirmModal(int lang) {
 #define DISP_GRID_PITCH 26
 #define DISP_CELL_H     24
 #define DISP_GRID_ROWS  6
-#define DISP_CELL_COUNT 9
+#define DISP_CELL_COUNT 11
 
 /* One label line plus a value/state line under it, tinted by `valueCol`. */
 static void DispCell(int index, const char* label, const char* value, uint32_t valueCol) {
@@ -2465,6 +2475,26 @@ static void RenderDisplayModal(int lang) {
     DispCell(6, gradeL[lang], GbaFxLevelName(lang, fx0), fx0 ? onCol : idleCol);
     DispCell(7, gridL[lang],  GbaFxLevelName(lang, fx1), fx1 ? onCol : idleCol);
     DispCell(8, vigL[lang],   GbaFxLevelName(lang, fx2), fx2 ? onCol : idleCol);
+
+    static const char* const hudPosL[7] = { "HUD POSITION","HUD POSITION","HUD POSITION","HUD-POSITION","POSITION HUD","POSIZIONE HUD","POSICION HUD" };
+    static const char* const bezelL[7]  = { "GBA FRAME","GBA FRAME","GBA FRAME","GBA-RAHMEN","CADRE GBA","CORNICE GBA","MARCO GBA" };
+
+    const char* lockedTxt = (lang == 6) ? "BLOQUEADO" : "LOCKED";
+    bool pixelPerfect = (Port_Config_Get3DSDisplayStyle() == 0);
+
+    /* HUD Position: TOP BORDER vs DEFAULT (only active in Pixel Perfect) */
+    bool hudOut = Port_Config_GetHudOutside();
+    const char* hudOutTxt = (lang == 6) ? "BORDE SUP." : ((lang == 3) ? "OBEN" : ((lang == 4) ? "BORD SUP." : ((lang == 5) ? "BORDO SUP." : "TOP BORDER")));
+    const char* hudDefTxt = (lang == 6) ? "NORMAL" : ((lang == 3) ? "NORMAL" : ((lang == 4) ? "NORMAL" : ((lang == 5) ? "NORMALE" : "DEFAULT")));
+    DispCell(9, hudPosL[lang],
+             pixelPerfect ? (hudOut ? hudOutTxt : hudDefTxt) : lockedTxt,
+             pixelPerfect ? (hudOut ? onCol : valCol) : idleCol);
+
+    /* GBA Bezel: ON vs OFF (only active in Pixel Perfect) */
+    bool bezelOn = Port_Config_GetGbaBezel();
+    DispCell(10, bezelL[lang],
+             pixelPerfect ? (bezelOn ? onTxt : offTxt) : lockedTxt,
+             pixelPerfect ? (bezelOn ? onCol : offCol) : idleCol);
 
     /* Close button (Y: 206 to 228) */
     C2D_DrawRectSolid(100.0f, 206.0f, 0.9f, 120.0f, 22.0f, C2D_Color32(20, 70, 130, 255));

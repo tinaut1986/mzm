@@ -131,6 +131,8 @@ static const char* const sConfigPath = "mzm3ds.ini";
 
 static bool sAutoHideHud = true;
 static bool sHideSpoilers = true;
+static bool sHudOutside = false;
+static bool sGbaBezel = false;
 
 /* GBA-look top-screen effects, 0 = OFF, 1 = LOW, 2 = MEDIUM, 3 = HIGH.
  * Implemented in port_gba_screen_fx.c and applied by platform_gpu_3ds.c;
@@ -199,6 +201,8 @@ void Port_Config_Save(void) {
     fprintf(file, "show_fps=%u\n", sShowFps ? 1u : 0u);
     fprintf(file, "auto_hide_hud=%u\n", sAutoHideHud ? 1u : 0u);
     fprintf(file, "hide_spoilers=%u\n", sHideSpoilers ? 1u : 0u);
+    fprintf(file, "hud_outside=%u\n", sHudOutside ? 1u : 0u);
+    fprintf(file, "gba_bezel=%u\n", sGbaBezel ? 1u : 0u);
     fprintf(file, "gba_fx_grade=%d\n", sGbaFxGrade);
     fprintf(file, "gba_fx_grid=%d\n", sGbaFxGrid);
     fprintf(file, "gba_fx_vignette=%d\n", sGbaFxVignette);
@@ -281,6 +285,10 @@ void Port_Config_Load(void) {
             sAutoHideHud = (val != 0);
         } else if (strcmp(key, "hide_spoilers") == 0) {
             sHideSpoilers = (val != 0);
+        } else if (strcmp(key, "hud_outside") == 0) {
+            sHudOutside = (val != 0);
+        } else if (strcmp(key, "gba_bezel") == 0) {
+            sGbaBezel = (val != 0);
         } else if (strcmp(key, "gba_fx_grade") == 0) {
             if (val >= 0 && val < 4) sGbaFxGrade = val;
         } else if (strcmp(key, "gba_fx_grid") == 0) {
@@ -336,6 +344,14 @@ void Port_Config_SetAutoHideHud(bool autoHide) { sAutoHideHud = autoHide; Port_C
 
 bool Port_Config_GetHideSpoilers(void) { return sHideSpoilers; }
 void Port_Config_SetHideSpoilers(bool hide) { sHideSpoilers = hide; Port_Config_Save(); }
+
+bool Port_Config_GetHudOutside(void) { return sHudOutside; }
+void Port_Config_SetHudOutside(bool outside) { sHudOutside = outside; Port_Config_Save(); }
+void Port_Config_ToggleHudOutside(void) { sHudOutside = !sHudOutside; Port_Config_Save(); }
+
+bool Port_Config_GetGbaBezel(void) { return sGbaBezel; }
+void Port_Config_SetGbaBezel(bool bezel) { sGbaBezel = bezel; Port_Config_Save(); }
+void Port_Config_ToggleGbaBezel(void) { sGbaBezel = !sGbaBezel; Port_Config_Save(); }
 
 /* GBA screen-effect levels (0..3). Setters clamp and persist, matching the
  * Get/Set pattern of the toggles above. */

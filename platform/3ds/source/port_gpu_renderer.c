@@ -18,6 +18,7 @@
 #include "port_layer_fixes.h"
 #include "port_sprite_depth_oam.h"
 #include "port_haze_3ds.h"
+#include "port_gba_bezel.h"
 #include "platform_gpu_3ds.h"
 #include "port_debug_tools.h" /* PORT_DEBUG_TOOLS_ACTIVE */
 
@@ -196,6 +197,7 @@ typedef struct DrawItem {
                       * (see Port_GpuRenderer_RenderFrame). */
     bool affine;
     WindowVis winVis;
+    bool isHud;
 } DrawItem;
 
 static C3D_Tex sAtlasTexture;
@@ -1002,7 +1004,7 @@ static inline int AllocDrawItem(int slot, int sortKey) {
 }
 
 static inline void PushItem(int slot, float x, float y, int sortKey, int depthTier, bool blendAlpha,
-                            WindowVis winVis) {
+                            WindowVis winVis, bool isHud) {
     int idx = AllocDrawItem(slot, sortKey);
     if (idx < 0) return;
     DrawItem* item = &sDrawItems[idx];
@@ -1015,6 +1017,7 @@ static inline void PushItem(int slot, float x, float y, int sortKey, int depthTi
     item->blendAlpha = blendAlpha;
     item->affine = false;
     item->winVis = winVis;
+    item->isHud = isHud;
 }
 
 /* Affine OBJ variant: x,y is the subtile's already-transformed screen-space
@@ -1036,6 +1039,7 @@ static inline void PushAffineItem(int slot, float centerX, float centerY, float 
     item->blendAlpha = blendAlpha;
     item->affine = true;
     item->winVis = winVis;
+    item->isHud = false;
 }
 
 /* Text-mode BG tilemap addressing, byte-identical to the formula validated
@@ -1186,7 +1190,7 @@ static void CollectBgLayer(int bgIndex) {
                     }
                 }
             }
-            PushItem(slot, drawX, drawY, sortKey, depthTier, blendAlpha, rectWinVis);
+            PushItem(slot, drawX, drawY, sortKey, depthTier, blendAlpha, rectWinVis, false);
         }
     }
 }
@@ -1558,7 +1562,7 @@ static void CollectSprite(int oamIndex, bool obj1D) {
                 if (drawY <= -8.0f || drawY >= 160.0f || drawX <= -8.0f || drawX >= 240.0f) continue;
                 if (sObjWindowActive && !ObjWinItemVisible(objWinVis, drawX, drawY)) continue;
                 int slot = GetOrDecodeTileSlot(byteOffset, bpp8, pal, palBank, hflip, vflip, true, brightAdjust);
-                PushItem(slot, drawX, drawY, sortKey, depthTier, blendAlpha, rectWinVis);
+                PushItem(slot, drawX, drawY, sortKey, depthTier, blendAlpha, rectWinVis, isRealHud);
                 continue;
             }
 
@@ -1775,11 +1779,13 @@ void Port_GpuRenderer_GetLastFrameTimingMs(float* outCollectMs, float* outDrawMs
 extern bool Port_Config_GetShowFps(void);
 extern int Port_Config_Get3DSAspectRatio(void);
 extern int Port_Config_Get3DSDisplayStyle(void);
+extern bool Port_Config_GetHudOutside(void);
+extern bool Port_Config_GetGbaBezel(void);
 extern double Port_PPU_3DS_CurrentFps(void);
 
-static inline C2D_DrawParams BuildDrawParams(const DrawItem* item, float screenBaseX, float screenBaseY, float eyeOffset, float scaleX, float scaleY) {
+static inline C2D_DrawParams BuildDrawParams(const DrawItem* item, float screenBaseX, float screenBaseY, float eyeOffset, float scaleX, float scaleY, bool hudOutside) {
     C2D_DrawParams params;
-    params.depth = 0.5f;
+    params.depth = (item->isHud && hudOutside) ? 0.7f : 0.5f;
     if (item->affine) {
         float w = item->w * scaleX, h = item->h * scaleY;
         params.pos.x = screenBaseX + eyeOffset + item->x * scaleX - w * 0.5f;
@@ -1811,9 +1817,16 @@ static inline C2D_DrawParams BuildDrawParams(const DrawItem* item, float screenB
          * scaled sprites where snapping the bounding quad would quantize the
          * rotation, and they carry no text. */
         float left = screenBaseX + eyeOffset + item->x * scaleX;
-        float top = screenBaseY + item->y * scaleY;
+        float top;
         float right = screenBaseX + eyeOffset + (item->x + item->w) * scaleX;
-        float bottom = screenBaseY + (item->y + item->h) * scaleY;
+        float bottom;
+        if (item->isHud && hudOutside) {
+            top = 2.0f + item->y;
+            bottom = 2.0f + (item->y + item->h);
+        } else {
+            top = screenBaseY + item->y * scaleY;
+            bottom = screenBaseY + (item->y + item->h) * scaleY;
+        }
         float sl = floorf(left + 0.5f);
         float st = floorf(top + 0.5f);
         params.pos.x = sl;
@@ -2221,6 +2234,7 @@ void Port_GpuRenderer_RenderFrame(void) {
     float slider3d = osGet3DSliderState();
     const int style = Port_Config_Get3DSDisplayStyle();
     const int aspect = Port_Config_Get3DSAspectRatio();
+    bool hudOutside = (style == 0 && Port_Config_GetHudOutside());
 
     /* Emulated GBA main game mode (GM_INGAME == 4, GM_DEMO == 11, etc.) */
     extern s16 gMainGameMode;
@@ -2360,6 +2374,7 @@ void Port_GpuRenderer_RenderFrame(void) {
             for (int oi = 0; oi < sDrawOrderCount; ++oi) {
                 const DrawItem* item = &sDrawItems[sDrawOrder[oi]];
                 if (!ItemPassesWindow(sWindowActive, item->winVis, insidePass)) continue;
+                if (hudOutside && item->isHud) continue;
                 /* item->blendAlpha already implies alpha mode: the BG/OBJ
                  * collect paths only set it when sBldEffect==1, and a
                  * Semi-Transparent OBJ sets it unconditionally (and must
@@ -2407,7 +2422,7 @@ void Port_GpuRenderer_RenderFrame(void) {
                  * any: what it had was per-tile rounding noise that read as
                  * shimmer. */
                 float eyeOffset = floorf(eyeSign * slider3d * PortStereoDepth_TierPx(item->depthTier) + 0.5f);
-                C2D_DrawParams params = BuildDrawParams(item, screenBaseX, screenBaseY, eyeOffset, scaleX, scaleY);
+                C2D_DrawParams params = BuildDrawParams(item, screenBaseX, screenBaseY, eyeOffset, scaleX, scaleY, false);
                 C2D_DrawImage(item->img, &params, NULL);
                 ++drawCount;
                 if (!reassertedTexEnv) {
@@ -2487,6 +2502,30 @@ void Port_GpuRenderer_RenderFrame(void) {
             if (bottomY < 240.0f) {
                 C2D_DrawRectSolid(0.0f, bottomY, 0.6f, 400.0f, 240.0f - bottomY, C2D_Color32(0, 0, 0, 255));
             }
+        }
+
+        /* GBA Bezel overlay */
+        if (PortGbaBezel_Active()) {
+            PortGbaBezel_Draw(target);
+        }
+
+        /* If HUD is placed outside in the top border, draw HUD sprites now so they appear
+         * cleanly on top of the black top bar (or top bezel). */
+        if (hudOutside) {
+            C2D_SceneBegin(target);
+            ConfigureAtlasTextureEnv();
+            C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_ALL);
+            C3D_AlphaTest(true, GPU_GREATER, 0);
+            C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
+            for (int oi = 0; oi < sDrawOrderCount; ++oi) {
+                const DrawItem* item = &sDrawItems[sDrawOrder[oi]];
+                if (!item->isHud) continue;
+                float eyeOffset = floorf(eyeSign * slider3d * PortStereoDepth_TierPx(item->depthTier) + 0.5f);
+                C2D_DrawParams params = BuildDrawParams(item, screenBaseX, screenBaseY, eyeOffset, scaleX, scaleY, true);
+                C2D_DrawImage(item->img, &params, NULL);
+                ++drawCount;
+            }
+            C2D_Flush();
         }
 
         /* Shared overlay so a CPU fallback frame draws the exact same box
