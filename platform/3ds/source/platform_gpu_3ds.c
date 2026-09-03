@@ -64,6 +64,7 @@ enum {
 extern u32 __ctru_linear_heap;
 extern u32 __ctru_linear_heap_size;
 extern bool Port_Config_GetShowFps(void);
+extern int Port_Config_GetFpsPosition(void);
 extern int Port_Config_Get3DSAspectRatio(void);
 extern int Port_Config_Get3DSDisplayStyle(void);
 extern double Port_PPU_3DS_CurrentFps(void);
@@ -149,14 +150,38 @@ static const uint8_t* StatusGlyph(char c) {
  * Gated by the same MOSTRAR FPS config toggle as before. Must be called
  * inside an active C2D scene, after ConfigureAbgr/AtlasTextureEnv. */
 void PlatformGpu3DS_DrawFpsOverlay(float eyeXOffset) {
-    if (!Port_Config_GetShowFps()) return;
+    int pos = Port_Config_GetFpsPosition();
+    if (pos == 0) return;
+    PlatformGpu3DS_ResetSolidTexEnv();
     char label[20];
     double fps = Port_PPU_3DS_CurrentFps();
     unsigned rounded = fps > 0.0 ? (unsigned)(fps + 0.5) : 0u;
     if (rounded > 999u) rounded = 999u;
     snprintf(label, sizeof(label), "FPS %u", rounded);
-    C2D_DrawRectSolid(5.0f + eyeXOffset, 216.0f, 0.7f, 65.0f, 18.0f, C2D_Color32(0, 0, 0, 200));
-    PlatformGpu3DS_DrawStatusText(8.0f + eyeXOffset, 220.0f, 1.5f, label);
+
+    /* 1 = BOTTOM-LEFT, 2 = BOTTOM-RIGHT, 3 = TOP-LEFT, 4 = TOP-RIGHT */
+    float boxX, boxY;
+    switch (pos) {
+        case 2: /* BOTTOM-RIGHT */
+            boxX = 330.0f + eyeXOffset;
+            boxY = 216.0f;
+            break;
+        case 3: /* TOP-LEFT */
+            boxX = 5.0f + eyeXOffset;
+            boxY = 6.0f;
+            break;
+        case 4: /* TOP-RIGHT */
+            boxX = 330.0f + eyeXOffset;
+            boxY = 6.0f;
+            break;
+        case 1: /* BOTTOM-LEFT (default) */
+        default:
+            boxX = 5.0f + eyeXOffset;
+            boxY = 216.0f;
+            break;
+    }
+    C2D_DrawRectSolid(boxX, boxY, 0.7f, 65.0f, 18.0f, C2D_Color32(0, 0, 0, 200));
+    PlatformGpu3DS_DrawStatusText(boxX + 3.0f, boxY + 4.0f, 1.5f, label);
 }
 
 void PlatformGpu3DS_DrawStatusText(float x, float y, float scale, const char* text) {

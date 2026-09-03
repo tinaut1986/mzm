@@ -79,6 +79,8 @@ extern int32_t ChozoStatueHintCheckTargetIsActivated(uint8_t target) __attribute
 /* Platform and Config functions */
 extern bool Port_Config_GetShowFps(void);
 extern void Port_Config_SetShowFps(bool on);
+extern int Port_Config_GetFpsPosition(void);
+extern void Port_Config_CycleFpsPosition(void);
 extern int Port_Config_Get3DSAspectRatio(void);
 extern const char* Port_Config_Get3DSAspectRatioName(void);
 extern void Port_Config_Cycle3DSAspectRatio(void);
@@ -1388,7 +1390,7 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
                         if (Port_Config_Get3DSDisplayStyle() != 0) Port_Config_Cycle3DSAspectRatio();
                         break;
                     case 2: Port_Config_Cycle3DSDisplayStyle(); break;
-                    case 3: Port_Config_SetShowFps(!Port_Config_GetShowFps()); break;
+                    case 3: Port_Config_CycleFpsPosition(); break;
                     case 4: Port_Config_SetAutoHideHud(!Port_Config_GetAutoHideHud()); break;
                     case 5: Port_Config_SetHideSpoilers(!Port_Config_GetHideSpoilers()); break;
                     case 6: Port_Config_SetGbaFxGrade((Port_Config_GetGbaFxGrade() + 1) % 4); break;
@@ -1398,7 +1400,9 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
                         if (Port_Config_Get3DSDisplayStyle() == 0) Port_Config_ToggleHudOutside();
                         break;
                     case 10:
-                        if (Port_Config_Get3DSDisplayStyle() == 0) Port_Config_ToggleGbaBezel();
+                        if (Port_Config_Get3DSDisplayStyle() == 0 || Port_Config_Get3DSAspectRatio() == 1) {
+                            Port_Config_ToggleGbaBezel();
+                        }
                         break;
                     default: break;
                 }
@@ -1867,15 +1871,49 @@ static const char* GetDisplayStyleDisplayName(int lang) {
 }
 
 static const char* GetFpsOverlayDisplayName(int lang) {
-    bool on = Port_Config_GetShowFps();
-    switch (lang) {
+    int pos = Port_Config_GetFpsPosition();
+    switch (pos) {
+        case 1: /* BOTTOM-LEFT */
+            switch (lang) {
+                case 3: return "UNTEN LINKS";
+                case 4: return "BAS GAUCHE";
+                case 5: return "BASSO SINISTRA";
+                case 6: return "INF. IZQ.";
+                default: return "BOTTOM-LEFT";
+            }
+        case 2: /* BOTTOM-RIGHT */
+            switch (lang) {
+                case 3: return "UNTEN RECHTS";
+                case 4: return "BAS DROITE";
+                case 5: return "BASSO DESTRA";
+                case 6: return "INF. DER.";
+                default: return "BOTTOM-RIGHT";
+            }
+        case 3: /* TOP-LEFT */
+            switch (lang) {
+                case 3: return "OBEN LINKS";
+                case 4: return "HAUT GAUCHE";
+                case 5: return "ALTO SINISTRA";
+                case 6: return "SUP. IZQ.";
+                default: return "TOP-LEFT";
+            }
+        case 4: /* TOP-RIGHT */
+            switch (lang) {
+                case 3: return "OBEN RECHTS";
+                case 4: return "HAUT DROITE";
+                case 5: return "ALTO DESTRA";
+                case 6: return "SUP. DER.";
+                default: return "TOP-RIGHT";
+            }
         case 0:
-        case 1: return on ? "ON" : "OFF";
-        case 3: return on ? "EIN" : "AUS";
-        case 4: return on ? "ACTIVE" : "DESACTIVE";
-        case 5: return on ? "ATTIVO" : "DISATTIVO";
-        case 6: return on ? "ACTIVADO" : "DESACTIVADO";
-        default: return on ? "ON" : "OFF";
+        default:
+            switch (lang) {
+                case 3: return "AUS";
+                case 4: return "DESACTIVE";
+                case 5: return "DISATTIVO";
+                case 6: return "DESACTIVADO";
+                default: return "OFF";
+            }
     }
 }
 
@@ -2490,11 +2528,12 @@ static void RenderDisplayModal(int lang) {
              pixelPerfect ? (hudOut ? hudOutTxt : hudDefTxt) : lockedTxt,
              pixelPerfect ? (hudOut ? onCol : valCol) : idleCol);
 
-    /* GBA Bezel: ON vs OFF (only active in Pixel Perfect) */
+    /* GBA Bezel: ON vs OFF (active in Pixel Perfect or Scaled Original) */
+    bool bezelAllowed = (pixelPerfect || Port_Config_Get3DSAspectRatio() == 1);
     bool bezelOn = Port_Config_GetGbaBezel();
     DispCell(10, bezelL[lang],
-             pixelPerfect ? (bezelOn ? onTxt : offTxt) : lockedTxt,
-             pixelPerfect ? (bezelOn ? onCol : offCol) : idleCol);
+             bezelAllowed ? (bezelOn ? onTxt : offTxt) : lockedTxt,
+             bezelAllowed ? (bezelOn ? onCol : offCol) : idleCol);
 
     /* Close button (Y: 206 to 228) */
     C2D_DrawRectSolid(100.0f, 206.0f, 0.9f, 120.0f, 22.0f, C2D_Color32(20, 70, 130, 255));

@@ -11,6 +11,7 @@ extern const uint8_t gGbaBezelCompressedData[];
 
 extern bool Port_Config_GetGbaBezel(void);
 extern int Port_Config_Get3DSDisplayStyle(void);
+extern int Port_Config_Get3DSAspectRatio(void);
 
 #define BEZEL_TEX_W 512
 #define BEZEL_TEX_H 256
@@ -19,6 +20,8 @@ extern int Port_Config_Get3DSDisplayStyle(void);
 
 static C3D_Tex sBezelTex;
 static Tex3DS_SubTexture sBezelSub;
+static Tex3DS_SubTexture sSideLeftSub;
+static Tex3DS_SubTexture sSideRightSub;
 static bool sBezelReady;
 
 /* Simple in-place standard LZ4 block decompressor with zero external dependencies. */
@@ -92,6 +95,21 @@ void PortGbaBezel_Init(void) {
     sBezelSub.right = (float)BEZEL_SCR_W / (float)BEZEL_TEX_W;
     sBezelSub.bottom = 1.0f - (float)BEZEL_SCR_H / (float)BEZEL_TEX_H;
 
+    /* Left and right 20px border strips for Scaled - Original mode (360x240) */
+    sSideLeftSub.width = 20;
+    sSideLeftSub.height = BEZEL_SCR_H;
+    sSideLeftSub.left = 0.0f;
+    sSideLeftSub.top = 1.0f;
+    sSideLeftSub.right = 20.0f / (float)BEZEL_TEX_W;
+    sSideLeftSub.bottom = 1.0f - (float)BEZEL_SCR_H / (float)BEZEL_TEX_H;
+
+    sSideRightSub.width = 20;
+    sSideRightSub.height = BEZEL_SCR_H;
+    sSideRightSub.left = (float)(BEZEL_SCR_W - 20) / (float)BEZEL_TEX_W;
+    sSideRightSub.top = 1.0f;
+    sSideRightSub.right = (float)BEZEL_SCR_W / (float)BEZEL_TEX_W;
+    sSideRightSub.bottom = 1.0f - (float)BEZEL_SCR_H / (float)BEZEL_TEX_H;
+
     sBezelReady = true;
 }
 
@@ -105,13 +123,23 @@ bool PortGbaBezel_Ready(void) {
     return sBezelReady;
 }
 
+GbaBezelMode PortGbaBezel_GetMode(void) {
+    if (!sBezelReady || !Port_Config_GetGbaBezel()) return GBA_BEZEL_MODE_NONE;
+    int style = Port_Config_Get3DSDisplayStyle();
+    if (style == 0) return GBA_BEZEL_MODE_FULL;
+    int aspect = Port_Config_Get3DSAspectRatio();
+    if (aspect == 1 /* TOP_ASPECT_ORIGINAL */) return GBA_BEZEL_MODE_SIDES;
+    return GBA_BEZEL_MODE_NONE;
+}
+
 bool PortGbaBezel_Active(void) {
-    /* Bezel is enabled when the user setting is ON and the display style is Pixel Perfect. */
-    return sBezelReady && Port_Config_GetGbaBezel() && (Port_Config_Get3DSDisplayStyle() == 0);
+    return PortGbaBezel_GetMode() != GBA_BEZEL_MODE_NONE;
 }
 
 void PortGbaBezel_Draw(C3D_RenderTarget* target) {
     if (!sBezelReady) return;
+    GbaBezelMode mode = PortGbaBezel_GetMode();
+    if (mode == GBA_BEZEL_MODE_NONE) return;
 
     C2D_SceneBegin(target);
     PlatformGpu3DS_ResetSolidTexEnv();
@@ -120,7 +148,6 @@ void PortGbaBezel_Draw(C3D_RenderTarget* target) {
     C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD,
                    GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA,
                    GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA);
-    /* Discard transparent pixels (the 240x160 viewport in the middle). */
     C3D_AlphaTest(true, GPU_GREATER, 0);
 
     C3D_TexEnv* env = C3D_GetTexEnv(0);
@@ -128,16 +155,36 @@ void PortGbaBezel_Draw(C3D_RenderTarget* target) {
     C3D_TexEnvSrc(env, C3D_Both, GPU_TEXTURE0, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR);
     C3D_TexEnvFunc(env, C3D_Both, GPU_REPLACE);
 
-    const C2D_Image img = { .tex = &sBezelTex, .subtex = &sBezelSub };
-    const C2D_DrawParams params = {
-        .pos = { 0.0f, 0.0f, (float)BEZEL_SCR_W, (float)BEZEL_SCR_H },
-        .center = { 0.0f, 0.0f },
-        .depth = 0.65f,
-        .angle = 0.0f,
-    };
-    C2D_DrawImage(img, &params, NULL);
-    C2D_Flush();
+    if (mode == GBA_BEZEL_MODE_FULL) {
+        const C2D_Image img = { .tex = &sBezelTex, .subtex = &sBezelSub };
+        const C2D_DrawParams params = {
+            .pos = { 0.0f, 0.0f, (float)BEZEL_SCR_W, (float)BEZEL_SCR_H },
+            .center = { 0.0f, 0.0f },
+            .depth = 0.65f,
+            .angle = 0.0f,
+        };
+        C2D_DrawImage(img, &params, NULL);
+    } else if (mode == GBA_BEZEL_MODE_SIDES) {
+        const C2D_Image leftImg = { .tex = &sBezelTex, .subtex = &sSideLeftSub };
+        const C2D_DrawParams leftParams = {
+            .pos = { 0.0f, 0.0f, 20.0f, (float)BEZEL_SCR_H },
+            .center = { 0.0f, 0.0f },
+            .depth = 0.65f,
+            .angle = 0.0f,
+        };
+        C2D_DrawImage(leftImg, &leftParams, NULL);
 
+        const C2D_Image rightImg = { .tex = &sBezelTex, .subtex = &sSideRightSub };
+        const C2D_DrawParams rightParams = {
+            .pos = { 380.0f, 0.0f, 20.0f, (float)BEZEL_SCR_H },
+            .center = { 0.0f, 0.0f },
+            .depth = 0.65f,
+            .angle = 0.0f,
+        };
+        C2D_DrawImage(rightImg, &rightParams, NULL);
+    }
+
+    C2D_Flush();
     C3D_AlphaTest(false, GPU_ALWAYS, 0);
     PlatformGpu3DS_ResetSolidTexEnv();
 }

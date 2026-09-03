@@ -124,7 +124,7 @@ static void UpdateFpsWindow(void) {
 #include "port_bottom_ui_3ds.h"
 #include <stdio.h>
 
-static bool sShowFps = true;
+static int sFpsPosition = 1; /* 0 = OFF, 1 = BOTTOM-LEFT, 2 = BOTTOM-RIGHT, 3 = TOP-LEFT, 4 = TOP-RIGHT */
 static int sAspectRatio = 1; /* 1 = ORIGINAL, 2 = STRETCH (0 = WIDE retired -- not wired up yet) */
 static int sDisplayStyle = 0; /* 0 = PIXEL PERFECT, 1 = SCALED (2 = BLUR retired -- no effect on the GPU path) */
 static const char* const sConfigPath = "mzm3ds.ini";
@@ -198,7 +198,7 @@ void Port_Config_Save(void) {
     fprintf(file, "# Metroid Zero Mission 3DS runtime settings\n");
     fprintf(file, "aspect_ratio=%d\n", sAspectRatio);
     fprintf(file, "display_style=%d\n", sDisplayStyle);
-    fprintf(file, "show_fps=%u\n", sShowFps ? 1u : 0u);
+    fprintf(file, "show_fps=%d\n", sFpsPosition);
     fprintf(file, "auto_hide_hud=%u\n", sAutoHideHud ? 1u : 0u);
     fprintf(file, "hide_spoilers=%u\n", sHideSpoilers ? 1u : 0u);
     fprintf(file, "hud_outside=%u\n", sHudOutside ? 1u : 0u);
@@ -280,7 +280,8 @@ void Port_Config_Load(void) {
             /* 3D depth is fixed at BOLD now (the slider covers the rest) --
              * accept and ignore the key for backward compatibility. */
         } else if (strcmp(key, "show_fps") == 0) {
-            sShowFps = (val != 0);
+            if (val >= 0 && val <= 4) sFpsPosition = val;
+            else sFpsPosition = (val != 0) ? 1 : 0;
         } else if (strcmp(key, "auto_hide_hud") == 0) {
             sAutoHideHud = (val != 0);
         } else if (strcmp(key, "hide_spoilers") == 0) {
@@ -336,8 +337,11 @@ void Port_Config_SetAspectRatio(int ratio) { if (ratio >= 0 && ratio < 3) { sAsp
 int Port_Config_GetDisplayStyle(void) { return sDisplayStyle; }
 void Port_Config_SetDisplayStyle(int style) { if (style >= 0 && style < 3) { sDisplayStyle = style; Port_Config_Save(); } }
 
-bool Port_Config_GetShowFps(void) { return sShowFps; }
-void Port_Config_SetShowFps(bool show) { sShowFps = show; Port_Config_Save(); }
+bool Port_Config_GetShowFps(void) { return sFpsPosition != 0; }
+int Port_Config_GetFpsPosition(void) { return sFpsPosition; }
+void Port_Config_SetFpsPosition(int pos) { sFpsPosition = (pos >= 0 && pos <= 4) ? pos : 0; Port_Config_Save(); }
+void Port_Config_CycleFpsPosition(void) { sFpsPosition = (sFpsPosition + 1) % 5; Port_Config_Save(); }
+void Port_Config_SetShowFps(bool show) { sFpsPosition = show ? (sFpsPosition ? sFpsPosition : 1) : 0; Port_Config_Save(); }
 
 bool Port_Config_GetAutoHideHud(void) { return sAutoHideHud; }
 void Port_Config_SetAutoHideHud(bool autoHide) { sAutoHideHud = autoHide; Port_Config_Save(); }

@@ -2517,21 +2517,40 @@ void Port_GpuRenderer_RenderFrame(void) {
             C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_ALL);
             C3D_AlphaTest(true, GPU_GREATER, 0);
             C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
+            bool hudReassertedTexEnv = false;
             for (int oi = 0; oi < sDrawOrderCount; ++oi) {
                 const DrawItem* item = &sDrawItems[sDrawOrder[oi]];
                 if (!item->isHud) continue;
+                if (item->x >= 240.0f || item->x + item->w <= 0.0f) continue;
                 float eyeOffset = floorf(eyeSign * slider3d * PortStereoDepth_TierPx(item->depthTier) + 0.5f);
                 C2D_DrawParams params = BuildDrawParams(item, screenBaseX, screenBaseY, eyeOffset, scaleX, scaleY, true);
-                C2D_DrawImage(item->img, &params, NULL);
+                C2D_Image img = item->img;
+                Tex3DS_SubTexture clippedSub;
+                if (item->x + item->w > 240.0f) {
+                    /* Clip subtile that spills beyond the 240px GBA screen width (e.g. minimap right edge) */
+                    float visibleW = 240.0f - item->x;
+                    params.pos.w = visibleW;
+                    clippedSub = *item->img.subtex;
+                    clippedSub.right = clippedSub.left + (clippedSub.right - clippedSub.left) * (visibleW / item->w);
+                    img.subtex = &clippedSub;
+                }
+                C2D_DrawImage(img, &params, NULL);
                 ++drawCount;
+                if (!hudReassertedTexEnv) {
+                    ConfigureAtlasTextureEnv();
+                    hudReassertedTexEnv = true;
+                }
             }
             C2D_Flush();
+            C3D_AlphaTest(false, GPU_ALWAYS, 0);
+            PlatformGpu3DS_ResetSolidTexEnv();
         }
 
         /* Shared overlay so a CPU fallback frame draws the exact same box
          * (see PlatformGpu3DS_DrawFpsOverlay). Parallax past the frontmost
          * world tier (HUD, +2.0px) and pixel-snapped like the tile layers,
          * so the counter always reads as being in front of everything. */
+        PlatformGpu3DS_ResetSolidTexEnv();
         PlatformGpu3DS_DrawFpsOverlay(floorf(eyeSign * slider3d * (+2.5f) + 0.5f));
 #ifdef PORT_DEBUG_TOOLS_ACTIVE
         {
