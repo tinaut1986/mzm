@@ -98,7 +98,12 @@ jobs:
             echo "## Downloads"
             echo
             echo "- [mzm-3ds-${TAG}.cia](${BASE}/mzm-3ds-${TAG}.cia)"
-            echo "- [mzm-3ds-${TAG}.3dsx](${BASE}/mzm-3ds-${TAG}.3dsx)"
+            echo
+            echo "Install the CIA. No \`.3dsx\` is published: a 3dsx cannot"
+            echo "declare its own memory budget, so it inherits whatever the"
+            echo "Homebrew Launcher host has left -- not enough for the 8MB"
+            echo "ROM buffer plus the GPU buffers this port reserves. The CIA"
+            echo "asks for 64MB of its own (see cia/mzm3ds.rsf)."
             echo
             echo "## Changelog"
             echo
@@ -109,17 +114,16 @@ jobs:
           qrencode -s 10 -o "QR-${TAG}.png" "${BASE}/mzm-3ds-${TAG}.cia"
 
           # Versioned filenames for distribution assets (canonical build
-          # names stay fixed inside the tree)
+          # names stay fixed inside the tree). CIA only -- see the note in
+          # the release body above for why the 3dsx is not shipped. `make
+          # 3dsx` still exists for local Homebrew Launcher testing.
           cp platform/3ds/mzm-3ds.cia "mzm-3ds-${TAG}.cia"
-          [ -f platform/3ds/mzm-3ds.3dsx ] && cp platform/3ds/mzm-3ds.3dsx "mzm-3ds-${TAG}.3dsx" || true
 
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: mzm-3ds-build
-          path: |
-            platform/3ds/mzm-3ds.cia
-            platform/3ds/mzm-3ds.3dsx
+          path: platform/3ds/mzm-3ds.cia
 
       - name: Create / Update GitHub Release
         uses: softprops/action-gh-release@v2
@@ -132,7 +136,6 @@ jobs:
           body_path: release_notes.md
           files: |
             mzm-3ds-${{ steps.vars.outputs.tag }}.cia
-            mzm-3ds-${{ steps.vars.outputs.tag }}.3dsx
             QR-${{ steps.vars.outputs.tag }}.png
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -361,7 +361,10 @@ bool PlatformGpu3DS_Init(bool old3dsProfile) {
     sStats.topUploadAddress = (uintptr_t)sTopUpload;
     sStats.bottomUploadAddress[0] = (uintptr_t)sBottomUploads[0];
     sStats.bottomUploadAddress[1] = (uintptr_t)sBottomUploads[1];
-    sTopRightUpload = (uint32_t*)linearMemAlign(TOP_TEXTURE_WIDTH * TOP_TEXTURE_HEIGHT * sizeof(uint32_t), 0x80);
+    /* sTopRightUpload is allocated with the other upload buffers above (and
+     * zeroed + flushed there). A second linearMemAlign used to sit here and
+     * overwrite the pointer: 512KB of linear heap leaked for the life of the
+     * process, and the buffer actually in use was the uninitialised one. */
     if (!C3D_TexInitVRAM(&sTopTexture, TOP_TEXTURE_WIDTH, TOP_TEXTURE_HEIGHT, GPU_RGBA8)) goto fail;
     if (!C3D_TexInitVRAM(&sTopRightTexture, TOP_TEXTURE_WIDTH, TOP_TEXTURE_HEIGHT, GPU_RGBA8)) goto fail_top_texture;
     if (!C3D_TexInitVRAM(&sBottomTexture, 512, 256, GPU_RGBA8)) goto fail_top_right_texture;

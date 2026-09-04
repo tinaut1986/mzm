@@ -19,10 +19,15 @@ This target builds the native dual-screen Nintendo 3DS port of **Metroid: Zero M
    ```text
    mzm-3ds.cia
    ```
-   *(Or launch `mzm-3ds.3dsx` through the Homebrew Launcher).*
-
    Releases named **Beta** are pre-releases cut from a branch that is still
    being worked on — pick a plain **Release** for a stable build.
+
+   Only a CIA is published. A `.3dsx` cannot declare its own memory budget, so
+   it inherits whatever the Homebrew Launcher's host title has left — not
+   enough for the 8&nbsp;MB ROM buffer plus the GPU buffers this port reserves,
+   which is why the same build can run installed and fail as homebrew. The CIA
+   requests 64&nbsp;MB of its own. `make 3dsx` still builds one for local
+   testing if you want to try it on a host with room to spare.
 
 2. Create the following folder on your SD card:
    ```text

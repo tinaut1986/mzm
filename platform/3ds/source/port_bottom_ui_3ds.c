@@ -3878,6 +3878,25 @@ static void RenderDebugToolsModal(int lang) {
 
     if (sDebugToolsMsg[0] && sFrameCounter < sDebugToolsMsgUntil) {
         DrawTextCentered(160.0f, 204.0f, 1.0f, sDebugToolsMsg, C2D_Color32(120, 255, 160, 255));
+    } else {
+        /* Linear heap, free / total. Everything big the port reserves comes
+         * out of here -- the 8MB ROM buffer, the tile atlas, the citro2d/
+         * citro3d buffers, the bezel and effect textures -- so this is the
+         * number that decides whether the port fits in whatever memory the
+         * loader gave us. A CIA declares its own budget (SystemMode in
+         * cia/mzm3ds.rsf); a .3dsx inherits the Homebrew Launcher host's
+         * leftovers, which is why the same build can run installed and run
+         * out of memory launched as homebrew. Read it here before blaming
+         * anything else for an allocation failure. */
+        PlatformGpu3DSStats st;
+        PlatformGpu3DS_GetStats(&st);
+        const uint32_t freeKb = linearSpaceFree() / 1024u;
+        const uint32_t totalKb = st.linearHeapBytes / 1024u;
+        char mem[48];
+        snprintf(mem, sizeof(mem), "LINEAR %u.%01u / %u.%01u MB FREE",
+                 freeKb / 1024u, (freeKb % 1024u) * 10u / 1024u,
+                 totalKb / 1024u, (totalKb % 1024u) * 10u / 1024u);
+        DrawTextCentered(160.0f, 204.0f, 1.0f, mem, C2D_Color32(140, 170, 210, 255));
     }
 }
 
