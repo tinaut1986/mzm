@@ -142,6 +142,49 @@ def main():
             raw_tex[offset + 2] = g
             raw_tex[offset + 3] = r
 
+    # Scaled side strips for Escalado - Original (360x240 game):
+    # Scale console image so that the screen cutout is 360x240, and take
+    # the 55px region from the screen edge across the bezel/seam to the purple chassis,
+    # resized into the 20px pillarbox strips.
+    sy = 240.0 / ch
+    scaled_h = int(round(im.height * sy))
+    scaled_w = int(round(im.width * sy))
+    im_sy = im.resize((scaled_w, scaled_h), Image.Resampling.LANCZOS)
+    cutout_top = int(round(122 * sy))
+    cutout_bottom = cutout_top + 240
+    cutout_left = int(round(263 * sy))
+    cutout_right = int(round(760 * sy))
+
+    width_px = 55
+    l_crop = im_sy.crop(
+        (cutout_left - width_px, cutout_top, cutout_left, cutout_bottom)
+    ).resize((20, 240), Image.Resampling.LANCZOS)
+    r_crop = im_sy.crop(
+        (cutout_right, cutout_top, cutout_right + width_px, cutout_bottom)
+    ).resize((20, 240), Image.Resampling.LANCZOS)
+    l_pixels = l_crop.load()
+    r_pixels = r_crop.load()
+
+    # Left strip at X: 416..436, Y: 0..240
+    for y in range(240):
+        for x in range(20):
+            r, g, b, a = l_pixels[x, y]
+            offset = swizzle_offset(416 + x, y) * 4
+            raw_tex[offset + 0] = 255
+            raw_tex[offset + 1] = b
+            raw_tex[offset + 2] = g
+            raw_tex[offset + 3] = r
+
+    # Right strip at X: 448..468, Y: 0..240
+    for y in range(240):
+        for x in range(20):
+            r, g, b, a = r_pixels[x, y]
+            offset = swizzle_offset(448 + x, y) * 4
+            raw_tex[offset + 0] = 255
+            raw_tex[offset + 1] = b
+            raw_tex[offset + 2] = g
+            raw_tex[offset + 3] = r
+
     compressed = lz4_compress(raw_tex)
     print(f"Compressed {len(raw_tex)} bytes to {len(compressed)} bytes ({len(compressed) / 1024:.1f} KB)")
 

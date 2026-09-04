@@ -98,16 +98,16 @@ void PortGbaBezel_Init(void) {
     /* Left and right 20px border strips for Scaled - Original mode (360x240) */
     sSideLeftSub.width = 20;
     sSideLeftSub.height = BEZEL_SCR_H;
-    sSideLeftSub.left = 0.0f;
+    sSideLeftSub.left = 416.0f / (float)BEZEL_TEX_W;
     sSideLeftSub.top = 1.0f;
-    sSideLeftSub.right = 20.0f / (float)BEZEL_TEX_W;
+    sSideLeftSub.right = (416.0f + 20.0f) / (float)BEZEL_TEX_W;
     sSideLeftSub.bottom = 1.0f - (float)BEZEL_SCR_H / (float)BEZEL_TEX_H;
 
     sSideRightSub.width = 20;
     sSideRightSub.height = BEZEL_SCR_H;
-    sSideRightSub.left = (float)(BEZEL_SCR_W - 20) / (float)BEZEL_TEX_W;
+    sSideRightSub.left = 448.0f / (float)BEZEL_TEX_W;
     sSideRightSub.top = 1.0f;
-    sSideRightSub.right = (float)BEZEL_SCR_W / (float)BEZEL_TEX_W;
+    sSideRightSub.right = (448.0f + 20.0f) / (float)BEZEL_TEX_W;
     sSideRightSub.bottom = 1.0f - (float)BEZEL_SCR_H / (float)BEZEL_TEX_H;
 
     sBezelReady = true;
