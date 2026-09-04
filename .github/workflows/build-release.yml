@@ -32,46 +32,78 @@ jobs:
           make -C platform/3ds -j$(nproc) RENDERER=gpu BANNERTOOL=$GITHUB_WORKSPACE/tools/bin/bannertool MAKEROM=$GITHUB_WORKSPACE/tools/bin/makerom
 
       # NOTE: container default shell is dash/sh -- no [[ ]], use POSIX case
-      - name: Determine release tag
+      - name: Determine release tag and channel
         id: vars
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           case "$GITHUB_REF" in
             refs/tags/*)
               TAG="${GITHUB_REF#refs/tags/}"
-              IS_TAG=true
               ;;
             *)
               TAG=$(git describe --tags --always)
-              IS_TAG=false
               ;;
           esac
+
+          # Stable vs beta is decided by whether main can reach this commit,
+          # NOT by "was this a tag push". A release/* branch collects work and
+          # may be tagged while still unmerged -- that is a beta; only the
+          # merge into main declares the line stable. Consequences:
+          #   - Tag on an unmerged release/* branch  -> Beta (prerelease).
+          #   - Tag on (or merged into) main         -> Release.
+          #   - Manual workflow_dispatch on a branch -> Beta.
+          #   - Re-running this workflow from main for a tag that already
+          #     shipped as a beta promotes that same release page to stable.
+          # Push main BEFORE the tag, otherwise the tag build cannot see the
+          # merge yet and publishes as a beta. If the fetch below fails we
+          # deliberately fall through to Beta: mislabelling a stable build as
+          # a beta is recoverable, the other direction is not.
+          git fetch --no-tags --quiet origin +refs/heads/main:refs/remotes/origin/main || true
+          if git merge-base --is-ancestor HEAD refs/remotes/origin/main 2>/dev/null; then
+            PRERELEASE=false
+            CHANNEL=Release
+          else
+            PRERELEASE=true
+            CHANNEL=Beta
+          fi
           {
             echo "tag=$TAG"
-            echo "is_tag=$IS_TAG"
+            echo "prerelease=$PRERELEASE"
+            echo "channel=$CHANNEL"
           } >> "$GITHUB_OUTPUT"
 
       # Release notes: QR code (scannable with Universal-Updater / phone to get
       # the CIA download URL) plus an auto-generated changelog covering every
-      # commit since the previous tag. Manual (workflow_dispatch) runs on a
-      # non-tagged commit produce a prerelease page instead.
+      # commit since the previous tag. Beta pages (see the channel logic
+      # above) get a banner saying so.
       - name: Generate changelog and QR code
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           TAG="${{ steps.vars.outputs.tag }}"
           REPO="${{ github.repository }}"
           BASE="https://github.com/${REPO}/releases/download/${TAG}"
+          PRERELEASE="${{ steps.vars.outputs.prerelease }}"
 
           PREV=$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)
           RANGE="${PREV:+${PREV}..}HEAD"
 
           {
+            if [ "$PRERELEASE" = "true" ]; then
+              echo "> **Beta build.** This comes off a \`release/*\` branch that has not"
+              echo "> been merged into \`main\` yet, so it is not a stable version."
+              echo
+            fi
             echo "![QR code for the ${TAG} CIA](${BASE}/QR-${TAG}.png)"
             echo
             echo "## Downloads"
             echo
             echo "- [mzm-3ds-${TAG}.cia](${BASE}/mzm-3ds-${TAG}.cia)"
-            echo "- [mzm-3ds-${TAG}.3dsx](${BASE}/mzm-3ds-${TAG}.3dsx)"
+            echo
+            echo "Install the CIA. No \`.3dsx\` is published: a 3dsx cannot"
+            echo "declare its own memory budget, so it inherits whatever the"
+            echo "Homebrew Launcher host has left -- not enough for the 8MB"
+            echo "ROM buffer plus the GPU buffers this port reserves. The CIA"
+            echo "asks for 64MB of its own (see cia/mzm3ds.rsf)."
             echo
             echo "## Changelog"
             echo
@@ -82,30 +114,28 @@ jobs:
           qrencode -s 10 -o "QR-${TAG}.png" "${BASE}/mzm-3ds-${TAG}.cia"
 
           # Versioned filenames for distribution assets (canonical build
-          # names stay fixed inside the tree)
+          # names stay fixed inside the tree). CIA only -- see the note in
+          # the release body above for why the 3dsx is not shipped. `make
+          # 3dsx` still exists for local Homebrew Launcher testing.
           cp platform/3ds/mzm-3ds.cia "mzm-3ds-${TAG}.cia"
-          [ -f platform/3ds/mzm-3ds.3dsx ] && cp platform/3ds/mzm-3ds.3dsx "mzm-3ds-${TAG}.3dsx" || true
 
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: mzm-3ds-build
-          path: |
-            platform/3ds/mzm-3ds.cia
-            platform/3ds/mzm-3ds.3dsx
+          path: platform/3ds/mzm-3ds.cia
 
       - name: Create / Update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.vars.outputs.tag }}
-          name: Release ${{ steps.vars.outputs.tag }}
+          name: ${{ steps.vars.outputs.channel }} ${{ steps.vars.outputs.tag }}
           draft: false
-          prerelease: ${{ steps.vars.outputs.is_tag != 'true' }}
+          prerelease: ${{ steps.vars.outputs.prerelease == 'true' }}
           generate_release_notes: true
           body_path: release_notes.md
           files: |
             mzm-3ds-${{ steps.vars.outputs.tag }}.cia
-            mzm-3ds-${{ steps.vars.outputs.tag }}.3dsx
             QR-${{ steps.vars.outputs.tag }}.png
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
