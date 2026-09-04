@@ -74,6 +74,10 @@ void Port_RA_SetEnabled(bool enabled);
 
 bool Port_RA_IsHardcore(void);
 void Port_RA_SetHardcore(bool hardcore);
+/* False when the build forbids hardcore outright (debug-tools builds carry a
+ * god-mode / no-clip cheat harness). Port_RA_SetHardcore(true) is a no-op in
+ * that case, and the UI shows hardcore as unavailable rather than off. */
+bool Port_RA_HardcoreAllowed(void);
 
 bool Port_RA_GetNotificationSound(void);
 void Port_RA_SetNotificationSound(bool sound);

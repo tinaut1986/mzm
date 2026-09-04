@@ -208,7 +208,9 @@ static uint16_t ProcessButtonAction(int action, uint32_t keysHeld, uint32_t keys
             /* Pulse KEY_B every other frame (30 shots/sec) */
             return (sRapidCounter & 1) ? (1 << 1) : 0;
         }
-        case 2: { /* MORFOSFERA RAPIDA (QUICK MORPH) */
+        case 2: { /* MORFOSFERA RAPIDA (QUICK MORPH) - disabled in RA hardcore mode */
+            extern bool Port_RA_IsHardcore(void);
+            if (Port_RA_IsHardcore()) return 0;
             if (keysDown & buttonMask) {
                 if (outMorphPulse) *outMorphPulse = true;
             }
@@ -318,8 +320,25 @@ void Platform3DS_PollKeysIntoGba(void) {
         sQuickMorphPressing = false;
         sQuickMorphSafetyFrames = 120;
     }
+    {
+        /* Hardcore can be turned on while a sequence is mid-flight; drop it
+         * so the assist never touches gameplay that counts. */
+        extern bool Port_RA_IsHardcore(void);
+        if (sQuickMorphGoalClass >= 0 && Port_RA_IsHardcore()) {
+            sQuickMorphGoalClass = -1;
+        }
+    }
     if (sQuickMorphGoalClass >= 0) {
         const uint16_t morphKey = (sQuickMorphGoalClass == 2) ? (1 << 7) : (1 << 6);
+        /* Morphing while running: on the ground a running Samus reads a Down
+         * press as "aim the cannon down", not "crouch -> ball", so the pulse
+         * just bobs her arm until she happens to stop. Releasing left/right
+         * for the handful of frames the sequence lasts brings her to a stand
+         * and the Down pulse balls her up immediately. Unmorph (goal 0) needs
+         * no such help. */
+        if (sQuickMorphGoalClass == 2 && Port_Samus_GetPoseClass() != 2) {
+            gbaKeys &= ~((1u << 4) | (1u << 5)); /* clear KEY_RIGHT | KEY_LEFT */
+        }
         if (Port_Samus_GetPoseClass() == sQuickMorphGoalClass || --sQuickMorphSafetyFrames <= 0) {
             sQuickMorphGoalClass = -1;
         } else if (sQuickMorphPhaseTimer > 0) {

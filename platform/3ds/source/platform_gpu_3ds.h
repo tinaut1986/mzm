@@ -59,6 +59,10 @@ bool PlatformGpu3DS_BeginTopSceneGpu(void);
 struct C3D_RenderTarget_tag* PlatformGpu3DS_GetTopLeftTarget(void);
 struct C3D_RenderTarget_tag* PlatformGpu3DS_GetTopRightTarget(void);
 
+/* Rectangle (in 400x240 top-screen pixels) the emulated GBA image occupies
+ * for the current display style / aspect. Any output pointer may be NULL. */
+void PlatformGpu3DS_GetTopImageRect(int* outX, int* outY, int* outW, int* outH);
+
 /* One-shot diagnostic dump (L+R+X) and the start/stop scene recorder
  * (L+R+START), see platform_gpu_3ds.c. PlatformGpu3DS_RecordTick must be
  * called once per emulated GBA frame (Port_Bios_Halt does this) -- it's a

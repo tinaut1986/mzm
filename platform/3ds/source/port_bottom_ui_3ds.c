@@ -4,6 +4,7 @@
 #include <citro2d.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #include "platform_gpu_3ds.h"
 #include "port_debug_tools.h"
@@ -79,12 +80,18 @@ extern int32_t ChozoStatueHintCheckTargetIsActivated(uint8_t target) __attribute
 /* Platform and Config functions */
 extern bool Port_Config_GetShowFps(void);
 extern void Port_Config_SetShowFps(bool on);
+extern int Port_Config_GetFpsPosition(void);
+extern void Port_Config_CycleFpsPosition(void);
 extern int Port_Config_Get3DSAspectRatio(void);
 extern const char* Port_Config_Get3DSAspectRatioName(void);
 extern void Port_Config_Cycle3DSAspectRatio(void);
 extern int Port_Config_Get3DSDisplayStyle(void);
 extern const char* Port_Config_Get3DSDisplayStyleName(void);
 extern void Port_Config_Cycle3DSDisplayStyle(void);
+extern bool Port_Config_GetHudOutside(void);
+extern void Port_Config_ToggleHudOutside(void);
+extern bool Port_Config_GetGbaBezel(void);
+extern void Port_Config_ToggleGbaBezel(void);
 
 extern bool Platform3DS_IsNew3DS(void);
 extern double Port_PPU_3DS_CurrentFps(void);
@@ -184,10 +191,6 @@ extern void Port_GpuRenderer_DumpAtlas(const char* ppmPath, const char* csvPath)
 extern bool Port_GpuRenderer_IsActive(void);
 extern void Port_GpuRenderer_SetActive(bool active);
 extern void Port_DebugLog(const char* msg);
-extern void PortStereoDepth_SetSpread(int spread);
-extern int PortStereoDepth_GetSpread(void);
-extern const char* PortStereoDepth_SpreadName(int spread);
-extern const char* PortStereoDepth_SpreadNameLang(int spread, int lang);
 extern bool Port_DebugLog_IsEnabled(void);
 extern void Port_DebugLog_SetBuffered(bool buffered);
 extern bool Port_DebugLog_IsBuffered(void);
@@ -273,8 +276,23 @@ extern const char* Port_Config_GetActionName(int action, int lang);
 extern int Port_Config_GetCstickMode(void);
 extern void Port_Config_SetCstickMode(int mode);
 
+/* GBA-look top-screen effects: level 0..3 (OFF/LOW/MEDIUM/HIGH). */
+extern int Port_Config_GetGbaFxGrade(void);
+extern void Port_Config_SetGbaFxGrade(int level);
+extern int Port_Config_GetGbaFxGrid(void);
+extern void Port_Config_SetGbaFxGrid(int level);
+extern int Port_Config_GetGbaFxVignette(void);
+extern void Port_Config_SetGbaFxVignette(int level);
+
 /* RetroAchievements Helpers */
 #include "port_retroachievements_3ds.h"
+
+/* Tapping a card in the list opens a read-only detail popup over it. The
+ * chosen achievement is snapshotted rather than referenced, so a background
+ * list refresh (an unlock, a hardcore toggle) cannot move it out from under
+ * the popup. */
+static bool sShowAchDetailModal = false;
+static RetroAchievementItem sAchDetail;
 
 /* Area selector & zoom state */
 static uint8_t sViewArea = 0;
@@ -374,6 +392,7 @@ static void OpenAchievementsUi(void) {
  * it, otherwise straight out of the modal. */
 static void AchievementsBack(void) {
     sShowAchievementsModal = false;
+    sShowAchDetailModal = false;
     if (sAchFromPacks) {
         sShowAchPacksModal = true;
         Port_RA_SetListSubset(0);
@@ -458,6 +477,7 @@ static void Port_Config_CycleLanguage(void);
 static const char* GetAspectRatioDisplayName(int lang);
 static const char* GetDisplayStyleDisplayName(int lang);
 static const char* GetFpsOverlayDisplayName(int lang);
+static int DispCellHit(int x, int y);
 
 /* Cached buffer for viewing other areas */
 static uint16_t sOtherAreaTiles[32 * 32];
@@ -1175,6 +1195,16 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
         }
     }
 
+    /* Modal: achievement detail popup. Sits on top of the list; only its BACK
+     * button is interactive, everything else is swallowed so the list behind
+     * it cannot scroll. */
+    if (sCurrentTab == BOTTOM_TAB_OPTIONS && sShowAchDetailModal) {
+        if (isNewTap && x >= 100 && x <= 220 && y >= 206 && y <= 230) {
+            sShowAchDetailModal = false;
+        }
+        return;
+    }
+
     /* Modal: pack chooser (only reachable when the game has >1 set) */
     if (sCurrentTab == BOTTOM_TAB_OPTIONS && sShowAchPacksModal) {
         HandleAchPacksTouch(x, y, isNewTap);
@@ -1222,13 +1252,25 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
             sAchievementsScrollY = AchScrollbarValue(y, maxAchScroll);
             sIsTouchDragging = true;
         } else if (!sAchScrollbarDrag && sLastTouchX >= 0 && sLastTouchY >= 0) {
-            float dy = (float)(sLastTouchY - y);
-            sAchievementsScrollY += dy;
-            if (sAchievementsScrollY < 0.0f) sAchievementsScrollY = 0.0f;
-            if (sAchievementsScrollY > maxAchScroll) sAchievementsScrollY = maxAchScroll;
-            sLastTouchX = x;
-            sLastTouchY = y;
-            sIsTouchDragging = true;
+            /* Dead zone: a stylus press wobbles a few pixels before it lifts,
+             * and treating that as a drag was eating every tap meant to open a
+             * card. Only start scrolling once the finger has travelled past a
+             * small threshold from where it first landed; below that, swallow
+             * the movement so the release still counts as a tap. */
+            const float DRAG_SLOP = 6.0f;
+            float totalDy = (sTouchStartY >= 0) ? (float)(y - sTouchStartY) : 0.0f;
+            if (!sIsTouchDragging && (totalDy > -DRAG_SLOP && totalDy < DRAG_SLOP)) {
+                sLastTouchX = x;
+                sLastTouchY = y;
+            } else {
+                float dy = (float)(sLastTouchY - y);
+                sAchievementsScrollY += dy;
+                if (sAchievementsScrollY < 0.0f) sAchievementsScrollY = 0.0f;
+                if (sAchievementsScrollY > maxAchScroll) sAchievementsScrollY = maxAchScroll;
+                sLastTouchX = x;
+                sLastTouchY = y;
+                sIsTouchDragging = true;
+            }
         }
         return;
     }
@@ -1250,6 +1292,12 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
                 } else if (x >= 170 && x <= 280 && y >= 140 && y <= 168) {
                     /* CANCEL */
                     sShowConfirmModal = false;
+                    /* A hardcore-enable confirm was opened from the RA
+                     * settings modal; go back to it rather than the bare
+                     * options list. */
+                    if (!sConfirmIsRestart) {
+                        sShowRASettingsModal = true;
+                    }
                 }
             }
             return;
@@ -1352,7 +1400,21 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
                         Port_RA_SetEnabled(!cur);
                         Port_Config_Save();
                     } else if (y >= 112 && y <= 136) {
-                        /* Hardcore Mode currently unavailable / coming soon */
+                        /* Hardcore Mode toggle. Turning it ON restarts the
+                         * game (rcheevos requires a clean run), so it goes
+                         * through the confirmation modal; turning it OFF is
+                         * immediate. Unavailable on debug-tools builds. */
+                        if (Port_RA_IsHardcore()) {
+                            Port_RA_SetHardcore(false);
+                            Port_Config_Save();
+                        } else if (Port_RA_HardcoreAllowed()) {
+                            /* Hand off to the confirm modal: close this one so
+                             * the confirm modal is what renders and takes
+                             * input (the render chain is a single else-if). */
+                            sShowRASettingsModal = false;
+                            sConfirmIsRestart = false;
+                            sShowConfirmModal = true;
+                        }
                     } else if (y >= 140 && y <= 164) {
                         /* Sound Notification toggle */
                         bool snd = Port_RA_GetNotificationSound();
@@ -1366,26 +1428,34 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
 
         if (sShowDisplayModal) {
             if (isNewTap) {
-                if (x >= 100 && x <= 220 && y >= 204 && y <= 230) {
+                if (x >= 100 && x <= 220 && y >= 206 && y <= 230) {
                     sShowDisplayModal = false;
-                } else if (x >= 10 && x <= 308) {
-                    if (y >= 46 && y <= 67) {
-                        Port_Config_CycleLanguage();
-                    } else if (y >= 69 && y <= 90) {
-                        Port_Config_Cycle3DSAspectRatio();
-                    } else if (y >= 92 && y <= 113) {
-                        Port_Config_Cycle3DSDisplayStyle();
-                    } else if (y >= 115 && y <= 136) {
-                        int next = (PortStereoDepth_GetSpread() + 1) % 3;
-                        PortStereoDepth_SetSpread(next);
-                        Port_Config_Save();
-                    } else if (y >= 138 && y <= 159) {
-                        Port_Config_SetShowFps(!Port_Config_GetShowFps());
-                    } else if (y >= 161 && y <= 182) {
-                        Port_Config_SetAutoHideHud(!Port_Config_GetAutoHideHud());
-                    } else if (y >= 184 && y <= 204) {
-                        Port_Config_SetHideSpoilers(!Port_Config_GetHideSpoilers());
-                    }
+                    return;
+                }
+                /* Two-column grid: 0..2 cycle a display setting, 3..5 toggle,
+                 * 6..8 cycle a GBA effect through OFF/LOW/MED/HIGH. */
+                switch (DispCellHit(x, y)) {
+                    case 0: Port_Config_CycleLanguage(); break;
+                    case 1:
+                        /* Aspect is locked while PIXEL PERFECT is selected. */
+                        if (Port_Config_Get3DSDisplayStyle() != 0) Port_Config_Cycle3DSAspectRatio();
+                        break;
+                    case 2: Port_Config_Cycle3DSDisplayStyle(); break;
+                    case 3: Port_Config_CycleFpsPosition(); break;
+                    case 4: Port_Config_SetAutoHideHud(!Port_Config_GetAutoHideHud()); break;
+                    case 5: Port_Config_SetHideSpoilers(!Port_Config_GetHideSpoilers()); break;
+                    case 6: Port_Config_SetGbaFxGrade((Port_Config_GetGbaFxGrade() + 1) % 4); break;
+                    case 7: Port_Config_SetGbaFxGrid((Port_Config_GetGbaFxGrid() + 1) % 4); break;
+                    case 8: Port_Config_SetGbaFxVignette((Port_Config_GetGbaFxVignette() + 1) % 4); break;
+                    case 9:
+                        if (Port_Config_Get3DSDisplayStyle() == 0) Port_Config_ToggleHudOutside();
+                        break;
+                    case 10:
+                        if (Port_Config_Get3DSDisplayStyle() == 0 || Port_Config_Get3DSAspectRatio() == 1) {
+                            Port_Config_ToggleGbaBezel();
+                        }
+                        break;
+                    default: break;
                 }
             }
             return;
@@ -1508,6 +1578,21 @@ void Port_BottomUI_TouchReleased(void) {
                 sShowAchPacksModal = false;
                 sShowAchievementsModal = true;
                 sAchievementsScrollY = 0.0f;
+            }
+        }
+    }
+
+    /* Achievement list: a tap that never became a drag opens the detail popup
+     * for that card, same release-based shape as the pack chooser above. */
+    if (sCurrentTab == BOTTOM_TAB_OPTIONS && sShowAchievementsModal && !sShowAchDetailModal) {
+        if (!sIsTouchDragging && sTouchStartX >= 16 && sTouchStartX <= 300 &&
+            (float)sTouchStartY >= ACH_LIST_CLIP_Y0 && (float)sTouchStartY < ACH_LIST_CLIP_Y1) {
+            float local = (float)sTouchStartY - ACH_LIST_CLIP_Y0 + sAchievementsScrollY;
+            uint32_t row = (uint32_t)(local / ACH_CARD_H);
+            const RetroAchievementItem* it = Port_RA_GetViewAchievement(row);
+            if (it) {
+                sAchDetail = *it;
+                sShowAchDetailModal = true;
             }
         }
     }
@@ -1851,20 +1936,50 @@ static const char* GetDisplayStyleDisplayName(int lang) {
     }
 }
 
-static const char* GetStereoDepthDisplayName(int lang) {
-    return PortStereoDepth_SpreadNameLang(PortStereoDepth_GetSpread(), lang);
-}
-
 static const char* GetFpsOverlayDisplayName(int lang) {
-    bool on = Port_Config_GetShowFps();
-    switch (lang) {
+    int pos = Port_Config_GetFpsPosition();
+    switch (pos) {
+        case 1: /* BOTTOM-LEFT */
+            switch (lang) {
+                case 3: return "UNTEN LINKS";
+                case 4: return "BAS GAUCHE";
+                case 5: return "BASSO SINISTRA";
+                case 6: return "INF. IZQ.";
+                default: return "BOTTOM-LEFT";
+            }
+        case 2: /* BOTTOM-RIGHT */
+            switch (lang) {
+                case 3: return "UNTEN RECHTS";
+                case 4: return "BAS DROITE";
+                case 5: return "BASSO DESTRA";
+                case 6: return "INF. DER.";
+                default: return "BOTTOM-RIGHT";
+            }
+        case 3: /* TOP-LEFT */
+            switch (lang) {
+                case 3: return "OBEN LINKS";
+                case 4: return "HAUT GAUCHE";
+                case 5: return "ALTO SINISTRA";
+                case 6: return "SUP. IZQ.";
+                default: return "TOP-LEFT";
+            }
+        case 4: /* TOP-RIGHT */
+            switch (lang) {
+                case 3: return "OBEN RECHTS";
+                case 4: return "HAUT DROITE";
+                case 5: return "ALTO DESTRA";
+                case 6: return "SUP. DER.";
+                default: return "TOP-RIGHT";
+            }
         case 0:
-        case 1: return on ? "ON" : "OFF";
-        case 3: return on ? "EIN" : "AUS";
-        case 4: return on ? "ACTIVE" : "DESACTIVE";
-        case 5: return on ? "ATTIVO" : "DISATTIVO";
-        case 6: return on ? "ACTIVADO" : "DESACTIVADO";
-        default: return on ? "ON" : "OFF";
+        default:
+            switch (lang) {
+                case 3: return "AUS";
+                case 4: return "DESACTIVE";
+                case 5: return "DISATTIVO";
+                case 6: return "DESACTIVADO";
+                default: return "OFF";
+            }
     }
 }
 
@@ -2121,6 +2236,80 @@ static void RenderAchPacksModal(int lang) {
     DrawTextCentered(160.0f, 209.0f, 1.0f, backLabels[lang], C2D_Color32(255, 255, 255, 255));
 }
 
+/* Colour RA uses for each special achievement type. */
+static uint32_t AchTypeColor(RetroAchievementType type) {
+    switch (type) {
+        case RA_ACH_TYPE_MISSABLE:      return C2D_Color32(255, 140, 40, 255);
+        case RA_ACH_TYPE_PROGRESSION:   return C2D_Color32(90, 160, 255, 255);
+        case RA_ACH_TYPE_WIN_CONDITION: return C2D_Color32(210, 120, 255, 255);
+        default:                        return C2D_Color32(150, 170, 200, 255);
+    }
+}
+
+/* Full-word name of a type, for the detail popup. */
+static const char* AchTypeName(RetroAchievementType type, int lang) {
+    switch (type) {
+        case RA_ACH_TYPE_MISSABLE: {
+            static const char* l[7] = { "MISSABLE", "MISSABLE", "MISSABLE",
+                                        "VERPASSBAR", "MANQUABLE", "MANCABILE", "PERDIBLE" };
+            return l[lang];
+        }
+        case RA_ACH_TYPE_PROGRESSION: {
+            static const char* l[7] = { "PROGRESSION", "PROGRESSION", "PROGRESSION",
+                                        "FORTSCHRITT", "PROGRESSION", "PROGRESSO", "PROGRESO" };
+            return l[lang];
+        }
+        case RA_ACH_TYPE_WIN_CONDITION: {
+            static const char* l[7] = { "BEATEN GAME", "BEATEN GAME", "BEATEN GAME",
+                                        "SPIEL BEENDET", "JEU TERMINE", "GIOCO FINITO", "JUEGO TERMINADO" };
+            return l[lang];
+        }
+        default:
+            return "";
+    }
+}
+
+/* The little glyph RA shows on the web for a special achievement type, drawn
+ * as pixel rects in a 12x12 box with its top-left at (x, y): an exclamation
+ * triangle for missable, rising bars for progression, a chequered finish flag
+ * for the "game beaten" win condition. Standard achievements draw nothing. */
+static void DrawAchTypeIcon(float x, float y, RetroAchievementType type, bool dim,
+                            float depth, float clipY0, float clipY1) {
+    if (type != RA_ACH_TYPE_MISSABLE && type != RA_ACH_TYPE_PROGRESSION &&
+        type != RA_ACH_TYPE_WIN_CONDITION) {
+        return;
+    }
+
+    uint32_t col = AchTypeColor(type);
+    if (dim) {
+        uint32_t r = (col & 0xFF), g = (col >> 8) & 0xFF, b = (col >> 16) & 0xFF;
+        col = C2D_Color32((uint8_t)(r / 2 + 30), (uint8_t)(g / 2 + 30), (uint8_t)(b / 2 + 30), 255);
+    }
+    uint32_t bg = C2D_Color32(12, 16, 24, 255);
+    float d2 = depth + 0.005f;
+
+    if (type == RA_ACH_TYPE_MISSABLE) {
+        for (int r = 0; r < 6; ++r) {
+            DrawRectClipped(x + (5.0f - (float)r), y + (float)r * 2.0f, depth,
+                            2.0f + (float)r * 2.0f, 2.0f, col, clipY0, clipY1);
+        }
+        DrawRectClipped(x + 5.0f, y + 3.0f, d2, 2.0f, 4.0f, bg, clipY0, clipY1);
+        DrawRectClipped(x + 5.0f, y + 8.0f, d2, 2.0f, 2.0f, bg, clipY0, clipY1);
+    } else if (type == RA_ACH_TYPE_PROGRESSION) {
+        DrawRectClipped(x + 0.0f, y + 7.0f, depth, 3.0f, 5.0f, col, clipY0, clipY1);
+        DrawRectClipped(x + 4.0f, y + 4.0f, depth, 3.0f, 8.0f, col, clipY0, clipY1);
+        DrawRectClipped(x + 8.0f, y + 1.0f, depth, 3.0f, 11.0f, col, clipY0, clipY1);
+    } else {
+        DrawRectClipped(x + 1.0f, y + 0.0f, depth, 2.0f, 12.0f, col, clipY0, clipY1);
+        DrawRectClipped(x + 3.0f, y + 1.0f, depth, 8.0f, 6.0f, col, clipY0, clipY1);
+        DrawRectClipped(x + 3.0f, y + 1.0f, d2, 2.0f, 2.0f, bg, clipY0, clipY1);
+        DrawRectClipped(x + 7.0f, y + 1.0f, d2, 2.0f, 2.0f, bg, clipY0, clipY1);
+        DrawRectClipped(x + 5.0f, y + 3.0f, d2, 2.0f, 2.0f, bg, clipY0, clipY1);
+        DrawRectClipped(x + 3.0f, y + 5.0f, d2, 2.0f, 2.0f, bg, clipY0, clipY1);
+        DrawRectClipped(x + 7.0f, y + 5.0f, d2, 2.0f, 2.0f, bg, clipY0, clipY1);
+    }
+}
+
 /* Render RetroAchievements List Modal with Touch Scrolling */
 static void RenderAchievementsModal(int lang) {
     const float mX = 10.0f;
@@ -2261,12 +2450,29 @@ static void RenderAchievementsModal(int lang) {
             }
         }
 
-        /* 3. Title + Points (Full width up to statX - 6.0f = 232px) */
-        char titleBuf[80];
-        snprintf(titleBuf, sizeof(titleBuf), "%s (%uP)", ach->title, (unsigned)ach->points);
+        /* 3. Title on the top line, full width now that the points have moved
+         * off it -- a long title no longer has to fight the "(NNP)" suffix for
+         * the last few pixels. */
         uint32_t titleCol = ach->hardcoreUnlocked ? C2D_Color32(255, 225, 80, 255) :
                             (ach->unlocked ? C2D_Color32(140, 240, 170, 255) : C2D_Color32(220, 235, 255, 255));
-        DrawTextMaxWClipped(48.0f, py + 4.0f, 1.0f, titleBuf, titleCol, clipY0, clipY1, 232.0f);
+        DrawTextMaxWClipped(48.0f, py + 4.0f, 1.0f, ach->title, titleCol, clipY0, clipY1, 236.0f);
+
+        /* 4. Points, bottom-left: directly under the title and beside the
+         * badge, in the space that was otherwise empty. */
+        char ptsBuf[16];
+        snprintf(ptsBuf, sizeof(ptsBuf), "%uP", (unsigned)ach->points);
+        uint32_t ptsCol = ach->hardcoreUnlocked ? C2D_Color32(255, 215, 0, 255) :
+                          (ach->unlocked ? C2D_Color32(120, 255, 160, 255) : C2D_Color32(140, 160, 190, 255));
+        if (py + 18.0f + 7.0f > clipY0 && py + 18.0f < clipY1) {
+            DrawTextClipped(48.0f, py + 18.0f, 1.0f, ptsBuf, ptsCol, clipY0, clipY1);
+        }
+
+        /* 5. Type icon (missable / progression / beaten-game), lower-right of
+         * the card, as on the RA website. Dimmed while still locked. */
+        if (py + 16.0f + 12.0f > clipY0 && py + 16.0f < clipY1) {
+            DrawAchTypeIcon(285.0f, py + 16.0f, ach->type,
+                            !ach->unlocked && !ach->hardcoreUnlocked, 0.93f, clipY0, clipY1);
+        }
     }
 
     /* Achievements modal scrollbar */
@@ -2307,6 +2513,97 @@ static void RenderAchievementsModal(int lang) {
         float py = 209.0f + (float)row * 2.0f;
         C2D_DrawRectSolid(px, py, 0.97f, w, 2.0f, C2D_Color32(150, 200, 255, 255));
     }
+}
+
+/* Read-only detail popup for one achievement, opened by tapping its card in
+ * the list. Shows the full badge, the untruncated title and description, the
+ * point value, the lock state (with unlock date when known) and the type. */
+static void RenderAchievementDetailModal(int lang) {
+    const RetroAchievementItem* a = &sAchDetail;
+    const float pX = 6.0f, pY = 20.0f, pW = 308.0f, pH = 214.0f;
+    const float clip0 = pY, clip1 = pY + pH;
+
+    C2D_DrawRectSolid(pX, pY, 0.975f, pW, pH, C2D_Color32(255, 215, 0, 255));
+    C2D_DrawRectSolid(pX + 2.0f, pY + 2.0f, 0.978f, pW - 4.0f, pH - 4.0f, C2D_Color32(8, 11, 20, 252));
+
+    /* Badge, nearest-neighbour scaled x4. Greyed while still locked, matching
+     * the list. */
+    const float px = 4.0f;
+    float bX = pX + 12.0f, bY = pY + 12.0f;
+    bool locked = !a->unlocked && !a->hardcoreUnlocked;
+    C2D_DrawRectSolid(bX - 2.0f, bY - 2.0f, 0.979f, 20.0f * px + 4.0f, 20.0f * px + 4.0f,
+                      C2D_Color32(60, 75, 100, 255));
+    const uint32_t* badge = Port_RA_GetBadgePixels(a->badgeName);
+    if (badge) {
+        for (int y = 0; y < 20; ++y) {
+            for (int x = 0; x < 20; ++x) {
+                uint32_t c = badge[y * 20 + x];
+                if (locked) {
+                    uint32_t r = c & 0xFF, g = (c >> 8) & 0xFF, b = (c >> 16) & 0xFF;
+                    uint32_t gray = (r * 30 + g * 59 + b * 11) / 250;
+                    c = C2D_Color32((uint8_t)gray, (uint8_t)gray, (uint8_t)gray, 255);
+                }
+                C2D_DrawRectSolid(bX + (float)x * px, bY + (float)y * px, 0.98f, px, px, c);
+            }
+        }
+    } else {
+        C2D_DrawRectSolid(bX, bY, 0.98f, 20.0f * px, 20.0f * px, C2D_Color32(20, 26, 40, 255));
+    }
+
+    float tX = bX + 20.0f * px + 10.0f;
+    float tW = pX + pW - 12.0f - tX;
+    DrawWrappedTextClipped(tX, pY + 12.0f, 1.0f, a->title, tW, 11.0f,
+                           C2D_Color32(255, 230, 120, 255), clip0, clip1);
+
+    char buf[96];
+    snprintf(buf, sizeof(buf), "%u PTS", (unsigned)a->points);
+    DrawText(tX, pY + 46.0f, 1.0f, buf, C2D_Color32(120, 255, 160, 255));
+
+    static const char* const stHardcore[7] = {
+        "UNLOCKED (HARDCORE)", "UNLOCKED (HARDCORE)", "UNLOCKED (HARDCORE)",
+        "FREIGESCHALTET (HARDCORE)", "DEBLOQUE (HARDCORE)", "SBLOCCATO (HARDCORE)",
+        "DESBLOQUEADO (HARDCORE)"
+    };
+    static const char* const stUnlocked[7] = {
+        "UNLOCKED", "UNLOCKED", "UNLOCKED",
+        "FREIGESCHALTET", "DEBLOQUE", "SBLOCCATO", "DESBLOQUEADO"
+    };
+    static const char* const stLocked[7] = {
+        "LOCKED", "LOCKED", "LOCKED",
+        "GESPERRT", "VERROUILLE", "BLOCCATO", "BLOQUEADO"
+    };
+    const char* stTxt;
+    uint32_t stCol;
+    if (a->hardcoreUnlocked)  { stTxt = stHardcore[lang]; stCol = C2D_Color32(255, 215, 0, 255); }
+    else if (a->unlocked)     { stTxt = stUnlocked[lang]; stCol = C2D_Color32(80, 255, 120, 255); }
+    else                      { stTxt = stLocked[lang];   stCol = C2D_Color32(150, 170, 200, 255); }
+    DrawText(tX, pY + 60.0f, 1.0f, stTxt, stCol);
+
+    if (!locked && a->unlockTime != 0) {
+        time_t t = (time_t)a->unlockTime;
+        struct tm* tmv = gmtime(&t);
+        if (tmv && strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M UTC", tmv) > 0) {
+            DrawText(tX, pY + 74.0f, 1.0f, buf, C2D_Color32(150, 180, 210, 255));
+        }
+    }
+
+    /* Type row, using the same glyph the list card carries. */
+    if (a->type == RA_ACH_TYPE_MISSABLE || a->type == RA_ACH_TYPE_PROGRESSION ||
+        a->type == RA_ACH_TYPE_WIN_CONDITION) {
+        float ty = pY + 96.0f;
+        DrawAchTypeIcon(bX + 2.0f, ty, a->type, false, 0.985f, clip0, clip1);
+        DrawText(bX + 20.0f, ty + 2.0f, 1.0f, AchTypeName(a->type, lang), AchTypeColor(a->type));
+    }
+
+    DrawWrappedTextClipped(pX + 12.0f, pY + 118.0f, 1.0f,
+                           a->description[0] ? a->description : "(NO DESCRIPTION)",
+                           pW - 24.0f, 12.0f, C2D_Color32(220, 235, 255, 255), clip0, clip1 - 26.0f);
+
+    C2D_DrawRectSolid(100.0f, 208.0f, 0.99f, 120.0f, 20.0f, C2D_Color32(20, 70, 130, 255));
+    static const char* backLabels[7] = {
+        "BACK", "BACK", "BACK", "ZURUECK", "RETOUR", "INDIETRO", "VOLVER"
+    };
+    DrawTextCentered(160.0f, 213.0f, 1.0f, backLabels[lang], C2D_Color32(255, 255, 255, 255));
 }
 
 /* Render Confirmation Dialog (hardcore enable / restart game) */
@@ -2363,91 +2660,132 @@ static void RenderConfirmModal(int lang) {
     DrawTextCentered(225.0f, 149.0f, 1.0f, cancelModalLabels[lang], C2D_Color32(255, 255, 255, 255));
 }
 
-/* Render Button Remap Modal */
+/* Two-column grid for the DISPLAY modal. Same geometry as the debug-tools
+ * grid (DBGTOOL_*), but defined here because that block only compiles in
+ * PORT_DEBUG_TOOLS_ACTIVE builds and this modal also ships in release. */
+#define DISP_COL_L_X    16
+#define DISP_COL_R_X    164
+#define DISP_COL_W      140
+#define DISP_GRID_Y0    46
+#define DISP_GRID_PITCH 26
+#define DISP_CELL_H     24
+#define DISP_GRID_ROWS  6
+#define DISP_CELL_COUNT 11
+
+/* One label line plus a value/state line under it, tinted by `valueCol`. */
+static void DispCell(int index, const char* label, const char* value, uint32_t valueCol) {
+    float x = (index & 1) ? (float)DISP_COL_R_X : (float)DISP_COL_L_X;
+    float y = (float)(DISP_GRID_Y0 + (index >> 1) * DISP_GRID_PITCH);
+    C2D_DrawRectSolid(x, y, 0.9f, (float)DISP_COL_W, (float)DISP_CELL_H, C2D_Color32(24, 32, 50, 255));
+    C2D_DrawRectSolid(x, y, 0.91f, (float)DISP_COL_W, 1.0f, C2D_Color32(50, 80, 130, 255));
+    DrawTextMaxWClipped(x + 6.0f, y + 2.0f, 1.0f, label, C2D_Color32(255, 255, 255, 255),
+                        0.0f, 240.0f, (float)DISP_COL_W - 12.0f);
+    if (value) DrawTextMaxWClipped(x + 6.0f, y + 13.0f, 1.0f, value, valueCol,
+                                   0.0f, 240.0f, (float)DISP_COL_W - 12.0f);
+}
+
+/* Index of the grid cell a tap landed on, or -1. */
+static int DispCellHit(int x, int y) {
+    int col;
+    if (x >= DISP_COL_L_X && x <= DISP_COL_L_X + DISP_COL_W) col = 0;
+    else if (x >= DISP_COL_R_X && x <= DISP_COL_R_X + DISP_COL_W) col = 1;
+    else return -1;
+    for (int r = 0; r < DISP_GRID_ROWS; ++r) {
+        int cy = DISP_GRID_Y0 + r * DISP_GRID_PITCH;
+        if (y < cy || y > cy + DISP_CELL_H) continue;
+        int idx = r * 2 + col;
+        return (idx < DISP_CELL_COUNT) ? idx : -1;
+    }
+    return -1;
+}
+
+/* OFF / LOW / MEDIUM / HIGH label for a GBA-effect level (0..3). */
+static const char* GbaFxLevelName(int lang, int level) {
+    switch (level) {
+        case 1:  return (lang == 6) ? "BAJO" : "LOW";
+        case 2:  return (lang == 6) ? "MEDIO" : "MED";
+        case 3:  return (lang == 6) ? "ALTO" : "HIGH";
+        default: return (lang == 6) ? "NO" : "OFF";
+    }
+}
+
+/* Render Display Settings Modal -- two-column grid so the GBA-look effect
+ * toggles fit alongside the existing rows without scrolling. */
 static void RenderDisplayModal(int lang) {
     C2D_DrawRectSolid(10.0f, 26.0f, 0.85f, 300.0f, 206.0f, C2D_Color32(10, 14, 24, 250));
     C2D_DrawRectSolid(10.0f, 26.0f, 0.84f, 300.0f, 206.0f, C2D_Color32(40, 70, 120, 255));
 
-    const char* displayTitles[7] = {
+    static const char* const titles[7] = {
         "DISPLAY SETTINGS", "DISPLAY SETTINGS", "DISPLAY SETTINGS",
         "BILDSCHIRMEINSTELLUNGEN", "PARAMETRES D'AFFICHAGE", "IMPOSTAZIONI SCHERMO", "CONFIGURACION DE PANTALLA"
     };
-    DrawText(20.0f, 30.0f, 1.0f, displayTitles[lang], C2D_Color32(255, 215, 0, 255));
+    DrawText(20.0f, 30.0f, 1.0f, titles[lang], C2D_Color32(255, 215, 0, 255));
 
-    /* Language row (Y: 46 to 67) */
-    C2D_DrawRectSolid(16.0f, 46.0f, 0.9f, 288.0f, 21.0f, C2D_Color32(24, 32, 50, 255));
-    const char* langLabels[7] = {
-        "LANGUAGE:", "LANGUAGE:", "LANGUAGE:",
-        "SPRACHE:", "LANGUE:", "LINGUA:", "IDIOMA:"
-    };
-    DrawText(24.0f, 50.0f, 1.0f, langLabels[lang], C2D_Color32(255, 255, 255, 255));
-    DrawText(160.0f, 50.0f, 1.0f, Port_Config_GetLanguageDisplayName(lang), C2D_Color32(255, 215, 0, 255));
+    const uint32_t valCol  = C2D_Color32(255, 215, 0, 255);
+    const uint32_t onCol   = C2D_Color32(80, 255, 120, 255);
+    const uint32_t offCol  = C2D_Color32(255, 100, 100, 255);
+    const uint32_t idleCol = C2D_Color32(150, 150, 150, 255);
 
-    /* Aspect Ratio row (Y: 69 to 90) */
-    C2D_DrawRectSolid(16.0f, 69.0f, 0.9f, 288.0f, 21.0f, C2D_Color32(24, 32, 50, 255));
-    const char* aspectLabels[7] = {
-        "ASPECT RATIO:", "ASPECT RATIO:", "ASPECT RATIO:",
-        "BILDVERHAELTNIS:", "FORMAT D'IMAGE:", "FORMATO:", "ASPECTO:"
-    };
-    DrawText(24.0f, 73.0f, 1.0f, aspectLabels[lang], C2D_Color32(255, 255, 255, 255));
-    DrawText(160.0f, 73.0f, 1.0f, GetAspectRatioDisplayName(lang), C2D_Color32(255, 215, 0, 255));
+    const char* onTxt  = (lang == 6) ? "ACTIVADO" : ((lang == 3) ? "EIN" : ((lang == 4) ? "ACTIVE" : ((lang == 5) ? "ATTIVO" : "ON")));
+    const char* offTxt = (lang == 6) ? "DESACT." : ((lang == 3) ? "AUS" : ((lang == 4) ? "DESACT." : ((lang == 5) ? "DISATT." : "OFF")));
 
-    /* Display Style row (Y: 92 to 113) */
-    C2D_DrawRectSolid(16.0f, 92.0f, 0.9f, 288.0f, 21.0f, C2D_Color32(24, 32, 50, 255));
-    const char* styleLabels[7] = {
-        "DISPLAY STYLE:", "DISPLAY STYLE:", "DISPLAY STYLE:",
-        "DARSTELLUNG:", "STYLE D'AFFICHAGE:", "STILE DISPLAY:", "ESTILO:"
-    };
-    DrawText(24.0f, 96.0f, 1.0f, styleLabels[lang], C2D_Color32(255, 255, 255, 255));
-    DrawText(160.0f, 96.0f, 1.0f, GetDisplayStyleDisplayName(lang), C2D_Color32(255, 215, 0, 255));
+    static const char* const langL[7]  = { "LANGUAGE","LANGUAGE","LANGUAGE","SPRACHE","LANGUE","LINGUA","IDIOMA" };
+    static const char* const aspL[7]   = { "ASPECT","ASPECT","ASPECT","BILDFORMAT","FORMAT","FORMATO","ASPECTO" };
+    static const char* const styL[7]   = { "DISPLAY STYLE","DISPLAY STYLE","DISPLAY STYLE","DARSTELLUNG","STYLE","STILE","ESTILO" };
+    static const char* const fpsL[7]   = { "SHOW FPS","SHOW FPS","SHOW FPS","FPS ANZEIGEN","AFFICHER FPS","MOSTRA FPS","MOSTRAR FPS" };
+    static const char* const hudL[7]   = { "AUTO-HIDE HUD","AUTO-HIDE HUD","AUTO-HIDE HUD","HUD AUTO-AUS","MASQUER HUD","NASCONDI HUD","AUTOOCULTAR HUD" };
+    static const char* const spoL[7]   = { "HIDE SPOILERS","HIDE SPOILERS","HIDE SPOILERS","SPOILER AUS","MASQ. SPOILERS","NASC. SPOILER","OCULTAR SPOILERS" };
 
-    /* 3D Depth row (Y: 115 to 136) */
-    C2D_DrawRectSolid(16.0f, 115.0f, 0.9f, 288.0f, 21.0f, C2D_Color32(24, 32, 50, 255));
-    const char* depthLabels[7] = {
-        "3D DEPTH:", "3D DEPTH:", "3D DEPTH:",
-        "3D-TIEFE:", "PROFONDEUR 3D:", "PROFONDITA 3D:", "PROFUNDIDAD 3D:"
-    };
-    DrawText(24.0f, 119.0f, 1.0f, depthLabels[lang], C2D_Color32(255, 255, 255, 255));
-    DrawText(160.0f, 119.0f, 1.0f, GetStereoDepthDisplayName(lang), C2D_Color32(255, 215, 0, 255));
+    DispCell(0, langL[lang], Port_Config_GetLanguageDisplayName(lang), valCol);
+    /* Aspect is meaningless at 1:1, so it is locked while PIXEL PERFECT is on. */
+    bool aspectLocked = (Port_Config_Get3DSDisplayStyle() == 0);
+    DispCell(1, aspL[lang],
+             aspectLocked ? ((lang == 6) ? "BLOQUEADO" : "LOCKED") : GetAspectRatioDisplayName(lang),
+             aspectLocked ? idleCol : valCol);
+    DispCell(2, styL[lang], GetDisplayStyleDisplayName(lang), valCol);
 
-    /* FPS Overlay toggle row (Y: 138 to 159) */
-    C2D_DrawRectSolid(16.0f, 138.0f, 0.9f, 288.0f, 21.0f, C2D_Color32(24, 32, 50, 255));
-    const char* fpsLabels[7] = {
-        "SHOW FPS:", "SHOW FPS:", "SHOW FPS:",
-        "FPS ANZEIGEN:", "AFFICHER FPS:", "MOSTRA FPS:", "MOSTRAR FPS:"
-    };
-    DrawText(24.0f, 142.0f, 1.0f, fpsLabels[lang], C2D_Color32(255, 255, 255, 255));
     bool fpsOn = Port_Config_GetShowFps();
-    DrawText(160.0f, 142.0f, 1.0f, GetFpsOverlayDisplayName(lang),
-             fpsOn ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 100, 100, 255));
-
-    /* Auto-Hide HUD toggle row (Y: 161 to 182) */
-    C2D_DrawRectSolid(16.0f, 161.0f, 0.9f, 288.0f, 21.0f, C2D_Color32(24, 32, 50, 255));
-    const char* hudLabels[7] = {
-        "AUTO-HIDE HUD:", "AUTO-HIDE HUD:", "AUTO-HIDE HUD:",
-        "HUD AUTOM. AUSBLENDEN:", "MASQUER HUD AUTO:", "NASCONDI HUD AUTO:", "AUTOESCONDER HUD:"
-    };
-    DrawText(24.0f, 165.0f, 1.0f, hudLabels[lang], C2D_Color32(255, 255, 255, 255));
+    DispCell(3, fpsL[lang], GetFpsOverlayDisplayName(lang), fpsOn ? onCol : offCol);
     bool ahOn = Port_Config_GetAutoHideHud();
-    DrawText(160.0f, 165.0f, 1.0f, ahOn ? ((lang == 6) ? "ACTIVADO" : ((lang == 3) ? "EIN" : ((lang == 4) ? "ACTIVE" : ((lang == 5) ? "ATTIVO" : "ON"))))
-                                         : ((lang == 6) ? "DESACTIVADO" : ((lang == 3) ? "AUS" : ((lang == 4) ? "DESACTIVE" : ((lang == 5) ? "DISATTIVO" : "OFF")))),
-             ahOn ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 100, 100, 255));
-
-    /* Hide Spoilers toggle row (Y: 184 to 204) */
-    C2D_DrawRectSolid(16.0f, 184.0f, 0.9f, 288.0f, 20.0f, C2D_Color32(24, 32, 50, 255));
-    const char* spoilerLabels[7] = {
-        "HIDE SPOILERS:", "HIDE SPOILERS:", "HIDE SPOILERS:",
-        "SPOILER VERBERGEN:", "MASQUER SPOILERS:", "NASCONDI SPOILER:", "OCULTAR SPOILERS:"
-    };
-    DrawText(24.0f, 187.0f, 1.0f, spoilerLabels[lang], C2D_Color32(255, 255, 255, 255));
+    DispCell(4, hudL[lang], ahOn ? onTxt : offTxt, ahOn ? onCol : offCol);
     bool spOn = Port_Config_GetHideSpoilers();
-    DrawText(160.0f, 187.0f, 1.0f, spOn ? ((lang == 6) ? "ACTIVADO" : ((lang == 3) ? "EIN" : ((lang == 4) ? "ACTIVE" : ((lang == 5) ? "ATTIVO" : "ON"))))
-                                         : ((lang == 6) ? "DESACTIVADO" : ((lang == 3) ? "AUS" : ((lang == 4) ? "DESACTIVE" : ((lang == 5) ? "DISATTIVO" : "OFF")))),
-             spOn ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 100, 100, 255));
+    DispCell(5, spoL[lang], spOn ? onTxt : offTxt, spOn ? onCol : offCol);
+
+    static const char* const gradeL[7] = { "GBA COLOR","GBA COLOR","GBA COLOR","GBA-FARBE","COULEUR GBA","COLORE GBA","COLOR GBA" };
+    static const char* const gridL[7]  = { "GBA GRID","GBA GRID","GBA GRID","GBA-GITTER","GRILLE GBA","GRIGLIA GBA","REJILLA GBA" };
+    static const char* const vigL[7]   = { "VIGNETTE","VIGNETTE","VIGNETTE","VIGNETTE","VIGNETTAGE","VIGNETTA","VINETA" };
+
+    int fx0 = Port_Config_GetGbaFxGrade();
+    int fx1 = Port_Config_GetGbaFxGrid();
+    int fx2 = Port_Config_GetGbaFxVignette();
+    DispCell(6, gradeL[lang], GbaFxLevelName(lang, fx0), fx0 ? onCol : idleCol);
+    DispCell(7, gridL[lang],  GbaFxLevelName(lang, fx1), fx1 ? onCol : idleCol);
+    DispCell(8, vigL[lang],   GbaFxLevelName(lang, fx2), fx2 ? onCol : idleCol);
+
+    static const char* const hudPosL[7] = { "HUD POSITION","HUD POSITION","HUD POSITION","HUD-POSITION","POSITION HUD","POSIZIONE HUD","POSICION HUD" };
+    static const char* const bezelL[7]  = { "GBA FRAME","GBA FRAME","GBA FRAME","GBA-RAHMEN","CADRE GBA","CORNICE GBA","MARCO GBA" };
+
+    const char* lockedTxt = (lang == 6) ? "BLOQUEADO" : "LOCKED";
+    bool pixelPerfect = (Port_Config_Get3DSDisplayStyle() == 0);
+
+    /* HUD Position: TOP BORDER vs DEFAULT (only active in Pixel Perfect) */
+    bool hudOut = Port_Config_GetHudOutside();
+    const char* hudOutTxt = (lang == 6) ? "BORDE SUP." : ((lang == 3) ? "OBEN" : ((lang == 4) ? "BORD SUP." : ((lang == 5) ? "BORDO SUP." : "TOP BORDER")));
+    const char* hudDefTxt = (lang == 6) ? "NORMAL" : ((lang == 3) ? "NORMAL" : ((lang == 4) ? "NORMAL" : ((lang == 5) ? "NORMALE" : "DEFAULT")));
+    DispCell(9, hudPosL[lang],
+             pixelPerfect ? (hudOut ? hudOutTxt : hudDefTxt) : lockedTxt,
+             pixelPerfect ? (hudOut ? onCol : valCol) : idleCol);
+
+    /* GBA Bezel: ON vs OFF (active in Pixel Perfect or Scaled Original) */
+    bool bezelAllowed = (pixelPerfect || Port_Config_Get3DSAspectRatio() == 1);
+    bool bezelOn = Port_Config_GetGbaBezel();
+    DispCell(10, bezelL[lang],
+             bezelAllowed ? (bezelOn ? onTxt : offTxt) : lockedTxt,
+             bezelAllowed ? (bezelOn ? onCol : offCol) : idleCol);
 
     /* Close button (Y: 206 to 228) */
     C2D_DrawRectSolid(100.0f, 206.0f, 0.9f, 120.0f, 22.0f, C2D_Color32(20, 70, 130, 255));
-    const char* closeLabels[7] = {
+    static const char* const closeLabels[7] = {
         "CLOSE", "CLOSE", "CLOSE",
         "SCHLIESSEN", "FERMER", "CHIUDI", "CERRAR"
     };
@@ -2506,18 +2844,25 @@ static void RenderRASettingsModal(int lang) {
     DrawText(170.0f, 90.0f, 1.0f, raEn ? onStr : offStr,
              raEn ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 100, 100, 255));
 
-    /* Row 3: Hardcore Mode (Disabled / Proximamente) (Y: 112 to 136) */
+    /* Row 3: Hardcore Mode (Y: 112 to 136) */
     C2D_DrawRectSolid(16.0f, 112.0f, 0.9f, 288.0f, 24.0f, C2D_Color32(18, 24, 38, 255));
     const char* hcLabels[7] = {
         "HARDCORE MODE:", "HARDCORE MODE:", "HARDCORE MODE:",
         "HARDCORE-MODUS:", "MODE HARDCORE:", "MODO HARDCORE:", "MODO HARDCORE:"
     };
-    DrawText(24.0f, 118.0f, 1.0f, hcLabels[lang], C2D_Color32(140, 150, 170, 255));
-    const char* soonLabels[7] = {
-        "COMING SOON", "COMING SOON", "COMING SOON",
-        "DEMNAECHST", "BIENTOT", "PROSSIMAMENTE", "PROXIMAMENTE"
-    };
-    DrawText(170.0f, 118.0f, 1.0f, soonLabels[lang], C2D_Color32(130, 140, 160, 255));
+    DrawText(24.0f, 118.0f, 1.0f, hcLabels[lang], C2D_Color32(255, 255, 255, 255));
+    if (!Port_RA_HardcoreAllowed()) {
+        /* Debug-tools build: hardcore can never be enabled here. */
+        const char* naLabels[7] = {
+            "N/A (DEBUG BUILD)", "N/A (DEBUG BUILD)", "N/A (DEBUG BUILD)",
+            "N/A (DEBUG-BUILD)", "N/A (BUILD DEBUG)", "N/D (BUILD DEBUG)", "N/D (BUILD DEBUG)"
+        };
+        DrawText(170.0f, 118.0f, 1.0f, naLabels[lang], C2D_Color32(130, 140, 160, 255));
+    } else {
+        bool hcOn = Port_RA_IsHardcore();
+        DrawText(170.0f, 118.0f, 1.0f, hcOn ? onStr : offStr,
+                 hcOn ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 100, 100, 255));
+    }
 
     /* Row 4: Achievement Notification Sound (Y: 140 to 164) */
     C2D_DrawRectSolid(16.0f, 140.0f, 0.9f, 288.0f, 24.0f, C2D_Color32(24, 32, 50, 255));
@@ -2580,7 +2925,9 @@ static void RenderRemapSelectModal(int lang) {
         float bw = 140.0f;
         float bh = 24.0f;
 
-        bool isDisabled = (act == 1 && hcActive);
+        /* Rapid fire (1) and quick morph (2) are input assists RA hardcore
+         * forbids; show them greyed, same as elsewhere. */
+        bool isDisabled = ((act == 1 || act == 2) && hcActive);
         bool isCur = (act == currentAct);
         uint32_t bgCol, bdrCol, textCol;
 
@@ -2663,7 +3010,7 @@ static void RenderRemapModal(int lang) {
             btnRowNames[lang][i],
             C2D_Color32(255, 255, 255, 255), viewY0, viewY1);
         int act = Port_Config_GetButtonMapping(i);
-        bool actDisabled = (act == 1 && hcActive);
+        bool actDisabled = ((act == 1 || act == 2) && hcActive);
         uint32_t actCol = actDisabled ? C2D_Color32(110, 120, 140, 255) : C2D_Color32(255, 215, 0, 255);
         DrawTextClipped(150.0f, py + 7.0f, 1.0f,
             Port_Config_GetActionName(act, lang),
@@ -3334,7 +3681,10 @@ static void RenderOptionsView(void) {
     if (sShowDisplayModal) RenderDisplayModal(lang);
     else if (sShowRASettingsModal) RenderRASettingsModal(lang);
     else if (sShowAchPacksModal) RenderAchPacksModal(lang);
-    else if (sShowAchievementsModal) RenderAchievementsModal(lang);
+    else if (sShowAchievementsModal) {
+        RenderAchievementsModal(lang);
+        if (sShowAchDetailModal) RenderAchievementDetailModal(lang);
+    }
     else if (sShowRemapModal) RenderRemapModal(lang);
     else if (sShowConfirmModal) RenderConfirmModal(lang);
 }
