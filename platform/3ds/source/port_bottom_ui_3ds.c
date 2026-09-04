@@ -1286,6 +1286,12 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
                 } else if (x >= 170 && x <= 280 && y >= 140 && y <= 168) {
                     /* CANCEL */
                     sShowConfirmModal = false;
+                    /* A hardcore-enable confirm was opened from the RA
+                     * settings modal; go back to it rather than the bare
+                     * options list. */
+                    if (!sConfirmIsRestart) {
+                        sShowRASettingsModal = true;
+                    }
                 }
             }
             return;
@@ -1388,7 +1394,21 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
                         Port_RA_SetEnabled(!cur);
                         Port_Config_Save();
                     } else if (y >= 112 && y <= 136) {
-                        /* Hardcore Mode currently unavailable / coming soon */
+                        /* Hardcore Mode toggle. Turning it ON restarts the
+                         * game (rcheevos requires a clean run), so it goes
+                         * through the confirmation modal; turning it OFF is
+                         * immediate. Unavailable on debug-tools builds. */
+                        if (Port_RA_IsHardcore()) {
+                            Port_RA_SetHardcore(false);
+                            Port_Config_Save();
+                        } else if (Port_RA_HardcoreAllowed()) {
+                            /* Hand off to the confirm modal: close this one so
+                             * the confirm modal is what renders and takes
+                             * input (the render chain is a single else-if). */
+                            sShowRASettingsModal = false;
+                            sConfirmIsRestart = false;
+                            sShowConfirmModal = true;
+                        }
                     } else if (y >= 140 && y <= 164) {
                         /* Sound Notification toggle */
                         bool snd = Port_RA_GetNotificationSound();
@@ -2755,18 +2775,25 @@ static void RenderRASettingsModal(int lang) {
     DrawText(170.0f, 90.0f, 1.0f, raEn ? onStr : offStr,
              raEn ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 100, 100, 255));
 
-    /* Row 3: Hardcore Mode (Disabled / Proximamente) (Y: 112 to 136) */
+    /* Row 3: Hardcore Mode (Y: 112 to 136) */
     C2D_DrawRectSolid(16.0f, 112.0f, 0.9f, 288.0f, 24.0f, C2D_Color32(18, 24, 38, 255));
     const char* hcLabels[7] = {
         "HARDCORE MODE:", "HARDCORE MODE:", "HARDCORE MODE:",
         "HARDCORE-MODUS:", "MODE HARDCORE:", "MODO HARDCORE:", "MODO HARDCORE:"
     };
-    DrawText(24.0f, 118.0f, 1.0f, hcLabels[lang], C2D_Color32(140, 150, 170, 255));
-    const char* soonLabels[7] = {
-        "COMING SOON", "COMING SOON", "COMING SOON",
-        "DEMNAECHST", "BIENTOT", "PROSSIMAMENTE", "PROXIMAMENTE"
-    };
-    DrawText(170.0f, 118.0f, 1.0f, soonLabels[lang], C2D_Color32(130, 140, 160, 255));
+    DrawText(24.0f, 118.0f, 1.0f, hcLabels[lang], C2D_Color32(255, 255, 255, 255));
+    if (!Port_RA_HardcoreAllowed()) {
+        /* Debug-tools build: hardcore can never be enabled here. */
+        const char* naLabels[7] = {
+            "N/A (DEBUG BUILD)", "N/A (DEBUG BUILD)", "N/A (DEBUG BUILD)",
+            "N/A (DEBUG-BUILD)", "N/A (BUILD DEBUG)", "N/D (BUILD DEBUG)", "N/D (BUILD DEBUG)"
+        };
+        DrawText(170.0f, 118.0f, 1.0f, naLabels[lang], C2D_Color32(130, 140, 160, 255));
+    } else {
+        bool hcOn = Port_RA_IsHardcore();
+        DrawText(170.0f, 118.0f, 1.0f, hcOn ? onStr : offStr,
+                 hcOn ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 100, 100, 255));
+    }
 
     /* Row 4: Achievement Notification Sound (Y: 140 to 164) */
     C2D_DrawRectSolid(16.0f, 140.0f, 0.9f, 288.0f, 24.0f, C2D_Color32(24, 32, 50, 255));
@@ -2829,7 +2856,9 @@ static void RenderRemapSelectModal(int lang) {
         float bw = 140.0f;
         float bh = 24.0f;
 
-        bool isDisabled = (act == 1 && hcActive);
+        /* Rapid fire (1) and quick morph (2) are input assists RA hardcore
+         * forbids; show them greyed, same as elsewhere. */
+        bool isDisabled = ((act == 1 || act == 2) && hcActive);
         bool isCur = (act == currentAct);
         uint32_t bgCol, bdrCol, textCol;
 
@@ -2912,7 +2941,7 @@ static void RenderRemapModal(int lang) {
             btnRowNames[lang][i],
             C2D_Color32(255, 255, 255, 255), viewY0, viewY1);
         int act = Port_Config_GetButtonMapping(i);
-        bool actDisabled = (act == 1 && hcActive);
+        bool actDisabled = ((act == 1 || act == 2) && hcActive);
         uint32_t actCol = actDisabled ? C2D_Color32(110, 120, 140, 255) : C2D_Color32(255, 215, 0, 255);
         DrawTextClipped(150.0f, py + 7.0f, 1.0f,
             Port_Config_GetActionName(act, lang),

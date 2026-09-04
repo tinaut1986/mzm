@@ -15,6 +15,7 @@
 
 #include "port_retroachievements_3ds.h"
 #include "port_ra_iwram_map.h"
+#include "port_debug_tools.h" /* PORT_DEBUG_TOOLS_ACTIVE */
 
 #include "rc_client.h"
 
@@ -52,7 +53,9 @@ extern uint8_t gEwram[0x40000];
 static rc_client_t* sClient = NULL;
 
 static bool sRAEnabled = false;
-static bool sRAHardcore = true;
+/* Off unless the player turned it on last session (restored from config) and
+ * the build allows it. Never defaults on: a fresh install is softcore. */
+static bool sRAHardcore = false;
 static bool sRANotifSound = true;
 static char sRAUsername[64] = "";
 static char sRAToken[64] = "";
@@ -1108,10 +1111,23 @@ void Port_RA_SetEnabled(bool enabled) {
 
 bool Port_RA_IsHardcore(void) { return sRAHardcore; }
 
+bool Port_RA_HardcoreAllowed(void) {
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
+    /* This build carries the debug-tools cheat harness (god mode, no-clip);
+     * hardcore unlocks must never be possible from it. */
+    return false;
+#else
+    return true;
+#endif
+}
+
 void Port_RA_SetHardcore(bool hardcore) {
+    if (hardcore && !Port_RA_HardcoreAllowed()) {
+        hardcore = false;
+    }
     sRAHardcore = hardcore;
     if (sClient) {
-        rc_client_set_hardcore_enabled(sClient, hardcore ? 1 : 0);
+        rc_client_set_hardcore_enabled(sClient, sRAHardcore ? 1 : 0);
         RefreshAchievementList();
     }
 }
