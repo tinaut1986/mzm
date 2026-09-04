@@ -63,8 +63,16 @@ Two extras beyond the original game:
 ## Installation
 
 1. **Install the app**
-   - Install `mzm-3ds.cia` with FBI or your preferred installer, or
-   - place `mzm-3ds.3dsx` in `sdmc:/3ds/` and launch it from the Homebrew Launcher.
+
+   Download `mzm-3ds.cia` from the [Releases page](https://github.com/tinaut1986/mzm/releases)
+   and install it with FBI or your preferred installer. Releases named **Beta**
+   are pre-releases cut from a branch still being worked on; pick a plain
+   **Release** for a stable build.
+
+   Only a CIA is published. A `.3dsx` cannot declare its own memory budget, so
+   it inherits whatever the Homebrew Launcher's host title has left — not enough
+   for the 8&nbsp;MB ROM buffer plus the GPU buffers this port reserves. The CIA
+   requests 64&nbsp;MB of its own.
 
 2. **ROM placement**
 
@@ -130,7 +138,9 @@ cd platform/3ds
 make clean && make -j$(nproc)
 ```
 
-Outputs land in `platform/3ds/`: `mzm-3ds.cia`, `mzm-3ds.3dsx`, `mzm-3ds.elf`. There are also `cia`, `3dsx` and `elf` targets to build just one of them.
+Outputs land in `platform/3ds/`: `mzm-3ds.cia` and `mzm-3ds.elf`. The `cia` and
+`elf` targets build just one of them. There is also a `3dsx` target, but it is
+not built by default and not distributed — see the installation note above.
 
 ### Tools: Layer Workbench
 

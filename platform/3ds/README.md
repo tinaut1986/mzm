@@ -90,7 +90,9 @@ cd platform/3ds
 make clean && make -j$(nproc)
 ```
 
-This produces `mzm-3ds.cia` (if `makerom` is available), `mzm-3ds.3dsx`, and `mzm-3ds.elf`.
+This produces `mzm-3ds.cia` (if `makerom` is available) and `mzm-3ds.elf`. The
+default target does not build a `.3dsx`; `make 3dsx` does, for local Homebrew
+Launcher testing only (see Console Installation above for why it is not shipped).
 
 ### Build Flags & Useful Targets
 
