@@ -1190,7 +1190,43 @@ void PortPpuMzm_DebugCycleReplaySlot(void) { sReplaySlot = (sReplaySlot % 4u) + 
 unsigned PortPpuMzm_DebugReplaySlot(void) { return sReplaySlot; }
 void PortPpuMzm_DebugRequestReplay(void) { sReplayPending = true; }
 
+/* Startup file trigger: if sdmc:/3ds/mzm-replay-request.txt exists, run the
+ * replay once and delete the request. This is what lets the harness be
+ * driven by a script -- Azahar in particular, where there is no touch input
+ * to tap the menu row with, and where the whole loop (build, install,
+ * launch, read the outputs off the virtual SD, compare) can then run
+ * unattended. Equally usable on hardware by dropping the file over FTP.
+ *
+ * Polled rather than checked once because the request may be dropped before
+ * the emulator has finished booting: every 30 frames for the first ~15
+ * seconds, then never again, which bounds the cost of probing a file that
+ * is normally absent. The replay itself does not care which game mode is
+ * running -- it injects the state it renders. */
+static void ReplayCheckFileTrigger(void) {
+    static unsigned frames;
+    static bool done;
+    if (done) return;
+    if (++frames > 900u) {
+        done = true;
+        return;
+    }
+    if ((frames % 30u) != 0u) return;
+
+    FILE* req = fopen("sdmc:/3ds/mzm-replay-request.txt", "rb");
+    if (!req) return;
+    /* An optional single digit picks the recording slot; anything else uses
+     * whatever the menu last selected. */
+    int c = fgetc(req);
+    fclose(req);
+    remove("sdmc:/3ds/mzm-replay-request.txt");
+    if (c >= '1' && c <= '9') sReplaySlot = (unsigned)(c - '0');
+    sReplayPending = true;
+    done = true;
+    Port_DebugLog("REPLAY: triggered by mzm-replay-request.txt");
+}
+
 void PortPpuMzm_DebugApplyPendingReplay(void) {
+    ReplayCheckFileTrigger();
     if (!sReplayPending) return;
     sReplayPending = false;
 

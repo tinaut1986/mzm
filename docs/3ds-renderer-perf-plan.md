@@ -6,11 +6,38 @@ to. Tick items as they land; add new ones as they come up. Everything under
 argument -- and everything under **Dead ends** was believed and then
 disproved, so please read that section before proposing a fix.
 
-> **Status 2026-09-04 (night).** With the 3D slider down a New3DS already
-> holds 60 FPS. The 45 FPS case is the second eye, and the cost is per-quad,
-> not per-pixel. Step A (16x16 atlas blocks) is **implemented and building,
-> not yet verified on hardware or through the harness** -- that is the next
-> thing to do. Branch: `work/perf-instrumentation-and-harness`.
+> **Status 2026-09-04 (night), handing off mid-investigation.**
+>
+> With the 3D slider down a New3DS already holds 60 FPS. The 45 FPS case is
+> the second eye, and the cost is per-quad, not per-pixel. Step A (16x16
+> atlas blocks) is implemented and building but **still unverified**.
+>
+> **RIGHT NOW, PICK UP HERE.** The replay harness runs end to end under
+> Azahar, unattended -- and its output is **wrong in a way that is NOT step
+> A's fault**. Every replayed frame comes back with ~92% of pixels differing
+> from the CPU PPU, and the image is sliced into vertical stripes: the
+> content is recognisable (vine and pipe fragments) but scrambled in
+> columns. An A/B settles the blame: a build with the block pass forced OFF
+> produces **the same 92% striping**, so the fault is in the replay's dump
+> path (or in Azahar's handling of it), not in the renderer change.
+>
+> **The next experiment, and it is a small one:** take an ordinary SCREEN
+> DUMP inside Azahar with this same build and run it through
+> `compare_render.py` (the non-replay mode). This morning's hardware screen
+> dumps were clean -- six of ten pixel-identical -- so:
+>   * striped screen dump too -> Azahar's `C3D_SyncDisplayTransfer` out of a
+>     render target does not give the linear layout the dump assumes, and
+>     the whole Azahar path needs rethinking (or verifying on hardware
+>     instead).
+>   * clean screen dump -> the fault is in `PlatformGpu3DS_DumpTopLeftTo`
+>     being called at the wrong moment in the replay loop (the screen-dump
+>     path dumps at a different point in the frame than right after
+>     `EndBottom`), which would be a straightforward fix.
+>
+> Until that is resolved, **nothing has validated step A**, and the perf win
+> it was written for is also unmeasured.
+>
+> Branch: `work/perf-instrumentation-and-harness` (pushed).
 
 ## Measured, and not to be re-argued
 
@@ -76,10 +103,16 @@ groups (`mzm-perf-08/09.bin`, 2026-09-04):
 - [x] Capped at 24 outputs spread across the recording (each screenshot is
       288KB) and forces slider 0 / PIXEL PERFECT itself, so the comparison
       does not depend on how the console was set up.
+- [x] Runs unattended under Azahar via the file trigger (see **How to
+      verify**), so a correctness pass needs no console and no hands.
+- [ ] **Replayed frames come back striped.** ~92% of pixels differ from the
+      CPU PPU and the image is sliced into vertical columns. Proven NOT to
+      be step A: a build with the block pass forced off shows the same
+      striping. See the Status block for the next experiment.
 - [ ] Diff two builds' replays against each other on identical input, which
       isolates a change instead of measuring absolute agreement with the
-      oracle. Not written yet -- `compare_render.py` compares against the
-      oracle only.
+      oracle. Done by hand for the A/B above (rebuild with the pass off);
+      not scripted -- `compare_render.py` compares against the oracle only.
 
 ### A. 16x16 atlas blocks -- implemented, unverified
 
@@ -195,6 +228,37 @@ conditions rather than reporting nonsense. Baseline to compare against
 (2026-09-04, before step A): **six of ten sets pixel-identical**, three
 differing slightly over tinted/lava regions, one with the 17-pixel sprite
 shift above.
+
+**Correctness under Azahar, unattended.** This works today and needs no
+console and no hands -- it is how the replay above was exercised. Azahar's
+GPU is emulated rather than a real PICA200, so agreement there is weaker
+evidence than hardware; treat it as the fast inner loop and hardware as the
+final gate. It is not useless as a proxy: issue #17's renderer bug did
+reproduce in Azahar (see
+[3ds-issue17-session-2026-08-25.md](3ds-issue17-session-2026-08-25.md)).
+
+On this Windows box (the Linux equivalent is `tools/run_azahar_test.sh`,
+which predates the replay and only covers the log/audio dump):
+
+```powershell
+# SD root: %APPDATA%\Azahar\sdmc  -- readable directly, no FTP
+$sd = "$env:APPDATA\Azahar\sdmc\3ds"
+Copy-Item <a mzm-rec-NN.bin> "$sd\mzm-rec-01.bin"
+Set-Content "$sd\mzm-replay-request.txt" "1"        # the file trigger
+& "C:\Program Files\Azahar\azahar.exe" -i <the .cia>   # install
+# copy the freshly installed .app to %APPDATA%\Azahar\mzm.cxi, then:
+Start-Process "C:\Program Files\Azahar\azahar.exe" -ArgumentList @("-f", $cxi)
+# wait ~70s, kill it, and the frames are in $sd\mzm-replay-01-*.rgb
+```
+
+`mzm-replay-request.txt` exists precisely for this: Azahar has no touch
+input to tap the menu row with. A single digit in the file picks the
+recording slot. It is polled every 30 frames for the first ~15 seconds and
+then never again, and it works the same on hardware if dropped over FTP.
+
+Azahar is **worthless for speed** -- frame times there measure the host PC,
+not the PICA200 -- so every performance number in this document has to come
+off real hardware.
 
 **Speed** -- one perf capture, standing still, cycling the settings:
 `captureFlags` records the display style, slider, overlay, bezel, FX grade
