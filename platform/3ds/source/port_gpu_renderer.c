@@ -1765,6 +1765,17 @@ bool Port_GpuRenderer_CanRenderFrame(void) {
 static float sLastCollectMs, sLastDrawMs;
 static float sLastTileCollectMs, sLastAtlasUploadMs; /* collectMs split in two, see below */
 
+/* Issue #20 draw-call census. The frame-time numbers alone (citro3d's
+ * drawing/processing times, recorded per sample) say a frame went over
+ * budget but not why: a scene can cost the same in submitted quads and
+ * still take three times as long because every alpha-blended item breaks
+ * the batch and re-reads the destination framebuffer. These make that
+ * visible in a recording -- see Port_GpuRenderer_GetLastFrameDrawStats.
+ * Summed over both eyes, reset once per RenderFrame. */
+static uint32_t sLastDrawCalls;
+static uint32_t sLastBlendTransitions;
+static uint8_t sLastEyesRendered;
+
 void Port_GpuRenderer_GetLastFrameTimingMs(float* outCollectMs, float* outDrawMs) {
     if (outCollectMs) *outCollectMs = sLastCollectMs;
     if (outDrawMs) *outDrawMs = sLastDrawMs;
@@ -2312,6 +2323,10 @@ void Port_GpuRenderer_RenderFrame(void) {
     }
 #endif
 
+    sLastDrawCalls = 0;
+    sLastBlendTransitions = 0;
+    sLastEyesRendered = 0;
+
     for (int eye = 0; eye < 2; ++eye) {
         C3D_RenderTarget* target = (eye == 0) ? leftTarget : rightTarget;
         if (!target) continue;
@@ -2379,6 +2394,7 @@ void Port_GpuRenderer_RenderFrame(void) {
                  * blend even if BLDCNT is left in another mode). */
                 bool wantBlend = item->blendAlpha;
                 if (wantBlend != blendModeActive) {
+                    ++sLastBlendTransitions; /* each one is a batch break */
                     C2D_Flush();
                     if (wantBlend) {
                         /* GBA alpha blend (GBATEK): out = min(31, src*EVA/16 + dst*EVB/16),
@@ -2554,6 +2570,8 @@ void Port_GpuRenderer_RenderFrame(void) {
          * (untinted vertex colour == nothing) instead of the atlas env.
          * DrawFpsOverlay flushes first and resets the TEV itself. */
         PlatformGpu3DS_DrawFpsOverlay(floorf(eyeSign * slider3d * (+2.5f) + 0.5f));
+        sLastDrawCalls += (uint32_t)drawCount;
+        ++sLastEyesRendered;
 #ifdef PORT_DEBUG_TOOLS_ACTIVE
         {
             /* One counter per eye -- a single shared counter with an even
@@ -2618,6 +2636,31 @@ void Port_GpuRenderer_GetLastFrameStats(int* outItems, int* outObjItems, int* ou
     if (outItems) *outItems = sDrawItemCount;
     if (outObjItems) *outObjItems = sLastObjItemCount;
     if (outCacheSlots) *outCacheSlots = sCacheCount;
+}
+
+/* Why the scene cost what it cost, for the perf/scene recorders -- see the
+ * sLastDrawCalls declaration. windowActive doubles the pass over the whole
+ * draw order (the scissor in/out split), so a frame with it set submits
+ * roughly twice the quads for the same scene; hazeActive adds an offscreen
+ * render-to-texture pass of hazeTiles tiles plus a 160-strip blit per eye. */
+void Port_GpuRenderer_GetLastFrameDrawStats(PortGpuRendererDrawStats* out) {
+    if (!out) return;
+    out->drawCount = sLastDrawCalls;
+    out->blendTransitions = sLastBlendTransitions;
+    out->hazeTiles = sHazeActive ? (uint32_t)sHazeTileCount : 0u;
+    /* Collected items are per-eye: both eyes draw the same item list, so
+     * drawCount is roughly eyesRendered * (bgItems + objItems) minus
+     * whatever the window/HUD filters drop. */
+    out->objItems = (uint32_t)sLastObjItemCount;
+    out->bgItems = (sDrawItemCount > sLastObjItemCount)
+                     ? (uint32_t)(sDrawItemCount - sLastObjItemCount) : 0u;
+    out->cpuTileX100 = (sLastTileCollectMs > 0.0f) ? (uint32_t)(sLastTileCollectMs * 100.0f) : 0u;
+    out->cpuUploadX100 = (sLastAtlasUploadMs > 0.0f) ? (uint32_t)(sLastAtlasUploadMs * 100.0f) : 0u;
+    out->cpuDrawX100 = (sLastDrawMs > 0.0f) ? (uint32_t)(sLastDrawMs * 100.0f) : 0u;
+    out->eyesRendered = sLastEyesRendered;
+    out->scissorPasses = sWindowActive ? 2u : 1u;
+    out->windowActive = sWindowActive;
+    out->hazeActive = sHazeActive;
 }
 
 /* Issue #17 diagnosis: dumps the atlas texture verbatim (PPM, RGB8, no

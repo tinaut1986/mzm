@@ -2,6 +2,24 @@
 #include "port_debug_tools.h" /* PORT_DEBUG_TOOLS_ACTIVE */
 #include "port_gba_screen_fx.h"
 #include "port_gba_bezel.h"
+#include "port_gpu_renderer.h" /* PortGpuRendererDrawStats */
+#include "port_debug_files.h"
+#include "port_oam_census.h"
+
+/* How many captures of each kind to keep on the SD card before the oldest
+ * slot is reused. Sized by what one costs: a perf capture is ~154KB and a
+ * screen-dump set ~1MB, so ten of each is nothing; a scene recording is up
+ * to 32MB, so four. */
+#define PORT_KEEP_PERF 10u
+#define PORT_KEEP_DUMPS 10u
+#define PORT_KEEP_RECORDINGS 4u
+
+/* Slot number of the screen dump currently being written, so the Samus
+ * files written from port_ppu_mzm.c land in the same set. Read through
+ * PlatformGpu3DS_DumpSetIndex() rather than shared as a header extern,
+ * matching how everything else crosses that translation-unit boundary. */
+static unsigned sDumpSetIndex = 1u;
+unsigned PlatformGpu3DS_DumpSetIndex(void) { return sDumpSetIndex; }
 
 #include <3ds.h>
 #include <citro2d.h>
@@ -590,6 +608,10 @@ void PlatformGpu3DS_GetTopImageRect(int* outX, int* outY, int* outW, int* outH) 
     if (outH) *outH = h;
 }
 
+/* Defined with the perf recorder further down; called from EndBottom once
+ * the frame's real cost is known. */
+static void PerfBackfillPresentedFrame(void);
+
 bool PlatformGpu3DS_EndBottom(const uint32_t* pixels, bool changed) {
     if (!sFrameActive || !pixels) return false;
 #ifdef PORT_DEBUG_TOOLS_ACTIVE
@@ -681,6 +703,7 @@ bool PlatformGpu3DS_EndBottom(const uint32_t* pixels, bool changed) {
     ++sStats.frames;
     sStats.drawingTime = C3D_GetDrawingTime();
     sStats.processingTime = C3D_GetProcessingTime();
+    PerfBackfillPresentedFrame();
     sFrameActive = false;
     return true;
 
@@ -890,7 +913,8 @@ static unsigned sRecHead;       /* next slot to write */
 static unsigned sRecCount;      /* valid slots, 0..sRecSlots */
 static size_t sRecSlotUsed;     /* bytes into the in-progress slot */
 static size_t sRecSampleBytes;  /* real size of a completed sample (constant) */
-static char sRecLastFile[24];   /* basename of the last buffered flush */
+static char sRecLastFile[32];   /* basename of the last flushed recording */
+static unsigned sRecStreamIndex = 1u; /* slot number of a streaming capture */
 
 const char* PlatformGpu3DS_RecordLastFile(void) { return sRecLastFile; }
 
@@ -910,23 +934,70 @@ static void RecWrite(const void* p, size_t n) {
 
 bool PlatformGpu3DS_IsRecording(void) { return sRecording; }
 
+/* The OAM census lives in port_oam_census.c so the host test target can
+ * feed it synthetic OAM -- see platform/3ds/tests/oam_census_test.c for
+ * what it covers and why it earned tests. */
+static void OamCensus(unsigned* outTotal, unsigned* outVisible, unsigned* outAffine) {
+    extern u16 gOamMem[0x400 / 2];
+    Port_OamCensus((const uint16_t*)gOamMem, outTotal, outVisible, outAffine);
+}
+
+/* Packs Port_GpuRenderer_GetLastFrameDrawStats' flags into one word for the
+ * recorders. Layout is shared by mzm-perf.bin's PerfSample.rendererFlags
+ * and mzm-rec.bin's header word 14 -- keep both sides of
+ * docs/3ds-debug-tools.md in step with this. */
+static uint32_t PackRendererFlags(const PortGpuRendererDrawStats* st) {
+    return (uint32_t)st->scissorPasses
+         | ((uint32_t)(st->windowActive ? 1u : 0u) << 8)
+         | ((uint32_t)(st->hazeActive ? 1u : 0u) << 9)
+         | ((uint32_t)(st->eyesRendered & 3u) << 10)
+         | ((uint32_t)(st->hazeTiles & 0xFFFFu) << 16);
+}
+
 /* ---- Perf-only frame-time recorder (issue #20) ----------------------
  * The full scene recorder above writes ~100KB/sample to SD (~1.5MB/s
  * sustained), which by itself slows the whole game down -- masking exactly
  * the kind of transient hitch we're hunting. This sibling records ONLY a
  * 16-byte entry per emulated frame into a RAM ring buffer (no SD I/O while
  * running, no screenshots): frame counter, wall-clock duration of that
- * frame in microseconds, and the OAM census (total + affine sprites).
+ * frame in microseconds, the OAM census and the renderer's draw-call
+ * census -- enough to say not just THAT a frame missed the 16.67ms budget
+ * but what it spent the time on, without the SD writes that make the full
+ * scene recorder's own numbers meaningless.
  * L+R+A toggles; on stop the buffer is flushed to sdmc:/3ds/mzm-perf.bin
- * as a flat little-endian array of PerfSample structs.
- * 60 samples/sec * 120s capacity = 7200 entries * 16B = ~115KB BSS. ---- */
+ * as a PerfFileHeader followed by a flat little-endian array of PerfSample.
+ * 60 samples/sec * 40s capacity = 2400 entries * 64B = ~154KB linear. ---- */
+typedef struct {
+    uint32_t magic;       /* 'MZP2' = 0x3250 5A4D little-endian */
+    uint32_t sampleSize;  /* sizeof(PerfSample), so a parser can stride safely */
+    uint32_t sampleCount;
+    uint32_t reserved;
+} PerfFileHeader;
 typedef struct {
     uint32_t frameCounter;
     uint32_t durationUs;
-    uint32_t spriteCount;
+    uint32_t spriteCount;        /* non-disabled OAM entries -- see OamCensus */
+    uint32_t visibleSpriteCount; /* of those, actually intersecting 240x160 */
     uint32_t affineSpriteCount;
+    /* -- everything below is backfilled from PlatformGpu3DS_EndBottom, see
+     *    PerfBackfillPresentedFrame: at tick time this frame has not been
+     *    rendered yet, and reading the counters there recorded the PREVIOUS
+     *    frame's cost against this frame's duration. --------------------- */
+    uint32_t drawingTimeX100;    /* citro3d C3D_GetDrawingTime, 1/100 ms (GPU) */
+    uint32_t processingTimeX100; /* citro3d C3D_GetProcessingTime, 1/100 ms (GPU) */
+    uint32_t cpuTileX100;        /* renderer CPU: VRAM read + tile decode + sort */
+    uint32_t cpuUploadX100;      /* renderer CPU: atlas upload */
+    uint32_t cpuDrawX100;        /* renderer CPU: draw-call submission, all eyes */
+    uint32_t drawCount;          /* draw calls, summed over every eye drawn */
+    uint32_t bgItems;            /* collected BG tile quads, ONE eye */
+    uint32_t objItems;           /* collected OBJ subtile quads, ONE eye */
+    uint32_t blendTransitions;
+    uint32_t rendererFlags;      /* PackRendererFlags */
+    uint32_t reserved;
 } PerfSample;
-static const unsigned kPerfMaxSamples = 7200; /* ~2min at 60fps */
+/* 40 seconds is far longer than any hitch hunt needs and keeps the linear
+ * allocation in the same ballpark as the earlier, smaller samples. */
+static const unsigned kPerfMaxSamples = 2400; /* ~40s at 60fps */
 static bool sPerfRecording;
 static PerfSample* sPerfSamples;
 static unsigned sPerfCount;
@@ -938,11 +1009,23 @@ void PlatformGpu3DS_TogglePerfRecording(void) {
     if (sPerfRecording) {
         extern void Port_DebugLog(const char* msg);
         char msg[80];
-        snprintf(msg, sizeof(msg), "PERF REC STOP: %u frames -> mzm-perf.bin", sPerfCount);
+        char perfPath[256];
+        if (!Port_DebugFiles_NextPath("mzm-perf", ".bin", PORT_KEEP_PERF, perfPath, sizeof(perfPath)))
+            snprintf(perfPath, sizeof(perfPath), "sdmc:/3ds/mzm-perf-01.bin");
+        snprintf(msg, sizeof(msg), "PERF REC STOP: %u frames -> %s", sPerfCount, perfPath);
         Port_DebugLog(msg);
-        FILE* f = fopen("sdmc:/3ds/mzm-perf.bin", "wb");
-        if (f && sPerfSamples && sPerfCount) fwrite(sPerfSamples, sizeof(PerfSample), sPerfCount, f);
-        if (f) fclose(f);
+        FILE* f = fopen(perfPath, "wb");
+        if (f) {
+            const PerfFileHeader fh = {
+                .magic = 0x3250 << 16 | 0x5A4D, /* 'MZP2' */
+                .sampleSize = (uint32_t)sizeof(PerfSample),
+                .sampleCount = sPerfCount,
+                .reserved = 0,
+            };
+            fwrite(&fh, sizeof(fh), 1, f);
+            if (sPerfSamples && sPerfCount) fwrite(sPerfSamples, sizeof(PerfSample), sPerfCount, f);
+            fclose(f);
+        }
         linearFree(sPerfSamples);
         sPerfSamples = NULL;
         sPerfCount = 0;
@@ -952,7 +1035,7 @@ void PlatformGpu3DS_TogglePerfRecording(void) {
     if (!sPerfSamples) sPerfSamples = (PerfSample*)linearAlloc(kPerfMaxSamples * sizeof(PerfSample));
     if (!sPerfSamples) {
         extern void Port_DebugLog(const char* msg);
-        Port_DebugLog("PERF REC: linearAlloc FAILED (need 115KB linear heap)");
+        Port_DebugLog("PERF REC: linearAlloc FAILED (need 154KB linear heap)");
         return;
     }
     sPerfCount = 0;
@@ -962,7 +1045,6 @@ void PlatformGpu3DS_TogglePerfRecording(void) {
 
 void PlatformGpu3DS_PerfRecordTick(void) {
     if (!sPerfRecording || !sPerfSamples) return;
-    extern u16 gOamMem[0x400 / 2];
 
     const u64 now = Platform3DS_SystemTick();
     u64 durTicks = 0;
@@ -975,38 +1057,67 @@ void PlatformGpu3DS_PerfRecordTick(void) {
     }
 
     unsigned spriteCount = 0;
+    unsigned visibleSpriteCount = 0;
     unsigned affineSpriteCount = 0;
-    for (unsigned i = 0; i < 128u; ++i) {
-        const uint16_t attr0 = gOamMem[i * 4];
-        if ((attr0 & 0xC000u) == 0xC000u) continue;
-        if ((attr0 & 0x0300u) == 0x0100u) continue;
-        ++spriteCount;
-        if (attr0 & 0x0100u) ++affineSpriteCount;
-    }
+    OamCensus(&spriteCount, &visibleSpriteCount, &affineSpriteCount);
 
+    /* Only what is already known at tick time. This runs BEFORE the frame
+     * is rendered and presented, so every cost field is left at zero here
+     * and filled in by PerfBackfillPresentedFrame below -- reading the
+     * renderer / citro3d counters at this point recorded the PREVIOUS
+     * frame's cost against this frame's duration, which showed up in the
+     * 2026-09-04 capture as 2-vblank frames reporting LOWER GPU times than
+     * 1-vblank ones. */
     const u64 ticksPerSec = Platform3DS_TicksPerSecond();
     sPerfSamples[sPerfCount++] = (PerfSample){
         .frameCounter = sStats.frames,
         .durationUs = (uint32_t)((durTicks * 1000000ull) / (ticksPerSec ? ticksPerSec : 1)),
         .spriteCount = spriteCount,
+        .visibleSpriteCount = visibleSpriteCount,
         .affineSpriteCount = affineSpriteCount,
     };
+}
+
+/* Fills the in-flight sample's cost fields once the frame it describes has
+ * actually been rendered and presented. Called at the very end of
+ * PlatformGpu3DS_EndBottom, after sStats' citro3d counters are refreshed.
+ * A frame that gets sampled but never presented keeps its zeroed cost
+ * fields, which is the honest answer for it. */
+static void PerfBackfillPresentedFrame(void) {
+    if (!sPerfRecording || !sPerfSamples || sPerfCount == 0) return;
+    PerfSample* sample = &sPerfSamples[sPerfCount - 1];
+    if (sample->drawCount != 0u || sample->drawingTimeX100 != 0u) return; /* already filled */
+
+    PortGpuRendererDrawStats draw = { 0 };
+    Port_GpuRenderer_GetLastFrameDrawStats(&draw);
+
+    /* citro3d can hand back negatives outside an active frame; clamp so the
+     * recorded u32 stays parseable (same guard as the scene recorder). */
+    const float drawMs = sStats.drawingTime;
+    const float procMs = sStats.processingTime;
+    sample->drawingTimeX100 = (drawMs > 0.0f) ? (uint32_t)(drawMs * 100.0f) : 0u;
+    sample->processingTimeX100 = (procMs > 0.0f) ? (uint32_t)(procMs * 100.0f) : 0u;
+    sample->cpuTileX100 = draw.cpuTileX100;
+    sample->cpuUploadX100 = draw.cpuUploadX100;
+    sample->cpuDrawX100 = draw.cpuDrawX100;
+    sample->drawCount = draw.drawCount;
+    sample->bgItems = draw.bgItems;
+    sample->objItems = draw.objItems;
+    sample->blendTransitions = draw.blendTransitions;
+    sample->rendererFlags = PackRendererFlags(&draw);
 }
 
 void PlatformGpu3DS_ToggleRecording(void) {
     if (sRecording) {
         sRecording = false;
         if (sRecBuf) {
-            /* Flush the ring oldest-first. First take keeps the canonical
-             * name; later ones get mzm-rec-2.bin, -3.bin ... so a re-record
-             * never clobbers a good take. */
-            char path[64] = "sdmc:/3ds/mzm-rec.bin";
-            for (unsigned seq = 2; seq < 100; ++seq) {
-                FILE* ex = fopen(path, "rb");
-                if (!ex) break;
-                fclose(ex);
-                __builtin_snprintf(path, sizeof(path), "sdmc:/3ds/mzm-rec-%u.bin", seq);
-            }
+            /* Flush the ring oldest-first into a rotating slot. This used
+             * to walk mzm-rec.bin, -2, -3 ... up to -99 and never prune,
+             * i.e. up to ~800MB of recordings that only ever accumulated;
+             * now the oldest of PORT_KEEP_RECORDINGS is reused. */
+            char path[256];
+            if (!Port_DebugFiles_NextPath("mzm-rec", ".bin", PORT_KEEP_RECORDINGS, path, sizeof(path)))
+                __builtin_snprintf(path, sizeof(path), "sdmc:/3ds/mzm-rec-01.bin");
             FILE* f = fopen(path, "wb");
             if (f) {
                 unsigned first = (sRecCount < sRecSlots) ? 0u : sRecHead;
@@ -1055,8 +1166,17 @@ void PlatformGpu3DS_ToggleRecording(void) {
         sRecSlots = 0;
     }
 
-    sRecFile = fopen("sdmc:/3ds/mzm-rec.bin", "wb");
+    /* Streaming mode: the same rotating slot scheme as the buffered flush,
+     * chosen up front since samples are appended as they are captured. The
+     * companion screenshots below are named from sRecStreamIndex so a
+     * fetched set stays matched to the recording it belongs to. */
+    char streamPath[256];
+    sRecStreamIndex = Port_DebugFiles_NextSetIndex("mzm-rec", ".bin", PORT_KEEP_RECORDINGS);
+    if (!Port_DebugFiles_SetPath("mzm-rec", sRecStreamIndex, ".bin", streamPath, sizeof(streamPath)))
+        return;
+    sRecFile = fopen(streamPath, "wb");
     if (!sRecFile) return;
+    __builtin_snprintf(sRecLastFile, sizeof(sRecLastFile), "%s", streamPath + 10 /* skip "sdmc:/3ds/" */);
     sRecording = true;
 }
 
@@ -1092,23 +1212,21 @@ void PlatformGpu3DS_RecordTick(void) {
      * bumped 'MZMR' -> 'MZM2' so old parsers fail loudly instead of
      * misparsing. New fields: last emulated frame's wall-clock duration in
      * microseconds, citro3d drawing/processing times (hundredths of ms,
-     * clamped to u32), and OAM census -- total non-disabled sprites and how
-     * many use affine rotation/scaling matrices (the Skree explosion spawns
-     * 4 of those at once; the hypothesis is that they're what blows the
-     * frame budget). */
+     * clamped to u32), and the OAM census.
+     *
+     * The affine-sprite count was added on the hypothesis that rotation/
+     * scaling sprites (4 at once in a Skree explosion) were what blew the
+     * frame budget. Recordings from 2026-09-04 killed it: the 45 FPS rooms
+     * carried FEWER visible sprites than the 60 FPS one (9 against 37) and
+     * no affine ones at all. What did track was BLDCNT -- alpha blending
+     * with BG0 as first target in exactly the slow rooms -- hence the
+     * draw-call census in words 13-15. */
     unsigned spriteCount = 0;
+    unsigned visibleSpriteCount = 0;
     unsigned affineSpriteCount = 0;
-    for (unsigned i = 0; i < 128u; ++i) {
-        const uint16_t attr0 = gOamMem[i * 4];
-        /* GBA disabled check: shape bits 15-14 = 3, OR bit8=0 bit9=1.
-         * NOT 0x0300 (bits 8-9 = 11) — that's affine double-size,
-         * used by e.g. Skree explosions. (This was the old bug: counting
-         * affine-double-size sprites as disabled → affine=0 always.) */
-        if ((attr0 & 0xC000u) == 0xC000u) continue;
-        if ((attr0 & 0x0300u) == 0x0100u) continue;
-        ++spriteCount;
-        if (attr0 & 0x0100u) ++affineSpriteCount;
-    }
+    OamCensus(&spriteCount, &visibleSpriteCount, &affineSpriteCount);
+    PortGpuRendererDrawStats drawStats = { 0 };
+    Port_GpuRenderer_GetLastFrameDrawStats(&drawStats);
 
     const u64 ticksPerSec = Platform3DS_TicksPerSecond();
     const uint32_t frameUs =
@@ -1135,9 +1253,24 @@ void PlatformGpu3DS_RecordTick(void) {
     header[10] = procX100;
     header[11] = spriteCount;
     header[12] = affineSpriteCount;
-    header[13] = 0; /* reserved */
-    header[14] = 0; /* reserved */
-    header[15] = 0; /* reserved */
+    /* The three words that were reserved in 'MZM2' now carry the draw-call
+     * census (issue #20). The magic stays 'MZM4': nothing moved and no
+     * existing field changed meaning, so older parsers (the layer workbench
+     * included) keep reading these recordings -- they just see the three
+     * words they were already ignoring stop being zero. */
+    header[13] = drawStats.drawCount;
+    header[14] = drawStats.blendTransitions;
+    /* Bits 0-7 visible sprites (0..128), 8-9 scissor passes, 10 window
+     * active, 11 haze active, 16-31 haze tile count. Not PackRendererFlags:
+     * that layout puts hazeTiles at bit 16 already and leaves no room below
+     * it for the sprite count, so the two words are packed differently on
+     * purpose -- see docs/3ds-debug-tools.md. */
+    header[15] = (visibleSpriteCount & 0xFFu)
+               | ((uint32_t)(drawStats.scissorPasses & 3u) << 8)
+               | ((uint32_t)(drawStats.windowActive ? 1u : 0u) << 10)
+               | ((uint32_t)(drawStats.hazeActive ? 1u : 0u) << 11)
+               | ((uint32_t)(drawStats.eyesRendered & 3u) << 12)
+               | ((drawStats.hazeTiles & 0xFFFFu) << 16);
 
     RecWrite(header, sizeof(header));
     RecWrite(gIoMem, sizeof(gIoMem));
@@ -1173,28 +1306,45 @@ void PlatformGpu3DS_RecordTick(void) {
      * Skipped in RAM-buffer mode: DumpOneTarget does a GPU sync + SD write,
      * exactly the stall the buffer exists to avoid. */
     if (!sRecBuf && (sRecSampleCount - 1) % kRecordScreenshotEverySamples == 0) {
-        char path[64];
-        snprintf(path, sizeof(path), "sdmc:/3ds/mzm-rec-shot-%04u.rgb", sRecSampleCount - 1);
-        DumpOneTarget(sTopTarget, path);
+        char path[256];
+        char suffix[32];
+        snprintf(suffix, sizeof(suffix), "-shot-%04u.rgb", sRecSampleCount - 1);
+        if (Port_DebugFiles_SetPath("mzm-rec", sRecStreamIndex, suffix, path, sizeof(path)))
+            DumpOneTarget(sTopTarget, path);
     }
 }
 
 void PlatformGpu3DS_DumpScreens(void) {
     if (!sReady) return;
-    DumpOneTarget(sTopTarget, "sdmc:/3ds/mzm-dump-left.rgb");
-    DumpOneTarget(sTopRightTarget, "sdmc:/3ds/mzm-dump-right.rgb");
-    DumpOneTarget(sBottomTarget, "sdmc:/3ds/mzm-dump-bottom.rgb");
+
+    /* Every file of one press shares a slot number, so a fetched set is
+     * unambiguously one capture: mzm-dump-03-left.rgb, -03-vram.bin, ...
+     * Probing on "-left.rgb" since that is written first and always. All
+     * eleven files used to be fixed names overwritten in place, which made
+     * two dumps impossible to compare -- and worse, a set could silently
+     * end up a mix of two presses if a fetch landed in between (that
+     * actually happened during the issue #17 investigation, see the note in
+     * docs/3ds-debug-tools.md about a "truncated/mismatched mix"). */
+    const unsigned set = Port_DebugFiles_NextSetIndex("mzm-dump", "-left.rgb", PORT_KEEP_DUMPS);
+    sDumpSetIndex = set;
+    char path[256];
+#define PORT_DUMP_PATH(suffix)     (Port_DebugFiles_SetPath("mzm-dump", set, (suffix), path, sizeof(path)) ? path : "")
+
+    DumpOneTarget(sTopTarget, PORT_DUMP_PATH("-left.rgb"));
+    DumpOneTarget(sTopRightTarget, PORT_DUMP_PATH("-right.rgb"));
+    DumpOneTarget(sBottomTarget, PORT_DUMP_PATH("-bottom.rgb"));
 
     extern u8 gIoMem[0x400];
     extern u16 gBgPltt[256];
     extern u16 gObjPltt[256];
     extern u16 gOamMem[0x400 / 2];
     extern u8 gVram[0x18000];
-    WriteBlob("sdmc:/3ds/mzm-dump-vram.bin", gVram, sizeof(gVram));
-    WriteBlob("sdmc:/3ds/mzm-dump-io.bin", gIoMem, sizeof(gIoMem));
-    WriteBlob("sdmc:/3ds/mzm-dump-bgpltt.bin", gBgPltt, sizeof(gBgPltt));
-    WriteBlob("sdmc:/3ds/mzm-dump-objpltt.bin", gObjPltt, sizeof(gObjPltt));
-    WriteBlob("sdmc:/3ds/mzm-dump-oam.bin", gOamMem, sizeof(gOamMem));
+    WriteBlob(PORT_DUMP_PATH("-vram.bin"), gVram, sizeof(gVram));
+    WriteBlob(PORT_DUMP_PATH("-io.bin"), gIoMem, sizeof(gIoMem));
+    WriteBlob(PORT_DUMP_PATH("-bgpltt.bin"), gBgPltt, sizeof(gBgPltt));
+    WriteBlob(PORT_DUMP_PATH("-objpltt.bin"), gObjPltt, sizeof(gObjPltt));
+    WriteBlob(PORT_DUMP_PATH("-oam.bin"), gOamMem, sizeof(gOamMem));
+#undef PORT_DUMP_PATH
 
     PortPpuMzm_DumpSamusState();
 

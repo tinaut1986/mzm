@@ -69,6 +69,7 @@ SRCS_ROOT := \
 	$(ROOT)/port/port_bios.c \
 	$(ROOT)/port/port_gba_timing.c \
 	$(ROOT)/port/port_debug_log.c \
+	$(ROOT)/port/port_debug_files.c \
 	$(ROOT)/port/port_constructor_init.c \
 	$(ROOT)/port/port_mzm_audio_glue.c \
 	$(ROOT)/port/port_psg_synth.c \
@@ -93,6 +94,7 @@ SRCS_ASM := \
 SRCS_3DS := \
 	$(CURDIR)/source/main_3ds.c \
 	$(CURDIR)/source/platform_3ds_minimal.c \
+	$(CURDIR)/source/port_oam_census.c \
 	$(CURDIR)/source/platform_gpu_3ds.c \
 	$(CURDIR)/source/port_bottom_ui_3ds.c \
 	$(CURDIR)/source/port_ppu_mzm.c \
@@ -352,6 +354,8 @@ test:
 		-o $(BUILD)/layer_fixes_test \
 		$(CURDIR)/tests/layer_fixes_test.c $(CURDIR)/source/port_layer_fixes.c
 	@$(BUILD)/layer_fixes_test
+	@$(TEST_CC) -std=c11 -O1 -Wall -Wextra -Werror -I$(CURDIR)/source 		-o $(BUILD)/oam_census_test 		$(CURDIR)/tests/oam_census_test.c $(CURDIR)/source/port_oam_census.c
+	@$(BUILD)/oam_census_test
 
 ftp: $(TARGET).cia
 	@echo "Uploading $(TARGET).cia as mzm-3ds-$(VERSION).cia to FTP..."
