@@ -33,7 +33,9 @@ extern void PlatformGpu3DS_ResetSolidTexEnv(void);
 extern int Port_Config_GetGbaFxGrade(void);
 extern int Port_Config_GetGbaFxGrid(void);
 extern int Port_Config_GetGbaFxVignette(void);
-extern bool Port_Config_GetShowFps(void);
+/* Where the "FPS NN" overlay sits: 0 = OFF, 1 = BOTTOM-LEFT,
+ * 2 = BOTTOM-RIGHT, 3 = TOP-LEFT, 4 = TOP-RIGHT. */
+extern int Port_Config_GetFpsPosition(void);
 /* Rectangle the emulated GBA picture occupies on the 400x240 top screen --
  * varies with display style / aspect. The effects only touch this rect (the
  * scanline pitch follows the GBA-pixel size, and the vignette rings the
@@ -49,10 +51,30 @@ static bool sFxReady;
 static int sBakedGrade = -1, sBakedGrid = -1, sBakedVig = -1, sBakedFps = -1;
 static int sBakedRect[4] = { -1, -1, -1, -1 };
 
-/* The top-screen "FPS NN" overlay (PlatformGpu3DS_DrawFpsOverlay): a fixed
- * box in the bottom-left. Carve it out of the mask so the effects never
- * clip across it in SCALED (where it sits inside the picture). */
-enum { FPS_X0 = 3, FPS_Y0 = 213, FPS_X1 = 74, FPS_Y1 = 237 };
+/* The top-screen "FPS NN" overlay (PlatformGpu3DS_DrawFpsOverlay): a 65x18
+ * box in one of the four corners, plus a small margin. Carve it out of the
+ * mask so the effects never clip across it in SCALED (where it sits inside
+ * the picture). These must track DrawFpsOverlay's own box layout. */
+enum { FPS_BOX_W = 65, FPS_BOX_H = 18, FPS_BOX_PAD = 3 };
+enum { FPS_LEFT_X = 5, FPS_RIGHT_X = 330, FPS_TOP_Y = 6, FPS_BOTTOM_Y = 216 };
+
+/* Carve-out box for FPS position `pos`, padded. Returns false for OFF (or an
+ * unknown position), leaving the outputs untouched. */
+static bool FpsCarveBox(int pos, int* x0, int* y0, int* x1, int* y1) {
+    int bx, by;
+    switch (pos) {
+        case 1: bx = FPS_LEFT_X;  by = FPS_BOTTOM_Y; break;
+        case 2: bx = FPS_RIGHT_X; by = FPS_BOTTOM_Y; break;
+        case 3: bx = FPS_LEFT_X;  by = FPS_TOP_Y;    break;
+        case 4: bx = FPS_RIGHT_X; by = FPS_TOP_Y;    break;
+        default: return false;
+    }
+    *x0 = bx - FPS_BOX_PAD;
+    *y0 = by - FPS_BOX_PAD;
+    *x1 = bx + FPS_BOX_W + FPS_BOX_PAD;
+    *y1 = by + FPS_BOX_H + FPS_BOX_PAD;
+    return true;
+}
 
 static int ClampLevel(int level) {
     if (level < 0) return 0;
@@ -136,17 +158,19 @@ static u8 VignetteBlackAlphaAt(int level, int lx, int ly, int w, int h) {
  * the summed darkening is capped well short of opaque. */
 #define FX_MAX_ALPHA 165
 
-static void BakeMask(int grade, int grid, int vig, bool fps, const int rect[4]) {
+static void BakeMask(int grade, int grid, int vig, int fpsPos, const int rect[4]) {
     if (!sFxReady) return;
     const int rx = rect[0], ry = rect[1], rw = rect[2], rh = rect[3];
     const int gBase = GradeBaseAlpha(grade);
     u32* data = (u32*)sFxTex.data;
+    int fx0 = 0, fy0 = 0, fx1 = 0, fy1 = 0;
+    const bool hasFpsBox = FpsCarveBox(fpsPos, &fx0, &fy0, &fx1, &fy1);
 
     for (int y = 0; y < FX_H; ++y) {
         for (int x = 0; x < FX_W; ++x) {
             const int lx = x - rx, ly = y - ry;
             u32 texel = 0u;
-            const bool inFps = fps && x >= FPS_X0 && x < FPS_X1 && y >= FPS_Y0 && y < FPS_Y1;
+            const bool inFps = hasFpsBox && x >= fx0 && x < fx1 && y >= fy0 && y < fy1;
             if (!inFps && lx >= 0 && lx < rw && ly >= 0 && ly < rh) {
                 int a = gBase
                       + GridBlackAlphaAt(grid, lx, ly, rw, rh)
@@ -161,7 +185,7 @@ static void BakeMask(int grade, int grid, int vig, bool fps, const int rect[4]) 
     sBakedGrade = grade;
     sBakedGrid = grid;
     sBakedVig = vig;
-    sBakedFps = fps ? 1 : 0;
+    sBakedFps = fpsPos;
     sBakedRect[0] = rx; sBakedRect[1] = ry; sBakedRect[2] = rw; sBakedRect[3] = rh;
 }
 
@@ -237,14 +261,14 @@ void PortGbaScreenFx_PostProcessTop(C3D_RenderTarget* left, C3D_RenderTarget* ri
 
     const u64 t0 = svcGetSystemTick();
 
-    const bool fps = Port_Config_GetShowFps();
+    const int fpsPos = Port_Config_GetFpsPosition();
     int rect[4];
     PlatformGpu3DS_GetTopImageRect(&rect[0], &rect[1], &rect[2], &rect[3]);
     if (grade != sBakedGrade || grid != sBakedGrid || vig != sBakedVig
-        || (fps ? 1 : 0) != sBakedFps
+        || fpsPos != sBakedFps
         || rect[0] != sBakedRect[0] || rect[1] != sBakedRect[1]
         || rect[2] != sBakedRect[2] || rect[3] != sBakedRect[3])
-        BakeMask(grade, grid, vig, fps, rect);
+        BakeMask(grade, grid, vig, fpsPos, rect);
 
     /* Commit whatever the present path queued into the top target(s) first,
      * so the overlay composites over a finished image rather than joining
