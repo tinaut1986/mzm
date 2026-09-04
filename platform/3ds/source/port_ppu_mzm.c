@@ -259,8 +259,9 @@ void Port_Config_Load(void) {
             Port_RA_SetEnabled(val != 0);
         } else if (strcmp(key, "ra_hardcore") == 0) {
             extern void Port_RA_SetHardcore(bool);
-            /* Hardcore forced to false for now */
-            Port_RA_SetHardcore(false);
+            /* Restore last session's choice. Port_RA_SetHardcore clamps it
+             * back to false when the build forbids hardcore (debug tools). */
+            Port_RA_SetHardcore(val != 0);
         } else if (strcmp(key, "ra_sound") == 0) {
             extern void Port_RA_SetNotificationSound(bool);
             Port_RA_SetNotificationSound(val != 0);
