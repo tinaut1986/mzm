@@ -8209,6 +8209,25 @@ void SamusDraw(void)
 
         // Get oam pointer
         src = gSamusEnvironmentalEffects[j].pOamFrame;
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+        /* An effect slot can be left with type != ENV_EFFECT_NONE and
+         * pOamFrame still NULL: SamusUpdateEnvironmentalEffects is what
+         * fills the pointer in, and it returns early while dying (and does
+         * not run at all in some transitions), so this loop can reach a
+         * slot whose type was set but whose frame pointer never was.
+         *
+         * On GBA *src then reads the BIOS at address 0 -- garbage OAM
+         * values for one frame, no fault. On the 3DS page 0 is unmapped and
+         * it is a data abort: confirmed on hardware 2026-09-04 (Luma arm11
+         * dump 49, ldrb at SamusDraw+0xd4 with the loaded pOamFrame = 0,
+         * slot 0). Skipping the slot and clearing it drops one frame of an
+         * effect that had no graphics to draw anyway. */
+        if (src == NULL)
+        {
+            gSamusEnvironmentalEffects[j].type = ENV_EFFECT_NONE;
+            continue;
+        }
+#endif
 
         // Update next oam slot
         part1 = *src++;
