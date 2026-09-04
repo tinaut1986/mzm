@@ -4,6 +4,7 @@
 #include <citro2d.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #include "platform_gpu_3ds.h"
 #include "port_debug_tools.h"
@@ -286,6 +287,13 @@ extern void Port_Config_SetGbaFxVignette(int level);
 /* RetroAchievements Helpers */
 #include "port_retroachievements_3ds.h"
 
+/* Tapping a card in the list opens a read-only detail popup over it. The
+ * chosen achievement is snapshotted rather than referenced, so a background
+ * list refresh (an unlock, a hardcore toggle) cannot move it out from under
+ * the popup. */
+static bool sShowAchDetailModal = false;
+static RetroAchievementItem sAchDetail;
+
 /* Area selector & zoom state */
 static uint8_t sViewArea = 0;
 static bool sFollowSamus = true;
@@ -384,6 +392,7 @@ static void OpenAchievementsUi(void) {
  * it, otherwise straight out of the modal. */
 static void AchievementsBack(void) {
     sShowAchievementsModal = false;
+    sShowAchDetailModal = false;
     if (sAchFromPacks) {
         sShowAchPacksModal = true;
         Port_RA_SetListSubset(0);
@@ -1186,6 +1195,16 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
         }
     }
 
+    /* Modal: achievement detail popup. Sits on top of the list; only its BACK
+     * button is interactive, everything else is swallowed so the list behind
+     * it cannot scroll. */
+    if (sCurrentTab == BOTTOM_TAB_OPTIONS && sShowAchDetailModal) {
+        if (isNewTap && x >= 100 && x <= 220 && y >= 206 && y <= 230) {
+            sShowAchDetailModal = false;
+        }
+        return;
+    }
+
     /* Modal: pack chooser (only reachable when the game has >1 set) */
     if (sCurrentTab == BOTTOM_TAB_OPTIONS && sShowAchPacksModal) {
         HandleAchPacksTouch(x, y, isNewTap);
@@ -1233,13 +1252,25 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
             sAchievementsScrollY = AchScrollbarValue(y, maxAchScroll);
             sIsTouchDragging = true;
         } else if (!sAchScrollbarDrag && sLastTouchX >= 0 && sLastTouchY >= 0) {
-            float dy = (float)(sLastTouchY - y);
-            sAchievementsScrollY += dy;
-            if (sAchievementsScrollY < 0.0f) sAchievementsScrollY = 0.0f;
-            if (sAchievementsScrollY > maxAchScroll) sAchievementsScrollY = maxAchScroll;
-            sLastTouchX = x;
-            sLastTouchY = y;
-            sIsTouchDragging = true;
+            /* Dead zone: a stylus press wobbles a few pixels before it lifts,
+             * and treating that as a drag was eating every tap meant to open a
+             * card. Only start scrolling once the finger has travelled past a
+             * small threshold from where it first landed; below that, swallow
+             * the movement so the release still counts as a tap. */
+            const float DRAG_SLOP = 6.0f;
+            float totalDy = (sTouchStartY >= 0) ? (float)(y - sTouchStartY) : 0.0f;
+            if (!sIsTouchDragging && (totalDy > -DRAG_SLOP && totalDy < DRAG_SLOP)) {
+                sLastTouchX = x;
+                sLastTouchY = y;
+            } else {
+                float dy = (float)(sLastTouchY - y);
+                sAchievementsScrollY += dy;
+                if (sAchievementsScrollY < 0.0f) sAchievementsScrollY = 0.0f;
+                if (sAchievementsScrollY > maxAchScroll) sAchievementsScrollY = maxAchScroll;
+                sLastTouchX = x;
+                sLastTouchY = y;
+                sIsTouchDragging = true;
+            }
         }
         return;
     }
@@ -1527,6 +1558,21 @@ void Port_BottomUI_TouchReleased(void) {
                 sShowAchPacksModal = false;
                 sShowAchievementsModal = true;
                 sAchievementsScrollY = 0.0f;
+            }
+        }
+    }
+
+    /* Achievement list: a tap that never became a drag opens the detail popup
+     * for that card, same release-based shape as the pack chooser above. */
+    if (sCurrentTab == BOTTOM_TAB_OPTIONS && sShowAchievementsModal && !sShowAchDetailModal) {
+        if (!sIsTouchDragging && sTouchStartX >= 16 && sTouchStartX <= 300 &&
+            (float)sTouchStartY >= ACH_LIST_CLIP_Y0 && (float)sTouchStartY < ACH_LIST_CLIP_Y1) {
+            float local = (float)sTouchStartY - ACH_LIST_CLIP_Y0 + sAchievementsScrollY;
+            uint32_t row = (uint32_t)(local / ACH_CARD_H);
+            const RetroAchievementItem* it = Port_RA_GetViewAchievement(row);
+            if (it) {
+                sAchDetail = *it;
+                sShowAchDetailModal = true;
             }
         }
     }
@@ -2170,6 +2216,80 @@ static void RenderAchPacksModal(int lang) {
     DrawTextCentered(160.0f, 209.0f, 1.0f, backLabels[lang], C2D_Color32(255, 255, 255, 255));
 }
 
+/* Colour RA uses for each special achievement type. */
+static uint32_t AchTypeColor(RetroAchievementType type) {
+    switch (type) {
+        case RA_ACH_TYPE_MISSABLE:      return C2D_Color32(255, 140, 40, 255);
+        case RA_ACH_TYPE_PROGRESSION:   return C2D_Color32(90, 160, 255, 255);
+        case RA_ACH_TYPE_WIN_CONDITION: return C2D_Color32(210, 120, 255, 255);
+        default:                        return C2D_Color32(150, 170, 200, 255);
+    }
+}
+
+/* Full-word name of a type, for the detail popup. */
+static const char* AchTypeName(RetroAchievementType type, int lang) {
+    switch (type) {
+        case RA_ACH_TYPE_MISSABLE: {
+            static const char* l[7] = { "MISSABLE", "MISSABLE", "MISSABLE",
+                                        "VERPASSBAR", "MANQUABLE", "MANCABILE", "PERDIBLE" };
+            return l[lang];
+        }
+        case RA_ACH_TYPE_PROGRESSION: {
+            static const char* l[7] = { "PROGRESSION", "PROGRESSION", "PROGRESSION",
+                                        "FORTSCHRITT", "PROGRESSION", "PROGRESSO", "PROGRESO" };
+            return l[lang];
+        }
+        case RA_ACH_TYPE_WIN_CONDITION: {
+            static const char* l[7] = { "BEATEN GAME", "BEATEN GAME", "BEATEN GAME",
+                                        "SPIEL BEENDET", "JEU TERMINE", "GIOCO FINITO", "JUEGO TERMINADO" };
+            return l[lang];
+        }
+        default:
+            return "";
+    }
+}
+
+/* The little glyph RA shows on the web for a special achievement type, drawn
+ * as pixel rects in a 12x12 box with its top-left at (x, y): an exclamation
+ * triangle for missable, rising bars for progression, a chequered finish flag
+ * for the "game beaten" win condition. Standard achievements draw nothing. */
+static void DrawAchTypeIcon(float x, float y, RetroAchievementType type, bool dim,
+                            float depth, float clipY0, float clipY1) {
+    if (type != RA_ACH_TYPE_MISSABLE && type != RA_ACH_TYPE_PROGRESSION &&
+        type != RA_ACH_TYPE_WIN_CONDITION) {
+        return;
+    }
+
+    uint32_t col = AchTypeColor(type);
+    if (dim) {
+        uint32_t r = (col & 0xFF), g = (col >> 8) & 0xFF, b = (col >> 16) & 0xFF;
+        col = C2D_Color32((uint8_t)(r / 2 + 30), (uint8_t)(g / 2 + 30), (uint8_t)(b / 2 + 30), 255);
+    }
+    uint32_t bg = C2D_Color32(12, 16, 24, 255);
+    float d2 = depth + 0.005f;
+
+    if (type == RA_ACH_TYPE_MISSABLE) {
+        for (int r = 0; r < 6; ++r) {
+            DrawRectClipped(x + (5.0f - (float)r), y + (float)r * 2.0f, depth,
+                            2.0f + (float)r * 2.0f, 2.0f, col, clipY0, clipY1);
+        }
+        DrawRectClipped(x + 5.0f, y + 3.0f, d2, 2.0f, 4.0f, bg, clipY0, clipY1);
+        DrawRectClipped(x + 5.0f, y + 8.0f, d2, 2.0f, 2.0f, bg, clipY0, clipY1);
+    } else if (type == RA_ACH_TYPE_PROGRESSION) {
+        DrawRectClipped(x + 0.0f, y + 7.0f, depth, 3.0f, 5.0f, col, clipY0, clipY1);
+        DrawRectClipped(x + 4.0f, y + 4.0f, depth, 3.0f, 8.0f, col, clipY0, clipY1);
+        DrawRectClipped(x + 8.0f, y + 1.0f, depth, 3.0f, 11.0f, col, clipY0, clipY1);
+    } else {
+        DrawRectClipped(x + 1.0f, y + 0.0f, depth, 2.0f, 12.0f, col, clipY0, clipY1);
+        DrawRectClipped(x + 3.0f, y + 1.0f, depth, 8.0f, 6.0f, col, clipY0, clipY1);
+        DrawRectClipped(x + 3.0f, y + 1.0f, d2, 2.0f, 2.0f, bg, clipY0, clipY1);
+        DrawRectClipped(x + 7.0f, y + 1.0f, d2, 2.0f, 2.0f, bg, clipY0, clipY1);
+        DrawRectClipped(x + 5.0f, y + 3.0f, d2, 2.0f, 2.0f, bg, clipY0, clipY1);
+        DrawRectClipped(x + 3.0f, y + 5.0f, d2, 2.0f, 2.0f, bg, clipY0, clipY1);
+        DrawRectClipped(x + 7.0f, y + 5.0f, d2, 2.0f, 2.0f, bg, clipY0, clipY1);
+    }
+}
+
 /* Render RetroAchievements List Modal with Touch Scrolling */
 static void RenderAchievementsModal(int lang) {
     const float mX = 10.0f;
@@ -2310,12 +2430,29 @@ static void RenderAchievementsModal(int lang) {
             }
         }
 
-        /* 3. Title + Points (Full width up to statX - 6.0f = 232px) */
-        char titleBuf[80];
-        snprintf(titleBuf, sizeof(titleBuf), "%s (%uP)", ach->title, (unsigned)ach->points);
+        /* 3. Title on the top line, full width now that the points have moved
+         * off it -- a long title no longer has to fight the "(NNP)" suffix for
+         * the last few pixels. */
         uint32_t titleCol = ach->hardcoreUnlocked ? C2D_Color32(255, 225, 80, 255) :
                             (ach->unlocked ? C2D_Color32(140, 240, 170, 255) : C2D_Color32(220, 235, 255, 255));
-        DrawTextMaxWClipped(48.0f, py + 4.0f, 1.0f, titleBuf, titleCol, clipY0, clipY1, 232.0f);
+        DrawTextMaxWClipped(48.0f, py + 4.0f, 1.0f, ach->title, titleCol, clipY0, clipY1, 236.0f);
+
+        /* 4. Points, bottom-left: directly under the title and beside the
+         * badge, in the space that was otherwise empty. */
+        char ptsBuf[16];
+        snprintf(ptsBuf, sizeof(ptsBuf), "%uP", (unsigned)ach->points);
+        uint32_t ptsCol = ach->hardcoreUnlocked ? C2D_Color32(255, 215, 0, 255) :
+                          (ach->unlocked ? C2D_Color32(120, 255, 160, 255) : C2D_Color32(140, 160, 190, 255));
+        if (py + 18.0f + 7.0f > clipY0 && py + 18.0f < clipY1) {
+            DrawTextClipped(48.0f, py + 18.0f, 1.0f, ptsBuf, ptsCol, clipY0, clipY1);
+        }
+
+        /* 5. Type icon (missable / progression / beaten-game), lower-right of
+         * the card, as on the RA website. Dimmed while still locked. */
+        if (py + 16.0f + 12.0f > clipY0 && py + 16.0f < clipY1) {
+            DrawAchTypeIcon(285.0f, py + 16.0f, ach->type,
+                            !ach->unlocked && !ach->hardcoreUnlocked, 0.93f, clipY0, clipY1);
+        }
     }
 
     /* Achievements modal scrollbar */
@@ -2356,6 +2493,97 @@ static void RenderAchievementsModal(int lang) {
         float py = 209.0f + (float)row * 2.0f;
         C2D_DrawRectSolid(px, py, 0.97f, w, 2.0f, C2D_Color32(150, 200, 255, 255));
     }
+}
+
+/* Read-only detail popup for one achievement, opened by tapping its card in
+ * the list. Shows the full badge, the untruncated title and description, the
+ * point value, the lock state (with unlock date when known) and the type. */
+static void RenderAchievementDetailModal(int lang) {
+    const RetroAchievementItem* a = &sAchDetail;
+    const float pX = 6.0f, pY = 20.0f, pW = 308.0f, pH = 214.0f;
+    const float clip0 = pY, clip1 = pY + pH;
+
+    C2D_DrawRectSolid(pX, pY, 0.975f, pW, pH, C2D_Color32(255, 215, 0, 255));
+    C2D_DrawRectSolid(pX + 2.0f, pY + 2.0f, 0.978f, pW - 4.0f, pH - 4.0f, C2D_Color32(8, 11, 20, 252));
+
+    /* Badge, nearest-neighbour scaled x4. Greyed while still locked, matching
+     * the list. */
+    const float px = 4.0f;
+    float bX = pX + 12.0f, bY = pY + 12.0f;
+    bool locked = !a->unlocked && !a->hardcoreUnlocked;
+    C2D_DrawRectSolid(bX - 2.0f, bY - 2.0f, 0.979f, 20.0f * px + 4.0f, 20.0f * px + 4.0f,
+                      C2D_Color32(60, 75, 100, 255));
+    const uint32_t* badge = Port_RA_GetBadgePixels(a->badgeName);
+    if (badge) {
+        for (int y = 0; y < 20; ++y) {
+            for (int x = 0; x < 20; ++x) {
+                uint32_t c = badge[y * 20 + x];
+                if (locked) {
+                    uint32_t r = c & 0xFF, g = (c >> 8) & 0xFF, b = (c >> 16) & 0xFF;
+                    uint32_t gray = (r * 30 + g * 59 + b * 11) / 250;
+                    c = C2D_Color32((uint8_t)gray, (uint8_t)gray, (uint8_t)gray, 255);
+                }
+                C2D_DrawRectSolid(bX + (float)x * px, bY + (float)y * px, 0.98f, px, px, c);
+            }
+        }
+    } else {
+        C2D_DrawRectSolid(bX, bY, 0.98f, 20.0f * px, 20.0f * px, C2D_Color32(20, 26, 40, 255));
+    }
+
+    float tX = bX + 20.0f * px + 10.0f;
+    float tW = pX + pW - 12.0f - tX;
+    DrawWrappedTextClipped(tX, pY + 12.0f, 1.0f, a->title, tW, 11.0f,
+                           C2D_Color32(255, 230, 120, 255), clip0, clip1);
+
+    char buf[96];
+    snprintf(buf, sizeof(buf), "%u PTS", (unsigned)a->points);
+    DrawText(tX, pY + 46.0f, 1.0f, buf, C2D_Color32(120, 255, 160, 255));
+
+    static const char* const stHardcore[7] = {
+        "UNLOCKED (HARDCORE)", "UNLOCKED (HARDCORE)", "UNLOCKED (HARDCORE)",
+        "FREIGESCHALTET (HARDCORE)", "DEBLOQUE (HARDCORE)", "SBLOCCATO (HARDCORE)",
+        "DESBLOQUEADO (HARDCORE)"
+    };
+    static const char* const stUnlocked[7] = {
+        "UNLOCKED", "UNLOCKED", "UNLOCKED",
+        "FREIGESCHALTET", "DEBLOQUE", "SBLOCCATO", "DESBLOQUEADO"
+    };
+    static const char* const stLocked[7] = {
+        "LOCKED", "LOCKED", "LOCKED",
+        "GESPERRT", "VERROUILLE", "BLOCCATO", "BLOQUEADO"
+    };
+    const char* stTxt;
+    uint32_t stCol;
+    if (a->hardcoreUnlocked)  { stTxt = stHardcore[lang]; stCol = C2D_Color32(255, 215, 0, 255); }
+    else if (a->unlocked)     { stTxt = stUnlocked[lang]; stCol = C2D_Color32(80, 255, 120, 255); }
+    else                      { stTxt = stLocked[lang];   stCol = C2D_Color32(150, 170, 200, 255); }
+    DrawText(tX, pY + 60.0f, 1.0f, stTxt, stCol);
+
+    if (!locked && a->unlockTime != 0) {
+        time_t t = (time_t)a->unlockTime;
+        struct tm* tmv = gmtime(&t);
+        if (tmv && strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M UTC", tmv) > 0) {
+            DrawText(tX, pY + 74.0f, 1.0f, buf, C2D_Color32(150, 180, 210, 255));
+        }
+    }
+
+    /* Type row, using the same glyph the list card carries. */
+    if (a->type == RA_ACH_TYPE_MISSABLE || a->type == RA_ACH_TYPE_PROGRESSION ||
+        a->type == RA_ACH_TYPE_WIN_CONDITION) {
+        float ty = pY + 96.0f;
+        DrawAchTypeIcon(bX + 2.0f, ty, a->type, false, 0.985f, clip0, clip1);
+        DrawText(bX + 20.0f, ty + 2.0f, 1.0f, AchTypeName(a->type, lang), AchTypeColor(a->type));
+    }
+
+    DrawWrappedTextClipped(pX + 12.0f, pY + 118.0f, 1.0f,
+                           a->description[0] ? a->description : "(NO DESCRIPTION)",
+                           pW - 24.0f, 12.0f, C2D_Color32(220, 235, 255, 255), clip0, clip1 - 26.0f);
+
+    C2D_DrawRectSolid(100.0f, 208.0f, 0.99f, 120.0f, 20.0f, C2D_Color32(20, 70, 130, 255));
+    static const char* backLabels[7] = {
+        "BACK", "BACK", "BACK", "ZURUECK", "RETOUR", "INDIETRO", "VOLVER"
+    };
+    DrawTextCentered(160.0f, 213.0f, 1.0f, backLabels[lang], C2D_Color32(255, 255, 255, 255));
 }
 
 /* Render Confirmation Dialog (hardcore enable / restart game) */
@@ -3424,7 +3652,10 @@ static void RenderOptionsView(void) {
     if (sShowDisplayModal) RenderDisplayModal(lang);
     else if (sShowRASettingsModal) RenderRASettingsModal(lang);
     else if (sShowAchPacksModal) RenderAchPacksModal(lang);
-    else if (sShowAchievementsModal) RenderAchievementsModal(lang);
+    else if (sShowAchievementsModal) {
+        RenderAchievementsModal(lang);
+        if (sShowAchDetailModal) RenderAchievementDetailModal(lang);
+    }
     else if (sShowRemapModal) RenderRemapModal(lang);
     else if (sShowConfirmModal) RenderConfirmModal(lang);
 }

@@ -64,8 +64,19 @@ static struct {
     bool active;
     uint32_t timer;
     char title[64];
+    char badge[16];
     uint32_t points;
-} sToast = { false, 0, "", 0 };
+    bool hardcore;
+} sToast = { false, 0, "", "", 0, false };
+
+/* The classic "got a tank" jingle (MUSIC_GETTING_TANK_JINGLE, see
+ * include/constants/audio.h). Played through the decomp sound engine when an
+ * unlock fires and the notification sound is enabled. SoundPlay runs on the
+ * game-logic thread, which is where this event handler already executes -- the
+ * unlock is delivered from rc_client_do_frame inside Port_RA_EvaluateTriggers,
+ * called once per frame from agbmain. */
+#define RA_UNLOCK_JINGLE 0x3Au
+extern void SoundPlay(uint16_t sound);
 
 static void LogLine(const char* fmt, ...) {
     va_list args;
@@ -755,7 +766,15 @@ static void ShowUnlockToast(const rc_client_achievement_t* achievement) {
     sToast.timer = 180; /* 3 seconds at 60fps */
     snprintf(sToast.title, sizeof(sToast.title), "%s",
              achievement->title ? achievement->title : "");
+    snprintf(sToast.badge, sizeof(sToast.badge), "%s", achievement->badge_name);
     sToast.points = achievement->points;
+    /* Snapshot the mode the unlock counted for, so a later hardcore toggle
+     * cannot relabel a toast that is still on screen. */
+    sToast.hardcore = sRAHardcore;
+
+    if (sRANotifSound) {
+        SoundPlay(RA_UNLOCK_JINGLE);
+    }
 }
 
 static void EventHandler(const rc_client_event_t* event, rc_client_t* client) {
@@ -1433,29 +1452,56 @@ static void DrawToastText(float x, float y, const char* text, uint32_t color) {
 void Port_RA_RenderToastOverlay(void) {
     if (!sToast.active) return;
 
-    /* Visual pop-in slide animation */
+    bool hc = sToast.hardcore;
+
     float boxW = 280.0f;
-    float boxH = 32.0f;
+    float boxH = 36.0f;
     float boxX = (320.0f - boxW) / 2.0f;
     float boxY = 6.0f;
 
-    /* Outer golden frame */
-    C2D_DrawRectSolid(boxX, boxY, 0.94f, boxW, boxH, sRAHardcore ? C2D_Color32(255, 215, 0, 255) : C2D_Color32(80, 220, 120, 255));
-    /* Dark background fill */
-    C2D_DrawRectSolid(boxX + 1.0f, boxY + 1.0f, 0.95f, boxW - 2.0f, boxH - 2.0f, C2D_Color32(14, 20, 32, 250));
+    /* Hardcore and softcore toasts read differently at a glance: hardcore gets
+     * a gold double frame and a red accent stripe, softcore a single green
+     * frame and no stripe. */
+    uint32_t frameCol = hc ? C2D_Color32(255, 215, 0, 255) : C2D_Color32(80, 220, 120, 255);
+    uint32_t accentCol = hc ? C2D_Color32(230, 60, 60, 255) : C2D_Color32(40, 150, 90, 255);
 
-    /* Trophy icon on the left */
-    float iconX = boxX + 6.0f;
+    C2D_DrawRectSolid(boxX, boxY, 0.94f, boxW, boxH, frameCol);
+    C2D_DrawRectSolid(boxX + 1.0f, boxY + 1.0f, 0.945f, boxW - 2.0f, boxH - 2.0f, C2D_Color32(14, 20, 32, 250));
+    if (hc) {
+        /* Inner second frame line, only for hardcore. */
+        C2D_DrawRectSolid(boxX + 2.0f, boxY + 2.0f, 0.946f, boxW - 4.0f, 1.0f, frameCol);
+        C2D_DrawRectSolid(boxX + 2.0f, boxY + boxH - 3.0f, 0.946f, boxW - 4.0f, 1.0f, frameCol);
+    }
+    /* Accent stripe down the left edge. */
+    C2D_DrawRectSolid(boxX + 2.0f, boxY + 2.0f, 0.95f, 2.0f, boxH - 4.0f, accentCol);
+
+    /* Achievement badge on the left. Falls back to a drawn trophy when the
+     * 20x20 pixel copy for this badge is not bundled (see
+     * port_ra_badges_data.c). */
+    float iconX = boxX + 7.0f;
     float iconY = boxY + 8.0f;
-    uint32_t goldCol = C2D_Color32(255, 215, 0, 255);
-    C2D_DrawRectSolid(iconX + 2.0f, iconY, 0.96f, 10.0f, 6.0f, goldCol);
-    C2D_DrawRectSolid(iconX + 5.0f, iconY + 6.0f, 0.96f, 4.0f, 5.0f, goldCol);
-    C2D_DrawRectSolid(iconX + 3.0f, iconY + 11.0f, 0.96f, 8.0f, 3.0f, goldCol);
+    const uint32_t* badge = Port_RA_GetBadgePixels(sToast.badge);
+    if (badge) {
+        C2D_DrawRectSolid(iconX - 1.0f, iconY - 1.0f, 0.955f, 22.0f, 22.0f, frameCol);
+        for (int by = 0; by < 20; ++by) {
+            for (int bx = 0; bx < 20; ++bx) {
+                C2D_DrawRectSolid(iconX + (float)bx, iconY + (float)by, 0.96f, 1.0f, 1.0f,
+                                  badge[by * 20 + bx]);
+            }
+        }
+    } else {
+        uint32_t goldCol = C2D_Color32(255, 215, 0, 255);
+        C2D_DrawRectSolid(iconX + 4.0f, iconY, 0.96f, 12.0f, 7.0f, goldCol);
+        C2D_DrawRectSolid(iconX + 8.0f, iconY + 7.0f, 0.96f, 4.0f, 6.0f, goldCol);
+        C2D_DrawRectSolid(iconX + 5.0f, iconY + 13.0f, 0.96f, 10.0f, 3.0f, goldCol);
+    }
 
-    /* Text */
-    DrawToastText(boxX + 24.0f, boxY + 5.0f, sRAHardcore ? "! LOGRO DESBLOQUEADO (HARDCORE) !" : "! LOGRO DESBLOQUEADO !", goldCol);
-    
+    float textX = boxX + 34.0f;
+    DrawToastText(textX, boxY + 6.0f,
+                  hc ? "! LOGRO DESBLOQUEADO (HARDCORE) !" : "! LOGRO DESBLOQUEADO !",
+                  hc ? C2D_Color32(255, 120, 120, 255) : frameCol);
+
     char titleBuf[80];
     snprintf(titleBuf, sizeof(titleBuf), "%s (+%lu PTS)", sToast.title, (unsigned long)sToast.points);
-    DrawToastText(boxX + 24.0f, boxY + 18.0f, titleBuf, C2D_Color32(255, 255, 255, 255));
+    DrawToastText(textX, boxY + 20.0f, titleBuf, C2D_Color32(255, 255, 255, 255));
 }
