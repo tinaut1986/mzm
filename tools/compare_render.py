@@ -26,9 +26,20 @@ reporting nonsense:
   * FPS overlay and GBA bezel off. Both are drawn onto the top target by the
     port and have no counterpart in a GBA frame.
 
+Two modes:
+
+  * screen-dump sets (default). Self-validating but only for the build that
+    took them, so verifying a change means fresh dumps and fresh gameplay.
+  * --replay NN, the repeatable one. The console re-renders the SAVED PPU
+    states of mzm-rec-NN.bin through whatever build is installed (REPLAY
+    RECORDING in the debug tools menu) and writes mzm-replay-NN-SSSS.rgb;
+    this compares each against the CPU PPU's render of the same sample. Same
+    frames after every change, and two builds can be diffed on identical
+    input.
+
 Usage:
     python3 tools/compare_render.py <dump-dir> [NN ...]
-    python3 tools/compare_render.py <dump-dir> --all
+    python3 tools/compare_render.py <dir> --replay 01
 """
 
 import argparse
@@ -193,6 +204,74 @@ def write_report_png(out_path, ref, got, mask):
         return ppm
 
 
+def discover_replays(replay_dir, slot):
+    rx = re.compile(rf"^mzm-replay-{slot}-(\d+)\.rgb$")
+    return sorted(
+        (m.group(1) for m in (rx.match(n) for n in os.listdir(replay_dir)) if m), key=int
+    )
+
+
+def run_replay(args):
+    """Compare a replayed recording against the CPU PPU, sample by sample.
+
+    This is the repeatable half of the harness. A screen dump can only ever
+    validate the build that took it -- its -left.rgb is what the renderer
+    drew that day -- so verifying a renderer change with dumps means going
+    back into the game and reproducing scenes by hand. A replay instead
+    re-renders the SAVED PPU states of a recording through whatever build is
+    installed (REPLAY RECORDING in the debug tools menu), so the same frames
+    can be checked after every change, and two builds can be diffed against
+    each other on identical input.
+    """
+    out_dir = args.out or os.path.join(args.dump_dir, "compare")
+    os.makedirs(out_dir, exist_ok=True)
+    indices = discover_replays(args.dump_dir, args.replay)
+    if not indices:
+        sys.exit(f"no mzm-replay-{args.replay}-*.rgb found in {args.dump_dir}")
+    rec = args.rec or os.path.join(args.dump_dir, f"mzm-rec-{args.replay}.bin")
+    if not os.path.isfile(rec):
+        sys.exit(f"missing the recording those frames came from: {rec}\n"
+                 f"fetch it from the console, or pass --rec")
+
+    failures = 0
+    for idx in indices:
+        sample = int(idx)
+        print(f"=== rec-{args.replay} sample {sample}")
+        r = subprocess.run([REC_RENDER, "rec", rec, out_dir, str(sample)],
+                           capture_output=True, text=True)
+        if r.returncode != 0:
+            print(r.stdout + r.stderr)
+            print("  SKIP: could not render the reference")
+            failures += 1
+            continue
+        _, _, ref = load_ppm(os.path.join(out_dir, f"frame-{sample:04d}.ppm"))
+        try:
+            got, fills_width = load_dump_rgb(os.path.join(args.dump_dir, f"mzm-replay-{args.replay}-{idx}.rgb"))
+        except (OSError, ValueError) as e:
+            print(f"  SKIP: {e}")
+            failures += 1
+            continue
+        if fills_width:
+            print("  SKIP: not pillarboxed -- the replay should force PIXEL PERFECT,\n"
+                  "        so this file probably predates that override.")
+            failures += 1
+            continue
+        res = compare(ref, got, exact=args.exact)
+        if res["ndiff"] == 0:
+            print(f"  OK: identical to the CPU PPU across all {GBA_W * GBA_H} pixels")
+            continue
+        failures += 1
+        x0, y0, x1, y1 = res["bbox"]
+        print(f"  DIFF: {res['ndiff']} px ({res['pct']:.2f}%), worst {res['worst']}, mean {res['mean_delta']:.1f}")
+        print(f"        bounding box x {x0}..{x1}, y {y0}..{y1}")
+        report = write_report_png(os.path.join(out_dir, f"replay-{args.replay}-{idx}.png"), ref, got, res["mask"])
+        print(f"        report (reference | console | diff): {report}")
+
+    print()
+    print(f"{len(indices)} replayed sample(s), {failures} problem(s)")
+    return 1 if failures else 0
+
+
 def discover_sets(dump_dir):
     rx = re.compile(r"^mzm-dump-(\d+)-left\.rgb$")
     return sorted({m.group(1) for m in (rx.match(n) for n in os.listdir(dump_dir)) if m})
@@ -204,6 +283,19 @@ def main():
     ap.add_argument("sets", nargs="*", help="set numbers to check (default: all found)")
     ap.add_argument("--out", default=None, help="where to write reports (default: <dump-dir>/compare)")
     ap.add_argument(
+        "--replay",
+        metavar="NN",
+        default=None,
+        help="compare a replayed recording (mzm-replay-NN-*.rgb) against the CPU PPU "
+        "instead of screen-dump sets -- the repeatable mode, see run_replay()",
+    )
+    ap.add_argument(
+        "--rec",
+        default=None,
+        help="path to the mzm-rec-NN.bin those replayed frames came from "
+        "(default: <dump-dir>/mzm-rec-NN.bin)",
+    )
+    ap.add_argument(
         "--exact",
         action="store_true",
         help="compare raw bytes instead of quantising to GBA 5-bit colour first "
@@ -213,6 +305,9 @@ def main():
 
     if not os.path.isfile(REC_RENDER) and not os.path.isfile(REC_RENDER + ".exe"):
         sys.exit(f"missing {REC_RENDER}\nbuild it first:  make -C platform/3ds rec-render")
+
+    if args.replay:
+        return run_replay(args)
 
     out_dir = args.out or os.path.join(args.dump_dir, "compare")
     os.makedirs(out_dir, exist_ok=True)

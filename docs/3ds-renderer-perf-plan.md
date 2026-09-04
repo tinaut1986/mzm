@@ -65,6 +65,22 @@ groups (`mzm-perf-08/09.bin`, 2026-09-04):
 
 ## Plan
 
+### 0. Harness: replay saved states through the installed build -- done
+
+- [x] Screen dumps can only validate the build that took them, so every
+      verification round needed fresh gameplay. `REPLAY RECORDING` in the
+      debug tools menu re-renders a recording's saved PPU states through the
+      installed renderer and dumps each frame; `compare_render.py --replay`
+      diffs them against the CPU PPU. Non-destructive: the live PPU state is
+      snapshotted and restored, so the running game survives.
+- [x] Capped at 24 outputs spread across the recording (each screenshot is
+      288KB) and forces slider 0 / PIXEL PERFECT itself, so the comparison
+      does not depend on how the console was set up.
+- [ ] Diff two builds' replays against each other on identical input, which
+      isolates a change instead of measuring absolute agreement with the
+      oracle. Not written yet -- `compare_render.py` compares against the
+      oracle only.
+
 ### A. 16x16 atlas blocks -- implemented, unverified
 
 One quad per tilemap-aligned 2x2 group instead of four.
@@ -84,10 +100,10 @@ One quad per tilemap-aligned 2x2 group instead of four.
 - [x] Alignment arithmetic verified exhaustively on the host (every map size
       x every scroll position: no group crosses a 32x32 screen block or a
       32-entry row).
-- [ ] **Verify on hardware through the harness.** Dumps in 5-6 varied rooms,
-      and specifically a lava room and a red-heat-tint room -- animated
-      palettes are where a hole in the per-block staleness check would show
-      as frozen or mis-coloured tiles.
+- [ ] **Verify on hardware through the harness.** Use the replay
+      (`--replay`), not fresh dumps: `mzm-rec-01.bin` is on the card as the
+      corpus. Animated-palette rooms are where a hole in the per-block
+      staleness check would show, as frozen or mis-coloured tiles.
 - [ ] **Measure the win.** Expect `bgItems` ~2244 -> ~700 per eye and 2-eye
       GPU 17,75 -> ~5-6 ms. If it lands, 60 FPS with the slider up.
 - [ ] Consider 32x32 blocks once 16x16 is proven (a further /4 on the
@@ -150,7 +166,23 @@ Skip tiles fully covered by an opaque higher-priority tile.
 Both recipes and the formats they produce are documented in
 [3ds-debug-tools.md](3ds-debug-tools.md).
 
-**Correctness** -- the GPU renderer against the CPU PPU oracle:
+**Correctness, repeatably** -- replay a saved recording through whatever
+build is installed. This is the mode to use after a renderer change: the
+console re-renders the recording's saved PPU states, so the same frames are
+checked every time and no gameplay is needed.
+
+```sh
+# once: put a corpus on the card (any mzm-rec-NN.bin, kept for reuse)
+# then, after each build: debug tools -> REPLAY RECORDING -> side button
+python3 tools/compare_render.py <dir-with-the-fetched-replay> --replay 01
+```
+
+Screen dumps validate only the build that took them -- their `-left.rgb` is
+what the renderer drew that day -- so they cannot check a later build, which
+is why the replay exists. Keep using dumps for one-off "what does this room
+do" questions.
+
+**Correctness, one-off** -- the GPU renderer against the CPU PPU oracle:
 
 ```sh
 make -C platform/3ds rec-render

@@ -163,6 +163,11 @@ void agbmain(void)
         {
             extern void PortPpuMzm_DebugApplyPendingWarp(void);
             PortPpuMzm_DebugApplyPendingWarp();
+            /* Same reasoning, same place: the replay presents frames of its
+             * own, so it cannot run from the touch handler either. See
+             * PortPpuMzm_DebugApplyPendingReplay. */
+            extern void PortPpuMzm_DebugApplyPendingReplay(void);
+            PortPpuMzm_DebugApplyPendingReplay();
         }
 #endif
 

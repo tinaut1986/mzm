@@ -1152,6 +1152,162 @@ bool PortPpuMzm_DebugRequestWarpToSelection(void) {
  * owns gSubGameMode1 at that moment. The request stays pending until
  * gameplay is reached, so triggering it from the pause screen warps as soon
  * as the game resumes instead of being dropped. */
+/* ---- Replay: re-render recorded PPU states through the GPU renderer ----
+ *
+ * The comparison harness (tools/compare_render.py) checks the GPU renderer
+ * against the CPU PPU, which is the oracle. A screen dump carries both
+ * halves of one such comparison, but only for the build that took it: its
+ * -left.rgb is what the renderer drew THAT DAY. So dumps cannot validate a
+ * later build, and every verification round would mean going back into the
+ * game and reproducing scenes by hand -- exactly the manual work the
+ * harness exists to remove.
+ *
+ * This closes that. The recorded PPU states (mzm-rec-NN.bin, one per
+ * sample) are the reusable half: injecting them back into the emulated PPU
+ * memory and re-rendering makes a saved recording a FIXED regression suite.
+ * Install a build, press one row, fetch, run one command. Identical inputs
+ * every time -- which also allows diffing one build's output against
+ * another's on the very same frame, isolating a change instead of measuring
+ * absolute agreement with the oracle (which has known divergences).
+ *
+ * Non-destructive: the live PPU state is snapshotted and restored, so the
+ * running game survives a replay and does not need a reboot.
+ *
+ * Runs from the main loop (see the call in src/agbmain.c next to the warp)
+ * and never from the touch handler: it presents frames itself, and
+ * Port_Bios_Halt -- where the touch handler runs -- is called mid-frame by
+ * src/transfer.c. */
+enum {
+    /* Cap on files written, spread across the recording rather than taken
+     * from its start: each screenshot is 288KB, so a whole 82-sample
+     * recording would be ~23MB to write and fetch for no extra coverage. */
+    PORT_REPLAY_MAX_OUTPUTS = 24,
+};
+static bool sReplayPending;
+static unsigned sReplaySlot = 1;
+
+void PortPpuMzm_DebugCycleReplaySlot(void) { sReplaySlot = (sReplaySlot % 4u) + 1u; }
+unsigned PortPpuMzm_DebugReplaySlot(void) { return sReplaySlot; }
+void PortPpuMzm_DebugRequestReplay(void) { sReplayPending = true; }
+
+void PortPpuMzm_DebugApplyPendingReplay(void) {
+    if (!sReplayPending) return;
+    sReplayPending = false;
+
+    char path[64];
+    snprintf(path, sizeof(path), "sdmc:/3ds/mzm-rec-%02u.bin", sReplaySlot);
+    FILE* f = fopen(path, "rb");
+    if (!f) {
+        char msg[96];
+        snprintf(msg, sizeof(msg), "REPLAY: no such recording: %s", path);
+        Port_DebugLog(msg);
+        return;
+    }
+
+    /* Stride as this build writes it (see PlatformGpu3DS_RecordTick and the
+     * format section of docs/3ds-debug-tools.md). Every sample's magic is
+     * checked below, so a recording from a build with a different clip
+     * block fails loudly on the first sample instead of rendering garbage. */
+    const size_t clipSize = (size_t)PortPpuMzm_GetClipRecordBlockSize();
+    const size_t stride = 64u + sizeof(gIoMem) + sizeof(gBgPltt) + sizeof(gObjPltt) + sizeof(gOamMem) +
+                          sizeof(gVram) + clipSize;
+
+    fseek(f, 0, SEEK_END);
+    const long fileSize = ftell(f);
+    const unsigned total = (fileSize > 0) ? (unsigned)((size_t)fileSize / stride) : 0u;
+    if (total == 0u) {
+        Port_DebugLog("REPLAY: recording holds no complete sample");
+        fclose(f);
+        return;
+    }
+    const unsigned step = (total > PORT_REPLAY_MAX_OUTPUTS) ? (total / PORT_REPLAY_MAX_OUTPUTS) : 1u;
+
+    /* Snapshot the live state so the running game survives. */
+    const size_t snapBytes =
+        sizeof(gIoMem) + sizeof(gBgPltt) + sizeof(gObjPltt) + sizeof(gOamMem) + sizeof(gVram);
+    uint8_t* snap = (uint8_t*)malloc(snapBytes);
+    if (!snap) {
+        Port_DebugLog("REPLAY: cannot allocate the live-state snapshot");
+        fclose(f);
+        return;
+    }
+    {
+        uint8_t* w = snap;
+        memcpy(w, gIoMem, sizeof(gIoMem));      w += sizeof(gIoMem);
+        memcpy(w, gBgPltt, sizeof(gBgPltt));    w += sizeof(gBgPltt);
+        memcpy(w, gObjPltt, sizeof(gObjPltt));  w += sizeof(gObjPltt);
+        memcpy(w, gOamMem, sizeof(gOamMem));    w += sizeof(gOamMem);
+        memcpy(w, gVram, sizeof(gVram));
+    }
+
+    /* Slider 0 and 1:1, whatever the console is actually set to: the
+     * comparison against the CPU PPU is only defined there. */
+    PlatformGpu3DS_SetSliderOverride(true, 0.0f);
+    Port_GpuRenderer_SetReplayOverride(true);
+
+    unsigned written = 0, unsupported = 0, bad = 0;
+    for (unsigned i = 0; i < total && written < PORT_REPLAY_MAX_OUTPUTS; i += step) {
+        const long base = (long)((size_t)i * stride);
+        uint8_t magic[4];
+        if (fseek(f, base, SEEK_SET) != 0 || fread(magic, 1, 4, f) != 4) break;
+        if (!(magic[0] == 'M' && magic[1] == 'Z' && magic[2] == 'M' && magic[3] == '4')) {
+            ++bad;
+            break;
+        }
+        if (fseek(f, base + 64, SEEK_SET) != 0) break;
+        if (fread(gIoMem, 1, sizeof(gIoMem), f) != sizeof(gIoMem)) break;
+        if (fread(gBgPltt, 1, sizeof(gBgPltt), f) != sizeof(gBgPltt)) break;
+        if (fread(gObjPltt, 1, sizeof(gObjPltt), f) != sizeof(gObjPltt)) break;
+        if (fread(gOamMem, 1, sizeof(gOamMem), f) != sizeof(gOamMem)) break;
+        if (fread(gVram, 1, sizeof(gVram), f) != sizeof(gVram)) break;
+
+        /* One full present, the same sequence Port_PPU_PresentFrame uses for
+         * a GPU frame. A state the renderer does not support is skipped
+         * rather than drawn: in real gameplay it would have fallen back to
+         * the CPU renderer, so it is not a frame this comparison is about. */
+        bool drew = false;
+        PlatformGpu3DS_SubmitLock_Acquire();
+        if (Port_GpuRenderer_IsActive() && Port_GpuRenderer_CanRenderFrame() &&
+            PlatformGpu3DS_BeginTopSceneGpu()) {
+            Port_GpuRenderer_RenderFrame();
+            drew = true;
+        }
+        PlatformGpu3DS_EndBottom(sBottomBuffer, true);
+        PlatformGpu3DS_SubmitLock_Release();
+
+        if (!drew) {
+            ++unsupported;
+            continue;
+        }
+        char out[64];
+        snprintf(out, sizeof(out), "sdmc:/3ds/mzm-replay-%02u-%04u.rgb", sReplaySlot, i);
+        PlatformGpu3DS_DumpTopLeftTo(out);
+        ++written;
+    }
+
+    PlatformGpu3DS_SetSliderOverride(false, 0.0f);
+    Port_GpuRenderer_SetReplayOverride(false);
+
+    /* Put the running game back exactly as it was. */
+    {
+        const uint8_t* r = snap;
+        memcpy(gIoMem, r, sizeof(gIoMem));      r += sizeof(gIoMem);
+        memcpy(gBgPltt, r, sizeof(gBgPltt));    r += sizeof(gBgPltt);
+        memcpy(gObjPltt, r, sizeof(gObjPltt));  r += sizeof(gObjPltt);
+        memcpy(gOamMem, r, sizeof(gOamMem));    r += sizeof(gOamMem);
+        memcpy(gVram, r, sizeof(gVram));
+    }
+    free(snap);
+    fclose(f);
+
+    char msg[128];
+    snprintf(msg, sizeof(msg),
+             "REPLAY rec-%02u: %u/%u samples -> mzm-replay-%02u-*.rgb (%u unsupported%s)",
+             sReplaySlot, written, total, sReplaySlot, unsupported,
+             bad ? ", BAD MAGIC: stride mismatch" : "");
+    Port_DebugLog(msg);
+}
+
 void PortPpuMzm_DebugApplyPendingWarp(void) {
     if (!sWarpPending) return;
     if (gMainGameMode != GM_INGAME || gSubGameMode1 != SUB_GAME_MODE_PLAYING) return;

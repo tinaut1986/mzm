@@ -3705,7 +3705,7 @@ static void RenderOptionsView(void) {
 /* Cell 11 (RENDERER GPU/CPU) only exists when the GPU tile renderer is
  * compiled in -- a RENDERER=cpu build has nothing to switch to. */
 #ifdef PORT_GPU_TILE_RENDERER
-#define DBGTOOL_COUNT     12
+#define DBGTOOL_COUNT     13
 #else
 #define DBGTOOL_COUNT     11
 #endif
@@ -3874,6 +3874,18 @@ static void RenderDebugToolsModal(int lang) {
         DrawDebugCell(11, (lang == 6) ? "RENDERER" : "RENDERER",
                       gpuOn ? "GPU" : "CPU", gpuOn ? colAct : colOn);
     }
+    /* Re-renders a saved recording's PPU states through the GPU renderer and
+     * dumps each frame, which turns mzm-rec-NN.bin into a fixed regression
+     * suite for tools/compare_render.py -- no need to reproduce scenes by
+     * hand after a renderer change. Middle taps cycle which recording, the
+     * side button runs it. Non-destructive: the live state is restored. */
+    {
+        extern unsigned PortPpuMzm_DebugReplaySlot(void);
+        char slotTxt[12];
+        snprintf(slotTxt, sizeof(slotTxt), "REC-%02u", PortPpuMzm_DebugReplaySlot());
+        DrawDebugCell(12, (lang == 6) ? "REPETIR GRABACION" : "REPLAY RECORDING", slotTxt, colMenu);
+        DrawDebugCellSideButton(12, false);
+    }
 #endif
 
     if (sDebugToolsMsg[0] && sFrameCounter < sDebugToolsMsgUntil) {
@@ -3925,6 +3937,27 @@ static bool HandleDebugToolsModalTouch(int x, int y) {
                          : (last && last[0]) ? last : "REC OFF");
         return true;
     }
+#ifdef PORT_GPU_TILE_RENDERER
+    if (cell == 12) {
+        extern void PortPpuMzm_DebugCycleReplaySlot(void);
+        extern void PortPpuMzm_DebugRequestReplay(void);
+        extern unsigned PortPpuMzm_DebugReplaySlot(void);
+        char msg[24];
+        if (DebugCellRightZoneHit(x, 12)) {
+            /* Only raises a flag: the replay presents frames of its own, so
+             * it has to run from the main loop rather than from here (this
+             * is inside Port_Bios_Halt). See
+             * PortPpuMzm_DebugApplyPendingReplay. */
+            PortPpuMzm_DebugRequestReplay();
+            snprintf(msg, sizeof(msg), "REPLAY rec-%02u...", PortPpuMzm_DebugReplaySlot());
+        } else {
+            PortPpuMzm_DebugCycleReplaySlot();
+            snprintf(msg, sizeof(msg), "REPLAY: rec-%02u", PortPpuMzm_DebugReplaySlot());
+        }
+        DebugToolsSetMsg(msg);
+        return true;
+    }
+#endif
     if (cell == 9 && DebugCellRightZoneHit(x, 9)) {
         /* Side button: start/stop logging on the selected stream. */
         if (Port_DebugLog_IsEnabled()) {

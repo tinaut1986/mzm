@@ -553,6 +553,12 @@ static void ComputeDepthState(uint16_t dispcnt) {
     UpdateLayerFixRoom();
 }
 
+/* See PortPpuMzm_DebugApplyPendingReplay. Forces the display geometry a
+ * replay needs; costs one predictable branch per frame otherwise. */
+static bool sReplayOverride;
+
+void Port_GpuRenderer_SetReplayOverride(bool active) { sReplayOverride = active; }
+
 bool Port_GpuRenderer_IsActive(void) { return sGpuRendererActive; }
 void Port_GpuRenderer_SetActive(bool active) { sGpuRendererActive = active; }
 
@@ -2556,10 +2562,22 @@ void Port_GpuRenderer_RenderFrame(void) {
     sLastCollectMs = (float)((double)(tAfterCollect - tStart) / PORT_GPU_RENDERER_CPU_TICKS_PER_MSEC);
     sLastAtlasUploadMs = (float)((double)(tAfterCollect - tBeforeUpload) / PORT_GPU_RENDERER_CPU_TICKS_PER_MSEC);
 
-    float slider3d = osGet3DSliderState();
-    const int style = Port_Config_Get3DSDisplayStyle();
-    const int aspect = Port_Config_Get3DSAspectRatio();
+    /* The slider is read through the platform accessor rather than
+     * osGet3DSliderState directly so a replay's override applies here too
+     * (see PlatformGpu3DS_SetSliderOverride). */
+    float slider3d = PlatformGpu3DS_Get3DSlider();
+    int style = Port_Config_Get3DSDisplayStyle();
+    int aspect = Port_Config_Get3DSAspectRatio();
     bool hudOutside = (style == 0 && Port_Config_GetHudOutside());
+    if (sReplayOverride) {
+        /* A replayed frame has to be comparable with the CPU PPU's 240x160
+         * output: 1:1, unfiltered, HUD in its normal place. Overridden here
+         * rather than by writing the user's config, which would persist to
+         * the ini and survive a crash mid-replay. */
+        style = 0;
+        aspect = 0;
+        hudOutside = false;
+    }
 
     /* Emulated GBA main game mode (GM_INGAME == 4, GM_DEMO == 11, etc.) */
     extern s16 gMainGameMode;

@@ -460,7 +460,33 @@ fail_linear:
     return false;
 }
 
-float PlatformGpu3DS_Get3DSlider(void) { return osGet3DSliderState(); }
+/* Replay override (see PortPpuMzm_DebugApplyPendingReplay): while set, every
+ * consumer of the slider -- the renderer's per-tier parallax, the screen-FX
+ * right-eye pass, the CPU PPU -- sees the overridden value instead of the
+ * physical one, so a replayed frame is reproducible regardless of where the
+ * slider happens to be. */
+static bool sSliderOverrideActive;
+static float sSliderOverrideValue;
+
+void PlatformGpu3DS_SetSliderOverride(bool active, float value) {
+    sSliderOverrideActive = active;
+    sSliderOverrideValue = value;
+}
+
+float PlatformGpu3DS_Get3DSlider(void) {
+    return sSliderOverrideActive ? sSliderOverrideValue : osGet3DSliderState();
+}
+
+/* Left top target only, to a caller-chosen path: what the replay writes per
+ * sample. Same mechanism and byte layout as the screen dump's own
+ * mzm-dump-NN-left.rgb (240x400 portrait, BGR -- see
+ * docs/3ds-debug-tools.md), so both feed the same comparison. */
+static void DumpOneTarget(C3D_RenderTarget* target, const char* path); /* defined below */
+
+void PlatformGpu3DS_DumpTopLeftTo(const char* path) {
+    if (!sReady || !path) return;
+    DumpOneTarget(sTopTarget, path);
+}
 uint32_t* PlatformGpu3DS_TopBuffer(void) { return sTopUpload; }
 uint32_t* PlatformGpu3DS_TopRightBuffer(void) { return sTopRightUpload; }
 uint32_t* PlatformGpu3DS_BottomBuffer(unsigned index) {
