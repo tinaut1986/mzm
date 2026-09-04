@@ -19,7 +19,6 @@ extern int Port_Config_Get3DSAspectRatio(void);
 #define BEZEL_SCR_H 240
 
 static C3D_Tex sBezelTex;
-static Tex3DS_SubTexture sBezelSub;
 static Tex3DS_SubTexture sSideLeftSub;
 static Tex3DS_SubTexture sSideRightSub;
 static bool sBezelReady;
@@ -85,15 +84,15 @@ void PortGbaBezel_Init(void) {
     }
 
     GSPGPU_FlushDataCache(sBezelTex.data, gGbaBezelUncompressedSize);
-    C3D_TexSetFilter(&sBezelTex, GPU_LINEAR, GPU_LINEAR);
+    /* Every bezel blit is 1:1 texel->pixel (no scaling in any mode), so LINEAR
+     * would only cost 4 texture fetches per fragment instead of 1 and soften a
+     * frame that should stay pixel-crisp. NEAREST. */
+    C3D_TexSetFilter(&sBezelTex, GPU_NEAREST, GPU_NEAREST);
     C3D_TexSetWrap(&sBezelTex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
 
-    sBezelSub.width = BEZEL_SCR_W;
-    sBezelSub.height = BEZEL_SCR_H;
-    sBezelSub.left = 0.0f;
-    sBezelSub.top = 1.0f;
-    sBezelSub.right = (float)BEZEL_SCR_W / (float)BEZEL_TEX_W;
-    sBezelSub.bottom = 1.0f - (float)BEZEL_SCR_H / (float)BEZEL_TEX_H;
+    /* FULL mode blits the artwork as four edge strips built on the fly in
+     * PortGbaBezel_Draw (source and dest 1:1), so no whole-screen subtexture
+     * is needed here. */
 
     /* Left and right 20px border strips for Scaled - Original mode (360x240) */
     sSideLeftSub.width = 20;
@@ -136,6 +135,31 @@ bool PortGbaBezel_Active(void) {
     return PortGbaBezel_GetMode() != GBA_BEZEL_MODE_NONE;
 }
 
+/* Blit one axis-aligned piece of the full-screen bezel artwork, source and
+ * destination locked 1:1 (screen pixel (x,y) samples bezel texel (x,y)). Used
+ * to cover the frame as four edge strips instead of one screen-sized quad, so
+ * the fully-transparent centre where the game picture sits is never
+ * rasterised. */
+static void DrawBezelPiece(int x, int y, int w, int h) {
+    if (w <= 0 || h <= 0) return;
+    Tex3DS_SubTexture sub = {
+        .width = (u16)w,
+        .height = (u16)h,
+        .left = (float)x / (float)BEZEL_TEX_W,
+        .right = (float)(x + w) / (float)BEZEL_TEX_W,
+        .top = 1.0f - (float)y / (float)BEZEL_TEX_H,
+        .bottom = 1.0f - (float)(y + h) / (float)BEZEL_TEX_H,
+    };
+    const C2D_Image img = { .tex = &sBezelTex, .subtex = &sub };
+    const C2D_DrawParams params = {
+        .pos = { (float)x, (float)y, (float)w, (float)h },
+        .center = { 0.0f, 0.0f },
+        .depth = 0.65f,
+        .angle = 0.0f,
+    };
+    C2D_DrawImage(img, &params, NULL);
+}
+
 void PortGbaBezel_Draw(C3D_RenderTarget* target) {
     if (!sBezelReady) return;
     GbaBezelMode mode = PortGbaBezel_GetMode();
@@ -156,14 +180,21 @@ void PortGbaBezel_Draw(C3D_RenderTarget* target) {
     C3D_TexEnvFunc(env, C3D_Both, GPU_REPLACE);
 
     if (mode == GBA_BEZEL_MODE_FULL) {
-        const C2D_Image img = { .tex = &sBezelTex, .subtex = &sBezelSub };
-        const C2D_DrawParams params = {
-            .pos = { 0.0f, 0.0f, (float)BEZEL_SCR_W, (float)BEZEL_SCR_H },
-            .center = { 0.0f, 0.0f },
-            .depth = 0.65f,
-            .angle = 0.0f,
-        };
-        C2D_DrawImage(img, &params, NULL);
+        /* The artwork is a frame: everything inside the game-picture rectangle
+         * is transparent. Cover only the four borders around that rectangle so
+         * the transparent centre is never touched -- ~40% fewer fragments than
+         * the old full-screen quad, per eye, with no visual change. */
+        int gx, gy, gw, gh;
+        PlatformGpu3DS_GetTopImageRect(&gx, &gy, &gw, &gh);
+        if (gx < 0) gx = 0;
+        if (gy < 0) gy = 0;
+        if (gx + gw > BEZEL_SCR_W) gw = BEZEL_SCR_W - gx;
+        if (gy + gh > BEZEL_SCR_H) gh = BEZEL_SCR_H - gy;
+
+        DrawBezelPiece(0, 0, gx, BEZEL_SCR_H);                              /* left   */
+        DrawBezelPiece(gx + gw, 0, BEZEL_SCR_W - (gx + gw), BEZEL_SCR_H);   /* right  */
+        DrawBezelPiece(gx, 0, gw, gy);                                      /* top    */
+        DrawBezelPiece(gx, gy + gh, gw, BEZEL_SCR_H - (gy + gh));           /* bottom */
     } else if (mode == GBA_BEZEL_MODE_SIDES) {
         const C2D_Image leftImg = { .tex = &sBezelTex, .subtex = &sSideLeftSub };
         const C2D_DrawParams leftParams = {
