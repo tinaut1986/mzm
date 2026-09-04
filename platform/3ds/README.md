@@ -119,3 +119,79 @@ You can customize the build using Makefile variables and `EXTRA_CFLAGS`:
   - **LOG MARK**: Writes a timestamped marker in `sdmc:/3ds/mzm-debug.log`.
   - **SCENE RECORDER**: Toggles sampling emulated GBA state every few frames to `sdmc:/3ds/mzm-rec.bin` (with blinking "REC" indicator) until toggled off.
   - **WARP & EQUIPMENT**: Room warp, save/restore position, map unlock, and equipment toggles.
+
+---
+
+## Release Process
+
+Version numbers are meaningful, not sequential: a **minor** bump marks a
+milestone (v0.4.0 followed v0.3.4 because the port became playable start to
+finish), a **patch** is an ordinary fix round. The next release branch is
+`release/vX.Y.(Z+1)` unless a milestone is landing.
+
+`main` means **stable**. A `release/*` branch is where work accumulates, and it
+stays off `main` for as long as there are known things left to resolve — being
+on `release/*` is itself the statement "not stable yet".
+
+### Two ways to publish
+
+Both are supported, and the CI picks the channel on its own (see below). Which
+one you use depends on whether the branch is ready to be called stable.
+
+**Beta** — tag the `release/*` branch without merging. Publishes a
+pre-release; work continues on the same branch afterwards.
+
+```sh
+git tag -a v0.4.4 -m "v0.4.4"
+git push origin release/v0.4.4
+git push origin v0.4.4          # -> GitHub pre-release, "Beta v0.4.4"
+```
+
+**Stable** — merge into `main` first, then tag the merge commit.
+
+```sh
+git checkout main
+git merge --no-ff release/v0.4.4
+git tag -a v0.4.4 -m "v0.4.4"
+git push origin main            # main FIRST -- see the note below
+git push origin v0.4.4          # -> GitHub release, "Release v0.4.4"
+```
+
+A tag that already shipped as a beta is promoted in place: once its commit is
+reachable from `main`, re-run **Build 3DS Release** from the Actions tab
+(`workflow_dispatch`) and the same release page flips to stable.
+
+### How the CI decides
+
+`.github/workflows/build-release.yml` runs on any `v*` tag push, and on manual
+dispatch. It marks the GitHub Release as a pre-release when **`main` cannot
+reach the built commit** — not by whether a tag was pushed. So:
+
+| Built from | Channel |
+|---|---|
+| Tag on an unmerged `release/*` branch | `Beta` (pre-release) |
+| Tag on `main`, or on a commit merged into `main` | `Release` |
+| Manual dispatch on any branch | `Beta` (pre-release) |
+
+**Push `main` before the tag.** The tag build resolves the channel against
+`origin/main`, so a tag that arrives first cannot see the merge and publishes
+as a beta. (Recoverable — re-dispatch the workflow — but avoidable.)
+
+Pre-releases keep the `Beta` prefix in the release name, carry a banner in the
+release notes, and do not become the repository's "Latest release".
+
+### After tagging
+
+Rename the release branch to the next patch version and delete the old remote
+branch — the tag is what identifies that line from then on:
+
+```sh
+git branch -m release/v0.4.4 release/v0.4.5
+git branch --unset-upstream                     # tracking still points at the old name
+git push -u origin release/v0.4.5
+git push origin --delete release/v0.4.4
+```
+
+The version string baked into the build (`make print-version`, and the CIA
+filename) is derived from git: an exact tag on `HEAD` gives `vX.Y.Z`, anything
+else on a release branch gives `vX.Y.Z-dev.<commits>+<hash>`.
