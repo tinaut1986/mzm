@@ -339,7 +339,7 @@ Toggled from the tools menu. ~1 minute of capacity (3600 frames at 60 FPS,
 
 ```
 struct PerfFileHeader {  // 16 bytes, at offset 0
-    uint32_t magic;       // 'MZP2' = 0x32505A4D little-endian
+    uint32_t magic;       // 'MZP3' = 0x33505A4D little-endian
     uint32_t sampleSize;  // sizeof(PerfSample) -- stride from this, don't hardcode
     uint32_t sampleCount;
     uint32_t reserved;    // zero
@@ -373,7 +373,18 @@ struct PerfSample {      // 64 bytes, sampleCount of them back to back
                                  // bit  9     haze active
                                  // bits 10-11 eyes rendered (2 = 3D slider up)
                                  // bits 16-31 haze tile count
-    uint32_t reserved;           // zero
+    uint32_t captureFlags;       // the settings the capture was taken under:
+                                 // bits 0-1   display style (0 = PIXEL PERFECT)
+                                 // bits 2-3   aspect ratio (2 = STRETCH)
+                                 // bits 4-10  3D slider x100, 0..100
+                                 // bit  11    FPS overlay on
+                                 // bit  12    HUD outside the frame
+                                 // bit  13    GBA bezel on
+                                 // bits 14-16 GBA screen-FX grade (0 = off)
+                                 // bit  17    Old3DS profile forced
+                                 // bit  18    frame drawn by the GPU renderer
+                                 //            (clear = CPU fallback, so the
+                                 //            draw-call census is stale)
 };
 ```
 
@@ -385,7 +396,12 @@ that this was happening, in the first capture: 2-vblank frames reported
 lower GPU times than 1-vblank ones. A frame that is sampled but never
 presented keeps zeros in those fields.
 
-'MZP1' was the same idea with a 40-byte sample, no CPU timings, no item
+'MZP2' was this without `captureFlags`, which made a set of captures
+impossible to tell apart afterwards: the 2026-09-04 round taking four of
+them (3D on/off against display style) to ask whether cost scales with
+pixels or with quads could not say which capture used which style, and
+inferring it from the frame cost would have been circular -- the cost is the
+thing under measurement. Before that, 'MZP1' was the same idea with a 40-byte sample, no CPU timings, no item
 split and no eye count; before that there was a headerless array of 16-byte
 samples with no magic at all. Check the magic, and stride by `sampleSize`.
 
@@ -395,14 +411,15 @@ samples with no magic at all. Check the magic, and stride by `sampleSize`.
 import struct
 d = open('mzm-perf.bin', 'rb').read()
 magic, size, count, _ = struct.unpack_from('<4I', d, 0)
-assert magic == 0x32505A4D, 'not an MZP2 perf capture'
+assert magic == 0x33505A4D, 'not an MZP3 perf capture'
 for i in range(count):
     (frame, us, spr, vis, aff, drawX, procX, tileX, upX, cpuDrawX,
-     quads, bg, obj, flushes, flags, _r) = struct.unpack_from('<16I', d, 16 + i * size)
+     quads, bg, obj, flushes, flags, cap) = struct.unpack_from('<16I', d, 16 + i * size)
     print(f"{frame} {us:6d}us gpu={drawX/100:5.2f}+{procX/100:5.2f} "
           f"cpu={tileX/100:5.2f}+{upX/100:5.2f}+{cpuDrawX/100:5.2f}ms "
           f"quads={quads:4d} (bg={bg} obj={obj}) eyes={(flags >> 10) & 3} "
-          f"flushes={flushes:3d} spr={vis:3d} passes={flags & 0xFF}")
+          f"flushes={flushes:3d} spr={vis:3d} passes={flags & 0xFF} "
+          f"style={cap & 3} slider={(cap >> 4) & 0x7F}")
 ```
 
 ### Reading the numbers

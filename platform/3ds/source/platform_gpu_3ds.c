@@ -942,6 +942,54 @@ static void OamCensus(unsigned* outTotal, unsigned* outVisible, unsigned* outAff
     Port_OamCensus((const uint16_t*)gOamMem, outTotal, outVisible, outAffine);
 }
 
+/* The display settings a capture was taken under. Recording these is what
+ * makes two captures comparable: the 2026-09-04 round asked whether frame
+ * cost scales with pixels (display style) or with quad count, and the four
+ * captures taken to answer it could not be told apart afterwards, because
+ * nothing in the file said which style each one used. Inferring the style
+ * from the frame cost would have been circular -- the cost is the thing
+ * under measurement.
+ *
+ * The FX grade, bezel and FPS overlay are here for the same reason: each
+ * adds work to the frame, so a capture with any of them on is not
+ * comparable with one without.
+ *
+ *   bits 0-1   display style (0 = PIXEL PERFECT, see Port_Config_*)
+ *   bits 2-3   aspect ratio (2 = STRETCH)
+ *   bits 4-10  3D slider position x100, 0..100
+ *   bit  11    FPS overlay on
+ *   bit  12    HUD drawn outside the frame
+ *   bit  13    GBA bezel on
+ *   bits 14-16 GBA screen-FX grade (0 = off)
+ *   bit  17    Old3DS runtime profile forced
+ *   bit  18    the frame was drawn by the GPU renderer (clear = CPU fallback,
+ *              in which case the draw-call census describes a stale frame)
+ */
+static uint32_t PackCaptureFlags(void) {
+    extern int Port_Config_Get3DSDisplayStyle(void);
+    extern int Port_Config_Get3DSAspectRatio(void);
+    extern bool Port_Config_GetShowFps(void);
+    extern bool Port_Config_GetHudOutside(void);
+    extern bool Port_Config_GetGbaBezel(void);
+    extern int Port_Config_GetGbaFxGrade(void);
+    extern bool Port_PPU_3DS_LastFrameUsedGpu(void);
+    extern bool Platform3DS_IsNew3DS(void);
+
+    const float slider = PlatformGpu3DS_Get3DSlider();
+    uint32_t sliderX100 = (uint32_t)(slider * 100.0f + 0.5f);
+    if (sliderX100 > 100u) sliderX100 = 100u;
+
+    return ((uint32_t)Port_Config_Get3DSDisplayStyle() & 3u)
+         | (((uint32_t)Port_Config_Get3DSAspectRatio() & 3u) << 2)
+         | (sliderX100 << 4)
+         | ((uint32_t)(Port_Config_GetShowFps() ? 1u : 0u) << 11)
+         | ((uint32_t)(Port_Config_GetHudOutside() ? 1u : 0u) << 12)
+         | ((uint32_t)(Port_Config_GetGbaBezel() ? 1u : 0u) << 13)
+         | (((uint32_t)Port_Config_GetGbaFxGrade() & 7u) << 14)
+         | ((uint32_t)(Platform3DS_IsNew3DS() ? 0u : 1u) << 17)
+         | ((uint32_t)(Port_PPU_3DS_LastFrameUsedGpu() ? 1u : 0u) << 18);
+}
+
 /* Packs Port_GpuRenderer_GetLastFrameDrawStats' flags into one word for the
  * recorders. Layout is shared by mzm-perf.bin's PerfSample.rendererFlags
  * and mzm-rec.bin's header word 14 -- keep both sides of
@@ -968,7 +1016,7 @@ static uint32_t PackRendererFlags(const PortGpuRendererDrawStats* st) {
  * as a PerfFileHeader followed by a flat little-endian array of PerfSample.
  * 60 samples/sec * 40s capacity = 2400 entries * 64B = ~154KB linear. ---- */
 typedef struct {
-    uint32_t magic;       /* 'MZP2' = 0x3250 5A4D little-endian */
+    uint32_t magic;       /* 'MZP3' = 0x3350 5A4D little-endian */
     uint32_t sampleSize;  /* sizeof(PerfSample), so a parser can stride safely */
     uint32_t sampleCount;
     uint32_t reserved;
@@ -993,7 +1041,7 @@ typedef struct {
     uint32_t objItems;           /* collected OBJ subtile quads, ONE eye */
     uint32_t blendTransitions;
     uint32_t rendererFlags;      /* PackRendererFlags */
-    uint32_t reserved;
+    uint32_t captureFlags;       /* PackCaptureFlags -- the settings in force */
 } PerfSample;
 /* 40 seconds is far longer than any hitch hunt needs and keeps the linear
  * allocation in the same ballpark as the earlier, smaller samples. */
@@ -1017,7 +1065,7 @@ void PlatformGpu3DS_TogglePerfRecording(void) {
         FILE* f = fopen(perfPath, "wb");
         if (f) {
             const PerfFileHeader fh = {
-                .magic = 0x3250 << 16 | 0x5A4D, /* 'MZP2' */
+                .magic = 0x3350 << 16 | 0x5A4D, /* 'MZP3' */
                 .sampleSize = (uint32_t)sizeof(PerfSample),
                 .sampleCount = sPerfCount,
                 .reserved = 0,
@@ -1105,6 +1153,7 @@ static void PerfBackfillPresentedFrame(void) {
     sample->objItems = draw.objItems;
     sample->blendTransitions = draw.blendTransitions;
     sample->rendererFlags = PackRendererFlags(&draw);
+    sample->captureFlags = PackCaptureFlags();
 }
 
 void PlatformGpu3DS_ToggleRecording(void) {
@@ -1265,6 +1314,10 @@ void PlatformGpu3DS_RecordTick(void) {
      * that layout puts hazeTiles at bit 16 already and leaves no room below
      * it for the sprite count, so the two words are packed differently on
      * purpose -- see docs/3ds-debug-tools.md. */
+    /* No room for PackCaptureFlags here -- all three formerly-reserved
+     * words are spoken for. A scene recording is for looking at frames
+     * rather than comparing costs between captures, so the settings matter
+     * less; mzm-perf.bin carries them. */
     header[15] = (visibleSpriteCount & 0xFFu)
                | ((uint32_t)(drawStats.scissorPasses & 3u) << 8)
                | ((uint32_t)(drawStats.windowActive ? 1u : 0u) << 10)
