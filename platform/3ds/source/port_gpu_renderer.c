@@ -2258,12 +2258,10 @@ void Port_GpuRenderer_RenderFrame(void) {
             scaleY = 1.5f;
             screenBaseX = 0.0f;
             screenBaseY = 0.0f;
-        } else if (aspect == 0) { /* WIDE (16:9) */
-            scaleX = 400.0f / 240.0f;
-            scaleY = 1.5f;
-            screenBaseX = 0.0f;
-            screenBaseY = 0.0f;
-        } else { /* ORIGINAL (3:2 / 360x240) */
+        } else { /* ORIGINAL (3:2 / 360x240), and the retired WIDE (0) with it.
+                  * Must stay in lockstep with PlatformGpu3DS_GetTopImageRect:
+                  * the screen-space effects position themselves off that rect,
+                  * so a disagreement here misplaces them. */
             scaleX = 1.5f;
             scaleY = 1.5f;
             screenBaseX = 20.0f;
@@ -2550,7 +2548,11 @@ void Port_GpuRenderer_RenderFrame(void) {
          * (see PlatformGpu3DS_DrawFpsOverlay). Parallax past the frontmost
          * world tier (HUD, +2.0px) and pixel-snapped like the tile layers,
          * so the counter always reads as being in front of everything. */
-        PlatformGpu3DS_ResetSolidTexEnv();
+        /* No bare ResetSolidTexEnv() here: it would rewrite TEV 0 while this
+         * eye's tile quads are still sitting unflushed in citro2d's vertex
+         * buffer, and they would then be emitted with the solid-colour env
+         * (untinted vertex colour == nothing) instead of the atlas env.
+         * DrawFpsOverlay flushes first and resets the TEV itself. */
         PlatformGpu3DS_DrawFpsOverlay(floorf(eyeSign * slider3d * (+2.5f) + 0.5f));
 #ifdef PORT_DEBUG_TOOLS_ACTIVE
         {

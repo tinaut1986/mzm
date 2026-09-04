@@ -72,7 +72,7 @@ extern bool Port_PPU_3DS_LastFrameUsedGpu(void);
 extern void Port_GpuRenderer_GetLastFrameStats(int* outItems, int* outObjItems, int* outCacheSlots);
 
 enum {
-    TOP_ASPECT_WIDE = 0,
+    TOP_ASPECT_WIDE = 0, /* retired -- Port_Config_Load clamps it to ORIGINAL */
     TOP_ASPECT_ORIGINAL,
     TOP_ASPECT_STRETCH,
 };
@@ -152,6 +152,16 @@ static const uint8_t* StatusGlyph(char c) {
 void PlatformGpu3DS_DrawFpsOverlay(float eyeXOffset) {
     int pos = Port_Config_GetFpsPosition();
     if (pos == 0) return;
+    /* Commit whatever the caller queued BEFORE touching the TEV. citro2d
+     * batches C2D_DrawImage into its vertex buffer and only emits the draw
+     * (with citro3d's *current* TEV state) at the next flush -- so writing
+     * the TEV here while textured quads are still pending makes those quads
+     * render with the solid-colour env instead of their texture, i.e. as
+     * the untinted vertex colour (0), i.e. as nothing. That is what turned
+     * the whole picture black in SCALED + STRETCH, the one display mode
+     * where nothing else (pillarbox masks, bezel, HUD-outside pass) sits
+     * between the tile batch and this overlay to flush it first. */
+    C2D_Flush();
     PlatformGpu3DS_ResetSolidTexEnv();
     char label[20];
     double fps = Port_PPU_3DS_CurrentFps();
@@ -477,12 +487,13 @@ static void DrawTopImageStereo(const uint32_t* leftPixels, const uint32_t* right
         drawH = 160.0f;
     } else {
         drawH = 240.0f;
-        switch (Port_Config_Get3DSAspectRatio()) {
-            case TOP_ASPECT_STRETCH: drawW = 400.0f; break;
-            case TOP_ASPECT_ORIGINAL: drawW = 360.0f; break;
-            case TOP_ASPECT_WIDE:
-            default: drawW = width >= 266u ? 400.0f : 360.0f; break;
-        }
+        /* Only STRETCH fills the screen width; ORIGINAL -- and TOP_ASPECT_WIDE
+         * or any stale out-of-range value, both retired and clamped out by
+         * Port_Config_Load -- pillarbox to 360. Kept identical to
+         * PlatformGpu3DS_GetTopImageRect and to port_gpu_renderer.c's
+         * screenBaseX/scaleX: a rect that disagrees with what was actually
+         * drawn misplaces every screen-space effect built on it. */
+        drawW = (Port_Config_Get3DSAspectRatio() == TOP_ASPECT_STRETCH) ? 400.0f : 360.0f;
     }
     const C2D_DrawParams params = {
         .pos = { .x = (400.0f - drawW) * 0.5f, .y = (240.0f - drawH) * 0.5f,
@@ -493,20 +504,28 @@ static void DrawTopImageStereo(const uint32_t* leftPixels, const uint32_t* right
     C2D_TargetClear(sTopTarget, C2D_Color32(0, 0, 0, 255));
     C2D_SceneBegin(sTopTarget);
     C2D_DrawImage(imageLeft, &params, NULL);
+    /* Set the channel-swizzle env and commit the picture quad right here.
+     * The env has to be written after C2D_DrawImage (citro2d re-inits TEV 0
+     * on the first draw of a scene) but before the flush that actually
+     * emits it -- and every later pass (bezel, FPS overlay) starts by
+     * resetting the TEV, so leaving the quad pending across them drew it
+     * with the solid-colour env: a black top screen. */
+    PlatformGpu3DS_ConfigureAbgrTextureEnv();
+    C2D_Flush();
     if (PortGbaBezel_Active()) {
         PortGbaBezel_Draw(sTopTarget);
     }
-    PlatformGpu3DS_ConfigureAbgrTextureEnv();
     PlatformGpu3DS_DrawFpsOverlay(0.0f);
 
     if (sTopRightTarget) {
         C2D_TargetClear(sTopRightTarget, C2D_Color32(0, 0, 0, 255));
         C2D_SceneBegin(sTopRightTarget);
         C2D_DrawImage(imageRight, &params, NULL);
+        PlatformGpu3DS_ConfigureAbgrTextureEnv(); /* see the left eye above */
+        C2D_Flush();
         if (PortGbaBezel_Active()) {
             PortGbaBezel_Draw(sTopRightTarget);
         }
-        PlatformGpu3DS_ConfigureAbgrTextureEnv();
         PlatformGpu3DS_DrawFpsOverlay(0.0f);
     }
 }
@@ -559,11 +578,8 @@ void PlatformGpu3DS_GetTopImageRect(int* outX, int* outY, int* outW, int* outH) 
         w = 240; h = 160;
     } else {
         h = 240;
-        switch (Port_Config_Get3DSAspectRatio()) {
-            case TOP_ASPECT_STRETCH: w = 400; break;
-            case TOP_ASPECT_ORIGINAL: w = 360; break;
-            default: w = 360; break;
-        }
+        /* See DrawTopImageStereo: STRETCH is the only full-width aspect. */
+        w = (Port_Config_Get3DSAspectRatio() == TOP_ASPECT_STRETCH) ? 400 : 360;
     }
     if (outX) *outX = (400 - w) / 2;
     if (outY) *outY = (240 - h) / 2;
