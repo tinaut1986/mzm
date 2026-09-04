@@ -52,8 +52,12 @@ jobs:
           #   - Tag on an unmerged release/* branch  -> Beta (prerelease).
           #   - Tag on (or merged into) main         -> Release.
           #   - Manual workflow_dispatch on a branch -> Beta.
-          #   - Re-running this workflow from main for a tag that already
-          #     shipped as a beta promotes that same release page to stable.
+          #   - Re-running this workflow ON THE TAG (not on main) for a tag
+          #     that already shipped as a beta promotes that same release page
+          #     to stable. It has to be the tag: TAG comes from git describe on
+          #     a manual run, and main's tip is one merge commit past the tag,
+          #     so dispatching on main yields vX.Y.Z-1-g<hash> and would
+          #     publish a second page instead of updating the first.
           # Push main BEFORE the tag, otherwise the tag build cannot see the
           # merge yet and publishes as a beta. If the fetch below fails we
           # deliberately fall through to Beta: mislabelling a stable build as

@@ -75,8 +75,13 @@ git push origin v0.4.4          # -> GitHub release, "Release v0.4.4"
 ```
 
 A tag that already shipped as a beta is promoted in place: once its commit is
-reachable from `main`, re-run **Build 3DS Release** from the Actions tab and the
-same release page flips to stable.
+reachable from `main`, re-run **Build 3DS Release** from the Actions tab and
+pick **the tag itself** as the ref, not `main`. The workflow derives the release
+name from `git describe` on a manual run, so dispatching on `main` resolves to
+`vX.Y.Z-1-g<hash>` (the merge commit is one commit past the tag) and publishes a
+second, wrongly-named page instead of promoting the existing one. Dispatching on
+the tag gives the bare `vX.Y.Z`, and `main` now reaches it, so the same page
+flips to stable.
 
 ### How the CI picks the channel
 
