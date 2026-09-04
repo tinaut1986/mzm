@@ -598,6 +598,12 @@ from a pause screen stays pending and fires as soon as play resumes.
 
 ## Known findings so far (#20, frame rate)
 
+> The live work order for this -- what is done, what is next, and the
+> hypotheses that were tried and disproved -- is
+> [3ds-renderer-perf-plan.md](3ds-renderer-perf-plan.md). This section is
+> the measurement record; that one is the plan.
+
+
 From the 2026-09-04 captures (`mzm-rec-3/4/5.bin`, area 2 rooms 1 / 39 / 43):
 
 - The 45 FPS is **not** a hitch. It is a steady `33ms / 17ms / 16.5ms`
