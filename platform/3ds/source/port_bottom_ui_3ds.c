@@ -3890,8 +3890,10 @@ static void RenderDebugToolsModal(int lang) {
          * anything else for an allocation failure. */
         PlatformGpu3DSStats st;
         PlatformGpu3DS_GetStats(&st);
-        const uint32_t freeKb = linearSpaceFree() / 1024u;
-        const uint32_t totalKb = st.linearHeapBytes / 1024u;
+        /* Plain unsigned, not u32/uint32_t: those are unsigned long on
+         * devkitARM and would not match snprintf's %u. */
+        const unsigned freeKb = (unsigned)(linearSpaceFree() / 1024u);
+        const unsigned totalKb = (unsigned)(st.linearHeapBytes / 1024u);
         char mem[48];
         snprintf(mem, sizeof(mem), "LINEAR %u.%01u / %u.%01u MB FREE",
                  freeKb / 1024u, (freeKb % 1024u) * 10u / 1024u,
