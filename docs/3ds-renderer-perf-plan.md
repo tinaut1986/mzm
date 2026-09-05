@@ -306,15 +306,51 @@ One quad per tilemap-aligned 2x2 group instead of four.
 - [ ] Consider 32x32 blocks once 16x16 is proven (a further /4 on the
       interior, at 16x the cache-key space and coarser invalidation).
 
-### B. Cache whole scrolling layers in render targets -- premise weakened
+### B. Cache whole scrolling layers in render targets -- built, UNMEASURED
 
-One quad per layer. This was written as "~2244 -> 4, the big prize" when
-cost tracked quad count. After step A the BG layers are already down to ~370
-quads per eye and six times fewer quads bought 5% of the frame, so the
-arithmetic that justified this no longer holds -- see **The fire room** above.
-It may still be worth doing for the CPU submission it also collapses, and
-the same technique applied to the BG3 haze pass (640-660 tiles per frame,
-more than every BG layer put together) is now the better first target.
+Implemented 2026-09-05 and **off by default** (`CACHE CAPAS` in the debug
+tools menu). It has never run on a console: it was written in a session with
+no hardware to hand, so treat everything below as intent, not result.
+
+How it works. A text BG layer's tiles are homogeneous in everything the draw
+order cares about -- sort key, stereo tier, blend mode, window visibility are
+all per-LAYER -- so the layer is composed once into its own 256x256 render
+target and drawn as ONE quad per eye, at its own place in the priority order.
+The target is anchored to the TILE GRID rather than the camera (31x21 world
+tiles from `startTileX/Y`), and the fine scroll moves the sampled rectangle
+instead of forcing a re-compose, so a layer survives up to 8 px of scrolling.
+
+- [x] Per-layer VRAM target, composed once per frame, one quad per eye.
+- [x] Invalidated by an origin change, a tilemap hash over the sampled
+      window, the palette hash, evy, charBase or screenBase.
+- [x] **Animated tiles handled without hashing pixels.** The layer's tiles
+      are still walked every frame and still go through the atlas cache's
+      staleness checks; what the cache skips is the offscreen COMPOSE, not
+      the check. So the CPU cost stays roughly what it was and the GPU quads
+      collapse -- which is the half that was over budget.
+- [x] Declined per layer when anything resolves visibility or placement per
+      TILE: OBJWIN, or a room with layer-fix corrections. Windows are
+      per-layer and resolved by the scissor, so they are fine.
+- [x] `C3D_FrameSplit` on the frames that compose, because the eye passes
+      sample what was just rendered. The haze pass avoids this by double
+      buffering and sampling last frame's result; a layer cache cannot, since
+      it re-composes precisely because the content changed.
+- [ ] **Measure it.** `rendererFlags` bits 12-14 now carry how many layers
+      were composed and whether the cache was on at all, so a perf capture
+      says whether the cache is actually being reused or thrashing.
+
+**Manage expectations.** The arithmetic that originally justified this
+("~2244 quads -> 4, the big prize") assumed cost tracks quad count, and the
+fire-room capture shows it no longer does: six times fewer quads bought 5%
+of the frame. What that capture IS consistent with is cost tracking PIXELS
+-- the scaled case costs 2,3 ms more than pixel perfect for the same scene,
+and two eyes cost twice one. If the frame is fill-bound then this change
+cannot help, because a cached layer draws the same pixels and in fact draws
+them twice on the frames it composes. Measure before believing either way.
+
+If it turns out to be fill, the plan should turn to **step C** (occlusion
+culling), which is the only item here that removes pixels rather than
+quads, and which this document demoted on the strength of the quad model.
 
 - [ ] Decide what to do about animated palettes. MZM re-animates palettes
       constantly (lava, heat tint) and a palette change invalidates a

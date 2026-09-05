@@ -192,6 +192,8 @@ extern bool Port_GpuRenderer_IsActive(void);
 extern void Port_GpuRenderer_SetActive(bool active);
 extern void Port_GpuRenderer_SetBlockPass(bool on);
 extern bool Port_GpuRenderer_BlockPassEnabled(void);
+extern void Port_GpuRenderer_SetLayerCache(bool on);
+extern bool Port_GpuRenderer_LayerCacheEnabled(void);
 extern void Port_DebugLog(const char* msg);
 extern bool Port_DebugLog_IsEnabled(void);
 extern void Port_DebugLog_SetBuffered(bool buffered);
@@ -3703,11 +3705,11 @@ static void RenderOptionsView(void) {
 #define DBGTOOL_GRID_Y0   40
 #define DBGTOOL_GRID_PITCH 23
 #define DBGTOOL_CELL_H    22
-/* Cell 11 (RENDERER GPU/CPU) and cell 12 (BLOQUES 16x16) only exist when the
- * GPU tile renderer is compiled in -- a RENDERER=cpu build has nothing to
- * switch to and no block pass to switch off. */
+/* Cells 11..13 (RENDERER GPU/CPU, BLOQUES 16x16, CACHE CAPAS) only exist
+ * when the GPU tile renderer is compiled in -- a RENDERER=cpu build has
+ * nothing to switch to and neither pass to switch off. */
 #ifdef PORT_GPU_TILE_RENDERER
-#define DBGTOOL_COUNT     13
+#define DBGTOOL_COUNT     14
 #else
 #define DBGTOOL_COUNT     11
 #endif
@@ -3898,6 +3900,11 @@ static void RenderDebugToolsModal(int lang) {
         DrawDebugCell(12, (lang == 6) ? "BLOQUES 16x16" : "16x16 BLOCKS",
                       blocks ? onTxt : offTxt,
                       blocks ? C2D_Color32(120, 230, 140, 255) : C2D_Color32(150, 170, 200, 255));
+        /* Step B. Off by default -- see Port_GpuRenderer_SetLayerCache. */
+        const bool layers = Port_GpuRenderer_LayerCacheEnabled();
+        DrawDebugCell(13, (lang == 6) ? "CACHE CAPAS" : "LAYER CACHE",
+                      layers ? onTxt : offTxt,
+                      layers ? C2D_Color32(120, 230, 140, 255) : C2D_Color32(150, 170, 200, 255));
     }
 #endif
 
@@ -3955,6 +3962,12 @@ static bool HandleDebugToolsModalTouch(int x, int y) {
         const bool on = !Port_GpuRenderer_BlockPassEnabled();
         Port_GpuRenderer_SetBlockPass(on);
         DebugToolsSetMsg(on ? "BLOQUES 16x16: ON" : "BLOQUES 16x16: OFF");
+        return true;
+    }
+    if (cell == 13) {
+        const bool on = !Port_GpuRenderer_LayerCacheEnabled();
+        Port_GpuRenderer_SetLayerCache(on);
+        DebugToolsSetMsg(on ? "CACHE CAPAS: ON" : "CACHE CAPAS: OFF");
         return true;
     }
 #endif

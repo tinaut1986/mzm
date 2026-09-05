@@ -1050,6 +1050,8 @@ static uint32_t PackRendererFlags(const PortGpuRendererDrawStats* st) {
          | ((uint32_t)(st->windowActive ? 1u : 0u) << 8)
          | ((uint32_t)(st->hazeActive ? 1u : 0u) << 9)
          | ((uint32_t)(st->eyesRendered & 3u) << 10)
+         | ((uint32_t)(st->layerComposes & 7u) << 12)
+         | ((uint32_t)(st->layerCacheOn ? 1u : 0u) << 15)
          | ((uint32_t)(st->hazeTiles & 0xFFFFu) << 16);
 }
 

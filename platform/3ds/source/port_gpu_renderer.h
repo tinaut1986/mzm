@@ -21,6 +21,11 @@ void Port_GpuRenderer_Shutdown(void);
  * falls back to the per-tile loop, for measuring the change on hardware. */
 void Port_GpuRenderer_SetBlockPass(bool on);
 bool Port_GpuRenderer_BlockPassEnabled(void);
+/* Step B: compose each eligible scrolling BG layer into its own render
+ * target once per frame and draw it as ONE quad per eye. See the definition
+ * -- off by default, because whether it pays depends on the room. */
+void Port_GpuRenderer_SetLayerCache(bool on);
+bool Port_GpuRenderer_LayerCacheEnabled(void);
 bool Port_GpuRenderer_IsActive(void);
 void Port_GpuRenderer_SetActive(bool active);
 /* Item counts from the most recently rendered GPU frame, for the debug
@@ -43,6 +48,8 @@ typedef struct {
     uint32_t cpuTileX100;      /* VRAM reads + tile cache hash/decode + sort */
     uint32_t cpuUploadX100;    /* atlas texture upload (blocking transfer) */
     uint32_t cpuDrawX100;      /* draw-call submission, every eye */
+    uint8_t layerComposes;     /* step B: layers re-composed this frame; 0 = all reused */
+    bool layerCacheOn;         /* step B enabled at all, so 0 composes can be told from off */
     uint8_t eyesRendered;      /* 1, or 2 while the 3D slider is up */
     uint8_t scissorPasses;     /* 1, or 2 while a GBA window splits the draw order */
     bool windowActive;
