@@ -894,7 +894,16 @@ bool Port_PPU_GpuPresentPump(void) {
  * Triggered together with the VRAM/OAM/palette dump from the L+R+X combo.
  */
 void PortPpuMzm_DumpSamusState(void) {
-    FILE* f = fopen("sdmc:/3ds/mzm-dump-samus.txt", "w");
+    /* Same rotating slot as the rest of this screen dump -- see
+     * PlatformGpu3DS_DumpScreens. Declared locally rather than pulled in
+     * from platform_gpu_3ds.h, which this file cannot include (its u32
+     * typedef from <3ds.h> conflicts with the GBA-port one that
+     * structs/samus.h brings in here). */
+    extern unsigned PlatformGpu3DS_DumpSetIndex(void);
+    const unsigned set = PlatformGpu3DS_DumpSetIndex();
+    char dumpPath[256];
+    snprintf(dumpPath, sizeof(dumpPath), "sdmc:/3ds/mzm-dump-%02u-samus.txt", set);
+    FILE* f = fopen(dumpPath, "w");
     if (!f)
         return;
 
@@ -913,13 +922,15 @@ void PortPpuMzm_DumpSamusState(void) {
 
     fclose(f);
 
-    FILE* fb = fopen("sdmc:/3ds/mzm-dump-samusdata.bin", "wb");
+    snprintf(dumpPath, sizeof(dumpPath), "sdmc:/3ds/mzm-dump-%02u-samusdata.bin", set);
+    FILE* fb = fopen(dumpPath, "wb");
     if (fb) {
         fwrite(&gSamusData, 1, sizeof(gSamusData), fb);
         fclose(fb);
     }
 
-    fb = fopen("sdmc:/3ds/mzm-dump-samusphysics.bin", "wb");
+    snprintf(dumpPath, sizeof(dumpPath), "sdmc:/3ds/mzm-dump-%02u-samusphysics.bin", set);
+    fb = fopen(dumpPath, "wb");
     if (fb) {
         fwrite(&gSamusPhysics, 1, sizeof(gSamusPhysics), fb);
         fclose(fb);
