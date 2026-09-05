@@ -135,6 +135,15 @@ static void ImagoCocoonSyncSprites(void)
     MultiSpriteDataInfo_T pData;
     u16 oamIdx;
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+    /* An Init path can return without ever assigning pMultiOam, and
+     * this runs anyway. Address 0 is the BIOS on GBA -- a junk read, no
+     * fault -- but an unmapped page on the 3DS, so it is a data abort.
+     * Confirmed on hardware five times over (Luma arm11 dumps 48-52),
+     * each one reached by warping into a boss room. */
+    if (gSubSpriteData1.pMultiOam == NULL)
+        return;
+#endif
     pData = gSubSpriteData1.pMultiOam[gSubSpriteData1.currentAnimationFrame].pData;
 #if defined(MZM_3DS) || defined(PORT_NATIVE)
     pData = GBA_RESOLVE(pData);
@@ -1503,6 +1512,22 @@ void ImagoCocoon(void)
         case IMAGO_COCOON_POSE_IN_GROUND:
             ImagoCocoonInGround();
     }
+
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+    /* An Init path in the switch above can return without ever assigning
+     * gSubSpriteData1.pMultiOam (ImagoCocoonInit bails out with status = 0
+     * when the cocoon is already dead and the Ridley demo has played), and
+     * this tail then runs anyway: the anim update reads pMultiOam[...], and
+     * so does the sync below, through its own local copy of that deref.
+     * Address 0 is the BIOS on GBA -- junk data, no fault -- but an
+     * unmapped page on the 3DS. Guarding only the sprite_util.c side is not
+     * enough: it just moves the abort to the sync (confirmed on hardware,
+     * Luma arm11 dump 51: ImagoCocoonSyncSprites+0x10 with pMultiOam = 0
+     * one build after dump 50 was fixed that way). Bail out of the whole
+     * tail instead -- there is nothing to animate. */
+    if (gSubSpriteData1.pMultiOam == NULL)
+        return;
+#endif
 
     SpriteUtilUpdateSubSprite1Anim();
     if (gCurrentSprite.pose >= IMAGO_COCOON_POSE_UNLOCK_PASSAGE)

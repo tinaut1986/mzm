@@ -69,6 +69,7 @@ SRCS_ROOT := \
 	$(ROOT)/port/port_bios.c \
 	$(ROOT)/port/port_gba_timing.c \
 	$(ROOT)/port/port_debug_log.c \
+	$(ROOT)/port/port_debug_files.c \
 	$(ROOT)/port/port_constructor_init.c \
 	$(ROOT)/port/port_mzm_audio_glue.c \
 	$(ROOT)/port/port_psg_synth.c \
@@ -93,6 +94,7 @@ SRCS_ASM := \
 SRCS_3DS := \
 	$(CURDIR)/source/main_3ds.c \
 	$(CURDIR)/source/platform_3ds_minimal.c \
+	$(CURDIR)/source/port_oam_census.c \
 	$(CURDIR)/source/platform_gpu_3ds.c \
 	$(CURDIR)/source/port_bottom_ui_3ds.c \
 	$(CURDIR)/source/port_ppu_mzm.c \
@@ -352,6 +354,28 @@ test:
 		-o $(BUILD)/layer_fixes_test \
 		$(CURDIR)/tests/layer_fixes_test.c $(CURDIR)/source/port_layer_fixes.c
 	@$(BUILD)/layer_fixes_test
+	@$(TEST_CC) -std=c11 -O1 -Wall -Wextra -Werror -I$(CURDIR)/source 		-o $(BUILD)/oam_census_test 		$(CURDIR)/tests/oam_census_test.c $(CURDIR)/source/port_oam_census.c
+	@$(BUILD)/oam_census_test
+
+# Reference renderer for the GPU-renderer regression harness: renders the
+# PPU states in a fetched mzm-rec-NN.bin through the port's own CPU PPU and
+# writes them as PPMs. Host-only, no devkitARM, no ROM -- mode1.c takes its
+# GBA memory through virtuappu_mode1_bind_gba_memory, so a recording is all
+# the input it needs. See platform/3ds/tests/rec_render.c for what the
+# comparison is and why the CPU PPU is the oracle.
+#
+#   make -C platform/3ds rec-render
+#   platform/3ds/build/rec_render <mzm-rec-NN.bin> <out-dir> [sample]
+rec-render: $(BUILD)/rec_render
+#
+# -DPORT_NATIVE, not -DMZM_3DS: it selects the same native 240x160 geometry
+# the console build uses (see virtuappu.h) without dragging in the 3DS
+# worker-thread machinery, so the reference frames come out of the same
+# code paths that run on hardware.
+$(BUILD)/rec_render: $(CURDIR)/tests/rec_render.c $(ROOT)/port/ppu/src/mode1.c $(ROOT)/port/ppu/src/virtuappu.c
+	@mkdir -p $(BUILD)
+	@$(TEST_CC) -std=c11 -O2 -Wall -Wextra -Wno-unknown-pragmas -DPORT_NATIVE 		-I$(ROOT)/port/ppu/include -I$(ROOT)/port -I$(ROOT)/include -I$(ROOT) 		-o $@ $^
+	@echo "built $@"
 
 ftp: $(TARGET).cia
 	@echo "Uploading $(TARGET).cia as mzm-3ds-$(VERSION).cia to FTP..."

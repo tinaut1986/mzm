@@ -77,6 +77,74 @@ struct ChozoStatueTargetView {
 extern const struct ChozoStatueTargetView(*p_sChozoStatueTargets)[16];
 extern int32_t ChozoStatueHintCheckTargetIsActivated(uint8_t target) __attribute__((weak));
 
+/* sElevatorRoomPairs (struct ElevatorPair, include/structs/clipdata.h) -- the
+ * map tile of every inter-area elevator on each of its two sides. Layout is
+ * eight u8s; declared locally for the same reason as ChozoStatueTargetView,
+ * to keep the game headers out of this TU. Resolved by
+ * PortGen_clipdata_data_Init at startup. */
+struct PortElevatorPair {
+    uint8_t area1, room1, mapX1, mapY1;
+    uint8_t area2, room2, mapX2, mapY2;
+};
+#define PORT_ELEVATOR_ROUTE_COUNT 9 /* ELEVATOR_ROUTE_COUNT, index 0 = NONE */
+extern const struct PortElevatorPair(*p_sElevatorRoomPairs)[PORT_ELEVATOR_ROUTE_COUNT];
+
+/* Area indices (constants/connection.h). CHOZODIA has no elevator route. */
+enum {
+    PORT_AREA_BRINSTAR = 0, PORT_AREA_KRAID, PORT_AREA_NORFAIR, PORT_AREA_RIDLEY,
+    PORT_AREA_TOURIAN, PORT_AREA_CRATERIA, PORT_AREA_CHOZODIA, PORT_AREA_COUNT
+};
+
+/* Next elevator to take from `fromArea` toward `toArea`, as a tile on the
+ * `fromArea`-side map. Breadth-first over the elevator graph (7 nodes, 8
+ * edges) -- the game's own sChozoStatueTargetPath tables encode the same
+ * routes but as a stateful multi-hop walker; the graph is small enough to
+ * just search. `*outDir` is +1 when the elevator descends from here
+ * (arrow points down), -1 when it climbs (arrow up). Returns false when no
+ * route connects the two areas. */
+static bool PortMap_RouteArrow(uint8_t fromArea, uint8_t toArea,
+                               uint8_t* outX, uint8_t* outY, int* outDir) {
+    if (!p_sElevatorRoomPairs) return false;
+    if (fromArea >= PORT_AREA_COUNT || toArea >= PORT_AREA_COUNT) return false;
+    if (fromArea == toArea) return false;
+
+    int prevArea[PORT_AREA_COUNT];
+    int prevRoute[PORT_AREA_COUNT];
+    bool seen[PORT_AREA_COUNT] = { false };
+    int queue[PORT_AREA_COUNT];
+    int head = 0, tail = 0;
+
+    seen[fromArea] = true;
+    queue[tail++] = fromArea;
+    while (head < tail) {
+        int a = queue[head++];
+        if (a == (int)toArea) break;
+        for (int r = 1; r < PORT_ELEVATOR_ROUTE_COUNT; ++r) {
+            const struct PortElevatorPair* p = &(*p_sElevatorRoomPairs)[r];
+            int nb = -1;
+            if (p->area1 == a) nb = p->area2;
+            else if (p->area2 == a) nb = p->area1;
+            if (nb < 0 || nb >= PORT_AREA_COUNT || seen[nb]) continue;
+            seen[nb] = true;
+            prevArea[nb] = a;
+            prevRoute[nb] = r;
+            queue[tail++] = nb;
+        }
+    }
+    if (!seen[toArea]) return false;
+
+    /* Walk the chain back until the step that leaves fromArea. */
+    int cur = toArea;
+    while (prevArea[cur] != (int)fromArea) cur = prevArea[cur];
+    const struct PortElevatorPair* p = &(*p_sElevatorRoomPairs)[prevRoute[cur]];
+    if (p->area1 == fromArea) {
+        *outX = p->mapX1; *outY = p->mapY1; *outDir = +1; /* descend */
+    } else {
+        *outX = p->mapX2; *outY = p->mapY2; *outDir = -1; /* climb */
+    }
+    return true;
+}
+
 /* Platform and Config functions */
 extern bool Port_Config_GetShowFps(void);
 extern void Port_Config_SetShowFps(bool on);
@@ -190,6 +258,12 @@ extern void PortPpuMzm_DebugKillSamus(void);
 extern void Port_GpuRenderer_DumpAtlas(const char* ppmPath, const char* csvPath);
 extern bool Port_GpuRenderer_IsActive(void);
 extern void Port_GpuRenderer_SetActive(bool active);
+extern void Port_GpuRenderer_SetBlockPass(bool on);
+extern bool Port_GpuRenderer_BlockPassEnabled(void);
+extern void Port_GpuRenderer_SetLayerCache(bool on);
+extern bool Port_GpuRenderer_LayerCacheEnabled(void);
+extern void Port_GpuRenderer_CycleHazeMode(void);
+extern int Port_GpuRenderer_HazeMode(void);
 extern void Port_DebugLog(const char* msg);
 extern bool Port_DebugLog_IsEnabled(void);
 extern void Port_DebugLog_SetBuffered(bool buffered);
@@ -875,6 +949,12 @@ PortBottomTab Port_BottomUI_GetTab(void) {
 static bool GetActiveChozoTarget(uint8_t* outArea, uint8_t* outX, uint8_t* outY) {
     if (!p_sChozoStatueTargets || !ChozoStatueHintCheckTargetIsActivated) return false;
     for (uint8_t i = 0; i < 16; ++i) {
+        /* Flame targets (startIcon >= 8) are the post-boss statue openings:
+         * retail marks those with just the flame at the opened statue, no
+         * crosshair and no route -- handled separately below. Only the
+         * item-hint targets (startIcon == TARGET_OAM_ID_TARGET) drive the
+         * objective crosshair and the elevator route arrows. */
+        if ((*p_sChozoStatueTargets)[i].startIcon >= 8) continue;
         if (ChozoStatueHintCheckTargetIsActivated(i) > 0) {
             *outArea = (*p_sChozoStatueTargets)[i].targetArea;
             *outX = (*p_sChozoStatueTargets)[i].targetX;
@@ -3229,6 +3309,79 @@ static void RenderMapView(void) {
         }
     }
 
+    /* Route arrows: when the objective is in another area, mark the elevator
+     * to take out of the area being viewed, up or down, the way the retail
+     * pause map does. Same pulse as the target crosshair. */
+    if (hasTarget && targetArea != sViewArea) {
+        uint8_t elevX = 0, elevY = 0;
+        int dir = 0;
+        if (PortMap_RouteArrow(sViewArea, targetArea, &elevX, &elevY, &dir) &&
+            elevX < 32 && elevY < 32) {
+            float ex = startDrawX + ((float)elevX + 0.5f) * tileSize;
+            float ey = startDrawY + ((float)elevY + 0.5f) * tileSize;
+            if (ex >= clipX0 && ex <= clipX1 && ey >= clipY0 && ey <= clipY1) {
+                uint32_t col = ((sFrameCounter % 20) < 10) ? C2D_Color32(255, 50, 50, 255)
+                                                           : C2D_Color32(255, 220, 0, 255);
+                float s = tileSize * 0.55f;
+                if (s < 4.0f) s = 4.0f;
+                if (s > 9.0f) s = 9.0f;
+                float apexY = ey + (dir > 0 ? s : -s);
+                float baseY = ey - (dir > 0 ? s : -s) * 0.35f;
+                /* stem */
+                C2D_DrawRectSolid(ex - 1.0f, (baseY < apexY ? baseY : apexY), 0.78f,
+                                  2.0f, (baseY < apexY ? apexY - baseY : baseY - apexY), col);
+                /* head */
+                C2D_DrawTriangle(ex - s * 0.8f, baseY, col,
+                                 ex + s * 0.8f, baseY, col,
+                                 ex,            apexY, col, 0.79f);
+            }
+        }
+    }
+
+    /* Chozo-statue flame markers: after Kraid / Ridley die, a Chozo statue
+     * opens its mouth and retail's map lights THAT statue tile with a green
+     * (Kraid) or purple (Ridley) flame -- and shows no crosshair or route.
+     * sChozoStatueTargets entries TARGET_KRAID_FLAME / TARGET_RIDLEY_FLAME put
+     * the opened statue at target{Area,X,Y} (the flame's endIcon is the
+     * settled state there); the statue box is only the flame's spawn point in
+     * the retail moving animation, which the static map does not replay. */
+    if (p_sChozoStatueTargets && ChozoStatueHintCheckTargetIsActivated) {
+        for (int i = 0; i < 16; ++i) {
+            const struct ChozoStatueTargetView* t = &(*p_sChozoStatueTargets)[i];
+            if (t->startIcon < 8 /* TARGET_OAM_GREEN_FLAME_SPAWNING */) continue;
+            if (t->targetArea != sViewArea) continue;
+            if (t->targetX >= 32 || t->targetY >= 32) continue;
+            if (ChozoStatueHintCheckTargetIsActivated((uint8_t)i) <= 0) continue;
+
+            float fx = startDrawX + ((float)t->targetX + 0.5f) * tileSize;
+            float fy = startDrawY + ((float)t->targetY + 0.5f) * tileSize;
+            if (fx < clipX0 || fx > clipX1 || fy < clipY0 || fy > clipY1) continue;
+
+            bool purple = (t->startIcon >= 12 /* TARGET_OAM_PURPLE_FLAME_SPAWNING */);
+            uint32_t core = purple ? C2D_Color32(200, 90, 255, 255) : C2D_Color32(80, 255, 120, 255);
+            uint32_t tip  = purple ? C2D_Color32(255, 210, 255, 255) : C2D_Color32(220, 255, 220, 255);
+
+            float flick = (float)((sFrameCounter >> 2) & 3) * 0.12f;       /* 0..0.36 */
+            float h = tileSize * (0.95f + flick);
+            if (h < 6.0f) h = 6.0f;
+            if (h > 14.0f) h = 14.0f;
+            float w = h * 0.62f;
+            float baseY = fy + h * 0.42f;
+            float lean = ((sFrameCounter >> 3) & 1) ? w * 0.12f : -w * 0.12f;
+
+            /* outer flame */
+            C2D_DrawTriangle(fx - w * 0.5f, baseY, core,
+                             fx + w * 0.5f, baseY, core,
+                             fx + lean,     fy - h * 0.58f, core, 0.80f);
+            /* base fill so the bottom is not a sharp point */
+            C2D_DrawRectSolid(fx - w * 0.34f, baseY - h * 0.16f, 0.80f, w * 0.68f, h * 0.18f, core);
+            /* inner bright tongue */
+            C2D_DrawTriangle(fx - w * 0.24f, baseY - h * 0.05f, tip,
+                             fx + w * 0.24f, baseY - h * 0.05f, tip,
+                             fx + lean * 1.5f, fy - h * 0.30f, tip, 0.81f);
+        }
+    }
+
     /* Draw Samus Player indicator (when viewing current area) */
     if (sViewArea == gCurrentArea && gMinimapX < 32 && gMinimapY < 32) {
         float px = startDrawX + (float)gMinimapX * tileSize;
@@ -3698,17 +3851,29 @@ static void RenderOptionsView(void) {
 #define DBGTOOL_COL_L_X   16
 #define DBGTOOL_COL_R_X   164
 #define DBGTOOL_COL_W     140
-#define DBGTOOL_GRID_Y0   46
-#define DBGTOOL_GRID_PITCH 26
-#define DBGTOOL_CELL_H    24
-#define DBGTOOL_GRID_ROWS 6
-/* Cell 11 (RENDERER GPU/CPU) only exists when the GPU tile renderer is
- * compiled in -- a RENDERER=cpu build has nothing to switch to. */
+#define DBGTOOL_GRID_Y0   40
+#define DBGTOOL_GRID_PITCH 23
+#define DBGTOOL_CELL_H    22
+/* Cells 11..13 (RENDERER GPU/CPU, BLOQUES 16x16, CACHE CAPAS) only exist
+ * when the GPU tile renderer is compiled in -- a RENDERER=cpu build has
+ * nothing to switch to and neither pass to switch off. */
 #ifdef PORT_GPU_TILE_RENDERER
-#define DBGTOOL_COUNT     12
+#define DBGTOOL_COUNT     14
 #else
 #define DBGTOOL_COUNT     11
 #endif
+/* DERIVED, never hand-written. It used to be a literal 6, which was right
+ * for twelve tools and silently wrong for the thirteenth, which drew itself
+ * on row 6 -- on top of the status line and the CLOSE button --
+ * while DebugCellHit still stopped scanning at row 5, so the row was
+ * visible, overlapping, and untouchable. Deriving it means adding a tool
+ * moves the grid instead of falling off the end of it. */
+#define DBGTOOL_GRID_ROWS ((DBGTOOL_COUNT + 1) / 2)
+/* The grid has to clear the transient status line at y=204 (see
+ * RenderDebugToolsModal) and the CLOSE button at y=214. Checked here so a
+ * future tool that no longer fits fails the build rather than the touch. */
+_Static_assert(DBGTOOL_GRID_Y0 + (DBGTOOL_GRID_ROWS - 1) * DBGTOOL_GRID_PITCH + DBGTOOL_CELL_H <= 202,
+               "debug tools grid runs into the status line / CLOSE button");
 
 #define DBGTOOL_CELL_Y(r) ((float)(DBGTOOL_GRID_Y0 + (r) * DBGTOOL_GRID_PITCH))
 #define DBGTOOL_CELL_X(c) ((float)((c) == 0 ? DBGTOOL_COL_L_X : DBGTOOL_COL_R_X))
@@ -3721,9 +3886,9 @@ static void DrawDebugCell(int index, const char* label, const char* state, uint3
     float y = DBGTOOL_CELL_Y(index >> 1);
     C2D_DrawRectSolid(x, y, 0.9f, (float)DBGTOOL_COL_W, (float)DBGTOOL_CELL_H, C2D_Color32(24, 32, 50, 255));
     C2D_DrawRectSolid(x, y, 0.91f, (float)DBGTOOL_COL_W, 1.0f, C2D_Color32(50, 80, 130, 255));
-    DrawTextMaxWClipped(x + 6.0f, y + 2.0f, 1.0f, label, C2D_Color32(255, 255, 255, 255),
+    DrawTextMaxWClipped(x + 6.0f, y + 1.0f, 1.0f, label, C2D_Color32(255, 255, 255, 255),
                         0.0f, 240.0f, (float)DBGTOOL_COL_W - 12.0f);
-    if (state) DrawText(x + 6.0f, y + 13.0f, 1.0f, state, accent);
+    if (state) DrawText(x + 6.0f, y + 11.0f, 1.0f, state, accent);
 }
 
 /* The right ~48px of a cell is a start/stop side button (DebugCellRightZoneHit):
@@ -3874,6 +4039,31 @@ static void RenderDebugToolsModal(int lang) {
         DrawDebugCell(11, (lang == 6) ? "RENDERER" : "RENDERER",
                       gpuOn ? "GPU" : "CPU", gpuOn ? colAct : colOn);
     }
+    /* Step A (one quad per 16x16 tilemap-aligned block instead of four).
+     * A switch rather than a build flag because it is a PERFORMANCE change
+     * and the only place its cost can be read is a console: same scene, one
+     * press, compare the FPS overlay. Off falls through to the untouched
+     * per-tile loop. */
+    {
+        const bool blocks = Port_GpuRenderer_BlockPassEnabled();
+        DrawDebugCell(12, (lang == 6) ? "BLOQUES 16x16" : "16x16 BLOCKS",
+                      blocks ? onTxt : offTxt,
+                      blocks ? C2D_Color32(120, 230, 140, 255) : C2D_Color32(150, 170, 200, 255));
+        /* Two renderer experiments share this cell, because the grid has no
+         * room for a fifteenth two-line row without running into the status
+         * line and the CLOSE button (see DBGTOOL_GRID_ROWS). Tapping the
+         * cell toggles the layer cache; tapping its right edge toggles the
+         * BG3 haze pass. */
+        const bool layers = Port_GpuRenderer_LayerCacheEnabled();
+        static const char* const hazeTxt[4] = { "ON", "NOCOMP", "OFF", "RT" };
+        const int haze = Port_GpuRenderer_HazeMode();
+        char expTxt[28];
+        snprintf(expTxt, sizeof(expTxt), "CAPAS %s HAZE %s",
+                 layers ? "ON" : "--", hazeTxt[haze & 3]);
+        DrawDebugCell(13, (lang == 6) ? "CAPAS / HAZE" : "LAYERS / HAZE", expTxt,
+                      (layers || haze) ? C2D_Color32(230, 200, 120, 255)
+                                       : C2D_Color32(150, 170, 200, 255));
+    }
 #endif
 
     if (sDebugToolsMsg[0] && sFrameCounter < sDebugToolsMsgUntil) {
@@ -3925,6 +4115,27 @@ static bool HandleDebugToolsModalTouch(int x, int y) {
                          : (last && last[0]) ? last : "REC OFF");
         return true;
     }
+#ifdef PORT_GPU_TILE_RENDERER
+    if (cell == 12) {
+        const bool on = !Port_GpuRenderer_BlockPassEnabled();
+        Port_GpuRenderer_SetBlockPass(on);
+        DebugToolsSetMsg(on ? "BLOQUES 16x16: ON" : "BLOQUES 16x16: OFF");
+        return true;
+    }
+    if (cell == 13) {
+        if (DebugCellRightZoneHit(x, 13)) {
+            static const char* const msg[4] = { "HAZE: COMPLETA", "HAZE: SIN COMPONER",
+                                                "HAZE: APAGADA", "HAZE: A TARGET (RT)" };
+            Port_GpuRenderer_CycleHazeMode();
+            DebugToolsSetMsg(msg[Port_GpuRenderer_HazeMode() & 3]);
+        } else {
+            const bool on = !Port_GpuRenderer_LayerCacheEnabled();
+            Port_GpuRenderer_SetLayerCache(on);
+            DebugToolsSetMsg(on ? "CACHE CAPAS: ON" : "CACHE CAPAS: OFF");
+        }
+        return true;
+    }
+#endif
     if (cell == 9 && DebugCellRightZoneHit(x, 9)) {
         /* Side button: start/stop logging on the selected stream. */
         if (Port_DebugLog_IsEnabled()) {

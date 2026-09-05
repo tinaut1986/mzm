@@ -129,10 +129,43 @@ static void ConfigurePlainTextureEnv(void) {
  * slots of 8x8 = 4096 -- comfortably above a worst-case frame (4 BGs at
  * ~33x21 visible tiles each, worst case ~2772 tiles, realistically far
  * fewer unique combos due to tile reuse). */
+/* The atlas is 512 WIDE and 1024 TALL, split into two regions:
+ *
+ *   slot rows 0..63    8x8 tile slots, 4096 of them, addressed exactly as
+ *                      before this split (see DecodeTileIntoSlot: a slot is
+ *                      64 contiguous texels and slots run row-major with
+ *                      ATLAS_TILES_PER_ROW per row, which depends only on
+ *                      the WIDTH -- so growing downwards leaves every
+ *                      existing offset untouched).
+ *   slot rows 64..127  16x16 BLOCK slots, 1024 of them. A 16x16 region of
+ *                      this texture is exactly an aligned 2x2 group of 8x8
+ *                      slots, so no new texture and no new layout is needed
+ *                      -- just an allocator that hands out aligned groups.
+ *
+ * Why blocks at all: measured on hardware 2026-09-04, a quad costs ~3.87us
+ * of GPU time while filling a pixel costs ~0.66ns, so one quad's setup is
+ * worth about 5900 pixels of fill and an 8x8 tile is 64. Frame cost tracks
+ * quad COUNT and is almost blind to quad AREA (2.25x the pixels measured
+ * +1.3%). MZM builds its tilemaps out of 16x16 blocks and reuses them
+ * heavily, so drawing one quad per 16x16 block instead of four per tile
+ * removes most of the quads without touching what ends up on screen.
+ *
+ * One texture, deliberately: citro2d rebinds (and therefore breaks the
+ * batch) whenever the texture pointer changes between draws, and the draw
+ * order interleaves layers by priority, so putting blocks in a second
+ * texture would flush on every alternation and cost more than it saves. */
 enum {
-    ATLAS_DIM = 512,
-    ATLAS_TILES_PER_ROW = ATLAS_DIM / 8,
-    ATLAS_MAX_SLOTS = ATLAS_TILES_PER_ROW * ATLAS_TILES_PER_ROW,
+    ATLAS_W = 512,
+    ATLAS_H = 1024,
+    ATLAS_TILES_PER_ROW = ATLAS_W / 8,
+    ATLAS_SLOT_ROWS = ATLAS_H / 8,
+    /* Tile region: unchanged, the first 64 slot rows. */
+    ATLAS_TILE_ROWS = 64,
+    ATLAS_MAX_SLOTS = ATLAS_TILES_PER_ROW * ATLAS_TILE_ROWS,
+    /* Block region: the rest, in aligned 2x2 slot groups. */
+    ATLAS_BLOCK_ROW0 = ATLAS_TILE_ROWS,
+    ATLAS_BLOCKS_PER_ROW = ATLAS_TILES_PER_ROW / 2,
+    ATLAS_MAX_BLOCKS = ATLAS_BLOCKS_PER_ROW * ((ATLAS_SLOT_ROWS - ATLAS_BLOCK_ROW0) / 2),
     MAX_DRAW_ITEMS = 3200,
 };
 
@@ -198,6 +231,12 @@ typedef struct DrawItem {
     bool affine;
     WindowVis winVis;
     bool isHud;
+    /* A cached layer's quad samples a render target, whose texels come back
+     * verbatim; the CPU-written atlas needs the channel unswizzle. The draw
+     * loop switches the texenv when this changes, which costs a batch break
+     * per switch -- a handful per eye against the hundreds of quads the
+     * cache removes. */
+    bool plainEnv;
 } DrawItem;
 
 static C3D_Tex sAtlasTexture;
@@ -242,6 +281,140 @@ static int16_t sHazeRowDelta[160];
 static int16_t sHazeBakeHofs;
 static Tex3DS_SubTexture sHazeStripSubtex; /* mutated per strip by HazeBlitStrips */
 typedef struct { C2D_Image img; float x, y; } HazeTile;
+
+/* ---- Haze mode 3: ripple once into a target, blit one quad per eye ------
+ *
+ * The per-scanline blit is 6 ms of the frame -- measured 2026-09-05 by
+ * splitting the pass three ways: composing the 640-660 tiles is only 1,27 ms
+ * of it, and the rest is the 160 strips, drawn TWICE because each eye blits
+ * them itself.
+ *
+ * So do the ripple once, offscreen, and give each eye a single quad. Two
+ * things get smaller at once: the strip count halves (160 per frame instead
+ * of 160 per eye), and each strip shrinks from 240x1 GBA pixels scaled onto
+ * the screen (360x1,5 at 3:2) to 240x1 in a 256x256 target.
+ *
+ * Written and sampled in the same frame, so it needs C3D_FrameSplit -- the
+ * double-buffering trick the compose uses is not available here without
+ * putting the ripple a frame behind the scene it belongs to. That sync is
+ * the risk in this change, and the reason it is a MODE rather than the
+ * default: if the split costs more than the strips saved, the numbers will
+ * say so. */
+static C3D_Tex sHazeRippleTex;
+static C3D_RenderTarget* sHazeRippleRT;
+static bool sHazeRippleReady;
+static Tex3DS_SubTexture sHazeRippleSubtex;
+
+/* ---- Step B: cache a whole scrolling BG layer in a render target -------
+ *
+ * A text BG layer's tiles are homogeneous in everything the draw order
+ * cares about -- sort key, stereo tier, blend mode, window visibility are
+ * all per-LAYER -- so the ~370 quads a layer contributes can be composed
+ * once into an offscreen target and drawn as ONE quad per eye, at the
+ * layer's own place in the priority order.
+ *
+ * The target is anchored to the TILE GRID, not to the camera: it holds the
+ * 31x21 world tiles starting at (startTileX, startTileY), and the fine
+ * scroll is applied by moving the sampled rectangle instead of re-rendering.
+ * A layer therefore survives up to 8 pixels of scrolling before the origin
+ * moves and it has to be composed again. 31x21 tiles is 248x168 px, which is
+ * what a 240x160 view plus a fine offset of up to 7 can reach, and it fits a
+ * 256x256 texture.
+ *
+ * Correctness over cheapness on the invalidation: the layer's tiles are
+ * still walked every frame and still go through the atlas cache's staleness
+ * checks, so an animated tile or a palette change is caught exactly as
+ * before -- what the cache skips is the offscreen COMPOSE, not the check.
+ * That keeps the CPU cost roughly as it was and takes the GPU quads down,
+ * which is the half that was over budget. */
+enum {
+    LAYER_RT_DIM = 256,
+    /* Window the sampled rectangle can reach, and so the window the
+     * invalidation hash covers: 240 px plus a fine offset of up to 7 needs
+     * 31 tiles, 160 plus 7 needs 21. */
+    LAYER_TILES_X = 31,
+    LAYER_TILES_Y = 21,
+    /* Capacity for what COLLECTION can push, which is a little more: its
+     * loops run tx -1..31 and ty 0..20, and everything with a non-negative
+     * target coordinate is captured even if the quad never samples it.
+     * Sizing this at LAYER_TILES_X * LAYER_TILES_Y instead would silently
+     * drop the last column and leave a seam. */
+    LAYER_MAX_TILES = 32 * 22,
+};
+typedef struct { C2D_Image img; float x, y, w, h; } LayerTile;
+static C3D_Tex sLayerTex[4];
+static C3D_RenderTarget* sLayerRT[4];
+static bool sLayerRtReady[4];
+static Tex3DS_SubTexture sLayerSubtex[4];
+static LayerTile sLayerTiles[4][LAYER_MAX_TILES];
+static int sLayerTileCount[4];
+static bool sLayerNeedsCompose[4];
+static bool sLayerComposed[4]; /* has valid content from some earlier frame */
+typedef struct {
+    int originTileX, originTileY;
+    uint32_t screenBase, charBase, mapHash, palHash;
+    uint8_t evy, brightAdjust, bpp8;
+} LayerKey;
+static LayerKey sLayerKey[4];
+
+/* Off by default: this is a performance change whose payoff depends on the
+ * room, and the only machine that can judge it is a console. */
+static bool sLayerCacheEnabled;
+void Port_GpuRenderer_SetLayerCache(bool on) { sLayerCacheEnabled = on; }
+bool Port_GpuRenderer_LayerCacheEnabled(void) { return sLayerCacheEnabled; }
+
+/* The BG3 haze pass (issue #29) is the largest thing in a frame that no
+ * counter reaches: 640-660 tiles into an offscreen target once per frame,
+ * plus ONE QUAD PER SCANLINE -- 160 per eye -- to blit it back with the
+ * per-row ripple. Neither shows up in drawCount or drawnPixels.
+ *
+ * Every cost model this renderer has been optimised against has turned out
+ * wrong when finally measured, and each time it was a runtime toggle that
+ * settled it. So: a toggle. Off, BG3 falls back to the ordinary per-tile
+ * path -- it loses the ripple, which is the point of the pass, so this is a
+ * measurement aid and not a setting anyone should play with.
+ *
+ * Measured 2026-09-05: the pass is 8,45 ms of a 16,91 ms frame -- HALF the
+ * frame -- and turning it off leaves MORE quads and MORE pixels behind it,
+ * so it is not paying for either. Three states, because the 8,45 has two
+ * halves and the fix differs completely depending on which one it is:
+ *
+ *   FULL     compose 640-660 tiles into the offscreen target, then blit.
+ *   NOCOMPOSE  skip the compose, blit whatever the target already holds.
+ *              Stale by design -- BG3 freezes -- but it isolates the blit's
+ *              160 quads per eye from the compose's 660.
+ *   OFF      BG3 back to the ordinary per-tile path, no ripple.
+ *
+ * If NOCOMPOSE recovers most of the time, the fix is to stop re-composing a
+ * target whose BG3 has not changed, which is what the layer cache already
+ * does for BG0-2. If it does not, the per-scanline blit is the problem and
+ * needs a different answer. */
+typedef enum { HAZE_FULL = 0, HAZE_NOCOMPOSE, HAZE_OFF, HAZE_RIPPLE_RT, HAZE_MODE_COUNT } HazeMode;
+/* RT by default: measured 17,77 -> 11,26 ms on the same scene, same quads,
+ * same pixels. The other modes stay for measuring against, and RT falls back
+ * to FULL by itself if its target could not be allocated. */
+static int sHazeMode = HAZE_RIPPLE_RT;
+void Port_GpuRenderer_CycleHazeMode(void) { sHazeMode = (sHazeMode + 1) % HAZE_MODE_COUNT; }
+/* Whether the rippled-target path is the one actually running, as opposed to
+ * merely selected -- it needs its VRAM target. */
+bool Port_GpuRenderer_HazeRippleActive(void) {
+    return sHazeMode == HAZE_RIPPLE_RT && sHazeRippleReady;
+}
+int Port_GpuRenderer_HazeMode(void) { return sHazeMode; }
+
+/* While >= 0, BG pushes are captured into that layer's compose list instead
+ * of going straight into the frame's draw items. */
+static int sCaptureLayer = -1;
+static float sCaptureOffX, sCaptureOffY;
+static bool sLayerSameKey;
+static bool sLayerDirtyAtEntry;
+/* How many layers had to be composed this frame -- 0 means every cached
+ * layer was reused, which is what the cache is for. Recorded per perf
+ * sample so the toggle produces a number and not an impression. */
+static unsigned sLastLayerComposes;
+/* Device pixels covered by the frame's quads, summed over every eye. See
+ * where it is accumulated for why it exists. */
+static uint32_t sLastDrawnPixels;
 static HazeTile sHazeTiles[HAZE_MAX_TILES];
 static int sHazeTileCount;
 
@@ -329,7 +502,57 @@ static uint8_t sCacheEvy[ATLAS_MAX_SLOTS];
  * the range-based version wasn't actually narrow in practice. A bitmask +
  * transferring each contiguous RUN of set bits separately fixes this
  * properly instead of guessing at a better single range. */
-static uint64_t sDirtyRowMask;
+static uint64_t sDirtyRowMask[(ATLAS_SLOT_ROWS + 63) / 64];
+
+static inline void MarkAtlasRowDirty(int row) {
+    sDirtyRowMask[row >> 6] |= (1ull << (row & 63));
+}
+
+/* ---- 16x16 block cache (see the ATLAS_* enum for why blocks exist) ----
+ *
+ * Deliberately a separate cache from the tile one rather than a widened
+ * version of it: the tile cache's slot indices, hash table and per-slot
+ * staleness arrays are load-bearing for the OBJ path and for the fallback
+ * tiles, and blocks have a different key (four tilemap entries instead of
+ * one tile's byte offset). Keeping them apart means the tile path is
+ * untouched and a block-cache overflow degrades to per-tile drawing rather
+ * than corrupting anything.
+ *
+ * 4bpp only. An 8bpp layer falls back to per-tile drawing: it would double
+ * the staleness bytes kept per block for a case MZM's backgrounds do not
+ * use, and the fallback is merely the old cost, not a bug. */
+typedef struct BlockCacheKey {
+    uint16_t entry[4];   /* tilemap entries, reading order: TL, TR, BL, BR */
+    uint32_t charBase;   /* the layer's tile data base within gVram */
+    uint8_t palBankHint; /* 0xFF when the four entries disagree; see below */
+    uint8_t brightAdjust;
+} BlockCacheKey;
+
+static BlockCacheKey sBlockKeys[ATLAS_MAX_BLOCKS];
+static uint8_t sBlockSourceBytes[ATLAS_MAX_BLOCKS][4 * 32]; /* 4bpp: 32B/tile */
+static uint32_t sBlockPalHash[ATLAS_MAX_BLOCKS];
+static uint8_t sBlockEvy[ATLAS_MAX_BLOCKS];
+static int sBlockCount;
+static int32_t sBlockHashHead[HASH_BUCKETS];
+static int32_t sBlockHashNext[ATLAS_MAX_BLOCKS];
+/* Per-frame counters, for the recorders and the debug overlay. */
+static int sBlockItemsThisFrame;
+static int sBlockOverflowThisFrame;
+static bool sBlockCacheResetPending;
+
+/* Called once per frame before any collection: empties the block cache if
+ * the previous frame ran out of block slots. Safe here and nowhere else --
+ * no DrawItem from the previous frame survives into this one. */
+static void BlockCacheBeginFrame(void) {
+    if (sBlockCacheResetPending) {
+        sBlockCount = 0;
+        for (int i = 0; i < HASH_BUCKETS; ++i) sBlockHashHead[i] = -1;
+        sBlockCacheResetPending = false;
+    }
+    sBlockItemsThisFrame = 0;
+    sBlockOverflowThisFrame = 0;
+}
+
 
 /* Per-frame palette hashes (see sCachePalHash's comment): computed ONCE per
  * frame in Port_GpuRenderer_RenderFrame from gBgPltt/gObjPltt, then reused
@@ -463,12 +686,44 @@ static void ComputeDepthState(uint16_t dispcnt) {
             sDepthState.bg0IsOverlayText = !sDepthState.inGameplay;
             break;
     }
+    /* Two-plane flatten for depthless screens (see flatMenu): content
+     * forward, backdrop back. GM_FILE_SELECT (3): backdrop is BG3 only, so
+     * the split is at priority 3. GM_CREDITS (8): the crew text alternates
+     * BG0/BG1 while the Chozo wall is BG2/BG3, so the split is at priority
+     * 2 -- all text forward, all wall back. */
+    if (gMainGameMode == 3) {
+        sDepthState.flatMenu = true;
+        sDepthState.flatMenuBackdropPrio = 3;
+    } else if (gMainGameMode == 8) {
+        sDepthState.flatMenu = true;
+        sDepthState.flatMenuBackdropPrio = 2;
+    } else {
+        sDepthState.flatMenu = false;
+        sDepthState.flatMenuBackdropPrio = 0;
+    }
     for (int bg = 0; bg < 4; ++bg) {
         sDepthState.priority[bg] =
             (uint8_t)(((uint16_t)(gIoMem[0x08 + bg * 2] | (gIoMem[0x09 + bg * 2] << 8))) & 3u);
     }
     UpdateLayerFixRoom();
+
+    /* Visible item tanks are animated tiles with no BG block-map entry, so
+     * they cannot go through the layer-fix list; the renderer lifts them to
+     * Samus's plane directly (see the tank-tile branch below). Rescanned
+     * every frame so a hidden tank revealed by a shot is picked up the frame
+     * its clipdata flips -- the scan is a cheap block-grid walk. */
+    extern void PortPpuMzm_ScanRoomTanks(void);
+    PortPpuMzm_ScanRoomTanks();
 }
+
+/* Step A (16x16 atlas blocks) is a performance change that has never been
+ * measured on hardware, so it needs to be switchable there: one press, same
+ * scene, read the FPS overlay. Off falls straight through to the untouched
+ * per-tile loop -- the pass is purely subtractive, so this is a clean A/B
+ * and not a second code path. */
+static bool sBlockPassEnabled = true;
+void Port_GpuRenderer_SetBlockPass(bool on) { sBlockPassEnabled = on; }
+bool Port_GpuRenderer_BlockPassEnabled(void) { return sBlockPassEnabled; }
 
 bool Port_GpuRenderer_IsActive(void) { return sGpuRendererActive; }
 void Port_GpuRenderer_SetActive(bool active) { sGpuRendererActive = active; }
@@ -492,19 +747,95 @@ static inline void FlushAtlasRange(void* addr, size_t size) {
 }
 
 static Tex3DS_SubTexture sSlotSubtexTable[ATLAS_MAX_SLOTS];
+static Tex3DS_SubTexture sBlockSubtexTable[ATLAS_MAX_BLOCKS];
+
+/* First 8x8 slot of a 16x16 block: its top-left quadrant. The other three
+ * are +1, +ATLAS_TILES_PER_ROW and +ATLAS_TILES_PER_ROW+1. */
+static inline int BlockBaseSlot(int block) {
+    const int brow = ATLAS_BLOCK_ROW0 + (block / ATLAS_BLOCKS_PER_ROW) * 2;
+    const int bcol = (block % ATLAS_BLOCKS_PER_ROW) * 2;
+    return brow * ATLAS_TILES_PER_ROW + bcol;
+}
+
+/* Atlas subtexture UVs.
+ *
+ * The span is exactly n texels for an n-texel slot, SHIFTED by an eighth of
+ * a texel. Both halves of that matter, and both were learned the hard way on
+ * hardware (2026-09-05):
+ *
+ *   - The span must be n, not the n-1 a half-texel inset on each edge gives.
+ *     An n-1 span is exact at 1:1 and wrong at every other scale, by an
+ *     amount that depends on the span -- so one 16x16 block quad and the four
+ *     8x8 tile quads it replaces chose DIFFERENT texels once the display was
+ *     scaled, and the GPU tile renderer disagreed with the CPU scanline
+ *     renderer for the same reason (the CPU path draws the whole 240-wide
+ *     frame as one quad, so its sequence was the ideal one).
+ *
+ *   - The span must not be pinned at the texel edges either. At 3:2 that puts
+ *     every third sample EXACTLY on a texel boundary, where which side it
+ *     lands is up to the hardware's rounding; a real PICA200 lands low often
+ *     enough to pull in the neighbouring atlas slot, seen as dirt crawling
+ *     along tile edges. The shift breaks those ties the same way every time.
+ *
+ * Any shift between about 1/64 and 5/16 of a texel works; an eighth is the
+ * middle of that range, and leaves the outermost samples ~0.46 texels inside
+ * the slot at the widest quads in use. PlatformGpu3DS's presentation quad
+ * uses the same shift on purpose -- that is what makes the two renderers
+ * agree pixel for pixel at 3:2, which is what lets one be the other's
+ * oracle. */
+#define ATLAS_UV_TIE_SHIFT 0.125f
 
 static void InitSlotSubtexTable(void) {
-    const float invAtlas = 1.0f / (float)ATLAS_DIM;
+    /* FULL-texel edges (sx .. sx+n), not the half-texel inset
+     * (sx+0.5 .. sx+n-0.5) these tables used to carry.
+     *
+     * The inset samples a span of n-1 texels for n screen pixels. At 1:1
+     * that still lands on texel centres and is exact, which is why it went
+     * unnoticed for as long as everything was 8x8. It stops being exact the
+     * moment a quad is SCALED, and worse, the error depends on the span: at
+     * 1.5x a 16-texel quad picks
+     *     0 1 2 2 3 3 4 5 5 6 7 7 8 8 9 10 10 11 12 12 13 13 14 15
+     * where two 8-texel quads covering the same 24 pixels pick
+     *     0 1 1 2 3 3 4 4 5 6 6 7 8 9 9 10 11 11 12 12 13 14 14 15.
+     * So one 16x16 block quad and the four 8x8 tile quads it replaces draw
+     * DIFFERENT IMAGES, which is exactly what turning the block pass on and
+     * off looked like on hardware (reported 2026-09-05) -- a correctness
+     * bug in step A that had nothing to do with the tiles it fetched: the
+     * addressing was verified identical across 12285 groups of a real
+     * gameplay recording.
+     *
+     * Full-texel edges sample n texels for n pixels, so the texel sequence
+     * depends only on the scale and not on how wide the quad is, and the
+     * two agree at every display style. It is also more regular when
+     * scaled -- the doubled texels land on a fixed period instead of
+     * clustering. Nothing bleeds: with GPU_NEAREST every sample sits at a
+     * pixel centre, which is strictly inside the span, never on the edge. */
+    const float invU = 1.0f / (float)ATLAS_W;
+    const float invV = 1.0f / (float)ATLAS_H;
+    const float sh = ATLAS_UV_TIE_SHIFT;
     for (int slot = 0; slot < ATLAS_MAX_SLOTS; ++slot) {
         int sx = (slot % ATLAS_TILES_PER_ROW) * 8;
         int sy = (slot / ATLAS_TILES_PER_ROW) * 8;
         sSlotSubtexTable[slot] = (Tex3DS_SubTexture){
             .width = 8,
             .height = 8,
-            .left = ((float)sx + 0.5f) * invAtlas,
-            .top = 1.0f - ((float)sy + 0.5f) * invAtlas,
-            .right = ((float)sx + 7.5f) * invAtlas,
-            .bottom = 1.0f - ((float)sy + 7.5f) * invAtlas,
+            .left = ((float)sx + sh) * invU,
+            .top = 1.0f - ((float)sy + sh) * invV,
+            .right = ((float)(sx + 8) + sh) * invU,
+            .bottom = 1.0f - ((float)(sy + 8) + sh) * invV,
+        };
+    }
+    for (int block = 0; block < ATLAS_MAX_BLOCKS; ++block) {
+        const int base = BlockBaseSlot(block);
+        int sx = (base % ATLAS_TILES_PER_ROW) * 8;
+        int sy = (base / ATLAS_TILES_PER_ROW) * 8;
+        sBlockSubtexTable[block] = (Tex3DS_SubTexture){
+            .width = 16,
+            .height = 16,
+            .left = ((float)sx + sh) * invU,
+            .top = 1.0f - ((float)sy + sh) * invV,
+            .right = ((float)(sx + 16) + sh) * invU,
+            .bottom = 1.0f - ((float)(sy + 16) + sh) * invV,
         };
     }
 }
@@ -528,9 +859,9 @@ bool Port_GpuRenderer_Init(void) {
      * CPU-writability for a separate memory bus (less FCRAM/GPU
      * contention), not worth it here given the transfer step's cost
      * dwarfed any bandwidth benefit. */
-    if (!C3D_TexInit(&sAtlasTexture, ATLAS_DIM, ATLAS_DIM, GPU_RGBA8)) return false;
-    memset(sAtlasTexture.data, 0, ATLAS_DIM * ATLAS_DIM * sizeof(u32));
-    FlushAtlasRange(sAtlasTexture.data, ATLAS_DIM * ATLAS_DIM * sizeof(u32));
+    if (!C3D_TexInit(&sAtlasTexture, ATLAS_W, ATLAS_H, GPU_RGBA8)) return false;
+    memset(sAtlasTexture.data, 0, (size_t)ATLAS_W * ATLAS_H * sizeof(u32));
+    FlushAtlasRange(sAtlasTexture.data, (size_t)ATLAS_W * ATLAS_H * sizeof(u32));
     C3D_TexSetFilter(&sAtlasTexture, GPU_NEAREST, GPU_NEAREST);
 
     /* Offscreen BG3 target for the issue #29 per-scanline ripple. VRAM-backed
@@ -545,10 +876,37 @@ bool Port_GpuRenderer_Init(void) {
         if (!sHazeRT[b]) { C3D_TexDelete(&sHazeTex[b]); sHazeRtReady = false; break; }
     }
 
+    /* Mode 3's rippled target -- see sHazeRippleTex. Optional: without it
+     * that mode simply behaves like HAZE_FULL. */
+    sHazeRippleReady = false;
+    if (C3D_TexInitVRAM(&sHazeRippleTex, HAZE_RT_DIM, HAZE_RT_DIM, GPU_RGBA8)) {
+        C3D_TexSetFilter(&sHazeRippleTex, GPU_NEAREST, GPU_NEAREST);
+        C3D_TexSetWrap(&sHazeRippleTex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
+        sHazeRippleRT = C3D_RenderTargetCreateFromTex(&sHazeRippleTex, GPU_TEXFACE_2D, 0, -1);
+        if (sHazeRippleRT) sHazeRippleReady = true;
+        else C3D_TexDelete(&sHazeRippleTex);
+    }
+
+    /* Step B's per-layer targets. VRAM, like the haze pair: 4 x 256KB. A
+     * failure here is not fatal -- that layer simply keeps drawing per tile,
+     * which is what every ineligible layer does anyway. */
+    for (int i = 0; i < 4; ++i) {
+        sLayerRtReady[i] = false;
+        sLayerComposed[i] = false;
+        if (!C3D_TexInitVRAM(&sLayerTex[i], LAYER_RT_DIM, LAYER_RT_DIM, GPU_RGBA8)) continue;
+        C3D_TexSetFilter(&sLayerTex[i], GPU_NEAREST, GPU_NEAREST);
+        C3D_TexSetWrap(&sLayerTex[i], GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
+        sLayerRT[i] = C3D_RenderTargetCreateFromTex(&sLayerTex[i], GPU_TEXFACE_2D, 0, -1);
+        if (!sLayerRT[i]) { C3D_TexDelete(&sLayerTex[i]); continue; }
+        sLayerRtReady[i] = true;
+    }
+
     InitSlotSubtexTable();
 
     for (int i = 0; i < HASH_BUCKETS; ++i) sHashBucketHead[i] = -1;
     sCacheCount = 0;
+    for (int i = 0; i < HASH_BUCKETS; ++i) sBlockHashHead[i] = -1;
+    sBlockCount = 0;
 
     sInitialized = true;
     return true;
@@ -884,13 +1242,18 @@ static const uint8_t kSwizzleLUT[64] = {
  * redecoding pixel-by-pixel, and sets this slot's row bit in
  * sDirtyRowMask so the end-of-frame cache flush only covers the atlas
  * rows actually touched this frame. */
-static void DecodeTileIntoSlot(int slot, const uint8_t* src, bool bpp8, const uint16_t* pal, int palBank,
-                               bool hflip, bool vflip, BrightAdjust brightAdjust, uint32_t palHash) {
-    /* Each slot is one 64-texel (8x8) block; blocks are stored row-major
-     * across the atlas (ATLAS_TILES_PER_ROW blocks per block-row), same
-     * layout GX_TRANSFER_OUT_TILED(1) used to produce -- confirmed by the
-     * dirty-row byte-offset math elsewhere in this file (row*8*rowBytes)
-     * already relying on exactly this ordering. */
+/* Writes one 8x8 tile's texels into one atlas slot, and nothing else -- no
+ * cache bookkeeping, no dirty-row marking. Split out of DecodeTileIntoSlot
+ * so the 16x16 block decoder can fill each of a block's four quadrant slots
+ * with it instead of duplicating the palette/flip/brightness logic.
+ *
+ * Each slot is one 64-texel (8x8) block; blocks are stored row-major across
+ * the atlas (ATLAS_TILES_PER_ROW blocks per block-row), the same layout
+ * GX_TRANSFER_OUT_TILED(1) used to produce -- confirmed by the dirty-row
+ * byte-offset math elsewhere in this file (row*8*rowBytes) already relying
+ * on exactly this ordering. */
+static void DecodeTileTexels(int slot, const uint8_t* src, bool bpp8, const uint16_t* pal, int palBank,
+                             bool hflip, bool vflip, BrightAdjust brightAdjust) {
     u32* blockBase = (u32*)sAtlasTexture.data + (size_t)slot * 64;
 
     for (int row = 0; row < 8; ++row) {
@@ -919,13 +1282,102 @@ static void DecodeTileIntoSlot(int slot, const uint8_t* src, bool bpp8, const ui
         }
         for (int col = 0; col < 8; ++col) blockBase[kSwizzleLUT[row * 8 + col]] = pixels[col];
     }
+}
+
+static void DecodeTileIntoSlot(int slot, const uint8_t* src, bool bpp8, const uint16_t* pal, int palBank,
+                               bool hflip, bool vflip, BrightAdjust brightAdjust, uint32_t palHash) {
+    DecodeTileTexels(slot, src, bpp8, pal, palBank, hflip, vflip, brightAdjust);
     memcpy(sCacheSourceBytes[slot], src, bpp8 ? 64u : 32u);
     sCachePalHash[slot] = palHash;
     sCacheEvy[slot] = (brightAdjust != BRIGHT_ADJUST_NONE) ? (uint8_t)sBldEvy : 0;
 
-    int tileRow = slot / ATLAS_TILES_PER_ROW;
-    sDirtyRowMask |= (1ull << tileRow);
+    MarkAtlasRowDirty(slot / ATLAS_TILES_PER_ROW);
     sAnyDirtySlot = true;
+}
+
+static inline uint32_t BlockKeyHash(const BlockCacheKey* k) {
+    uint32_t h = 2166136261u;
+    const uint8_t* b = (const uint8_t*)k;
+    for (size_t i = 0; i < sizeof(*k); ++i) h = (h ^ b[i]) * 16777619u;
+    return h & HASH_MASK;
+}
+
+static inline bool BlockKeyEqual(const BlockCacheKey* a, const BlockCacheKey* b) {
+    return a->entry[0] == b->entry[0] && a->entry[1] == b->entry[1] && a->entry[2] == b->entry[2] &&
+           a->entry[3] == b->entry[3] && a->charBase == b->charBase &&
+           a->palBankHint == b->palBankHint && a->brightAdjust == b->brightAdjust;
+}
+
+/* Decodes the four 8x8 tiles of a block into its four atlas quadrants.
+ * Reuses the tile decoder's texel loop by writing into each quadrant slot's
+ * own 64-texel region -- the block IS four adjacent slots, nothing special. */
+static void DecodeBlockIntoSlot(int block, const uint8_t* src[4], const uint16_t* pal,
+                                const BlockCacheKey* key, uint32_t palHash) {
+    const int base = BlockBaseSlot(block);
+    const int quadSlot[4] = { base, base + 1, base + ATLAS_TILES_PER_ROW, base + ATLAS_TILES_PER_ROW + 1 };
+    for (int q = 0; q < 4; ++q) {
+        const uint16_t entry = key->entry[q];
+        DecodeTileTexels(quadSlot[q], src[q], false, pal, (entry >> 12) & 0x0Fu,
+                         (entry & 0x0400u) != 0u, (entry & 0x0800u) != 0u,
+                         (BrightAdjust)key->brightAdjust);
+        memcpy(&sBlockSourceBytes[block][q * 32], src[q], 32u);
+    }
+    sBlockPalHash[block] = palHash;
+    sBlockEvy[block] = (key->brightAdjust != BRIGHT_ADJUST_NONE) ? (uint8_t)sBldEvy : 0;
+    /* Both slot rows the block spans. */
+    MarkAtlasRowDirty(base / ATLAS_TILES_PER_ROW);
+    MarkAtlasRowDirty(base / ATLAS_TILES_PER_ROW + 1);
+    sAnyDirtySlot = true;
+}
+
+/* Atlas block index for this 2x2 tilemap group, decoding only if needed;
+ * -1 when the block region is full, which the caller answers by drawing the
+ * four tiles individually. Staleness is checked exactly as for tiles: a key
+ * hit still has to pass a memcmp of the source bytes (animated tiles) plus
+ * the palette hash and evy. */
+static int GetOrDecodeBlockSlot(const uint16_t entry[4], uint32_t charBase, const uint16_t* pal,
+                                uint32_t palHash, BrightAdjust brightAdjust, const uint8_t* src[4]) {
+    BlockCacheKey key;
+    memset(&key, 0, sizeof(key));
+    for (int q = 0; q < 4; ++q) key.entry[q] = entry[q];
+    key.charBase = charBase;
+    key.brightAdjust = (uint8_t)brightAdjust;
+    /* palBankHint exists so two blocks that differ ONLY in palette bank
+     * cannot share an entry: the bank lives in the tilemap entry's top
+     * nibble, so it is already covered -- this is belt and braces for
+     * clarity, mirroring TileCacheKey carrying palBank explicitly. */
+    key.palBankHint = (uint8_t)((entry[0] >> 12) & 0x0Fu);
+
+    const uint32_t h = BlockKeyHash(&key);
+    const uint8_t curEvy = (brightAdjust != BRIGHT_ADJUST_NONE) ? (uint8_t)sBldEvy : 0;
+    for (int32_t i = sBlockHashHead[h]; i >= 0; i = sBlockHashNext[i]) {
+        if (!BlockKeyEqual(&sBlockKeys[i], &key)) continue;
+        bool fresh = sBlockPalHash[i] == palHash && sBlockEvy[i] == curEvy;
+        for (int q = 0; fresh && q < 4; ++q) {
+            if (memcmp(&sBlockSourceBytes[i][q * 32], src[q], 32u) != 0) fresh = false;
+        }
+        if (fresh) return i;
+        DecodeBlockIntoSlot(i, src, pal, &key, palHash); /* redecode in place */
+        return i;
+    }
+
+    if (sBlockCount >= ATLAS_MAX_BLOCKS) {
+        /* Full: draw this group as four tiles instead. The cache is cleared
+         * at the START of the next frame rather than here -- reusing a
+         * block mid-frame would overwrite content a DrawItem already
+         * pushed this frame still points at, which is the exact failure the
+         * tile cache's own comment describes (items aliasing to stale
+         * slot content after a mid-frame reset). */
+        ++sBlockOverflowThisFrame;
+        sBlockCacheResetPending = true;
+        return -1;
+    }
+    const int block = sBlockCount++;
+    sBlockKeys[block] = key;
+    sBlockHashNext[block] = sBlockHashHead[h];
+    sBlockHashHead[h] = block;
+    DecodeBlockIntoSlot(block, src, pal, &key, palHash);
+    return block;
 }
 
 /* Returns the atlas slot for this tile, decoding it only if needed. Unlike
@@ -988,12 +1440,12 @@ static int GetOrDecodeTileSlot(uint32_t byteOffset, bool bpp8, const uint16_t* p
     return slot;
 }
 
-static inline int AllocDrawItem(int slot, int sortKey) {
+static inline int AllocDrawItemSubtex(const Tex3DS_SubTexture* subtex, int sortKey) {
     if (sDrawItemCount >= MAX_DRAW_ITEMS) return -1;
     int idx = sDrawItemCount++;
     DrawItem* item = &sDrawItems[idx];
     item->img.tex = &sAtlasTexture;
-    item->img.subtex = &sSlotSubtexTable[slot];
+    item->img.subtex = subtex;
     item->sortKey = sortKey;
 
     sBucketNext[idx] = -1;
@@ -1003,21 +1455,76 @@ static inline int AllocDrawItem(int slot, int sortKey) {
     return idx;
 }
 
-static inline void PushItem(int slot, float x, float y, int sortKey, int depthTier, bool blendAlpha,
-                            WindowVis winVis, bool isHud) {
-    int idx = AllocDrawItem(slot, sortKey);
+/* Pushes one quad that samples something other than the atlas -- a cached
+ * layer's render target. */
+static void PushLayerQuad(const C3D_Tex* tex, const Tex3DS_SubTexture* subtex, int sortKey,
+                          int depthTier, bool blendAlpha, WindowVis winVis) {
+    int idx = AllocDrawItemSubtex(subtex, sortKey);
+    if (idx < 0) return;
+    DrawItem* item = &sDrawItems[idx];
+    item->img.tex = (C3D_Tex*)tex;
+    item->x = 0.0f;
+    item->y = 0.0f;
+    item->w = 240.0f;
+    item->h = 160.0f;
+    item->angle = 0.0f;
+    item->depthTier = (int8_t)depthTier;
+    item->blendAlpha = blendAlpha;
+    item->affine = false;
+    item->winVis = winVis;
+    item->isHud = false;
+    item->plainEnv = true;
+}
+
+static inline int AllocDrawItem(int slot, int sortKey) {
+    return AllocDrawItemSubtex(&sSlotSubtexTable[slot], sortKey);
+}
+
+/* Size-carrying push, for the 16x16 block items. BuildDrawParams already
+ * reads item->w/h for non-affine items, so a 16x16 quad needs nothing else. */
+static inline void PushItemSubtex(const Tex3DS_SubTexture* subtex, float x, float y, float w, float h,
+                                  int sortKey, int depthTier, bool blendAlpha, WindowVis winVis,
+                                  bool isHud) {
+    if (sCaptureLayer >= 0) {
+        /* Composing a cached layer: the quad belongs in that layer's target,
+         * at the tile grid's own coordinates, not on screen. Everything left
+         * of or above the target is off the sampled rectangle by
+         * construction (see LAYER_TILES_X/Y) and is simply not needed. */
+        const float tx = x + sCaptureOffX;
+        const float ty = y + sCaptureOffY;
+        if (tx < 0.0f || ty < 0.0f) return;
+        int n = sLayerTileCount[sCaptureLayer];
+        if (n >= LAYER_MAX_TILES) return;
+        LayerTile* lt = &sLayerTiles[sCaptureLayer][n];
+        lt->img.tex = &sAtlasTexture;
+        lt->img.subtex = subtex;
+        lt->x = tx;
+        lt->y = ty;
+        lt->w = w;
+        lt->h = h;
+        sLayerTileCount[sCaptureLayer] = n + 1;
+        return;
+    }
+    int idx = AllocDrawItemSubtex(subtex, sortKey);
     if (idx < 0) return;
     DrawItem* item = &sDrawItems[idx];
     item->x = x;
     item->y = y;
-    item->w = 8.0f;
-    item->h = 8.0f;
+    item->w = w;
+    item->h = h;
     item->angle = 0.0f;
     item->depthTier = (int8_t)depthTier;
     item->blendAlpha = blendAlpha;
     item->affine = false;
     item->winVis = winVis;
     item->isHud = isHud;
+    item->plainEnv = false;
+}
+
+static inline void PushItem(int slot, float x, float y, int sortKey, int depthTier, bool blendAlpha,
+                            WindowVis winVis, bool isHud) {
+    PushItemSubtex(&sSlotSubtexTable[slot], x, y, 8.0f, 8.0f, sortKey, depthTier, blendAlpha, winVis,
+                   isHud);
 }
 
 /* Affine OBJ variant: x,y is the subtile's already-transformed screen-space
@@ -1040,6 +1547,7 @@ static inline void PushAffineItem(int slot, float centerX, float centerY, float 
     item->affine = true;
     item->winVis = winVis;
     item->isHud = false;
+    item->plainEnv = false;
 }
 
 /* Text-mode BG tilemap addressing, byte-identical to the formula validated
@@ -1088,6 +1596,66 @@ static void CollectBgLayer(int bgIndex) {
     int fineX = scrollX % 8;
     int fineY = scrollY % 8;
 
+    /* ---- Step B: is this layer cacheable, and is its cache still good? ---
+     * Declined when something resolves visibility or placement per TILE,
+     * because a cached layer is one quad and cannot carry per-tile
+     * decisions: OBJWIN masks tiles individually, and a layer-fix list moves
+     * single tiles to another plane and draw order. Window (WIN0/WIN1)
+     * visibility is per-layer and resolved by the scissor at draw time, so
+     * it is fine. */
+    /* A room with a visible item tank forces the per-tile path on BG1 (the
+     * clipdata layer): the tank is an animated tile with no block-map entry,
+     * so it can only be recognised and lifted to Samus's plane one tile at a
+     * time -- a cached layer quad or a 16x16 atlas block carries a single
+     * depth tier and cannot. Same trade the layer-fix list already makes. */
+    extern int PortPpuMzm_RoomTankCount(void);
+    extern bool PortPpuMzm_IsVisibleTankBlock(int blockX, int blockY);
+    const bool roomHasTankOnThisBg =
+        (bgIndex == 1) && PortPpuMzm_RoomTankCount() > 0;
+    const bool layerCacheable =
+        sLayerCacheEnabled && sLayerRtReady[bgIndex] && !sObjWindowActive &&
+        PortLayerFix_ActiveCount() == 0 && !roomHasTankOnThisBg;
+    if (layerCacheable) {
+        /* Hash the tilemap window this target covers, so a room redrawing
+         * its map invalidates even when the origin has not moved. */
+        uint32_t mapHash = 2166136261u;
+        for (int ty = 0; ty < LAYER_TILES_Y; ++ty) {
+            const int tileRow = (startTileY + ty) & (mapHeightTiles - 1);
+            const int sby = tileRow / 32, lry = tileRow % 32;
+            for (int tx = 0; tx < LAYER_TILES_X; ++tx) {
+                const int tileCol = (startTileX + tx) & (mapWidthTiles - 1);
+                const uint32_t a = screenBase + (uint32_t)(tileCol / 32 + sby * blocksPerRow) * 0x800u +
+                                   (uint32_t)(lry * 32 + tileCol % 32) * 2u;
+                mapHash = (mapHash ^ gVram[a]) * 16777619u;
+                mapHash = (mapHash ^ gVram[a + 1]) * 16777619u;
+            }
+        }
+        const LayerKey key = {
+            startTileX, startTileY, screenBase, charBase, mapHash,
+            sBgPalFullHash,
+            (uint8_t)((brightAdjust != BRIGHT_ADJUST_NONE) ? sBldEvy : 0),
+            (uint8_t)brightAdjust, (uint8_t)bpp8,
+        };
+        const LayerKey* prev = &sLayerKey[bgIndex];
+        sLayerSameKey = sLayerComposed[bgIndex] &&
+                        prev->originTileX == key.originTileX && prev->originTileY == key.originTileY &&
+                        prev->screenBase == key.screenBase && prev->charBase == key.charBase &&
+                        prev->mapHash == key.mapHash && prev->palHash == key.palHash &&
+                        prev->evy == key.evy && prev->brightAdjust == key.brightAdjust &&
+                        prev->bpp8 == key.bpp8;
+        sLayerKey[bgIndex] = key;
+        sLayerTileCount[bgIndex] = 0;
+        sLayerDirtyAtEntry = sAnyDirtySlot;
+        /* Capture the tiles regardless: they still have to go through the
+         * atlas staleness checks, which is what catches an animated tile
+         * whose bytes changed without the tilemap moving. Whether the
+         * offscreen compose is skipped is decided after collection, from
+         * whether any slot was actually rewritten. */
+        sCaptureLayer = bgIndex;
+        sCaptureOffX = (float)fineX;
+        sCaptureOffY = (float)fineY;
+    }
+
     /* World tile shown at screen (0,0), de-wrapped from the 9-bit BG scroll
      * via the camera (PortPpuMzm_ScreenOrigin). The per-block layer
      * corrections (port_layer_fixes.c) are keyed to ABSOLUTE room-block
@@ -1098,7 +1666,7 @@ static void CollectBgLayer(int bgIndex) {
      * target scrolls with the camera 1:1, so one origin serves them all.
      * Only computed when a list is actually compiled in. */
     int fixOriginTileX = 0, fixOriginTileY = 0;
-    if (PortLayerFix_ActiveCount() > 0) {
+    if (PortLayerFix_ActiveCount() > 0 || roomHasTankOnThisBg) {
         extern void PortPpuMzm_ScreenOrigin(int* outX, int* outY);
         int originX = 0, originY = 0;
         PortPpuMzm_ScreenOrigin(&originX, &originY);
@@ -1106,11 +1674,97 @@ static void CollectBgLayer(int bgIndex) {
         fixOriginTileY = originY >> 3;
     }
 
+    /* ---- 16x16 block pass -------------------------------------------
+     * One quad per tilemap-aligned 2x2 group instead of four, which is the
+     * whole point of the block region (see the ATLAS_* enum: cost tracks
+     * quad count, not quad area). Every group it takes is marked in
+     * `covered` and skipped by the per-tile loop below; everything it
+     * declines falls through to that loop unchanged, so this is purely
+     * subtractive and any eligibility bug costs speed, not correctness.
+     *
+     * Declined wholesale for the layer when:
+     *   - 8bpp: not worth a second staleness-byte layout for a case MZM's
+     *     backgrounds do not use.
+     *   - OBJWIN active: visibility is resolved per-TILE at collection time
+     *     (ObjWinItemVisible), so a 16x16 quad could straddle the mask.
+     *   - a layer-fix list is compiled in: corrections are keyed per tile
+     *     and can move a single tile to another plane and draw order.
+     * And per group, only groups landing wholly inside the 240x160 frame
+     * are taken -- the border ring stays per-tile, which keeps every
+     * partial-visibility and letterbox interaction exactly as it was. */
+    uint64_t covered[21]; /* tx runs -1..31, so bit index 0..32: needs 64 */
+    memset(covered, 0, sizeof(covered));
+    const bool blocksEligible =
+        sBlockPassEnabled && !bpp8 && !sObjWindowActive &&
+        PortLayerFix_ActiveCount() == 0 && !roomHasTankOnThisBg;
+    if (blocksEligible) {
+        for (int ty = (startTileY & 1) ? 1 : 0; ty + 1 <= 20; ty += 2) {
+            const float drawY = (float)(ty * 8 - fineY);
+            if (drawY < 0.0f || drawY + 16.0f > 160.0f) continue;
+            const int tileRow = (startTileY + ty) & (mapHeightTiles - 1);
+            const int screenBlockY = tileRow / 32;
+            const int localRow = tileRow % 32;
+            for (int tx = (startTileX & 1) ? 1 : 0; tx + 1 <= 31; tx += 2) {
+                const float drawX = (float)(tx * 8 - fineX);
+                if (drawX < 0.0f || drawX + 16.0f > 240.0f) continue;
+                const int tileCol = (startTileX + tx) & (mapWidthTiles - 1);
+                const int screenBlockX = tileCol / 32;
+                const int localCol = tileCol % 32;
+                /* A tilemap-aligned 2x2 group cannot straddle a 32x32
+                 * screen block (32 is even), so one base address plus +2
+                 * (right) and +64 (row below, 32 entries of 2 bytes)
+                 * reaches all four entries. */
+                const int screenBlockIndex = screenBlockX + screenBlockY * blocksPerRow;
+                const uint32_t mapAddr =
+                    screenBase + (uint32_t)screenBlockIndex * 0x800u + (uint32_t)(localRow * 32 + localCol) * 2u;
+                const uint32_t addr[4] = { mapAddr, mapAddr + 2u, mapAddr + 64u, mapAddr + 66u };
+                uint16_t entry[4];
+                const uint8_t* src[4];
+                bool anyOpaque = false;
+                for (int q = 0; q < 4; ++q) {
+                    entry[q] = (uint16_t)(gVram[addr[q]] | (gVram[addr[q] + 1] << 8));
+                    const uint32_t byteOffset = charBase + (uint32_t)(entry[q] & 0x3FFu) * 32u;
+                    src[q] = &gVram[byteOffset];
+                    if (TileHasOpaquePixel(byteOffset, false)) anyOpaque = true;
+                }
+                if (!anyOpaque) {
+                    /* Nothing to draw; still mark it covered so the tile
+                     * loop does not walk four transparent tiles either. */
+                    covered[ty] |= 3ull << (tx + 1);
+                    covered[ty + 1] |= 3ull << (tx + 1);
+                    continue;
+                }
+                /* Staleness hash over the palette banks all four tiles
+                 * actually sample. Folded in order rather than XORed: two
+                 * tiles sharing a bank would cancel under XOR and leave
+                 * that bank's contents unwatched. */
+                uint32_t palHash = 2166136261u;
+                for (int q = 0; q < 4; ++q) {
+                    const uint32_t bankHash = sBgPalBankHash[(entry[q] >> 12) & 0x0Fu];
+                    for (int b = 0; b < 4; ++b)
+                        palHash = (palHash ^ ((bankHash >> (b * 8)) & 0xFFu)) * 16777619u;
+                }
+                const int block =
+                    GetOrDecodeBlockSlot(entry, charBase, pal, palHash, brightAdjust, src);
+                if (block < 0) continue; /* region full: leave it to the tile loop */
+
+                int sortKey = (3 - priority) * 10 + (3 - bgIndex);
+                int depthTier = PortStereoDepth_BgTier(&sDepthState, bgIndex);
+                PushItemSubtex(&sBlockSubtexTable[block], drawX, drawY, 16.0f, 16.0f, sortKey,
+                               depthTier, blendAlpha, rectWinVis, false);
+                ++sBlockItemsThisFrame;
+                covered[ty] |= 3ull << (tx + 1);
+                covered[ty + 1] |= 3ull << (tx + 1);
+            }
+        }
+    }
+
     for (int ty = 0; ty <= 20; ++ty) {
         int tileRow = (startTileY + ty) & (mapHeightTiles - 1);
         int screenBlockY = tileRow / 32;
         int localRow = tileRow % 32;
         for (int tx = -1; tx <= 31; ++tx) {
+            if (covered[ty] & (1ull << (tx + 1))) continue;
             int tileCol = (startTileX + tx) & (mapWidthTiles - 1);
             int screenBlockX = tileCol / 32;
             int localCol = tileCol % 32;
@@ -1190,8 +1844,44 @@ static void CollectBgLayer(int bgIndex) {
                     }
                 }
             }
+            /* Visible item tank (animated tile, no block-map entry, so not
+             * reachable by the layer-fix list above): as a BG1 tile it would
+             * inherit the BG play plane, which sits nearer the viewer than
+             * the world-sprite plane and makes the tank read as floating in
+             * front of Samus. Move ONLY its depth to Samus's OBJ plane; the
+             * 2D draw order (sortKey) is left alone, so occlusion against the
+             * scenery is unchanged. */
+            if (roomHasTankOnThisBg &&
+                PortPpuMzm_IsVisibleTankBlock((fixOriginTileX + tx) >> 1,
+                                              (fixOriginTileY + ty) >> 1)) {
+                depthTier = PortStereoDepth_ObjTier(&sDepthState, 1);
+            }
             PushItem(slot, drawX, drawY, sortKey, depthTier, blendAlpha, rectWinVis, false);
         }
+    }
+
+    if (sCaptureLayer == bgIndex) {
+        sCaptureLayer = -1;
+        /* Compose again unless nothing moved at all: same key AND no atlas
+         * slot rewritten while collecting this layer (an animated tile, a
+         * palette phase, an evy step). */
+        sLayerNeedsCompose[bgIndex] = !(sLayerSameKey && sAnyDirtySlot == sLayerDirtyAtEntry);
+
+        /* The sampled rectangle carries the fine scroll. Same full-span,
+         * eighth-of-a-texel-shifted convention as the atlas and the
+         * presentation quad -- see ATLAS_UV_TIE_SHIFT. */
+        const float inv = 1.0f / (float)LAYER_RT_DIM;
+        const float sh = ATLAS_UV_TIE_SHIFT;
+        sLayerSubtex[bgIndex] = (Tex3DS_SubTexture){
+            .width = 240, .height = 160,
+            .left = ((float)fineX + sh) * inv,
+            .top = 1.0f - ((float)fineY + sh) * inv,
+            .right = ((float)(fineX + 240) + sh) * inv,
+            .bottom = 1.0f - ((float)(fineY + 160) + sh) * inv,
+        };
+        PushLayerQuad(&sLayerTex[bgIndex], &sLayerSubtex[bgIndex],
+                      (3 - priority) * 10 + (3 - bgIndex),
+                      PortStereoDepth_BgTier(&sDepthState, bgIndex), blendAlpha, rectWinVis);
     }
 }
 
@@ -1266,6 +1956,59 @@ static void CollectHazeBg3(void) {
  * scrolls independently -- the wobble the HBlank DMA produces on hardware.
  * Called first in the per-eye pass
  * (BG3 is backmost), opaque. */
+/* Mode 3: the same 160 strips, but into a 256x256 target at 1:1 instead of
+ * onto the screen at display scale, once per frame instead of once per eye.
+ * The eyes then each draw HazeBlitRippled's single quad. */
+static void HazeRippleIntoTarget(int buf, const int16_t* rowDelta) {
+    C2D_SceneBegin(sHazeRippleRT);
+    C3D_RenderTargetClear(sHazeRippleRT, C3D_CLEAR_COLOR, 0, 0);
+    C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_ALL);
+    C3D_AlphaTest(true, GPU_GREATER, 0);
+    C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
+    ConfigurePlainTextureEnv();
+
+    C2D_Image img = { &sHazeTex[buf], &sHazeStripSubtex };
+    bool reasserted = false;
+    for (int y = 0; y < 160; ++y) {
+        int delta = (int)rowDelta[y];
+        if (delta < -HAZE_MARGIN) delta = -HAZE_MARGIN;
+        else if (delta > HAZE_MARGIN) delta = HAZE_MARGIN;
+
+        sHazeStripSubtex.width = 240;
+        sHazeStripSubtex.height = 1;
+        sHazeStripSubtex.left = (float)(HAZE_MARGIN + delta) / (float)HAZE_RT_DIM;
+        sHazeStripSubtex.right = (float)(HAZE_MARGIN + delta + 240) / (float)HAZE_RT_DIM;
+        sHazeStripSubtex.top = 1.0f - (float)y / (float)HAZE_RT_DIM;
+        sHazeStripSubtex.bottom = 1.0f - (float)(y + 1) / (float)HAZE_RT_DIM;
+        C2D_DrawParams p = { { 0.0f, (float)y, 240.0f, 1.0f }, { 0.0f, 0.0f }, 0.0f, 0.0f };
+        C2D_DrawImage(img, &p, NULL);
+        if (!reasserted) { ConfigurePlainTextureEnv(); reasserted = true; }
+    }
+    C2D_Flush();
+}
+
+/* Mode 3's per-eye half: one quad. Same shifted-full-span UV convention as
+ * everything else that samples a target (see ATLAS_UV_TIE_SHIFT). */
+static void HazeBlitRippled(float baseX, float baseY, float scaleX, float scaleY) {
+    C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
+    ConfigurePlainTextureEnv();
+    const float inv = 1.0f / (float)HAZE_RT_DIM;
+    const float sh = ATLAS_UV_TIE_SHIFT;
+    sHazeRippleSubtex = (Tex3DS_SubTexture){
+        .width = 240, .height = 160,
+        .left = sh * inv,
+        .top = 1.0f - sh * inv,
+        .right = (240.0f + sh) * inv,
+        .bottom = 1.0f - (160.0f + sh) * inv,
+    };
+    C2D_Image img = { &sHazeRippleTex, &sHazeRippleSubtex };
+    C2D_DrawParams p = { { baseX, baseY, 240.0f * scaleX, 160.0f * scaleY }, { 0.0f, 0.0f }, 0.5f, 0.0f };
+    C2D_DrawImage(img, &p, NULL);
+    ConfigurePlainTextureEnv(); /* citro2d re-inits on a scene's first draw */
+    C2D_Flush();
+    ConfigureAtlasTextureEnv(); /* restore for the BG0-2 / OBJ pass that follows */
+}
+
 static void HazeBlitStrips(int buf, float baseX, float baseY, float scaleX, float scaleY,
                            const int16_t *rowDelta) {
     C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
@@ -1765,6 +2508,17 @@ bool Port_GpuRenderer_CanRenderFrame(void) {
 static float sLastCollectMs, sLastDrawMs;
 static float sLastTileCollectMs, sLastAtlasUploadMs; /* collectMs split in two, see below */
 
+/* Issue #20 draw-call census. The frame-time numbers alone (citro3d's
+ * drawing/processing times, recorded per sample) say a frame went over
+ * budget but not why: a scene can cost the same in submitted quads and
+ * still take three times as long because every alpha-blended item breaks
+ * the batch and re-reads the destination framebuffer. These make that
+ * visible in a recording -- see Port_GpuRenderer_GetLastFrameDrawStats.
+ * Summed over both eyes, reset once per RenderFrame. */
+static uint32_t sLastDrawCalls;
+static uint32_t sLastBlendTransitions;
+static uint8_t sLastEyesRendered;
+
 void Port_GpuRenderer_GetLastFrameTimingMs(float* outCollectMs, float* outDrawMs) {
     if (outCollectMs) *outCollectMs = sLastCollectMs;
     if (outDrawMs) *outDrawMs = sLastDrawMs;
@@ -1937,8 +2691,14 @@ void Port_GpuRenderer_RenderFrame(void) {
         sCacheCount = 0;
     }
     sDrawItemCount = 0;
+    sLastLayerComposes = 0;
+    for (int li = 0; li < 4; ++li) sLayerNeedsCompose[li] = false;
+    /* Block cache housekeeping for the frame about to be collected -- must
+     * run before any CollectBgLayer call, and never mid-frame (see
+     * BlockCacheBeginFrame). */
+    BlockCacheBeginFrame();
     sAnyDirtySlot = false;
-    sDirtyRowMask = 0;
+    memset(sDirtyRowMask, 0, sizeof(sDirtyRowMask));
     for (int i = 0; i < SORT_KEY_BUCKETS; ++i) sBucketHead[i] = -1;
 
     /* Palette hashes computed ONCE per frame here rather than per tile
@@ -2074,7 +2834,7 @@ void Port_GpuRenderer_RenderFrame(void) {
      * BG3 for the offscreen strip pass and keep it out of the normal
      * back-to-front list. Windowed / power-bomb-flash frames fall through to
      * the flat path (kept simple: those never coincide with a ripple room). */
-    sHazeActive = sHazeRtReady && (dispcnt & (1u << 11)) && !sWindowActive && !sPbFlashActive &&
+    sHazeActive = (sHazeMode != HAZE_OFF) && sHazeRtReady && (dispcnt & (1u << 11)) && !sWindowActive && !sPbFlashActive &&
                   PortHaze_Bg3RowScroll(sHazeRowDelta, &sHazeBakeHofs);
     if (sHazeActive) CollectHazeBg3();
 
@@ -2172,24 +2932,31 @@ void Port_GpuRenderer_RenderFrame(void) {
          * flushing each dirty row-run separately (same byte-offset math as
          * the old transfer-based version) rather than the whole atlas is
          * still worth doing, just far cheaper to begin with now. */
-        size_t rowBytes = (size_t)ATLAS_DIM * sizeof(u32);
-        uint64_t mask = sDirtyRowMask;
-        while (mask != 0) {
-            int startRow = __builtin_ctzll(mask);
-            uint64_t shifted = mask >> startRow; /* bit 0 is guaranteed set */
-            /* Run length = index of the first zero bit above startRow.
-             * __builtin_ctzll(~shifted) is undefined for an all-ones input
-             * in C, but shifted here is guaranteed non-zero and has at most
-             * 64 - startRow valid bits, so ~shifted is never 0 for any
-             * startRow > 0. For startRow == 0 and all 64 bits dirty,
-             * runLength = 64 directly. */
-            int runLength = (~shifted == 0) ? 64 : __builtin_ctzll(~shifted);
-            u32* flushStart = (u32*)sAtlasTexture.data + (size_t)startRow * 8 * ATLAS_DIM;
-            size_t flushBytes = (size_t)runLength * 8 * rowBytes;
-            FlushAtlasRange(flushStart, flushBytes);
-            mask &= ~(((1ull << runLength) - 1ull) << startRow);
+        size_t rowBytes = (size_t)ATLAS_W * sizeof(u32);
+        /* One word per 64 slot rows since the atlas grew past 64 rows tall
+         * (see the ATLAS_* enum). Runs are found per word, so a run that
+         * spans a word boundary is flushed as two, which costs one extra
+         * syscall and nothing else. */
+        for (size_t w = 0; w < sizeof(sDirtyRowMask) / sizeof(sDirtyRowMask[0]); ++w) {
+            uint64_t mask = sDirtyRowMask[w];
+            const int rowBase = (int)w * 64;
+            while (mask != 0) {
+                int startRow = __builtin_ctzll(mask);
+                uint64_t shifted = mask >> startRow; /* bit 0 is guaranteed set */
+                /* Run length = index of the first zero bit above startRow.
+                 * __builtin_ctzll(~shifted) is undefined for an all-ones
+                 * input in C, but shifted here is guaranteed non-zero and
+                 * has at most 64 - startRow valid bits, so ~shifted is
+                 * never 0 for any startRow > 0. For startRow == 0 and all
+                 * 64 bits dirty, runLength = 64 directly. */
+                int runLength = (~shifted == 0) ? 64 : __builtin_ctzll(~shifted);
+                u32* flushStart = (u32*)sAtlasTexture.data + (size_t)(rowBase + startRow) * 8 * ATLAS_W;
+                size_t flushBytes = (size_t)runLength * 8 * rowBytes;
+                FlushAtlasRange(flushStart, flushBytes);
+                mask &= ~(((1ull << runLength) - 1ull) << startRow);
+            }
+            sDirtyRowMask[w] = 0;
         }
-        sDirtyRowMask = 0;
 
         /* Issue #17: flushing the CPU data cache above only makes the new
          * texels visible in MEMORY -- it says nothing to the PICA200's own
@@ -2231,9 +2998,9 @@ void Port_GpuRenderer_RenderFrame(void) {
     sLastCollectMs = (float)((double)(tAfterCollect - tStart) / PORT_GPU_RENDERER_CPU_TICKS_PER_MSEC);
     sLastAtlasUploadMs = (float)((double)(tAfterCollect - tBeforeUpload) / PORT_GPU_RENDERER_CPU_TICKS_PER_MSEC);
 
-    float slider3d = osGet3DSliderState();
-    const int style = Port_Config_Get3DSDisplayStyle();
-    const int aspect = Port_Config_Get3DSAspectRatio();
+    float slider3d = PlatformGpu3DS_Get3DSlider();
+    int style = Port_Config_Get3DSDisplayStyle();
+    int aspect = Port_Config_Get3DSAspectRatio();
     bool hudOutside = (style == 0 && Port_Config_GetHudOutside());
 
     /* Emulated GBA main game mode (GM_INGAME == 4, GM_DEMO == 11, etc.) */
@@ -2278,7 +3045,7 @@ void Port_GpuRenderer_RenderFrame(void) {
      * render-to-texture race, and both eyes read the same complete buffer.
      * The buffers flip at the end of the frame. */
     const int sHazeBack = sHazeCur ^ 1;
-    if (sHazeActive) {
+    if (sHazeActive && sHazeMode != HAZE_NOCOMPOSE) {
         C2D_SceneBegin(sHazeRT[sHazeBack]);
         /* C3D_CLEAR_COLOR only -- no depth buffer on these targets. */
         C3D_RenderTargetClear(sHazeRT[sHazeBack], C3D_CLEAR_COLOR, 0, 0);
@@ -2300,6 +3067,60 @@ void Port_GpuRenderer_RenderFrame(void) {
         sHazeBufReady[sHazeBack] = true;
     }
 
+    /* Mode 3: ripple once into a target here, so each eye below draws one
+     * quad instead of 160 strips. Samples the FRONT compose buffer, which
+     * was finished last frame, exactly as the eye passes do -- so this adds
+     * no lag of its own beyond the one the compose already has. */
+    const bool hazeRippleRT = sHazeActive && sHazeMode == HAZE_RIPPLE_RT &&
+                              sHazeRippleReady && sHazeBufReady[sHazeCur];
+    if (hazeRippleRT) {
+        HazeRippleIntoTarget(sHazeCur, sHazeBakedRowDelta[sHazeCur]);
+        /* Written and sampled inside one frame -- see sHazeRippleTex. */
+        C3D_FrameSplit(0);
+    }
+
+    /* Step B: compose the layers whose cache went stale. Cleared to fully
+     * transparent, not to the backdrop: a cached layer is composited over
+     * whatever is behind it, and the eye pass's alpha test (GREATER 0)
+     * discards the untouched texels, so the layer occludes exactly the
+     * pixels its own tiles cover. Once per frame, not once per eye -- both
+     * eyes sample the same target, which is the point. */
+    for (int li = 0; li < 4; ++li) {
+        if (!sLayerRtReady[li] || !sLayerNeedsCompose[li] || sLayerTileCount[li] == 0) continue;
+        C2D_SceneBegin(sLayerRT[li]);
+        C3D_RenderTargetClear(sLayerRT[li], C3D_CLEAR_COLOR, 0, 0);
+        C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_ALL);
+        C3D_AlphaTest(true, GPU_GREATER, 0);
+        C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
+        ConfigureAtlasTextureEnv();
+        for (int i = 0; i < sLayerTileCount[li]; ++i) {
+            const LayerTile* lt = &sLayerTiles[li][i];
+            C2D_DrawParams p = { { lt->x, lt->y, lt->w, lt->h }, { 0.0f, 0.0f }, 0.0f, 0.0f };
+            C2D_DrawImage(lt->img, &p, NULL);
+            /* citro2d re-inits the texenv on the first draw of a scene. */
+            if (i == 0) ConfigureAtlasTextureEnv();
+        }
+        C2D_Flush();
+        sLayerComposed[li] = true;
+        sLayerNeedsCompose[li] = false;
+        ++sLastLayerComposes;
+    }
+    if (sLastLayerComposes) {
+        /* The eye passes SAMPLE what was just rendered, in the same C3D
+         * frame. Without a split that is a render-to-texture read-after-
+         * write race -- the same one the haze pass documents having hit on
+         * hardware (one eye came back as 8x8-block garbage).
+         *
+         * The haze answers it by double buffering and sampling last frame's
+         * result. A layer cache cannot: a layer is re-composed precisely
+         * BECAUSE its content changed, so showing the previous buffer would
+         * lag the layer by a frame every time the scroll crosses a tile --
+         * visible as the layer stuttering against everything else. Splitting
+         * costs a GPU sync, but only on the frames that compose, which the
+         * cache exists to make rare. */
+        C3D_FrameSplit(0);
+    }
+
 #ifdef PORT_DEBUG_TOOLS_ACTIVE
     {
         static unsigned sEyeLogCounter;
@@ -2311,6 +3132,11 @@ void Port_GpuRenderer_RenderFrame(void) {
         }
     }
 #endif
+
+    sLastDrawCalls = 0;
+    sLastBlendTransitions = 0;
+    sLastEyesRendered = 0;
+    sLastDrawnPixels = 0;
 
     for (int eye = 0; eye < 2; ++eye) {
         C3D_RenderTarget* target = (eye == 0) ? leftTarget : rightTarget;
@@ -2347,8 +3173,12 @@ void Port_GpuRenderer_RenderFrame(void) {
         if (sHazeActive && sHazeBufReady[sHazeCur]) {
             float eyeOffBg3 = floorf(eyeSign * slider3d *
                                      PortStereoDepth_TierPx(PortStereoDepth_BgTier(&sDepthState, 3)) + 0.5f);
-            HazeBlitStrips(sHazeCur, screenBaseX + eyeOffBg3, screenBaseY, scaleX, scaleY,
-                           sHazeBakedRowDelta[sHazeCur]);
+            if (hazeRippleRT) {
+                HazeBlitRippled(screenBaseX + eyeOffBg3, screenBaseY, scaleX, scaleY);
+            } else {
+                HazeBlitStrips(sHazeCur, screenBaseX + eyeOffBg3, screenBaseY, scaleX, scaleY,
+                               sHazeBakedRowDelta[sHazeCur]);
+            }
         }
 
         /* Single pass over sDrawOrder (true back-to-front GBA priority
@@ -2365,6 +3195,7 @@ void Port_GpuRenderer_RenderFrame(void) {
          * priority, not always win. */
         int drawCount = 0;
         bool reassertedTexEnv = false;
+        bool plainEnvActive = false;
         int scissorPasses = sWindowActive ? 2 : 1;
         bool blendModeActive = false;
         for (int sp = 0; sp < scissorPasses; ++sp) {
@@ -2379,6 +3210,7 @@ void Port_GpuRenderer_RenderFrame(void) {
                  * blend even if BLDCNT is left in another mode). */
                 bool wantBlend = item->blendAlpha;
                 if (wantBlend != blendModeActive) {
+                    ++sLastBlendTransitions; /* each one is a batch break */
                     C2D_Flush();
                     if (wantBlend) {
                         /* GBA alpha blend (GBATEK): out = min(31, src*EVA/16 + dst*EVB/16),
@@ -2420,14 +3252,36 @@ void Port_GpuRenderer_RenderFrame(void) {
                  * any: what it had was per-tile rounding noise that read as
                  * shimmer. */
                 float eyeOffset = floorf(eyeSign * slider3d * PortStereoDepth_TierPx(item->depthTier) + 0.5f);
+                /* A cached layer's quad samples a render target, whose
+                 * texels need no unswizzle; the atlas does. */
+                if (item->plainEnv != plainEnvActive) {
+                    C2D_Flush();
+                    if (item->plainEnv) ConfigurePlainTextureEnv();
+                    else ConfigureAtlasTextureEnv();
+                    plainEnvActive = item->plainEnv;
+                    reassertedTexEnv = true;
+                }
                 C2D_DrawParams params = BuildDrawParams(item, screenBaseX, screenBaseY, eyeOffset, scaleX, scaleY, false);
                 C2D_DrawImage(item->img, &params, NULL);
                 ++drawCount;
+                /* Device pixels this quad covers, summed over every eye.
+                 * The point of counting it is to separate two explanations
+                 * of where a frame goes that the quad count alone cannot:
+                 * after step A, six times fewer quads bought 5% of the
+                 * frame, which says cost is NOT per-quad any more. If it is
+                 * per-pixel instead, this number tracks the frame time and
+                 * the fix is to remove overdraw, not quads. */
+                sLastDrawnPixels += (uint32_t)(params.pos.w * params.pos.h);
                 if (!reassertedTexEnv) {
                     ConfigureAtlasTextureEnv();
                     reassertedTexEnv = true;
                 }
             }
+        }
+        if (plainEnvActive) {
+            C2D_Flush();
+            ConfigureAtlasTextureEnv();
+            plainEnvActive = false;
         }
         if (blendModeActive) {
             C2D_Flush();
@@ -2554,6 +3408,8 @@ void Port_GpuRenderer_RenderFrame(void) {
          * (untinted vertex colour == nothing) instead of the atlas env.
          * DrawFpsOverlay flushes first and resets the TEV itself. */
         PlatformGpu3DS_DrawFpsOverlay(floorf(eyeSign * slider3d * (+2.5f) + 0.5f));
+        sLastDrawCalls += (uint32_t)drawCount;
+        ++sLastEyesRendered;
 #ifdef PORT_DEBUG_TOOLS_ACTIVE
         {
             /* One counter per eye -- a single shared counter with an even
@@ -2577,7 +3433,7 @@ void Port_GpuRenderer_RenderFrame(void) {
     /* Issue #29: flip the haze buffers -- the back buffer we just rendered
      * becomes next frame's read buffer, by which point C3D_FrameEnd has
      * flushed it. */
-    if (sHazeActive) sHazeCur = sHazeBack;
+    if (sHazeActive && sHazeMode != HAZE_NOCOMPOSE) sHazeCur = sHazeBack;
 
     u64 tEnd = svcGetSystemTick();
     sLastDrawMs = (float)((double)(tEnd - tAfterCollect) / PORT_GPU_RENDERER_CPU_TICKS_PER_MSEC);
@@ -2620,6 +3476,35 @@ void Port_GpuRenderer_GetLastFrameStats(int* outItems, int* outObjItems, int* ou
     if (outCacheSlots) *outCacheSlots = sCacheCount;
 }
 
+/* Why the scene cost what it cost, for the perf/scene recorders -- see the
+ * sLastDrawCalls declaration. windowActive doubles the pass over the whole
+ * draw order (the scissor in/out split), so a frame with it set submits
+ * roughly twice the quads for the same scene; hazeActive adds an offscreen
+ * render-to-texture pass of hazeTiles tiles plus a 160-strip blit per eye. */
+void Port_GpuRenderer_GetLastFrameDrawStats(PortGpuRendererDrawStats* out) {
+    if (!out) return;
+    out->drawCount = sLastDrawCalls;
+    out->blendTransitions = sLastBlendTransitions;
+    out->drawnPixels = sLastDrawnPixels;
+    out->layerComposes = sLastLayerComposes;
+    out->layerCacheOn = sLayerCacheEnabled;
+    out->hazeTiles = sHazeActive ? (uint32_t)sHazeTileCount : 0u;
+    /* Collected items are per-eye: both eyes draw the same item list, so
+     * drawCount is roughly eyesRendered * (bgItems + objItems) minus
+     * whatever the window/HUD filters drop. */
+    out->objItems = (uint32_t)sLastObjItemCount;
+    out->bgItems = (sDrawItemCount > sLastObjItemCount)
+                     ? (uint32_t)(sDrawItemCount - sLastObjItemCount) : 0u;
+    out->cpuTileX100 = (sLastTileCollectMs > 0.0f) ? (uint32_t)(sLastTileCollectMs * 100.0f) : 0u;
+    out->cpuUploadX100 = (sLastAtlasUploadMs > 0.0f) ? (uint32_t)(sLastAtlasUploadMs * 100.0f) : 0u;
+    out->cpuDrawX100 = (sLastDrawMs > 0.0f) ? (uint32_t)(sLastDrawMs * 100.0f) : 0u;
+    out->eyesRendered = sLastEyesRendered;
+    out->scissorPasses = sWindowActive ? 2u : 1u;
+    out->windowActive = sWindowActive;
+    out->hazeActive = sHazeActive;
+    out->hazeMode = (uint8_t)sHazeMode;
+}
+
 /* Issue #17 diagnosis: dumps the atlas texture verbatim (PPM, RGB8, no
  * alpha) plus a CSV of every populated slot's cache key, so a session can
  * SEE whether the corruption already exists inside the atlas (a decode/
@@ -2633,10 +3518,12 @@ void Port_GpuRenderer_GetLastFrameStats(int* outItems, int* outObjItems, int* ou
 void Port_GpuRenderer_DumpAtlas(const char* ppmPath, const char* csvPath) {
     FILE* f = fopen(ppmPath, "wb");
     if (f) {
-        fprintf(f, "P6\n%d %d\n255\n", ATLAS_DIM, ATLAS_DIM);
+        /* Whole atlas, both regions: the 8x8 tile slots on top and the
+         * 16x16 block slots below them (see the ATLAS_* enum). */
+        fprintf(f, "P6\n%d %d\n255\n", ATLAS_W, ATLAS_H);
         const u32* px = (const u32*)sAtlasTexture.data;
-        for (int y = 0; y < ATLAS_DIM; ++y) {
-            for (int x = 0; x < ATLAS_DIM; ++x) {
+        for (int y = 0; y < ATLAS_H; ++y) {
+            for (int x = 0; x < ATLAS_W; ++x) {
                 int tileCol = x / 8, tileRow = y / 8;
                 int slot = tileRow * ATLAS_TILES_PER_ROW + tileCol;
                 int localX = x % 8, localY = y % 8;

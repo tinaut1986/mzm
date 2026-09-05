@@ -1848,11 +1848,24 @@
     return c;
   }
 
+  /* Frame 0 of the four animated collectable-tank icons (build_maps.py
+     anim_tank_gfx): 4 types x one 4bpp 16x16 metatile of 0x80 bytes. */
+  var ANIMTANK=null;
+
   /* RoomLoad deja los tiles comunes en VRAM 0x4800 y el tileset en 0x5800, y
      el char base de BG1 es 0x4000: por debajo de 64 no se usa, 64..191 es un
-     tile común y 192 en adelante es del tileset (ver build_maps.py). */
+     tile común y 192 en adelante es del tileset (ver build_maps.py).
+
+     Excepción: los tiles 65..80 son la ventana donde el juego vuelca por DMA
+     los iconos de tanque animados (ANIMATED_GFX_TANK_VRAM_POS). No están en
+     ningún gfx estático, así que sin esto la vista de mapa pinta basura donde
+     hay un tanque. Se sirve el fotograma 0 de cada tipo. */
   function tileSrc(tid,gfx,cgfx){
     if(tid<64)return null;
+    if(tid>=65&&tid<=80&&ANIMTANK){
+      var t=(tid-65)>>2,j=(tid-65)&3;
+      return {buf:ANIMTANK,off:t*0x80+j*32};
+    }
     if(tid<192)return {buf:cgfx,off:(tid-64)*32};
     var off=(tid-192)*32;
     return off+32<=gfx.length?{buf:gfx,off:off}:null;
@@ -1918,6 +1931,7 @@
     if(!ts){els.meta.textContent="sala "+room.id+": falta el tileset "+room.tileset;return;}
     var com=maps.common[common];
     var gfx=tsGfx(ts.gfx,"ts"+room.tileset),cgfx=tsGfx(com.gfx,"com"+common);
+    if(!ANIMTANK&&maps.animTank)ANIMTANK=tsGfx(maps.animTank,"animTank");
     var tab=palLookup(ts,com);
     /* Las prioridades salen de maps.json, que las saca del `transparency` de
        la sala: no son fijas, y en unas salas BG0 va delante de todo mientras
@@ -2000,7 +2014,7 @@
         els.meta.textContent="maps.json antiguo: sin tiles comunes o sin áreas. Vuelve a generarlo.";
         return;
       }
-      mapsName=name;TSCACHE={};
+      mapsName=name;TSCACHE={};ANIMTANK=null;
       els.mapsbadge.textContent=Object.keys(maps.areas)
         .reduce(function(n,a){return n+maps.areas[a].length;},0)+" salas";
       els.mapsbadge.className="meta okbox";

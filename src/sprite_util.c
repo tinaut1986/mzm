@@ -1612,6 +1612,15 @@ boolu32 SpriteUtilHasSubSprite1AnimationEnded(void)
 
     APPLY_DELTA_TIME_INC(adc);
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+    /* An Init path can return without ever assigning pMultiOam, and
+     * this runs anyway. Address 0 is the BIOS on GBA -- a junk read, no
+     * fault -- but an unmapped page on the 3DS, so it is a data abort.
+     * Confirmed on hardware five times over (Luma arm11 dumps 48-52),
+     * each one reached by warping into a boss room. */
+    if (gSubSpriteData1.pMultiOam == NULL)
+        return FALSE;
+#endif
     if (gSubSpriteData1.pMultiOam[caf].timer < adc && gSubSpriteData1.pMultiOam[++caf].timer == 0)
         return TRUE;
     else
@@ -1634,6 +1643,15 @@ boolu32 SpriteUtilHasSubSprite1AnimationNearlyEnded(void)
     APPLY_DELTA_TIME_INC(adc);
     APPLY_DELTA_TIME_INC(adc);
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+    /* An Init path can return without ever assigning pMultiOam, and
+     * this runs anyway. Address 0 is the BIOS on GBA -- a junk read, no
+     * fault -- but an unmapped page on the 3DS, so it is a data abort.
+     * Confirmed on hardware five times over (Luma arm11 dumps 48-52),
+     * each one reached by warping into a boss room. */
+    if (gSubSpriteData1.pMultiOam == NULL)
+        return FALSE;
+#endif
     if (gSubSpriteData1.pMultiOam[caf].timer < adc && gSubSpriteData1.pMultiOam[++caf].timer == 0)
         return TRUE;
     else
@@ -1655,6 +1673,15 @@ boolu32 SpriteUtilHasSubSprite2AnimationEnded(void)
 
     APPLY_DELTA_TIME_INC(adc);
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+    /* An Init path can return without ever assigning pMultiOam, and
+     * this runs anyway. Address 0 is the BIOS on GBA -- a junk read, no
+     * fault -- but an unmapped page on the 3DS, so it is a data abort.
+     * Confirmed on hardware five times over (Luma arm11 dumps 48-52),
+     * each one reached by warping into a boss room. */
+    if (gSubSpriteData2.pMultiOam == NULL)
+        return FALSE;
+#endif
     if (gSubSpriteData2.pMultiOam[caf].timer < adc && gSubSpriteData2.pMultiOam[++caf].timer == 0)
         return TRUE;
     else
@@ -1677,6 +1704,15 @@ boolu32 SpriteUtilHasSubSpriteAnimationEnded(struct SubSpriteData* pSub)
 
     APPLY_DELTA_TIME_INC(adc);
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+    /* An Init path can return without ever assigning pMultiOam, and
+     * this runs anyway. Address 0 is the BIOS on GBA -- a junk read, no
+     * fault -- but an unmapped page on the 3DS, so it is a data abort.
+     * Confirmed on hardware five times over (Luma arm11 dumps 48-52),
+     * each one reached by warping into a boss room. */
+    if (pSub->pMultiOam == NULL)
+        return FALSE;
+#endif
     if (pSub->pMultiOam[caf].timer < adc && pSub->pMultiOam[++caf].timer == 0)
         return TRUE;
     else
@@ -1700,6 +1736,15 @@ boolu32 SpriteUtilHasSubSpriteAnimationNearlyEnded(struct SubSpriteData* pSub)
     APPLY_DELTA_TIME_INC(adc);
     APPLY_DELTA_TIME_INC(adc);
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+    /* An Init path can return without ever assigning pMultiOam, and
+     * this runs anyway. Address 0 is the BIOS on GBA -- a junk read, no
+     * fault -- but an unmapped page on the 3DS, so it is a data abort.
+     * Confirmed on hardware five times over (Luma arm11 dumps 48-52),
+     * each one reached by warping into a boss room. */
+    if (pSub->pMultiOam == NULL)
+        return FALSE;
+#endif
     if (pSub->pMultiOam[caf].timer < adc && pSub->pMultiOam[++caf].timer == 0)
         return TRUE;
     else
@@ -3498,6 +3543,15 @@ void SpriteUtilUpdateSubSprite1Timer(void)
     APPLY_DELTA_TIME_INC(adc);
     caf = gSubSpriteData1.currentAnimationFrame;
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+    /* An Init path can return without ever assigning pMultiOam, and
+     * this runs anyway. Address 0 is the BIOS on GBA -- a junk read, no
+     * fault -- but an unmapped page on the 3DS, so it is a data abort.
+     * Confirmed on hardware five times over (Luma arm11 dumps 48-52),
+     * each one reached by warping into a boss room. */
+    if (gSubSpriteData1.pMultiOam == NULL)
+        return;
+#endif
     if (gSubSpriteData1.pMultiOam[caf].timer < adc)
     {
         timer = caf;
@@ -3511,6 +3565,29 @@ void SpriteUtilUpdateSubSprite1Timer(void)
  */
 void SpriteUtilUpdateSubSprite1Anim(void)
 {
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+    /* Callers (imago_cocoon.c, imago.c, crocomire.c, chozo_statue.c) run
+     * this unconditionally after their state machine, and some of their
+     * Init paths return without ever assigning pMultiOam -- e.g.
+     * ImagoCocoonInit bails out with status = 0 when the cocoon is already
+     * dead and the Ridley demo has played, and ImagoCocoon then falls
+     * straight into this call with gSubSpriteData1 still zeroed from BSS.
+     *
+     * On GBA that dereferences address 0, which is the BIOS: the read
+     * returns whatever the BIOS last prefetched, the timer compare gets a
+     * garbage value and the frame carries on. On the 3DS page 0 is
+     * unmapped and it is a data abort. Confirmed on hardware 2026-09-04
+     * (Luma arm11 dump 50: ldrb at SpriteUtilUpdateSubSprite1Anim+0x14
+     * with r0 = 0, lr in ImagoCocoon), reached by warping into the Imago
+     * Cocoon room after the fight.
+     *
+     * Note the SubSprite2 / pSub-taking siblings below share the shape of
+     * this hazard; only the pair that actually crashed is guarded, to keep
+     * the port's footprint in this upstream file minimal. */
+    if (gSubSpriteData1.pMultiOam == NULL)
+        return;
+#endif
+
     APPLY_DELTA_TIME_INC(gSubSpriteData1.animationDurationCounter);
 
     if (gSubSpriteData1.pMultiOam[gSubSpriteData1.currentAnimationFrame].timer < gSubSpriteData1.animationDurationCounter)
@@ -3531,6 +3608,13 @@ void SpriteUtilSyncCurrentSpritePositionWithSubSprite1Position(void)
 {
     MultiSpriteDataInfo_T pData;
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+    /* Same uninitialised-pMultiOam case as SpriteUtilUpdateSubSprite1Anim
+     * above -- the callers pair the two in the same frame. */
+    if (gSubSpriteData1.pMultiOam == NULL)
+        return;
+#endif
+
     pData = gSubSpriteData1.pMultiOam[gSubSpriteData1.currentAnimationFrame].pData;
 #if defined(MZM_3DS) || defined(PORT_NATIVE)
     pData = GBA_RESOLVE(pData);
@@ -3543,6 +3627,13 @@ void SpriteUtilSyncCurrentSpritePositionWithSubSprite1Position(void)
 void SpriteUtilSyncCurrentSpritePositionWithSubSpriteData1PositionAndOam(void)
 {
     MultiSpriteDataInfo_T pData;
+
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+    /* Same uninitialised-pMultiOam case as SpriteUtilUpdateSubSprite1Anim
+     * above -- the callers pair the two in the same frame. */
+    if (gSubSpriteData1.pMultiOam == NULL)
+        return;
+#endif
 
     pData = gSubSpriteData1.pMultiOam[gSubSpriteData1.currentAnimationFrame].pData;
 #if defined(MZM_3DS) || defined(PORT_NATIVE)
@@ -3565,6 +3656,15 @@ void SpriteUtilUpdateSubSprite2Anim(void)
 {
     APPLY_DELTA_TIME_INC(gSubSpriteData2.animationDurationCounter);
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+    /* An Init path can return without ever assigning pMultiOam, and
+     * this runs anyway. Address 0 is the BIOS on GBA -- a junk read, no
+     * fault -- but an unmapped page on the 3DS, so it is a data abort.
+     * Confirmed on hardware five times over (Luma arm11 dumps 48-52),
+     * each one reached by warping into a boss room. */
+    if (gSubSpriteData2.pMultiOam == NULL)
+        return;
+#endif
     if (gSubSpriteData2.pMultiOam[gSubSpriteData2.currentAnimationFrame].timer < gSubSpriteData2.animationDurationCounter)
     {
         gSubSpriteData2.animationDurationCounter = DELTA_TIME;
@@ -3583,6 +3683,15 @@ void SpriteUtilSyncCurrentSpritePositionWithSubSpriteData2PositionAndOam(void)
 {
     MultiSpriteDataInfo_T pData;
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+    /* An Init path can return without ever assigning pMultiOam, and
+     * this runs anyway. Address 0 is the BIOS on GBA -- a junk read, no
+     * fault -- but an unmapped page on the 3DS, so it is a data abort.
+     * Confirmed on hardware five times over (Luma arm11 dumps 48-52),
+     * each one reached by warping into a boss room. */
+    if (gSubSpriteData2.pMultiOam == NULL)
+        return;
+#endif
     pData = gSubSpriteData2.pMultiOam[gSubSpriteData2.currentAnimationFrame].pData;
 #if defined(MZM_3DS) || defined(PORT_NATIVE)
     pData = GBA_RESOLVE(pData);
@@ -3605,6 +3714,15 @@ void SpriteUtilUpdateSubSpriteAnim(struct SubSpriteData* pSub)
 {
     APPLY_DELTA_TIME_INC(pSub->animationDurationCounter);
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+    /* An Init path can return without ever assigning pMultiOam, and
+     * this runs anyway. Address 0 is the BIOS on GBA -- a junk read, no
+     * fault -- but an unmapped page on the 3DS, so it is a data abort.
+     * Confirmed on hardware five times over (Luma arm11 dumps 48-52),
+     * each one reached by warping into a boss room. */
+    if (pSub->pMultiOam == NULL)
+        return;
+#endif
     if (pSub->pMultiOam[pSub->currentAnimationFrame].timer < pSub->animationDurationCounter)
     {
         pSub->animationDurationCounter = DELTA_TIME;
@@ -3624,6 +3742,15 @@ void SpriteUtilSyncCurrentSpritePositionWithSubSpritePosition(struct SubSpriteDa
 {
     MultiSpriteDataInfo_T pData;
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+    /* An Init path can return without ever assigning pMultiOam, and
+     * this runs anyway. Address 0 is the BIOS on GBA -- a junk read, no
+     * fault -- but an unmapped page on the 3DS, so it is a data abort.
+     * Confirmed on hardware five times over (Luma arm11 dumps 48-52),
+     * each one reached by warping into a boss room. */
+    if (pSub->pMultiOam == NULL)
+        return;
+#endif
     pData = pSub->pMultiOam[pSub->currentAnimationFrame].pData;
 #if defined(MZM_3DS) || defined(PORT_NATIVE)
     pData = GBA_RESOLVE(pData);
@@ -3642,6 +3769,15 @@ void SpriteUtilSyncCurrentSpritePositionWithSubSpritePositionAndOam(struct SubSp
 {
     MultiSpriteDataInfo_T pData;
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+    /* An Init path can return without ever assigning pMultiOam, and
+     * this runs anyway. Address 0 is the BIOS on GBA -- a junk read, no
+     * fault -- but an unmapped page on the 3DS, so it is a data abort.
+     * Confirmed on hardware five times over (Luma arm11 dumps 48-52),
+     * each one reached by warping into a boss room. */
+    if (pSub->pMultiOam == NULL)
+        return;
+#endif
     pData = pSub->pMultiOam[pSub->currentAnimationFrame].pData;
 #if defined(MZM_3DS) || defined(PORT_NATIVE)
     pData = GBA_RESOLVE(pData);

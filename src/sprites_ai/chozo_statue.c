@@ -80,6 +80,15 @@ static void ChozoStatueSyncSubSprites(void)
     MultiSpriteDataInfo_T pData;
     u16 oamIdx;
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+    /* An Init path can return without ever assigning pMultiOam, and
+     * this runs anyway. Address 0 is the BIOS on GBA -- a junk read, no
+     * fault -- but an unmapped page on the 3DS, so it is a data abort.
+     * Confirmed on hardware five times over (Luma arm11 dumps 48-52),
+     * each one reached by warping into a boss room. */
+    if (gSubSpriteData1.pMultiOam == NULL)
+        return;
+#endif
     pData = gSubSpriteData1.pMultiOam[gSubSpriteData1.currentAnimationFrame].pData;
 #if defined(MZM_3DS) || defined(PORT_NATIVE)
     pData = GBA_RESOLVE(pData);
@@ -1277,6 +1286,15 @@ void ChozoStatue(void)
         case CHOZO_STATUE_POSE_SLEEPING:
             ChozoStatueSleeping();
     }
+
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+    /* Same guard as ImagoCocoon's tail, same reason: the sync helper below
+     * dereferences gSubSpriteData1.pMultiOam directly, and an Init path in
+     * the switch above may never have assigned it. See the comment there
+     * and Luma arm11 dumps 50/51. */
+    if (gSubSpriteData1.pMultiOam == NULL)
+        return;
+#endif
 
     SpriteUtilUpdateSubSprite1Anim();
     ChozoStatueSyncSubSprites();

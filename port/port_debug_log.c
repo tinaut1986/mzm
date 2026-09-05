@@ -1,13 +1,32 @@
 #include "port_debug_log.h"
+#include "port_debug_files.h"
 
 #include <string.h>
 #include <stdio.h>
 
-#ifdef PLATFORM_LINUX
-#define PORT_DEBUG_LOG_PATH "/tmp/mzm-debug.log"
-#else
-#define PORT_DEBUG_LOG_PATH "sdmc:/3ds/mzm-debug.log"
-#endif
+/* One rotating file per logging SESSION, picked the moment logging leaves
+ * OFF (see Port_DebugLog_SetMode). The log used to be a single file that was
+ * only ever appended to, never truncated -- so every capture landed on top
+ * of every previous one and the documented workflow was "delete it over FTP
+ * before you start, and hope you remembered". A session per file makes each
+ * capture self-contained; the last PORT_DEBUG_LOG_KEEP of them survive.
+ *
+ * Empty until the first enable, so a build that never turns logging on
+ * touches no file at all. */
+#define PORT_DEBUG_LOG_NAME "mzm-debug"
+#define PORT_DEBUG_LOG_EXT  ".log"
+#define PORT_DEBUG_LOG_KEEP 10u
+static char sLogPath[256];
+
+static const char* LogPath(void) {
+    /* Fallback for a line logged before any enable (should not happen: the
+     * loggers all return early while the mode is NONE) -- better a known
+     * filename than a write to "". */
+    if (sLogPath[0] == '\0')
+        Port_DebugFiles_SetPath(PORT_DEBUG_LOG_NAME, 1u, PORT_DEBUG_LOG_EXT,
+                                sLogPath, sizeof(sLogPath));
+    return sLogPath;
+}
 
 /* Runtime state, flipped from the bottom screen's DEBUG -> HERRAMIENTAS menu
  * (see port_bottom_ui_3ds.c). Writing to the SD card is OFF by default even
@@ -36,7 +55,7 @@ static char sBufLog[4096];
 static size_t sBufLogLen;
 
 static void WriteDirect(const char* msg, size_t msgLen) {
-    FILE* f = fopen(PORT_DEBUG_LOG_PATH, "a");
+    FILE* f = fopen(LogPath(), "a");
     if (f) {
         fwrite(msg, 1, msgLen, f);
         fputc('\n', f);
@@ -46,7 +65,7 @@ static void WriteDirect(const char* msg, size_t msgLen) {
 
 void Port_DebugLogFlush(void) {
     if (sBufLogLen == 0) return;
-    FILE* f = fopen(PORT_DEBUG_LOG_PATH, "a");
+    FILE* f = fopen(LogPath(), "a");
     if (f) {
         fwrite(sBufLog, 1, sBufLogLen, f);
         fclose(f);
@@ -97,7 +116,21 @@ void Port_DebugLog_SetMode(PortDebugLogMode mode) {
      * change rather than dying there (or getting mislabelled as the new
      * mode's output). */
     Port_DebugLogFlush();
+    /* Leaving OFF starts a new session: claim a fresh slot so this capture
+     * cannot be confused with the previous one. Switching between active
+     * modes (ALL -> GPU -> ...) keeps writing to the same file, since it is
+     * still the same sitting. */
+    if (sLogMode == PORT_LOG_MODE_NONE && mode != PORT_LOG_MODE_NONE) {
+        Port_DebugFiles_NextPath(PORT_DEBUG_LOG_NAME, PORT_DEBUG_LOG_EXT,
+                                 PORT_DEBUG_LOG_KEEP, sLogPath, sizeof(sLogPath));
+        FILE* f = fopen(LogPath(), "wb"); /* truncate the slot being reused */
+        if (f) fclose(f);
+    }
     sLogMode = mode;
+}
+
+const char* Port_DebugLog_CurrentPath(void) {
+    return (sLogPath[0] == '\0') ? "" : sLogPath;
 }
 
 PortDebugLogMode Port_DebugLog_GetMode(void) { return sLogMode; }

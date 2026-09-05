@@ -57,6 +57,23 @@ typedef struct {
      * hardware register, but snapshotted from room config right next to the
      * priorities, so the mapping stays a pure function of its input. */
     bool samusOnTopOfBackgrounds;
+
+    /* Flat two-plane mode for a screen that has no real depth, only a
+     * content layer and a backdrop that the priority-based mapping otherwise
+     * scatters. When set, every BG whose BGCNT priority is >=
+     * flatMenuBackdropPrio goes to BG_FAR; every other BG and every sprite
+     * is coplanar at BG_PLAY. See BgTier / ObjTier.
+     *
+     * Used for:
+     *  - GM_FILE_SELECT: backdrop is BG3 alone (own char base, priority 3 --
+     *    the Chozo-ruins art); BG0/BG1/BG2 carry UI, incl. the "DATOS DE
+     *    SAMUS" row on BG2 at priority 2. flatMenuBackdropPrio = 3.
+     *  - GM_CREDITS: text alternates between BG0 (prio 0) and BG1 (prio 1)
+     *    as groups scroll, so headers and crew randomly split across planes;
+     *    the scrolling Chozo wall is BG2/BG3 (prio 2/3). flatMenuBackdropPrio
+     *    = 2 -- all text forward, all wall back. */
+    bool flatMenu;
+    uint8_t flatMenuBackdropPrio;
 } PortStereoDepthState;
 
 /* Depth tier indices. port_gpu_renderer.c picks the HUD and map tiers by
