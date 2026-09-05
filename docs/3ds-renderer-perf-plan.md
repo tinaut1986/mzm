@@ -6,19 +6,42 @@ to. Tick items as they land; add new ones as they come up. Everything under
 argument -- and everything under **Dead ends** was believed and then
 disproved, so please read that section before proposing a fix.
 
-> **Status 2026-09-05. The automated harness is PARKED. Test on hardware.**
+> **Status 2026-09-05. The fire room now fits the budget. The bottleneck was
+> the BG3 haze pass, and it was never quads and never fill.**
 >
-> Two sessions went into making the correctness harness run unattended under
-> Azahar on Linux. The plumbing all works -- build, install, launch, trigger,
-> fetch, compare, with no console and no hands -- and it still could not
-> answer a single question about the renderer, because everything it
-> compared was wrong for reasons of its own. The decision is to stop and
-> test on hardware by hand. `REPLAY RECORDING` and the file triggers are
-> gone from the console build (see **What was removed**); the host-side
-> scripts are kept because they cost nothing.
+> Where things stand, newest first:
 >
-> What the effort actually established is below. Most of it is negative, and
-> all of it is expensive to rediscover.
+> - **The haze was half the frame, and is fixed.** 17,77 -> 11,26 ms in the
+>   room that could not hold 60, by rippling once into a target and giving
+>   each eye a single quad instead of 160 per-scanline strips. Comfortably
+>   inside the 16,675 ms budget with two eyes, scaled, slider up. Default.
+> - **Step A works and is released.** One quad per 16x16 block took BG quads
+>   from ~2244 to ~370 per eye and the same room from 45 to 60 FPS with the
+>   slider down. In `release/v0.4.6`, tagged v0.4.5.
+> - **It also had a real correctness bug, now fixed**, which is why the two
+>   renderers disagreed whenever the display was scaled -- see the UV entry
+>   under **Open on hardware**. Read it before touching subtexture UVs again.
+> - **Step B is measured and stays OFF.** 2% in its best case, and never
+>   exercised while scrolling or with animated tiles. See **What is on by
+>   default**.
+> - **Neither quads nor pixels explain frame time.** Six times fewer quads
+>   bought 5%; 2,9x the pixels cost nothing measurable. Both models are dead,
+>   and step C rested on the second one -- so it is back to unproven rather
+>   than "probably next". Any plan justified by "this removes N quads" or
+>   "N pixels" needs its own measurement first.
+> - **The lesson worth keeping**: three cost models in a row survived
+>   argument and died to a runtime toggle. Every big cost so far -- the haze,
+>   the colour overlay, the bezel -- was invisible to `drawCount`,
+>   `bgItems` and `drawnPixels`, which count only the scene's own items. When
+>   something is unexplained, suspect a whole pass no counter reaches, and
+>   reach for a toggle rather than a theory.
+> - **The automated harness is PARKED**; test on hardware by hand. Two
+>   sessions went into running it unattended under Azahar and the plumbing
+>   all works, but everything it compared was wrong for reasons of its own.
+>   `REPLAY RECORDING` and the file triggers are gone from the console build.
+>
+> What that effort did establish is below. Most of it is negative, and all of
+> it is expensive to rediscover.
 
 ## What Linux/Azahar established
 
@@ -198,10 +221,10 @@ restored 60. An absent-file open is an FS service round trip, and a debug
 feature nobody is using must not cost one per frame-group -- worth
 remembering before adding another poll to the main loop.
 
-Step A is therefore worth keeping and worth finishing. What it still needs
-is to look right (see the UV convention entry under **Open on hardware**)
-and to be checked in rooms with animated palettes, where per-block staleness
-has the most room to be wrong.
+Step A is therefore worth keeping. It has since been made to look right (see
+the UV convention entry under **Open on hardware**) and shipped in v0.4.5.
+What it still has not had is a room with ANIMATED PALETTES, where per-block
+staleness has the most room to be wrong -- that check is still owed.
 
 ## The fire room, with step A on (2026-09-05, New3DS, hardware)
 
@@ -239,6 +262,176 @@ So the room that still misses 60 (two eyes, scaled) spends its frame on a
 pass nobody has looked at. Read `sHazeRT` / `HazeBlitStrips` before
 collapsing BG layers.
 
+## Step B measured, and what it really showed (2026-09-05, hardware)
+
+`mzm-perf-01.bin`, fire room, standing still, cycling the settings:
+
+| eyes | style | slider | layer cache | BG quads/eye | draws | px/frame | GPU |
+|---|---|---|---|---|---|---|---|
+| 2 | scaled | 100% | **on** | 38 | 123 | 535 254 | 16,49 ms |
+| 2 | scaled | 70% | off | 357 | 763 | 276 624 | 16,87 ms |
+| 2 | pixel perfect | 100% | **on** | 183 | 415 | 185 571 | 16,47 ms |
+| 1 | scaled | 0% | off | 357 | 381 | 138 313 | 9,08 ms |
+| 1 | pixel perfect | 0% | off | 357 | 381 | 61 471 | 8,50 ms |
+
+**Step B does what it was built to do, and it does not matter.** The cache
+reports **0 composes** in every group -- standing still, it is reused every
+single frame, which is the best case it can ever have -- and BG quads fall
+from 357 to 38 per eye. Frame time moves from 16,87 to 16,49 ms. Two
+percent.
+
+**And it is not fill either.** Two eyes at pixel perfect cost 16,47 ms;
+two eyes scaled cost 16,49 ms for **2,9x the pixels**. Whatever the frame is
+spending its time on, it is not the pixels the scene's quads cover.
+
+So neither model survives. What the numbers DO fit is a cost that is
+constant per eye: ~8,5 ms for one, ~16,5 for two, near enough regardless of
+357 quads or 38, and regardless of 61 471 pixels or 535 254.
+
+**Two full-screen per-eye passes are missing from every counter**, and both
+were on for all of this:
+
+- **The GBA screen FX overlay** (`captureFlags` says grade 3 in 100% of
+  samples in both captures). `PortGbaScreenFx_PostProcessTop` draws one
+  alpha-blended quad over the whole 400x240 target PER EYE. That is a
+  read-modify-write of the framebuffer -- exactly the "massive memory
+  bandwidth" the renderer's own opaque pass sets ONE/ZERO to avoid.
+- **The GBA bezel** (`captureFlags` says on in 100% of samples).
+  `PortGbaBezel_Draw` per eye, another large overlay.
+
+The haze blit is a third: `HazeBlitStrips` draws **one quad per scanline,
+160 per eye**, and `drawCount` does not include them either.
+
+None of this appears in `drawCount`, `bgItems` or `drawnPixels`, which count
+only the scene's own items -- so every measurement in this document taken in
+this room has been measuring a frame whose majority may be presentation
+effects. The plan's own baseline conditions say to capture with the bezel and
+colour correction OFF, and these captures did not.
+
+### That A/B, run (2026-09-05, hardware)
+
+Same room and spot, two eyes, scaled 3:2, slider up, cycling the two:
+
+| bezel | GBA colour | GPU | FPS p10 |
+|---|---|---|---|
+| on | 3 | 17,85 ms | 30,0 |
+| off | 3 | 17,48 ms | 30,0 |
+| on | 0 | 16,44 ms | **59,1** |
+| off | 0 | 16,12 ms | 58,9 |
+
+So the guess above was wrong about the SIZE and right about the effect:
+
+- **The GBA colour overlay costs ~1,4 ms** (17,85 -> 16,44 with the bezel on,
+  17,48 -> 16,12 with it off; the two agree to 0,05 ms).
+- **The bezel costs ~0,35 ms.**
+- Together ~1,7 ms of a ~17,9 ms frame -- a tenth, not the majority.
+
+But a tenth is the whole margin here. Turning the colour overlay off takes
+the FPS floor from **30 to 59**: the frame is sitting just over the 16,675 ms
+line and 1,4 ms is the difference between clearing it and missing it by
+enough to drop a whole vblank.
+
+And note what is left. With both off it is still **16,12 ms** for a scene
+whose cost does not move with quads (357 vs 38) or pixels (2,9x). The
+unexplained majority is still unexplained.
+
+### The haze is half the frame (2026-09-05, hardware)
+
+Same room and spot, bezel and colour overlay off, layer cache on:
+
+| BG3 haze pass | GPU | draws | px/frame | FPS p10 |
+|---|---|---|---|---|
+| on | **16,91 ms** | 346 | 567 394 | 59,5 |
+| **off** | **8,46 ms** | 375 | 744 095 | 58,1 |
+
+**8,45 ms of a 16,91 ms frame.** Half. And the direction of everything else
+settles the argument for good: with the pass OFF the frame has MORE draws
+(375 vs 346) and MORE pixels (744k vs 567k) -- because BG3 goes back to the
+ordinary tile path -- and still costs half as much. The frame was never
+about quad count or fill; it was about this one pass.
+
+That is also why every earlier conclusion in this document came out
+sideways. `mzm-perf-08/09`, the captures the per-quad model was derived
+from, had haze inactive; every capture in this room has it active at 640-660
+tiles, and none of the counters see it.
+
+### And within the haze, it is the BLIT (2026-09-05, hardware)
+
+Same room, bezel and colour overlay off, cycling the three haze modes:
+
+| haze mode | GPU | draws | px/frame |
+|---|---|---|---|
+| full | **17,71 ms** | 887 | 320 451 |
+| nocomp (blit only) | **16,44 ms** | 909 | 323 709 |
+| off | **10,40 ms** | 1350 | 508 063 |
+
+- Composing the 640-660 tiles: **1,27 ms**.
+- The per-scanline blit: **~6 ms**, and that is a floor -- the *off* column
+  also puts BG3 back into the scene as ordinary tiles (542 BG quads per eye
+  against 322, and 188k more pixels) and still lands 6 ms lower.
+
+So the step-B-shaped fix -- stop re-composing a target that has not changed
+-- would have bought 1,27 ms. The money is in the 160 strips, and they are
+drawn TWICE, once per eye.
+
+**Mode 3 (`RT`) is the attempt at it**: ripple once into a 256x256 target,
+then give each eye a single quad. Two things shrink together -- 160 strips
+per FRAME instead of per eye, and each strip goes from 240x1 GBA pixels
+scaled onto the screen (360x1,5 at 3:2) to 240x1 at 1:1. It needs a
+`C3D_FrameSplit`, since the target is written and sampled in the same frame,
+and that sync is the risk: if it costs more than the strips saved, the
+numbers will say so. Hence a mode and not a default.
+
+**Measured, and it is the answer for this room:**
+
+| haze mode | GPU | draws | px/frame |
+|---|---|---|---|
+| full | 17,77 ms | 921 | 325 310 |
+| **RT** | **11,26 ms** | 956 | 330 461 |
+
+**6,51 ms**, on the same scene with the same quads and the same pixels. The
+`C3D_FrameSplit` did not eat it: the ripple went from ~7,3 ms to ~0,9 --
+within a millisecond of not drawing the pass at all (10,40 ms measured with
+it off, and that column also carries BG3 as ordinary tiles).
+
+11,26 ms is comfortably inside the 16,675 budget with two eyes, scaled, in
+the room that could not hold 60. **RT is now the default.** The other modes
+stay for measuring against, and RT falls back to the per-scanline blit by
+itself if its VRAM target could not be allocated.
+
+The one thing to watch: the strips now land in a 1:1 target and the whole
+target is scaled once, where before each 1-pixel strip was scaled to 1,5 px
+on screen with a `scaleY + 0.5f` fudge to avoid gaps. The vertical sampling
+is uniform now instead of every row rounding on its own, so the ripple should
+look the same or slightly cleaner -- reported from hardware as "a little
+different, but I think it looks right".
+
+**Superseded: the haze.** It is the largest thing in a frame that no counter
+reaches -- 640-660 tiles into an offscreen target once per frame, plus ONE
+QUAD PER SCANLINE, 160 per eye, to blit it back with the ripple. A toggle
+for it now exists (`CAPAS / HAZE`, right edge of the cell), on the same
+reasoning that has worked twice: every cost model this renderer has been
+optimised against turned out wrong when finally measured, and each time a
+runtime toggle settled it.
+
+## What is on by default, and what is not
+
+None of these are stored on the SD card and none are inside a debug guard:
+they are plain statics, so a production build runs exactly these values and
+cannot be talked out of them.
+
+| Switch | Default | Why |
+|---|---|---|
+| 16x16 block pass | **ON** | 45 -> 60 FPS measured; shipped in v0.4.5 |
+| BG3 haze mode | **RT** | 17,77 -> 11,26 ms measured |
+| Layer cache (step B) | **OFF** | 2% measured, and only ever tested standing still |
+
+The layer cache is deliberately off. It bought 16,87 -> 16,49 ms in its very
+best case -- standing still, reused every frame, 0 composes -- and it has
+never been exercised while scrolling, where it composes, nor in a room with
+animated tiles, where its invalidation actually has work to do. It is not
+worth carrying that risk for 2% until something measures it moving.
+
 ## Dead ends
 
 - **Alpha blending / batch breaking.** `BLDCNT` looked like it tracked the
@@ -274,9 +467,13 @@ read the FPS overlay, take a `SCREEN DUMP` when a still frame is needed.
 - [ ] Reaching gameplay without hands (start a file, then warp) is the other
       prerequisite. Without it Azahar only ever sees the title screen.
 
-### A. 16x16 atlas blocks -- implemented, unverified
+### A. 16x16 atlas blocks -- DONE, measured, shipped in v0.4.5
 
-One quad per tilemap-aligned 2x2 group instead of four.
+One quad per tilemap-aligned 2x2 group instead of four. On hardware: BG
+quads ~2244 -> ~370 per eye, and 45 -> 60 FPS in the fire room with the
+slider down (see **Step A measured**). Switchable at runtime from the debug
+tools menu, because that is how it was measured and how the next change
+will be.
 
 - [x] Atlas grows to 512x1024, split into a tile region (rows 0..63,
       addressing untouched) and a 16x16 block region (rows 64..127, 1024
@@ -301,20 +498,62 @@ One quad per tilemap-aligned 2x2 group instead of four.
       (`--replay`), not fresh dumps: `mzm-rec-01.bin` is on the card as the
       corpus. Animated-palette rooms are where a hole in the per-block
       staleness check would show, as frozen or mis-coloured tiles.
-- [ ] **Measure the win.** Expect `bgItems` ~2244 -> ~700 per eye and 2-eye
-      GPU 17,75 -> ~5-6 ms. If it lands, 60 FPS with the slider up.
+- [x] **Measured.** `bgItems` ~2244 -> ~370 per eye, better than the /4 this
+      was designed for. 45 -> 60 FPS with the slider down. The predicted
+      2-eye GPU of 5-6 ms did NOT arrive, and chasing why is what eventually
+      found the haze -- the quad model the prediction came from was wrong.
 - [ ] Consider 32x32 blocks once 16x16 is proven (a further /4 on the
       interior, at 16x the cache-key space and coarser invalidation).
 
-### B. Cache whole scrolling layers in render targets -- premise weakened
+### B. Cache whole scrolling layers in render targets -- built, measured, OFF
 
-One quad per layer. This was written as "~2244 -> 4, the big prize" when
-cost tracked quad count. After step A the BG layers are already down to ~370
-quads per eye and six times fewer quads bought 5% of the frame, so the
-arithmetic that justified this no longer holds -- see **The fire room** above.
-It may still be worth doing for the CPU submission it also collapses, and
-the same technique applied to the BG3 haze pass (640-660 tiles per frame,
-more than every BG layer put together) is now the better first target.
+Implemented 2026-09-05 and **off by default** (`CACHE CAPAS` in the debug
+tools menu). Measured on hardware: it does exactly what it was built to do
+and it is not worth switching on.
+
+Standing still -- its best possible case, 0 composes, reused every frame --
+BG quads fall from 357 to 38 per eye and the frame moves 16,87 -> 16,49 ms.
+**Two percent.** The premise was that cost tracks quad count, and it does
+not; see **The fire room** and **Step B measured**.
+
+It stays off rather than being deleted: it is correct, it is cheap when
+unused, and if a future change makes quad count matter again it is already
+written. What it has never been is exercised while SCROLLING, where it
+actually composes, or in a room with animated tiles, where its invalidation
+has work to do -- so do not turn it on without measuring those two first.
+
+How it works. A text BG layer's tiles are homogeneous in everything the draw
+order cares about -- sort key, stereo tier, blend mode, window visibility are
+all per-LAYER -- so the layer is composed once into its own 256x256 render
+target and drawn as ONE quad per eye, at its own place in the priority order.
+The target is anchored to the TILE GRID rather than the camera (31x21 world
+tiles from `startTileX/Y`), and the fine scroll moves the sampled rectangle
+instead of forcing a re-compose, so a layer survives up to 8 px of scrolling.
+
+- [x] Per-layer VRAM target, composed once per frame, one quad per eye.
+- [x] Invalidated by an origin change, a tilemap hash over the sampled
+      window, the palette hash, evy, charBase or screenBase.
+- [x] **Animated tiles handled without hashing pixels.** The layer's tiles
+      are still walked every frame and still go through the atlas cache's
+      staleness checks; what the cache skips is the offscreen COMPOSE, not
+      the check. So the CPU cost stays roughly what it was and the GPU quads
+      collapse -- which is the half that was over budget.
+- [x] Declined per layer when anything resolves visibility or placement per
+      TILE: OBJWIN, or a room with layer-fix corrections. Windows are
+      per-layer and resolved by the scissor, so they are fine.
+- [x] `C3D_FrameSplit` on the frames that compose, because the eye passes
+      sample what was just rendered. The haze pass avoids this by double
+      buffering and sampling last frame's result; a layer cache cannot, since
+      it re-composes precisely because the content changed.
+- [x] **Measured.** `rendererFlags` bits 12-15 carry the compose count and
+      whether the cache was on, and a capture said: 0 composes standing
+      still, quads 357 -> 38 per eye, frame 16,87 -> 16,49 ms.
+
+**Why it bought so little.** The arithmetic that justified this ("~2244
+quads -> 4, the big prize") assumed cost tracks quad count. It does not, and
+neither does it track pixels -- both models died to measurements taken after
+this was written. What the frame was actually spending its time on was the
+BG3 haze pass, which no counter reached.
 
 - [ ] Decide what to do about animated palettes. MZM re-animates palettes
       constantly (lava, heat tint) and a palette change invalidates a
@@ -328,16 +567,33 @@ more than every BG layer put together) is now the better first target.
 - [ ] The BG3 haze path (`sHazeRT`) already does exactly this for one layer
       -- read it first, it is the working precedent.
 
-### C. Occlusion culling -- not started, and now lower priority
+### C. Occlusion culling -- premise DISPROVED, not the next thing
 
 Skip tiles fully covered by an opaque higher-priority tile.
 
+Promoted for a few hours on the reasoning that quads were no longer what
+cost, so removing PIXELS had to be the way. Then the `px/frame` column
+measured it and pixels are not what cost either: two eyes at pixel perfect
+cost 16,47 ms and two eyes scaled 16,49 for **2,9x the pixels**, and turning
+the haze off left MORE pixels in the frame for HALF the time.
+
+So this is back where it started -- an idea with no measurement behind it --
+and the fire room no longer needs it: 11,26 ms against a 16,675 budget.
+
+- [ ] **Do not start this without a room that misses the budget AND a
+      capture showing its frame time tracking `px/frame`.** Three cost models
+      in a row have now died this way.
 - [ ] Needs a coverage mask over the 32x21 screen cells walked
       front-to-back, plus a "tile is FULLY opaque" test (today's is "has any
       opaque pixel").
 - [ ] Must never cull what sits under an alpha-blended first-target layer.
-- [ ] Demoted below A and B: it removes quads (which is what matters) but
-      only where layers actually overlap, whereas A removes them everywhere.
+- [ ] The 16x16 block pass helps here rather than competing: a block is
+      already known-opaque or not as a unit, so coverage can be tested per
+      block instead of per tile.
+- [x] The BG3 haze pass, flagged here as worth looking at in the same breath,
+      turned out to BE the frame -- half of it -- and is dealt with above. It
+      was not fill: rippling it into a target cut 6,5 ms while leaving the
+      pixel count where it was.
 
 ### D. The second eye -- superseded, keep for reference
 
@@ -346,6 +602,17 @@ Skip tiles fully covered by an opaque higher-priority tile.
       cannot share a rasterisation, and the offsets differ per depth plane.
       A and B both fix it as a side effect by making the scene cheap enough
       to draw twice. Only revisit if both fail.
+- [ ] **Still the dominant term, and now for a different reason.** In the
+      fire room the second eye is the difference between 9,12 ms and 18,37
+      ms -- it doubles the frame. Step A made the scene six times cheaper in
+      quads and barely moved it, which says the second eye costs what it
+      costs because it draws the same PIXELS again, not because it submits
+      the same quads again. Anything that makes it cheap has to reduce
+      per-eye fill: step C, or a lower-cost target format.
+
+Note for whoever picks this up: the eyes are also where the scaled cost
+lands. Two eyes at 3:2 cost 2,3 ms more than two eyes at 1:1 on the same
+scene, for the same quads -- 2,25x the pixels.
 
 ## Open, unrelated to speed
 
@@ -369,7 +636,16 @@ Everything here is on hardware and by hand. The formats each recipe produces
 are documented in [3ds-debug-tools.md](3ds-debug-tools.md).
 
 **Speed** -- the only measurement that means anything, and the reason the
-rest of this document exists.
+rest of this document exists. Read a capture with:
+
+```sh
+python3 tools/perf_report.py <mzm-perf-NN.bin>
+```
+
+It groups the samples by the settings in force, drops the frames either side
+of each change, and prints GPU/CPU time, FPS, the quad census and -- from
+'MZP4' captures on -- the device pixels the frame's quads covered, which is
+the column that says whether cost tracks quads or pixels.
 
 One perf capture, standing still in the same room, cycling the settings:
 `captureFlags` records the display style, slider, overlay, bezel, FX grade
@@ -422,5 +698,6 @@ is all it should be relied on for today.
 | Perf / scene recorders, file rotation | `platform/3ds/source/platform_gpu_3ds.c`, `port/port_debug_files.c` |
 | Reference renderer (host) | `platform/3ds/tests/rec_render.c` |
 | Comparison harness | `tools/compare_render.py` |
+| Perf capture reader | `tools/perf_report.py` |
 | Depth assignment unit tests | `platform/3ds/tests/stereo_depth_test.c` |
 | OAM census unit tests | `platform/3ds/tests/oam_census_test.c` |
