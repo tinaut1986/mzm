@@ -232,6 +232,31 @@ def load_u_array(name):
     return [int(m) for m in re.findall(r"(\d+)u", text)]
 
 
+def load_u_array_at(*parts):
+    """Same flat `123u,` list, from an arbitrary include/extracted path."""
+    path = os.path.join(ROOT, "include", "extracted", *parts)
+    text = open(path, encoding="utf-8").read()
+    return [int(m) for m in re.findall(r"(\d+)u", text)]
+
+
+def anim_tank_gfx():
+    """The four collectable-tank icons (Energy / Missile / Super Missile /
+    Power Bomb) are ANIMATED tiles: their pixels are DMA'd into the BG1 char
+    base at runtime (AnimatedGraphicsTanksAnimationUpdate, src/animated_
+    graphics.c), so they are absent from every tileset's static gfx and the
+    map view drew garbage where a tank sits. sAnimatedTankGfx is 4 types x 4
+    frames x one 4bpp 16x16 metatile (4 tiles = 0x80 bytes). We ship frame 0
+    of each type -- 4 types x 0x80 = 0x200 bytes -- and the viewer splices it
+    in at the tile indices the tileset's tank blocks (72..75) reference,
+    which are 65.. onward in BG1 char space (ANIMATED_GFX_TANK_VRAM_POS). """
+    raw = bytes(load_u_array_at("data", "animated_tiles", "tanks.gfx.inc"))
+    frame_bytes = 0x80
+    frames_per_type = 4
+    stride = frame_bytes * frames_per_type
+    out = b"".join(raw[t * stride: t * stride + frame_bytes] for t in range(4))
+    return out.hex()
+
+
 def common_tiles():
     """RoomLoadTileset (src/room.c:315) carga los tiles comunes en VRAM 0x4800
     -- índices 64..191 para BG1, cuyo char base es 0x4000 -- y su paleta en los
@@ -413,6 +438,9 @@ def main():
 
     bundle["common"] = common_tiles()
     print("tiles comunes: %d juegos" % len(bundle["common"]))
+
+    bundle["animTank"] = anim_tank_gfx()
+    print("gfx de tanques animados: %d bytes" % (len(bundle["animTank"]) // 2))
 
     bundle["minimap"] = minimaps()
     print("minimapas: %d áreas de 32x32" % len(bundle["minimap"]["areas"]))
