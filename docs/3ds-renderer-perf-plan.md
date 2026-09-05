@@ -6,29 +6,35 @@ to. Tick items as they land; add new ones as they come up. Everything under
 argument -- and everything under **Dead ends** was believed and then
 disproved, so please read that section before proposing a fix.
 
-> **Status 2026-09-05 (night). Step A shipped in v0.4.5. The quad model is
-> dead. Step B is built but unmeasured, and step C is probably next.**
+> **Status 2026-09-05. The fire room now fits the budget. The bottleneck was
+> the BG3 haze pass, and it was never quads and never fill.**
 >
-> Where things actually stand, newest first:
+> Where things stand, newest first:
 >
+> - **The haze was half the frame, and is fixed.** 17,77 -> 11,26 ms in the
+>   room that could not hold 60, by rippling once into a target and giving
+>   each eye a single quad instead of 160 per-scanline strips. Comfortably
+>   inside the 16,675 ms budget with two eyes, scaled, slider up. Default.
 > - **Step A works and is released.** One quad per 16x16 block took BG quads
->   from ~2244 to ~370 per eye and the fire room from 45 to 60 FPS on a
->   New3DS. Merged into `release/v0.4.5`, tagged, and the release branch
->   renamed to `release/v0.4.6`.
+>   from ~2244 to ~370 per eye and the same room from 45 to 60 FPS with the
+>   slider down. In `release/v0.4.6`, tagged v0.4.5.
 > - **It also had a real correctness bug, now fixed**, which is why the two
 >   renderers disagreed whenever the display was scaled -- see the UV entry
->   under **Open on hardware**. Worth reading before touching subtexture
->   coordinates again.
-> - **Quad count no longer explains frame time.** Six times fewer quads
->   bought 5% of the frame. Every plan in this document that is justified by
->   "this removes N quads" has to be re-argued from a measurement, step B
->   included. See **The fire room**.
-> - **Step B is implemented and OFF by default** (`CACHE CAPAS`), and has
->   never run on a console. Its premise is the quad model, so measure it
->   before believing it.
-> - **The frame is plausibly fill-bound**, which would make step C -- the one
->   item here that removes pixels rather than quads -- the way forward. The
->   'MZP4' perf column added for exactly this question is unread.
+>   under **Open on hardware**. Read it before touching subtexture UVs again.
+> - **Step B is measured and stays OFF.** 2% in its best case, and never
+>   exercised while scrolling or with animated tiles. See **What is on by
+>   default**.
+> - **Neither quads nor pixels explain frame time.** Six times fewer quads
+>   bought 5%; 2,9x the pixels cost nothing measurable. Both models are dead,
+>   and step C rested on the second one -- so it is back to unproven rather
+>   than "probably next". Any plan justified by "this removes N quads" or
+>   "N pixels" needs its own measurement first.
+> - **The lesson worth keeping**: three cost models in a row survived
+>   argument and died to a runtime toggle. Every big cost so far -- the haze,
+>   the colour overlay, the bezel -- was invisible to `drawCount`,
+>   `bgItems` and `drawnPixels`, which count only the scene's own items. When
+>   something is unexplained, suspect a whole pass no counter reaches, and
+>   reach for a toggle rather than a theory.
 > - **The automated harness is PARKED**; test on hardware by hand. Two
 >   sessions went into running it unattended under Azahar and the plumbing
 >   all works, but everything it compared was wrong for reasons of its own.
@@ -215,10 +221,10 @@ restored 60. An absent-file open is an FS service round trip, and a debug
 feature nobody is using must not cost one per frame-group -- worth
 remembering before adding another poll to the main loop.
 
-Step A is therefore worth keeping and worth finishing. What it still needs
-is to look right (see the UV convention entry under **Open on hardware**)
-and to be checked in rooms with animated palettes, where per-block staleness
-has the most room to be wrong.
+Step A is therefore worth keeping. It has since been made to look right (see
+the UV convention entry under **Open on hardware**) and shipped in v0.4.5.
+What it still has not had is a room with ANIMATED PALETTES, where per-block
+staleness has the most room to be wrong -- that check is still owed.
 
 ## The fire room, with step A on (2026-09-05, New3DS, hardware)
 
@@ -492,16 +498,29 @@ will be.
       (`--replay`), not fresh dumps: `mzm-rec-01.bin` is on the card as the
       corpus. Animated-palette rooms are where a hole in the per-block
       staleness check would show, as frozen or mis-coloured tiles.
-- [ ] **Measure the win.** Expect `bgItems` ~2244 -> ~700 per eye and 2-eye
-      GPU 17,75 -> ~5-6 ms. If it lands, 60 FPS with the slider up.
+- [x] **Measured.** `bgItems` ~2244 -> ~370 per eye, better than the /4 this
+      was designed for. 45 -> 60 FPS with the slider down. The predicted
+      2-eye GPU of 5-6 ms did NOT arrive, and chasing why is what eventually
+      found the haze -- the quad model the prediction came from was wrong.
 - [ ] Consider 32x32 blocks once 16x16 is proven (a further /4 on the
       interior, at 16x the cache-key space and coarser invalidation).
 
-### B. Cache whole scrolling layers in render targets -- built, UNMEASURED
+### B. Cache whole scrolling layers in render targets -- built, measured, OFF
 
 Implemented 2026-09-05 and **off by default** (`CACHE CAPAS` in the debug
-tools menu). It has never run on a console: it was written in a session with
-no hardware to hand, so treat everything below as intent, not result.
+tools menu). Measured on hardware: it does exactly what it was built to do
+and it is not worth switching on.
+
+Standing still -- its best possible case, 0 composes, reused every frame --
+BG quads fall from 357 to 38 per eye and the frame moves 16,87 -> 16,49 ms.
+**Two percent.** The premise was that cost tracks quad count, and it does
+not; see **The fire room** and **Step B measured**.
+
+It stays off rather than being deleted: it is correct, it is cheap when
+unused, and if a future change makes quad count matter again it is already
+written. What it has never been is exercised while SCROLLING, where it
+actually composes, or in a room with animated tiles, where its invalidation
+has work to do -- so do not turn it on without measuring those two first.
 
 How it works. A text BG layer's tiles are homogeneous in everything the draw
 order cares about -- sort key, stereo tier, blend mode, window visibility are
@@ -526,22 +545,15 @@ instead of forcing a re-compose, so a layer survives up to 8 px of scrolling.
       sample what was just rendered. The haze pass avoids this by double
       buffering and sampling last frame's result; a layer cache cannot, since
       it re-composes precisely because the content changed.
-- [ ] **Measure it.** `rendererFlags` bits 12-14 now carry how many layers
-      were composed and whether the cache was on at all, so a perf capture
-      says whether the cache is actually being reused or thrashing.
+- [x] **Measured.** `rendererFlags` bits 12-15 carry the compose count and
+      whether the cache was on, and a capture said: 0 composes standing
+      still, quads 357 -> 38 per eye, frame 16,87 -> 16,49 ms.
 
-**Manage expectations.** The arithmetic that originally justified this
-("~2244 quads -> 4, the big prize") assumed cost tracks quad count, and the
-fire-room capture shows it no longer does: six times fewer quads bought 5%
-of the frame. What that capture IS consistent with is cost tracking PIXELS
--- the scaled case costs 2,3 ms more than pixel perfect for the same scene,
-and two eyes cost twice one. If the frame is fill-bound then this change
-cannot help, because a cached layer draws the same pixels and in fact draws
-them twice on the frames it composes. Measure before believing either way.
-
-If it turns out to be fill, the plan should turn to **step C** (occlusion
-culling), which is the only item here that removes pixels rather than
-quads, and which this document demoted on the strength of the quad model.
+**Why it bought so little.** The arithmetic that justified this ("~2244
+quads -> 4, the big prize") assumed cost tracks quad count. It does not, and
+neither does it track pixels -- both models died to measurements taken after
+this was written. What the frame was actually spending its time on was the
+BG3 haze pass, which no counter reached.
 
 - [ ] Decide what to do about animated palettes. MZM re-animates palettes
       constantly (lava, heat tint) and a palette change invalidates a
@@ -555,21 +567,22 @@ quads, and which this document demoted on the strength of the quad model.
 - [ ] The BG3 haze path (`sHazeRT`) already does exactly this for one layer
       -- read it first, it is the working precedent.
 
-### C. Occlusion culling -- PROMOTED, probably the next thing to do
+### C. Occlusion culling -- premise DISPROVED, not the next thing
 
 Skip tiles fully covered by an opaque higher-priority tile.
 
-This was demoted "below A and B" on the reasoning that it removes quads only
-where layers overlap, whereas A removes them everywhere -- back when removing
-quads was the point. After step A that reasoning inverts: quads are no longer
-what costs, and this is the only item in the plan that removes **pixels**.
-The fire room draws four BG layers plus OBJ over the same 240x160, so the
-overdraw it would cut is most of the frame's fill.
+Promoted for a few hours on the reasoning that quads were no longer what
+cost, so removing PIXELS had to be the way. Then the `px/frame` column
+measured it and pixels are not what cost either: two eyes at pixel perfect
+cost 16,47 ms and two eyes scaled 16,49 for **2,9x the pixels**, and turning
+the haze off left MORE pixels in the frame for HALF the time.
 
-- [ ] **Confirm the premise first.** A capture with the 'MZP4' `px/frame`
-      column, on the fire room, at both display styles and both slider
-      positions. If frame time tracks that column, this is the work; if it
-      tracks quads after all, step B is.
+So this is back where it started -- an idea with no measurement behind it --
+and the fire room no longer needs it: 11,26 ms against a 16,675 budget.
+
+- [ ] **Do not start this without a room that misses the budget AND a
+      capture showing its frame time tracking `px/frame`.** Three cost models
+      in a row have now died this way.
 - [ ] Needs a coverage mask over the 32x21 screen cells walked
       front-to-back, plus a "tile is FULLY opaque" test (today's is "has any
       opaque pixel").
@@ -577,9 +590,10 @@ overdraw it would cut is most of the frame's fill.
 - [ ] The 16x16 block pass helps here rather than competing: a block is
       already known-opaque or not as a unit, so coverage can be tested per
       block instead of per tile.
-- [ ] Consider the BG3 haze pass in the same breath. It renders 640-660
-      tiles into an offscreen target every frame in that room -- nearly twice
-      the BG quad count, and every one of those is fill nobody has looked at.
+- [x] The BG3 haze pass, flagged here as worth looking at in the same breath,
+      turned out to BE the frame -- half of it -- and is dealt with above. It
+      was not fill: rippling it into a target cut 6,5 ms while leaving the
+      pixel count where it was.
 
 ### D. The second eye -- superseded, keep for reference
 
