@@ -282,6 +282,29 @@ static int16_t sHazeBakeHofs;
 static Tex3DS_SubTexture sHazeStripSubtex; /* mutated per strip by HazeBlitStrips */
 typedef struct { C2D_Image img; float x, y; } HazeTile;
 
+/* ---- Haze mode 3: ripple once into a target, blit one quad per eye ------
+ *
+ * The per-scanline blit is 6 ms of the frame -- measured 2026-09-05 by
+ * splitting the pass three ways: composing the 640-660 tiles is only 1,27 ms
+ * of it, and the rest is the 160 strips, drawn TWICE because each eye blits
+ * them itself.
+ *
+ * So do the ripple once, offscreen, and give each eye a single quad. Two
+ * things get smaller at once: the strip count halves (160 per frame instead
+ * of 160 per eye), and each strip shrinks from 240x1 GBA pixels scaled onto
+ * the screen (360x1,5 at 3:2) to 240x1 in a 256x256 target.
+ *
+ * Written and sampled in the same frame, so it needs C3D_FrameSplit -- the
+ * double-buffering trick the compose uses is not available here without
+ * putting the ripple a frame behind the scene it belongs to. That sync is
+ * the risk in this change, and the reason it is a MODE rather than the
+ * default: if the split costs more than the strips saved, the numbers will
+ * say so. */
+static C3D_Tex sHazeRippleTex;
+static C3D_RenderTarget* sHazeRippleRT;
+static bool sHazeRippleReady;
+static Tex3DS_SubTexture sHazeRippleSubtex;
+
 /* ---- Step B: cache a whole scrolling BG layer in a render target -------
  *
  * A text BG layer's tiles are homogeneous in everything the draw order
@@ -339,6 +362,45 @@ static LayerKey sLayerKey[4];
 static bool sLayerCacheEnabled;
 void Port_GpuRenderer_SetLayerCache(bool on) { sLayerCacheEnabled = on; }
 bool Port_GpuRenderer_LayerCacheEnabled(void) { return sLayerCacheEnabled; }
+
+/* The BG3 haze pass (issue #29) is the largest thing in a frame that no
+ * counter reaches: 640-660 tiles into an offscreen target once per frame,
+ * plus ONE QUAD PER SCANLINE -- 160 per eye -- to blit it back with the
+ * per-row ripple. Neither shows up in drawCount or drawnPixels.
+ *
+ * Every cost model this renderer has been optimised against has turned out
+ * wrong when finally measured, and each time it was a runtime toggle that
+ * settled it. So: a toggle. Off, BG3 falls back to the ordinary per-tile
+ * path -- it loses the ripple, which is the point of the pass, so this is a
+ * measurement aid and not a setting anyone should play with.
+ *
+ * Measured 2026-09-05: the pass is 8,45 ms of a 16,91 ms frame -- HALF the
+ * frame -- and turning it off leaves MORE quads and MORE pixels behind it,
+ * so it is not paying for either. Three states, because the 8,45 has two
+ * halves and the fix differs completely depending on which one it is:
+ *
+ *   FULL     compose 640-660 tiles into the offscreen target, then blit.
+ *   NOCOMPOSE  skip the compose, blit whatever the target already holds.
+ *              Stale by design -- BG3 freezes -- but it isolates the blit's
+ *              160 quads per eye from the compose's 660.
+ *   OFF      BG3 back to the ordinary per-tile path, no ripple.
+ *
+ * If NOCOMPOSE recovers most of the time, the fix is to stop re-composing a
+ * target whose BG3 has not changed, which is what the layer cache already
+ * does for BG0-2. If it does not, the per-scanline blit is the problem and
+ * needs a different answer. */
+typedef enum { HAZE_FULL = 0, HAZE_NOCOMPOSE, HAZE_OFF, HAZE_RIPPLE_RT, HAZE_MODE_COUNT } HazeMode;
+/* RT by default: measured 17,77 -> 11,26 ms on the same scene, same quads,
+ * same pixels. The other modes stay for measuring against, and RT falls back
+ * to FULL by itself if its target could not be allocated. */
+static int sHazeMode = HAZE_RIPPLE_RT;
+void Port_GpuRenderer_CycleHazeMode(void) { sHazeMode = (sHazeMode + 1) % HAZE_MODE_COUNT; }
+/* Whether the rippled-target path is the one actually running, as opposed to
+ * merely selected -- it needs its VRAM target. */
+bool Port_GpuRenderer_HazeRippleActive(void) {
+    return sHazeMode == HAZE_RIPPLE_RT && sHazeRippleReady;
+}
+int Port_GpuRenderer_HazeMode(void) { return sHazeMode; }
 
 /* While >= 0, BG pushes are captured into that layer's compose list instead
  * of going straight into the frame's draw items. */
@@ -789,6 +851,17 @@ bool Port_GpuRenderer_Init(void) {
         C3D_TexSetWrap(&sHazeTex[b], GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
         sHazeRT[b] = C3D_RenderTargetCreateFromTex(&sHazeTex[b], GPU_TEXFACE_2D, 0, -1);
         if (!sHazeRT[b]) { C3D_TexDelete(&sHazeTex[b]); sHazeRtReady = false; break; }
+    }
+
+    /* Mode 3's rippled target -- see sHazeRippleTex. Optional: without it
+     * that mode simply behaves like HAZE_FULL. */
+    sHazeRippleReady = false;
+    if (C3D_TexInitVRAM(&sHazeRippleTex, HAZE_RT_DIM, HAZE_RT_DIM, GPU_RGBA8)) {
+        C3D_TexSetFilter(&sHazeRippleTex, GPU_NEAREST, GPU_NEAREST);
+        C3D_TexSetWrap(&sHazeRippleTex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
+        sHazeRippleRT = C3D_RenderTargetCreateFromTex(&sHazeRippleTex, GPU_TEXFACE_2D, 0, -1);
+        if (sHazeRippleRT) sHazeRippleReady = true;
+        else C3D_TexDelete(&sHazeRippleTex);
     }
 
     /* Step B's per-layer targets. VRAM, like the haze pair: 4 x 256KB. A
@@ -1838,6 +1911,59 @@ static void CollectHazeBg3(void) {
  * scrolls independently -- the wobble the HBlank DMA produces on hardware.
  * Called first in the per-eye pass
  * (BG3 is backmost), opaque. */
+/* Mode 3: the same 160 strips, but into a 256x256 target at 1:1 instead of
+ * onto the screen at display scale, once per frame instead of once per eye.
+ * The eyes then each draw HazeBlitRippled's single quad. */
+static void HazeRippleIntoTarget(int buf, const int16_t* rowDelta) {
+    C2D_SceneBegin(sHazeRippleRT);
+    C3D_RenderTargetClear(sHazeRippleRT, C3D_CLEAR_COLOR, 0, 0);
+    C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_ALL);
+    C3D_AlphaTest(true, GPU_GREATER, 0);
+    C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
+    ConfigurePlainTextureEnv();
+
+    C2D_Image img = { &sHazeTex[buf], &sHazeStripSubtex };
+    bool reasserted = false;
+    for (int y = 0; y < 160; ++y) {
+        int delta = (int)rowDelta[y];
+        if (delta < -HAZE_MARGIN) delta = -HAZE_MARGIN;
+        else if (delta > HAZE_MARGIN) delta = HAZE_MARGIN;
+
+        sHazeStripSubtex.width = 240;
+        sHazeStripSubtex.height = 1;
+        sHazeStripSubtex.left = (float)(HAZE_MARGIN + delta) / (float)HAZE_RT_DIM;
+        sHazeStripSubtex.right = (float)(HAZE_MARGIN + delta + 240) / (float)HAZE_RT_DIM;
+        sHazeStripSubtex.top = 1.0f - (float)y / (float)HAZE_RT_DIM;
+        sHazeStripSubtex.bottom = 1.0f - (float)(y + 1) / (float)HAZE_RT_DIM;
+        C2D_DrawParams p = { { 0.0f, (float)y, 240.0f, 1.0f }, { 0.0f, 0.0f }, 0.0f, 0.0f };
+        C2D_DrawImage(img, &p, NULL);
+        if (!reasserted) { ConfigurePlainTextureEnv(); reasserted = true; }
+    }
+    C2D_Flush();
+}
+
+/* Mode 3's per-eye half: one quad. Same shifted-full-span UV convention as
+ * everything else that samples a target (see ATLAS_UV_TIE_SHIFT). */
+static void HazeBlitRippled(float baseX, float baseY, float scaleX, float scaleY) {
+    C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
+    ConfigurePlainTextureEnv();
+    const float inv = 1.0f / (float)HAZE_RT_DIM;
+    const float sh = ATLAS_UV_TIE_SHIFT;
+    sHazeRippleSubtex = (Tex3DS_SubTexture){
+        .width = 240, .height = 160,
+        .left = sh * inv,
+        .top = 1.0f - sh * inv,
+        .right = (240.0f + sh) * inv,
+        .bottom = 1.0f - (160.0f + sh) * inv,
+    };
+    C2D_Image img = { &sHazeRippleTex, &sHazeRippleSubtex };
+    C2D_DrawParams p = { { baseX, baseY, 240.0f * scaleX, 160.0f * scaleY }, { 0.0f, 0.0f }, 0.5f, 0.0f };
+    C2D_DrawImage(img, &p, NULL);
+    ConfigurePlainTextureEnv(); /* citro2d re-inits on a scene's first draw */
+    C2D_Flush();
+    ConfigureAtlasTextureEnv(); /* restore for the BG0-2 / OBJ pass that follows */
+}
+
 static void HazeBlitStrips(int buf, float baseX, float baseY, float scaleX, float scaleY,
                            const int16_t *rowDelta) {
     C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
@@ -2663,7 +2789,7 @@ void Port_GpuRenderer_RenderFrame(void) {
      * BG3 for the offscreen strip pass and keep it out of the normal
      * back-to-front list. Windowed / power-bomb-flash frames fall through to
      * the flat path (kept simple: those never coincide with a ripple room). */
-    sHazeActive = sHazeRtReady && (dispcnt & (1u << 11)) && !sWindowActive && !sPbFlashActive &&
+    sHazeActive = (sHazeMode != HAZE_OFF) && sHazeRtReady && (dispcnt & (1u << 11)) && !sWindowActive && !sPbFlashActive &&
                   PortHaze_Bg3RowScroll(sHazeRowDelta, &sHazeBakeHofs);
     if (sHazeActive) CollectHazeBg3();
 
@@ -2874,7 +3000,7 @@ void Port_GpuRenderer_RenderFrame(void) {
      * render-to-texture race, and both eyes read the same complete buffer.
      * The buffers flip at the end of the frame. */
     const int sHazeBack = sHazeCur ^ 1;
-    if (sHazeActive) {
+    if (sHazeActive && sHazeMode != HAZE_NOCOMPOSE) {
         C2D_SceneBegin(sHazeRT[sHazeBack]);
         /* C3D_CLEAR_COLOR only -- no depth buffer on these targets. */
         C3D_RenderTargetClear(sHazeRT[sHazeBack], C3D_CLEAR_COLOR, 0, 0);
@@ -2894,6 +3020,18 @@ void Port_GpuRenderer_RenderFrame(void) {
         C2D_Flush();
         memcpy(sHazeBakedRowDelta[sHazeBack], sHazeRowDelta, sizeof(sHazeBakedRowDelta[sHazeBack]));
         sHazeBufReady[sHazeBack] = true;
+    }
+
+    /* Mode 3: ripple once into a target here, so each eye below draws one
+     * quad instead of 160 strips. Samples the FRONT compose buffer, which
+     * was finished last frame, exactly as the eye passes do -- so this adds
+     * no lag of its own beyond the one the compose already has. */
+    const bool hazeRippleRT = sHazeActive && sHazeMode == HAZE_RIPPLE_RT &&
+                              sHazeRippleReady && sHazeBufReady[sHazeCur];
+    if (hazeRippleRT) {
+        HazeRippleIntoTarget(sHazeCur, sHazeBakedRowDelta[sHazeCur]);
+        /* Written and sampled inside one frame -- see sHazeRippleTex. */
+        C3D_FrameSplit(0);
     }
 
     /* Step B: compose the layers whose cache went stale. Cleared to fully
@@ -2990,8 +3128,12 @@ void Port_GpuRenderer_RenderFrame(void) {
         if (sHazeActive && sHazeBufReady[sHazeCur]) {
             float eyeOffBg3 = floorf(eyeSign * slider3d *
                                      PortStereoDepth_TierPx(PortStereoDepth_BgTier(&sDepthState, 3)) + 0.5f);
-            HazeBlitStrips(sHazeCur, screenBaseX + eyeOffBg3, screenBaseY, scaleX, scaleY,
-                           sHazeBakedRowDelta[sHazeCur]);
+            if (hazeRippleRT) {
+                HazeBlitRippled(screenBaseX + eyeOffBg3, screenBaseY, scaleX, scaleY);
+            } else {
+                HazeBlitStrips(sHazeCur, screenBaseX + eyeOffBg3, screenBaseY, scaleX, scaleY,
+                               sHazeBakedRowDelta[sHazeCur]);
+            }
         }
 
         /* Single pass over sDrawOrder (true back-to-front GBA priority
@@ -3246,7 +3388,7 @@ void Port_GpuRenderer_RenderFrame(void) {
     /* Issue #29: flip the haze buffers -- the back buffer we just rendered
      * becomes next frame's read buffer, by which point C3D_FrameEnd has
      * flushed it. */
-    if (sHazeActive) sHazeCur = sHazeBack;
+    if (sHazeActive && sHazeMode != HAZE_NOCOMPOSE) sHazeCur = sHazeBack;
 
     u64 tEnd = svcGetSystemTick();
     sLastDrawMs = (float)((double)(tEnd - tAfterCollect) / PORT_GPU_RENDERER_CPU_TICKS_PER_MSEC);
@@ -3315,6 +3457,7 @@ void Port_GpuRenderer_GetLastFrameDrawStats(PortGpuRendererDrawStats* out) {
     out->scissorPasses = sWindowActive ? 2u : 1u;
     out->windowActive = sWindowActive;
     out->hazeActive = sHazeActive;
+    out->hazeMode = (uint8_t)sHazeMode;
 }
 
 /* Issue #17 diagnosis: dumps the atlas texture verbatim (PPM, RGB8, no

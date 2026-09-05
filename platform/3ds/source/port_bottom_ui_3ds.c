@@ -194,6 +194,8 @@ extern void Port_GpuRenderer_SetBlockPass(bool on);
 extern bool Port_GpuRenderer_BlockPassEnabled(void);
 extern void Port_GpuRenderer_SetLayerCache(bool on);
 extern bool Port_GpuRenderer_LayerCacheEnabled(void);
+extern void Port_GpuRenderer_CycleHazeMode(void);
+extern int Port_GpuRenderer_HazeMode(void);
 extern void Port_DebugLog(const char* msg);
 extern bool Port_DebugLog_IsEnabled(void);
 extern void Port_DebugLog_SetBuffered(bool buffered);
@@ -3900,11 +3902,20 @@ static void RenderDebugToolsModal(int lang) {
         DrawDebugCell(12, (lang == 6) ? "BLOQUES 16x16" : "16x16 BLOCKS",
                       blocks ? onTxt : offTxt,
                       blocks ? C2D_Color32(120, 230, 140, 255) : C2D_Color32(150, 170, 200, 255));
-        /* Step B. Off by default -- see Port_GpuRenderer_SetLayerCache. */
+        /* Two renderer experiments share this cell, because the grid has no
+         * room for a fifteenth two-line row without running into the status
+         * line and the CLOSE button (see DBGTOOL_GRID_ROWS). Tapping the
+         * cell toggles the layer cache; tapping its right edge toggles the
+         * BG3 haze pass. */
         const bool layers = Port_GpuRenderer_LayerCacheEnabled();
-        DrawDebugCell(13, (lang == 6) ? "CACHE CAPAS" : "LAYER CACHE",
-                      layers ? onTxt : offTxt,
-                      layers ? C2D_Color32(120, 230, 140, 255) : C2D_Color32(150, 170, 200, 255));
+        static const char* const hazeTxt[4] = { "ON", "NOCOMP", "OFF", "RT" };
+        const int haze = Port_GpuRenderer_HazeMode();
+        char expTxt[28];
+        snprintf(expTxt, sizeof(expTxt), "CAPAS %s HAZE %s",
+                 layers ? "ON" : "--", hazeTxt[haze & 3]);
+        DrawDebugCell(13, (lang == 6) ? "CAPAS / HAZE" : "LAYERS / HAZE", expTxt,
+                      (layers || haze) ? C2D_Color32(230, 200, 120, 255)
+                                       : C2D_Color32(150, 170, 200, 255));
     }
 #endif
 
@@ -3965,9 +3976,16 @@ static bool HandleDebugToolsModalTouch(int x, int y) {
         return true;
     }
     if (cell == 13) {
-        const bool on = !Port_GpuRenderer_LayerCacheEnabled();
-        Port_GpuRenderer_SetLayerCache(on);
-        DebugToolsSetMsg(on ? "CACHE CAPAS: ON" : "CACHE CAPAS: OFF");
+        if (DebugCellRightZoneHit(x, 13)) {
+            static const char* const msg[4] = { "HAZE: COMPLETA", "HAZE: SIN COMPONER",
+                                                "HAZE: APAGADA", "HAZE: A TARGET (RT)" };
+            Port_GpuRenderer_CycleHazeMode();
+            DebugToolsSetMsg(msg[Port_GpuRenderer_HazeMode() & 3]);
+        } else {
+            const bool on = !Port_GpuRenderer_LayerCacheEnabled();
+            Port_GpuRenderer_SetLayerCache(on);
+            DebugToolsSetMsg(on ? "CACHE CAPAS: ON" : "CACHE CAPAS: OFF");
+        }
         return true;
     }
 #endif

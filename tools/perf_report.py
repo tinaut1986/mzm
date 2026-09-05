@@ -33,6 +33,8 @@ ASPECT = {0: "3:2", 1: "3:2", 2: "stretch", 3: "?"}
 SETTLE = 30
 # A group smaller than this is a transition, not a condition.
 MIN_GROUP = 60
+# Port_GpuRenderer_HazeMode: full pass, blit without re-composing, off.
+HAZE_MODE = {0: "full", 1: "nocomp", 2: "off", 3: "rt"}
 
 
 def percentile(sorted_values, q):
@@ -67,17 +69,30 @@ def report(path):
         print("  empty")
         return
 
+    # The bezel and the GBA colour grade are in the key because they select
+    # two FULL-SCREEN PER-EYE passes that no other column here counts, and
+    # leaving them out silently merges conditions that differ by most of the
+    # frame -- which is exactly what happened to the first A/B capture.
     groups = {}
     for r in rows:
         cf = r["captureFlags"]
-        key = (cf & 3, (cf >> 2) & 3, (cf >> 4) & 0x7F, (cf >> 18) & 1)
+        rf = r["rendererFlags"]
+        # Everything that selects a WHOLE PASS belongs in the key, wherever
+        # it happens to be recorded. The bezel and the colour grade live in
+        # captureFlags; the haze pass and the layer cache live in
+        # rendererFlags. Leaving any of them out merges conditions that
+        # differ by a large part of the frame -- which has now happened twice
+        # to A/B captures taken specifically to separate them.
+        key = (cf & 3, (cf >> 2) & 3, (cf >> 4) & 0x7F, (cf >> 18) & 1,
+               (cf >> 13) & 1, (cf >> 14) & 7,
+               (rf >> 9) & 1, (rf >> 15) & 1, (rf >> 28) & 3)
         groups.setdefault(key, []).append(r)
 
     for key, group in sorted(groups.items(), key=lambda kv: -len(kv[1])):
         if len(group) < MIN_GROUP:
             continue
         group = group[SETTLE:-SETTLE]
-        style, aspect, slider, used_gpu = key
+        style, aspect, slider, used_gpu, bezel, grade, haze_on, cache_on, haze_mode = key
         flags = group[len(group) // 2]["rendererFlags"]
         gpu = sorted((r["gpuDrawX100"] + r["gpuProcX100"]) / 100.0 for r in group)
         cpu = sorted((r["cpuTileX100"] + r["cpuUploadX100"] + r["cpuDrawX100"]) / 100.0 for r in group)
@@ -85,15 +100,16 @@ def report(path):
         # Missing when the capture predates the column (see read()).
         avg = lambda k: (sum(r[k] for r in group) // len(group)) if k in group[0] else -1
 
-        print("  %-14s %-7s slider %3d%%  %s  n=%d" % (
+        print("  %-14s %-7s slider %3d%%  bezel %-3s  colour %d  haze %-3s  layers %-3s  n=%d" % (
             STYLE.get(style, style), ASPECT.get(aspect, aspect), slider,
-            "GPU renderer" if used_gpu else "CPU renderer", len(group)))
+            "on" if bezel else "off", grade,
+            HAZE_MODE[haze_mode] if haze_on else "OFF", "on" if cache_on else "off", len(group)))
         print("     GPU %5.2f ms (p90 %5.2f)   CPU %5.2f ms   FPS %5.1f (p10 %5.1f)   budget 16,675 ms" % (
             percentile(gpu, 0.5), percentile(gpu, 0.9), percentile(cpu, 0.5),
             percentile(fps, 0.5), percentile(fps, 0.1)))
         print("     eyes %d  scissor %d  window %d  haze %d (%d tiles)  layer-cache %s (%d composed)" % (
             (flags >> 10) & 3, flags & 0xFF, (flags >> 8) & 1, (flags >> 9) & 1,
-            (flags >> 16) & 0xFFFF, "on" if (flags >> 15) & 1 else "off", (flags >> 12) & 7))
+            (flags >> 16) & 0x0FFF, "on" if (flags >> 15) & 1 else "off", (flags >> 12) & 7))
         print("     quads: %d draws, %d BG + %d OBJ per eye, %d blend breaks   px/frame %d" % (
             avg("drawCount"), avg("bgItems"), avg("objItems"), avg("blendTransitions"),
             avg("drawnPixels")))

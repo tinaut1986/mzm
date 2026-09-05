@@ -256,6 +256,176 @@ So the room that still misses 60 (two eyes, scaled) spends its frame on a
 pass nobody has looked at. Read `sHazeRT` / `HazeBlitStrips` before
 collapsing BG layers.
 
+## Step B measured, and what it really showed (2026-09-05, hardware)
+
+`mzm-perf-01.bin`, fire room, standing still, cycling the settings:
+
+| eyes | style | slider | layer cache | BG quads/eye | draws | px/frame | GPU |
+|---|---|---|---|---|---|---|---|
+| 2 | scaled | 100% | **on** | 38 | 123 | 535 254 | 16,49 ms |
+| 2 | scaled | 70% | off | 357 | 763 | 276 624 | 16,87 ms |
+| 2 | pixel perfect | 100% | **on** | 183 | 415 | 185 571 | 16,47 ms |
+| 1 | scaled | 0% | off | 357 | 381 | 138 313 | 9,08 ms |
+| 1 | pixel perfect | 0% | off | 357 | 381 | 61 471 | 8,50 ms |
+
+**Step B does what it was built to do, and it does not matter.** The cache
+reports **0 composes** in every group -- standing still, it is reused every
+single frame, which is the best case it can ever have -- and BG quads fall
+from 357 to 38 per eye. Frame time moves from 16,87 to 16,49 ms. Two
+percent.
+
+**And it is not fill either.** Two eyes at pixel perfect cost 16,47 ms;
+two eyes scaled cost 16,49 ms for **2,9x the pixels**. Whatever the frame is
+spending its time on, it is not the pixels the scene's quads cover.
+
+So neither model survives. What the numbers DO fit is a cost that is
+constant per eye: ~8,5 ms for one, ~16,5 for two, near enough regardless of
+357 quads or 38, and regardless of 61 471 pixels or 535 254.
+
+**Two full-screen per-eye passes are missing from every counter**, and both
+were on for all of this:
+
+- **The GBA screen FX overlay** (`captureFlags` says grade 3 in 100% of
+  samples in both captures). `PortGbaScreenFx_PostProcessTop` draws one
+  alpha-blended quad over the whole 400x240 target PER EYE. That is a
+  read-modify-write of the framebuffer -- exactly the "massive memory
+  bandwidth" the renderer's own opaque pass sets ONE/ZERO to avoid.
+- **The GBA bezel** (`captureFlags` says on in 100% of samples).
+  `PortGbaBezel_Draw` per eye, another large overlay.
+
+The haze blit is a third: `HazeBlitStrips` draws **one quad per scanline,
+160 per eye**, and `drawCount` does not include them either.
+
+None of this appears in `drawCount`, `bgItems` or `drawnPixels`, which count
+only the scene's own items -- so every measurement in this document taken in
+this room has been measuring a frame whose majority may be presentation
+effects. The plan's own baseline conditions say to capture with the bezel and
+colour correction OFF, and these captures did not.
+
+### That A/B, run (2026-09-05, hardware)
+
+Same room and spot, two eyes, scaled 3:2, slider up, cycling the two:
+
+| bezel | GBA colour | GPU | FPS p10 |
+|---|---|---|---|
+| on | 3 | 17,85 ms | 30,0 |
+| off | 3 | 17,48 ms | 30,0 |
+| on | 0 | 16,44 ms | **59,1** |
+| off | 0 | 16,12 ms | 58,9 |
+
+So the guess above was wrong about the SIZE and right about the effect:
+
+- **The GBA colour overlay costs ~1,4 ms** (17,85 -> 16,44 with the bezel on,
+  17,48 -> 16,12 with it off; the two agree to 0,05 ms).
+- **The bezel costs ~0,35 ms.**
+- Together ~1,7 ms of a ~17,9 ms frame -- a tenth, not the majority.
+
+But a tenth is the whole margin here. Turning the colour overlay off takes
+the FPS floor from **30 to 59**: the frame is sitting just over the 16,675 ms
+line and 1,4 ms is the difference between clearing it and missing it by
+enough to drop a whole vblank.
+
+And note what is left. With both off it is still **16,12 ms** for a scene
+whose cost does not move with quads (357 vs 38) or pixels (2,9x). The
+unexplained majority is still unexplained.
+
+### The haze is half the frame (2026-09-05, hardware)
+
+Same room and spot, bezel and colour overlay off, layer cache on:
+
+| BG3 haze pass | GPU | draws | px/frame | FPS p10 |
+|---|---|---|---|---|
+| on | **16,91 ms** | 346 | 567 394 | 59,5 |
+| **off** | **8,46 ms** | 375 | 744 095 | 58,1 |
+
+**8,45 ms of a 16,91 ms frame.** Half. And the direction of everything else
+settles the argument for good: with the pass OFF the frame has MORE draws
+(375 vs 346) and MORE pixels (744k vs 567k) -- because BG3 goes back to the
+ordinary tile path -- and still costs half as much. The frame was never
+about quad count or fill; it was about this one pass.
+
+That is also why every earlier conclusion in this document came out
+sideways. `mzm-perf-08/09`, the captures the per-quad model was derived
+from, had haze inactive; every capture in this room has it active at 640-660
+tiles, and none of the counters see it.
+
+### And within the haze, it is the BLIT (2026-09-05, hardware)
+
+Same room, bezel and colour overlay off, cycling the three haze modes:
+
+| haze mode | GPU | draws | px/frame |
+|---|---|---|---|
+| full | **17,71 ms** | 887 | 320 451 |
+| nocomp (blit only) | **16,44 ms** | 909 | 323 709 |
+| off | **10,40 ms** | 1350 | 508 063 |
+
+- Composing the 640-660 tiles: **1,27 ms**.
+- The per-scanline blit: **~6 ms**, and that is a floor -- the *off* column
+  also puts BG3 back into the scene as ordinary tiles (542 BG quads per eye
+  against 322, and 188k more pixels) and still lands 6 ms lower.
+
+So the step-B-shaped fix -- stop re-composing a target that has not changed
+-- would have bought 1,27 ms. The money is in the 160 strips, and they are
+drawn TWICE, once per eye.
+
+**Mode 3 (`RT`) is the attempt at it**: ripple once into a 256x256 target,
+then give each eye a single quad. Two things shrink together -- 160 strips
+per FRAME instead of per eye, and each strip goes from 240x1 GBA pixels
+scaled onto the screen (360x1,5 at 3:2) to 240x1 at 1:1. It needs a
+`C3D_FrameSplit`, since the target is written and sampled in the same frame,
+and that sync is the risk: if it costs more than the strips saved, the
+numbers will say so. Hence a mode and not a default.
+
+**Measured, and it is the answer for this room:**
+
+| haze mode | GPU | draws | px/frame |
+|---|---|---|---|
+| full | 17,77 ms | 921 | 325 310 |
+| **RT** | **11,26 ms** | 956 | 330 461 |
+
+**6,51 ms**, on the same scene with the same quads and the same pixels. The
+`C3D_FrameSplit` did not eat it: the ripple went from ~7,3 ms to ~0,9 --
+within a millisecond of not drawing the pass at all (10,40 ms measured with
+it off, and that column also carries BG3 as ordinary tiles).
+
+11,26 ms is comfortably inside the 16,675 budget with two eyes, scaled, in
+the room that could not hold 60. **RT is now the default.** The other modes
+stay for measuring against, and RT falls back to the per-scanline blit by
+itself if its VRAM target could not be allocated.
+
+The one thing to watch: the strips now land in a 1:1 target and the whole
+target is scaled once, where before each 1-pixel strip was scaled to 1,5 px
+on screen with a `scaleY + 0.5f` fudge to avoid gaps. The vertical sampling
+is uniform now instead of every row rounding on its own, so the ripple should
+look the same or slightly cleaner -- reported from hardware as "a little
+different, but I think it looks right".
+
+**Superseded: the haze.** It is the largest thing in a frame that no counter
+reaches -- 640-660 tiles into an offscreen target once per frame, plus ONE
+QUAD PER SCANLINE, 160 per eye, to blit it back with the ripple. A toggle
+for it now exists (`CAPAS / HAZE`, right edge of the cell), on the same
+reasoning that has worked twice: every cost model this renderer has been
+optimised against turned out wrong when finally measured, and each time a
+runtime toggle settled it.
+
+## What is on by default, and what is not
+
+None of these are stored on the SD card and none are inside a debug guard:
+they are plain statics, so a production build runs exactly these values and
+cannot be talked out of them.
+
+| Switch | Default | Why |
+|---|---|---|
+| 16x16 block pass | **ON** | 45 -> 60 FPS measured; shipped in v0.4.5 |
+| BG3 haze mode | **RT** | 17,77 -> 11,26 ms measured |
+| Layer cache (step B) | **OFF** | 2% measured, and only ever tested standing still |
+
+The layer cache is deliberately off. It bought 16,87 -> 16,49 ms in its very
+best case -- standing still, reused every frame, 0 composes -- and it has
+never been exercised while scrolling, where it composes, nor in a room with
+animated tiles, where its invalidation actually has work to do. It is not
+worth carrying that risk for 2% until something measures it moving.
+
 ## Dead ends
 
 - **Alpha blending / batch breaking.** `BLDCNT` looked like it tracked the

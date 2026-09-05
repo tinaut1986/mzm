@@ -1052,7 +1052,13 @@ static uint32_t PackRendererFlags(const PortGpuRendererDrawStats* st) {
          | ((uint32_t)(st->eyesRendered & 3u) << 10)
          | ((uint32_t)(st->layerComposes & 7u) << 12)
          | ((uint32_t)(st->layerCacheOn ? 1u : 0u) << 15)
-         | ((uint32_t)(st->hazeTiles & 0xFFFFu) << 16);
+         /* hazeTiles is capped at HAZE_MAX_TILES (21*34 = 714), so 12 bits
+          * hold it with room to spare and bits 28-29 are free for the haze
+          * mode. Bits 0-15 are all spoken for; scissorPasses nominally owns
+          * the whole low byte and stays that way rather than being narrowed
+          * under a layout mzm-rec.bin's header word 14 also uses. */
+         | ((uint32_t)(st->hazeTiles & 0x0FFFu) << 16)
+         | ((uint32_t)(st->hazeMode & 3u) << 28);
 }
 
 /* ---- Perf-only frame-time recorder (issue #20) ----------------------

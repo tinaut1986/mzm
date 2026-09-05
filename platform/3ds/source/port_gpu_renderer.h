@@ -26,6 +26,12 @@ bool Port_GpuRenderer_BlockPassEnabled(void);
  * -- off by default, because whether it pays depends on the room. */
 void Port_GpuRenderer_SetLayerCache(bool on);
 bool Port_GpuRenderer_LayerCacheEnabled(void);
+/* BG3 ripple pass: 0 full, 1 blit without re-composing, 2 off. A measurement
+ * aid -- it is half the frame and the two halves need different fixes. See
+ * the definition. */
+void Port_GpuRenderer_CycleHazeMode(void);
+int Port_GpuRenderer_HazeMode(void);
+bool Port_GpuRenderer_HazeRippleActive(void);
 bool Port_GpuRenderer_IsActive(void);
 void Port_GpuRenderer_SetActive(bool active);
 /* Item counts from the most recently rendered GPU frame, for the debug
@@ -58,6 +64,7 @@ typedef struct {
     uint8_t scissorPasses;     /* 1, or 2 while a GBA window splits the draw order */
     bool windowActive;
     bool hazeActive;
+    uint8_t hazeMode;          /* 0 full, 1 blit-without-compose, 2 off */
 } PortGpuRendererDrawStats;
 void Port_GpuRenderer_GetLastFrameDrawStats(PortGpuRendererDrawStats* out);
 /* CPU time (ms) spent in the most recent Port_GpuRenderer_RenderFrame call:
