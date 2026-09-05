@@ -3,7 +3,7 @@
 /*
  * The one gate for every 3DS debug facility: the bottom screen's
  * DEBUG -> HERRAMIENTAS menu and the tools behind it (instant-kill, scene
- * recorder, perf recorder, one-shot fixture replay, live atlas dump,
+ * recorder, perf recorder, 16x16 block pass toggle, live atlas dump,
  * one-shot screen/state dump, USER MARK log line, room warp, equipment) AND
  * every throttled per-frame diagnostic log stream (GPUDIAG/GPUTIME/PBFLASH,
  * audio traces, PERF timing -- see docs/3ds-debug-tools.md).

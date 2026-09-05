@@ -190,6 +190,8 @@ extern void PortPpuMzm_DebugKillSamus(void);
 extern void Port_GpuRenderer_DumpAtlas(const char* ppmPath, const char* csvPath);
 extern bool Port_GpuRenderer_IsActive(void);
 extern void Port_GpuRenderer_SetActive(bool active);
+extern void Port_GpuRenderer_SetBlockPass(bool on);
+extern bool Port_GpuRenderer_BlockPassEnabled(void);
 extern void Port_DebugLog(const char* msg);
 extern bool Port_DebugLog_IsEnabled(void);
 extern void Port_DebugLog_SetBuffered(bool buffered);
@@ -3698,17 +3700,29 @@ static void RenderOptionsView(void) {
 #define DBGTOOL_COL_L_X   16
 #define DBGTOOL_COL_R_X   164
 #define DBGTOOL_COL_W     140
-#define DBGTOOL_GRID_Y0   46
-#define DBGTOOL_GRID_PITCH 26
-#define DBGTOOL_CELL_H    24
-#define DBGTOOL_GRID_ROWS 6
-/* Cell 11 (RENDERER GPU/CPU) only exists when the GPU tile renderer is
- * compiled in -- a RENDERER=cpu build has nothing to switch to. */
+#define DBGTOOL_GRID_Y0   40
+#define DBGTOOL_GRID_PITCH 23
+#define DBGTOOL_CELL_H    22
+/* Cell 11 (RENDERER GPU/CPU) and cell 12 (BLOQUES 16x16) only exist when the
+ * GPU tile renderer is compiled in -- a RENDERER=cpu build has nothing to
+ * switch to and no block pass to switch off. */
 #ifdef PORT_GPU_TILE_RENDERER
-#define DBGTOOL_COUNT     12
+#define DBGTOOL_COUNT     13
 #else
 #define DBGTOOL_COUNT     11
 #endif
+/* DERIVED, never hand-written. It used to be a literal 6, which was right
+ * for twelve tools and silently wrong for the thirteenth, which drew itself
+ * on row 6 -- on top of the status line and the CLOSE button --
+ * while DebugCellHit still stopped scanning at row 5, so the row was
+ * visible, overlapping, and untouchable. Deriving it means adding a tool
+ * moves the grid instead of falling off the end of it. */
+#define DBGTOOL_GRID_ROWS ((DBGTOOL_COUNT + 1) / 2)
+/* The grid has to clear the transient status line at y=204 (see
+ * RenderDebugToolsModal) and the CLOSE button at y=214. Checked here so a
+ * future tool that no longer fits fails the build rather than the touch. */
+_Static_assert(DBGTOOL_GRID_Y0 + (DBGTOOL_GRID_ROWS - 1) * DBGTOOL_GRID_PITCH + DBGTOOL_CELL_H <= 202,
+               "debug tools grid runs into the status line / CLOSE button");
 
 #define DBGTOOL_CELL_Y(r) ((float)(DBGTOOL_GRID_Y0 + (r) * DBGTOOL_GRID_PITCH))
 #define DBGTOOL_CELL_X(c) ((float)((c) == 0 ? DBGTOOL_COL_L_X : DBGTOOL_COL_R_X))
@@ -3721,9 +3735,9 @@ static void DrawDebugCell(int index, const char* label, const char* state, uint3
     float y = DBGTOOL_CELL_Y(index >> 1);
     C2D_DrawRectSolid(x, y, 0.9f, (float)DBGTOOL_COL_W, (float)DBGTOOL_CELL_H, C2D_Color32(24, 32, 50, 255));
     C2D_DrawRectSolid(x, y, 0.91f, (float)DBGTOOL_COL_W, 1.0f, C2D_Color32(50, 80, 130, 255));
-    DrawTextMaxWClipped(x + 6.0f, y + 2.0f, 1.0f, label, C2D_Color32(255, 255, 255, 255),
+    DrawTextMaxWClipped(x + 6.0f, y + 1.0f, 1.0f, label, C2D_Color32(255, 255, 255, 255),
                         0.0f, 240.0f, (float)DBGTOOL_COL_W - 12.0f);
-    if (state) DrawText(x + 6.0f, y + 13.0f, 1.0f, state, accent);
+    if (state) DrawText(x + 6.0f, y + 11.0f, 1.0f, state, accent);
 }
 
 /* The right ~48px of a cell is a start/stop side button (DebugCellRightZoneHit):
@@ -3874,6 +3888,17 @@ static void RenderDebugToolsModal(int lang) {
         DrawDebugCell(11, (lang == 6) ? "RENDERER" : "RENDERER",
                       gpuOn ? "GPU" : "CPU", gpuOn ? colAct : colOn);
     }
+    /* Step A (one quad per 16x16 tilemap-aligned block instead of four).
+     * A switch rather than a build flag because it is a PERFORMANCE change
+     * and the only place its cost can be read is a console: same scene, one
+     * press, compare the FPS overlay. Off falls through to the untouched
+     * per-tile loop. */
+    {
+        const bool blocks = Port_GpuRenderer_BlockPassEnabled();
+        DrawDebugCell(12, (lang == 6) ? "BLOQUES 16x16" : "16x16 BLOCKS",
+                      blocks ? onTxt : offTxt,
+                      blocks ? C2D_Color32(120, 230, 140, 255) : C2D_Color32(150, 170, 200, 255));
+    }
 #endif
 
     if (sDebugToolsMsg[0] && sFrameCounter < sDebugToolsMsgUntil) {
@@ -3925,6 +3950,14 @@ static bool HandleDebugToolsModalTouch(int x, int y) {
                          : (last && last[0]) ? last : "REC OFF");
         return true;
     }
+#ifdef PORT_GPU_TILE_RENDERER
+    if (cell == 12) {
+        const bool on = !Port_GpuRenderer_BlockPassEnabled();
+        Port_GpuRenderer_SetBlockPass(on);
+        DebugToolsSetMsg(on ? "BLOQUES 16x16: ON" : "BLOQUES 16x16: OFF");
+        return true;
+    }
+#endif
     if (cell == 9 && DebugCellRightZoneHit(x, 9)) {
         /* Side button: start/stop logging on the selected stream. */
         if (Port_DebugLog_IsEnabled()) {

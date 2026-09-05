@@ -129,6 +129,15 @@ static void ImagoSyncSubSprites(void)
     MultiSpriteDataInfo_T pData;
     u16 oamidx;
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+    /* An Init path can return without ever assigning pMultiOam, and
+     * this runs anyway. Address 0 is the BIOS on GBA -- a junk read, no
+     * fault -- but an unmapped page on the 3DS, so it is a data abort.
+     * Confirmed on hardware five times over (Luma arm11 dumps 48-52),
+     * each one reached by warping into a boss room. */
+    if (gSubSpriteData1.pMultiOam == NULL)
+        return;
+#endif
     pData = gSubSpriteData1.pMultiOam[gSubSpriteData1.currentAnimationFrame].pData;
 #if defined(MZM_3DS) || defined(PORT_NATIVE)
     pData = GBA_RESOLVE(pData);
@@ -1514,8 +1523,17 @@ void Imago(void)
         else
             ImagoCoreFlashingAnim();
 
-        SpriteUtilUpdateSubSprite1Anim();
-        ImagoSyncSubSprites();
+        /* See ImagoCocoon's tail (and Luma arm11 dumps 50/51):
+         * ImagoSyncSubSprites dereferences gSubSpriteData1.pMultiOam, which
+         * an Init path may never have assigned. Nested in a block here, so
+         * the two calls are skipped rather than returning. */
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+        if (gSubSpriteData1.pMultiOam != NULL)
+#endif
+        {
+            SpriteUtilUpdateSubSprite1Anim();
+            ImagoSyncSubSprites();
+        }
     }
 }
 
