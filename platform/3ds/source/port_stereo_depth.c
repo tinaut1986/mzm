@@ -121,6 +121,13 @@ float PortStereoDepth_TierPxFor(int spread, int tier) {
 }
 
 int PortStereoDepth_BgTier(const PortStereoDepthState* st, int bgIndex) {
+    /* Flat two-plane mode (file select, credits): a BG at or above the
+     * backdrop priority is the backdrop -> BG_FAR; everything else is the
+     * content layer -> BG_PLAY, coplanar with the sprites. */
+    if (st->flatMenu)
+        return (st->priority[bgIndex] >= st->flatMenuBackdropPrio)
+                   ? PORT_TIER_BG_FAR
+                   : PORT_TIER_BG_PLAY;
     /* BG0 gets the pop-forward overlay tier ONLY where it genuinely is the
      * text/dialog/pause-map layer (bg0IsOverlayText). Two ways this used to
      * be wrong:
@@ -181,6 +188,7 @@ int PortStereoDepth_BgTierForPriority(const PortStereoDepthState* st, int priori
  * them, matching the GBA), still behind a priority-0 BG0 overlay. */
 int PortStereoDepth_ObjTier(const PortStereoDepthState* st, int objPriority) {
     (void)objPriority;
+    if (st->flatMenu) return PORT_TIER_BG_PLAY; /* forward with the menu content */
     if (!st->inGameplay)
         return PORT_TIER_BG_PLAY; /* -0.3f: coplanar with the cutscene backdrop */
     return PORT_TIER_OBJ_P1; /* -0.8f */

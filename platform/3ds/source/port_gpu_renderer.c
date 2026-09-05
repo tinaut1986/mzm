@@ -686,6 +686,21 @@ static void ComputeDepthState(uint16_t dispcnt) {
             sDepthState.bg0IsOverlayText = !sDepthState.inGameplay;
             break;
     }
+    /* Two-plane flatten for depthless screens (see flatMenu): content
+     * forward, backdrop back. GM_FILE_SELECT (3): backdrop is BG3 only, so
+     * the split is at priority 3. GM_CREDITS (8): the crew text alternates
+     * BG0/BG1 while the Chozo wall is BG2/BG3, so the split is at priority
+     * 2 -- all text forward, all wall back. */
+    if (gMainGameMode == 3) {
+        sDepthState.flatMenu = true;
+        sDepthState.flatMenuBackdropPrio = 3;
+    } else if (gMainGameMode == 8) {
+        sDepthState.flatMenu = true;
+        sDepthState.flatMenuBackdropPrio = 2;
+    } else {
+        sDepthState.flatMenu = false;
+        sDepthState.flatMenuBackdropPrio = 0;
+    }
     for (int bg = 0; bg < 4; ++bg) {
         sDepthState.priority[bg] =
             (uint8_t)(((uint16_t)(gIoMem[0x08 + bg * 2] | (gIoMem[0x09 + bg * 2] << 8))) & 3u);

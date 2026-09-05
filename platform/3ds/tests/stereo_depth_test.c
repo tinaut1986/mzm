@@ -566,6 +566,49 @@ static void TestNamedParticularScenes(void) {
     }
 }
 
+/* ------------------------------------------------------------------ *
+ * Test: flatMenu has exactly two planes -- any BG at priority >=
+ * flatMenuBackdropPrio at BG_FAR, every other BG and every sprite forward
+ * and coplanar at BG_PLAY. Covers both callers: GM_FILE_SELECT (split at
+ * priority 3, backdrop is BG3 alone) and GM_CREDITS (split at priority 2,
+ * text on BG0/BG1 forward, the Chozo wall on BG2/BG3 back).
+ * ------------------------------------------------------------------ */
+static void TestFlatMenuTwoPlanes(void) {
+    printf("flatMenu: two planes, content forward + backdrop at BG_FAR\n");
+    for (int splitPrio = 2; splitPrio <= 3; ++splitPrio) {
+        for (unsigned packed = 0; packed < 256u; ++packed) {
+            PortStereoDepthState st;
+            memset(&st, 0, sizeof(st));
+            st.flatMenu = true;
+            st.flatMenuBackdropPrio = (uint8_t)splitPrio;
+            /* flatMenu must win regardless of every other input. */
+            st.inGameplay = (packed & 1u) != 0;
+            st.bg0IsOverlayText = (packed & 2u) != 0;
+            st.samusOnTopOfBackgrounds = (packed & 4u) != 0;
+            for (int bg = 0; bg < 4; ++bg)
+                st.priority[bg] = (uint8_t)((packed >> (bg * 2)) & 3u);
+
+            for (int bg = 0; bg < 4; ++bg) {
+                int want = (st.priority[bg] >= splitPrio) ? PORT_TIER_BG_FAR : PORT_TIER_BG_PLAY;
+                CHECK(PortStereoDepth_BgTier(&st, bg) == want,
+                      "flatMenu(split %d): BG%d prio %d -> %s",
+                      splitPrio, bg, st.priority[bg], TierName(want));
+            }
+            for (int q = 0; q < 4; ++q)
+                CHECK(PortStereoDepth_ObjTier(&st, q) == PORT_TIER_BG_PLAY,
+                      "flatMenu: OBJ prio %d must be on the forward plane", q);
+
+            /* The forward plane is nearer than the backdrop, matching 2D. */
+            for (int spread = 0; spread < PORT_STEREO_SPREAD_COUNT; ++spread) {
+                float fwd = PortStereoDepth_TierPxFor(spread, PORT_TIER_BG_PLAY);
+                float back = PortStereoDepth_TierPxFor(spread, PORT_TIER_BG_FAR);
+                CHECK(fwd > back, "flatMenu [%s]: forward plane must sit nearer than the backdrop",
+                      PortStereoDepth_SpreadName(spread));
+            }
+        }
+    }
+}
+
 int main(void) {
     TestNoContradictionExhaustive();
     TestDepthIsPriorityOnly();
@@ -574,6 +617,7 @@ int main(void) {
     TestSamusOnTopSplitsMerge();
     TestBgTierForPriorityMatchesBgTier();
     TestNamedParticularScenes();
+    TestFlatMenuTwoPlanes();
 
     printf("\n%d checks, %d failures\n", sChecks, sFailures);
     if (sFailures > 20) printf("(only the first 20 failures shown)\n");
