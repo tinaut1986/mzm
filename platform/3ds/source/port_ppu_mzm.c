@@ -1640,3 +1640,73 @@ void PortPpuMzm_GetClipRecordBlock(uint8_t* out) {
 int PortPpuMzm_GetClipRecordBlockSize(void) {
     return 24 + PORT_CLIPREC_COLS * PORT_CLIPREC_ROWS;
 }
+
+/* ---------------------------------------------------------------------
+ * Visible item-tank blocks in the current room.
+ *
+ * The in-world Energy / Missile / Super Missile / Power Bomb tank icon is an
+ * ANIMATED tile: its pixels are streamed at runtime from sAnimatedTankGfx
+ * (data/animated_tiles_data.c), not stored in any BG block map. So the tank
+ * is invisible to tools/layer-workbench (which renders BG0..2 statically from
+ * the tileset) and cannot be moved with a port_layer_fixes.inc entry. Yet as
+ * a BG1 tile it inherits the BG play-plane depth tier (nearer to the viewer
+ * than the world-sprite plane), which reads as the tank floating in front of
+ * Samus instead of sitting with her.
+ *
+ * This is NOT the abandoned per-tile clipdata depth probe (see
+ * PortPpuMzm_ScreenOrigin's history): that inferred a layer from raw
+ * solidity and tore ramps apart every 16px. Here we scan the room's clip
+ * behaviours, keep only the exact blocks whose behaviour is a visible tank
+ * (0x38..0x3F), and the renderer lifts only those blocks. Same "keyed to an
+ * absolute room-block position, human-scoped" model as port_layer_fixes,
+ * just derived from the data instead of hand-authored.
+ *
+ * Rescanned every frame, not once per room: a HIDDEN tank (0x34..0x37) looks
+ * like wall and is excluded, but shooting it rewrites its clipdata to the
+ * visible behaviour mid-room (BlockProcess -> BLOCK_LIFE_TYPE_TANK,
+ * src/block.c). A once-per-room scan missed that and left the freshly
+ * revealed tank at the wall's depth plane. A full block-grid walk is a few
+ * thousand u16 reads -- noise next to the frame it feeds.
+ * ------------------------------------------------------------------- */
+#define PORT_TANK_MAX 24
+
+static uint16_t sTankBlockX[PORT_TANK_MAX];
+static uint16_t sTankBlockY[PORT_TANK_MAX];
+static int sTankCount = 0;
+
+void PortPpuMzm_ScanRoomTanks(void) {
+    sTankCount = 0;
+
+    const uint16_t* decomp = gBgPointersAndDimensions.pClipDecomp;
+    const uint16_t* behaviours = gTilemapAndClipPointers.pClipBehaviors;
+    const int w = (int)gBgPointersAndDimensions.clipdataWidth;
+    const int h = (int)gBgPointersAndDimensions.clipdataHeight;
+    if (decomp == NULL || behaviours == NULL || w <= 0 || h <= 0)
+        return;
+
+    for (int by = 0; by < h; ++by) {
+        for (int bx = 0; bx < w; ++bx) {
+            uint16_t b = behaviours[decomp[by * w + bx]];
+            if (b >= CLIP_BEHAVIOR_ENERGY_TANK &&
+                b <= CLIP_BEHAVIOR_UNDERWATER_POWER_BOMB_TANK) {
+                if (sTankCount < PORT_TANK_MAX) {
+                    sTankBlockX[sTankCount] = (uint16_t)bx;
+                    sTankBlockY[sTankCount] = (uint16_t)by;
+                    ++sTankCount;
+                }
+            }
+        }
+    }
+}
+
+int PortPpuMzm_RoomTankCount(void) {
+    return sTankCount;
+}
+
+bool PortPpuMzm_IsVisibleTankBlock(int blockX, int blockY) {
+    for (int i = 0; i < sTankCount; ++i) {
+        if (sTankBlockX[i] == (uint16_t)blockX && sTankBlockY[i] == (uint16_t)blockY)
+            return true;
+    }
+    return false;
+}

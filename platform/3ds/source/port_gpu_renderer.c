@@ -691,6 +691,14 @@ static void ComputeDepthState(uint16_t dispcnt) {
             (uint8_t)(((uint16_t)(gIoMem[0x08 + bg * 2] | (gIoMem[0x09 + bg * 2] << 8))) & 3u);
     }
     UpdateLayerFixRoom();
+
+    /* Visible item tanks are animated tiles with no BG block-map entry, so
+     * they cannot go through the layer-fix list; the renderer lifts them to
+     * Samus's plane directly (see the tank-tile branch below). Rescanned
+     * every frame so a hidden tank revealed by a shot is picked up the frame
+     * its clipdata flips -- the scan is a cheap block-grid walk. */
+    extern void PortPpuMzm_ScanRoomTanks(void);
+    PortPpuMzm_ScanRoomTanks();
 }
 
 /* Step A (16x16 atlas blocks) is a performance change that has never been
@@ -1580,9 +1588,18 @@ static void CollectBgLayer(int bgIndex) {
      * single tiles to another plane and draw order. Window (WIN0/WIN1)
      * visibility is per-layer and resolved by the scissor at draw time, so
      * it is fine. */
+    /* A room with a visible item tank forces the per-tile path on BG1 (the
+     * clipdata layer): the tank is an animated tile with no block-map entry,
+     * so it can only be recognised and lifted to Samus's plane one tile at a
+     * time -- a cached layer quad or a 16x16 atlas block carries a single
+     * depth tier and cannot. Same trade the layer-fix list already makes. */
+    extern int PortPpuMzm_RoomTankCount(void);
+    extern bool PortPpuMzm_IsVisibleTankBlock(int blockX, int blockY);
+    const bool roomHasTankOnThisBg =
+        (bgIndex == 1) && PortPpuMzm_RoomTankCount() > 0;
     const bool layerCacheable =
         sLayerCacheEnabled && sLayerRtReady[bgIndex] && !sObjWindowActive &&
-        PortLayerFix_ActiveCount() == 0;
+        PortLayerFix_ActiveCount() == 0 && !roomHasTankOnThisBg;
     if (layerCacheable) {
         /* Hash the tilemap window this target covers, so a room redrawing
          * its map invalidates even when the origin has not moved. */
@@ -1634,7 +1651,7 @@ static void CollectBgLayer(int bgIndex) {
      * target scrolls with the camera 1:1, so one origin serves them all.
      * Only computed when a list is actually compiled in. */
     int fixOriginTileX = 0, fixOriginTileY = 0;
-    if (PortLayerFix_ActiveCount() > 0) {
+    if (PortLayerFix_ActiveCount() > 0 || roomHasTankOnThisBg) {
         extern void PortPpuMzm_ScreenOrigin(int* outX, int* outY);
         int originX = 0, originY = 0;
         PortPpuMzm_ScreenOrigin(&originX, &originY);
@@ -1663,7 +1680,8 @@ static void CollectBgLayer(int bgIndex) {
     uint64_t covered[21]; /* tx runs -1..31, so bit index 0..32: needs 64 */
     memset(covered, 0, sizeof(covered));
     const bool blocksEligible =
-        sBlockPassEnabled && !bpp8 && !sObjWindowActive && PortLayerFix_ActiveCount() == 0;
+        sBlockPassEnabled && !bpp8 && !sObjWindowActive &&
+        PortLayerFix_ActiveCount() == 0 && !roomHasTankOnThisBg;
     if (blocksEligible) {
         for (int ty = (startTileY & 1) ? 1 : 0; ty + 1 <= 20; ty += 2) {
             const float drawY = (float)(ty * 8 - fineY);
@@ -1810,6 +1828,18 @@ static void CollectBgLayer(int bgIndex) {
                         sortKey = (3 - sDepthState.priority[dest]) * 10 + (3 - dest);
                     }
                 }
+            }
+            /* Visible item tank (animated tile, no block-map entry, so not
+             * reachable by the layer-fix list above): as a BG1 tile it would
+             * inherit the BG play plane, which sits nearer the viewer than
+             * the world-sprite plane and makes the tank read as floating in
+             * front of Samus. Move ONLY its depth to Samus's OBJ plane; the
+             * 2D draw order (sortKey) is left alone, so occlusion against the
+             * scenery is unchanged. */
+            if (roomHasTankOnThisBg &&
+                PortPpuMzm_IsVisibleTankBlock((fixOriginTileX + tx) >> 1,
+                                              (fixOriginTileY + ty) >> 1)) {
+                depthTier = PortStereoDepth_ObjTier(&sDepthState, 1);
             }
             PushItem(slot, drawX, drawY, sortKey, depthTier, blendAlpha, rectWinVis, false);
         }
