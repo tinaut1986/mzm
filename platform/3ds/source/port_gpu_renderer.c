@@ -350,6 +350,9 @@ static bool sLayerDirtyAtEntry;
  * layer was reused, which is what the cache is for. Recorded per perf
  * sample so the toggle produces a number and not an impression. */
 static unsigned sLastLayerComposes;
+/* Device pixels covered by the frame's quads, summed over every eye. See
+ * where it is accumulated for why it exists. */
+static uint32_t sLastDrawnPixels;
 static HazeTile sHazeTiles[HAZE_MAX_TILES];
 static int sHazeTileCount;
 
@@ -2950,6 +2953,7 @@ void Port_GpuRenderer_RenderFrame(void) {
     sLastDrawCalls = 0;
     sLastBlendTransitions = 0;
     sLastEyesRendered = 0;
+    sLastDrawnPixels = 0;
 
     for (int eye = 0; eye < 2; ++eye) {
         C3D_RenderTarget* target = (eye == 0) ? leftTarget : rightTarget;
@@ -3073,6 +3077,14 @@ void Port_GpuRenderer_RenderFrame(void) {
                 C2D_DrawParams params = BuildDrawParams(item, screenBaseX, screenBaseY, eyeOffset, scaleX, scaleY, false);
                 C2D_DrawImage(item->img, &params, NULL);
                 ++drawCount;
+                /* Device pixels this quad covers, summed over every eye.
+                 * The point of counting it is to separate two explanations
+                 * of where a frame goes that the quad count alone cannot:
+                 * after step A, six times fewer quads bought 5% of the
+                 * frame, which says cost is NOT per-quad any more. If it is
+                 * per-pixel instead, this number tracks the frame time and
+                 * the fix is to remove overdraw, not quads. */
+                sLastDrawnPixels += (uint32_t)(params.pos.w * params.pos.h);
                 if (!reassertedTexEnv) {
                     ConfigureAtlasTextureEnv();
                     reassertedTexEnv = true;
@@ -3286,6 +3298,7 @@ void Port_GpuRenderer_GetLastFrameDrawStats(PortGpuRendererDrawStats* out) {
     if (!out) return;
     out->drawCount = sLastDrawCalls;
     out->blendTransitions = sLastBlendTransitions;
+    out->drawnPixels = sLastDrawnPixels;
     out->layerComposes = sLastLayerComposes;
     out->layerCacheOn = sLayerCacheEnabled;
     out->hazeTiles = sHazeActive ? (uint32_t)sHazeTileCount : 0u;

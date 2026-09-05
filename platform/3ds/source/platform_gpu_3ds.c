@@ -1069,7 +1069,7 @@ static uint32_t PackRendererFlags(const PortGpuRendererDrawStats* st) {
  * as a PerfFileHeader followed by a flat little-endian array of PerfSample.
  * 60 samples/sec * 40s capacity = 2400 entries * 64B = ~154KB linear. ---- */
 typedef struct {
-    uint32_t magic;       /* 'MZP3' = 0x3350 5A4D little-endian */
+    uint32_t magic;       /* 'MZP4'; 'MZP3' is the same layout without drawnPixels */
     uint32_t sampleSize;  /* sizeof(PerfSample), so a parser can stride safely */
     uint32_t sampleCount;
     uint32_t reserved;
@@ -1095,6 +1095,12 @@ typedef struct {
     uint32_t blendTransitions;
     uint32_t rendererFlags;      /* PackRendererFlags */
     uint32_t captureFlags;       /* PackCaptureFlags -- the settings in force */
+    /* Device pixels the frame's quads covered, over every eye. Added with
+     * magic 'MZP4': quad count stopped explaining frame time once step A cut
+     * quads 6x for 5% of the frame, and this is the number that says whether
+     * pixels explain it instead. Parsers stride by the header's sampleSize,
+     * so an older file still reads -- it just has no such column. */
+    uint32_t drawnPixels;
 } PerfSample;
 /* 40 seconds is far longer than any hitch hunt needs and keeps the linear
  * allocation in the same ballpark as the earlier, smaller samples. */
@@ -1118,7 +1124,7 @@ void PlatformGpu3DS_TogglePerfRecording(void) {
         FILE* f = fopen(perfPath, "wb");
         if (f) {
             const PerfFileHeader fh = {
-                .magic = 0x3350 << 16 | 0x5A4D, /* 'MZP3' */
+                .magic = 0x3450 << 16 | 0x5A4D, /* 'MZP4' */
                 .sampleSize = (uint32_t)sizeof(PerfSample),
                 .sampleCount = sPerfCount,
                 .reserved = 0,
@@ -1205,6 +1211,7 @@ static void PerfBackfillPresentedFrame(void) {
     sample->bgItems = draw.bgItems;
     sample->objItems = draw.objItems;
     sample->blendTransitions = draw.blendTransitions;
+    sample->drawnPixels = draw.drawnPixels;
     sample->rendererFlags = PackRendererFlags(&draw);
     sample->captureFlags = PackCaptureFlags();
 }

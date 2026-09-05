@@ -6,19 +6,36 @@ to. Tick items as they land; add new ones as they come up. Everything under
 argument -- and everything under **Dead ends** was believed and then
 disproved, so please read that section before proposing a fix.
 
-> **Status 2026-09-05. The automated harness is PARKED. Test on hardware.**
+> **Status 2026-09-05 (night). Step A shipped in v0.4.5. The quad model is
+> dead. Step B is built but unmeasured, and step C is probably next.**
 >
-> Two sessions went into making the correctness harness run unattended under
-> Azahar on Linux. The plumbing all works -- build, install, launch, trigger,
-> fetch, compare, with no console and no hands -- and it still could not
-> answer a single question about the renderer, because everything it
-> compared was wrong for reasons of its own. The decision is to stop and
-> test on hardware by hand. `REPLAY RECORDING` and the file triggers are
-> gone from the console build (see **What was removed**); the host-side
-> scripts are kept because they cost nothing.
+> Where things actually stand, newest first:
 >
-> What the effort actually established is below. Most of it is negative, and
-> all of it is expensive to rediscover.
+> - **Step A works and is released.** One quad per 16x16 block took BG quads
+>   from ~2244 to ~370 per eye and the fire room from 45 to 60 FPS on a
+>   New3DS. Merged into `release/v0.4.5`, tagged, and the release branch
+>   renamed to `release/v0.4.6`.
+> - **It also had a real correctness bug, now fixed**, which is why the two
+>   renderers disagreed whenever the display was scaled -- see the UV entry
+>   under **Open on hardware**. Worth reading before touching subtexture
+>   coordinates again.
+> - **Quad count no longer explains frame time.** Six times fewer quads
+>   bought 5% of the frame. Every plan in this document that is justified by
+>   "this removes N quads" has to be re-argued from a measurement, step B
+>   included. See **The fire room**.
+> - **Step B is implemented and OFF by default** (`CACHE CAPAS`), and has
+>   never run on a console. Its premise is the quad model, so measure it
+>   before believing it.
+> - **The frame is plausibly fill-bound**, which would make step C -- the one
+>   item here that removes pixels rather than quads -- the way forward. The
+>   'MZP4' perf column added for exactly this question is unread.
+> - **The automated harness is PARKED**; test on hardware by hand. Two
+>   sessions went into running it unattended under Azahar and the plumbing
+>   all works, but everything it compared was wrong for reasons of its own.
+>   `REPLAY RECORDING` and the file triggers are gone from the console build.
+>
+> What that effort did establish is below. Most of it is negative, and all of
+> it is expensive to rediscover.
 
 ## What Linux/Azahar established
 
@@ -274,9 +291,13 @@ read the FPS overlay, take a `SCREEN DUMP` when a still frame is needed.
 - [ ] Reaching gameplay without hands (start a file, then warp) is the other
       prerequisite. Without it Azahar only ever sees the title screen.
 
-### A. 16x16 atlas blocks -- implemented, unverified
+### A. 16x16 atlas blocks -- DONE, measured, shipped in v0.4.5
 
-One quad per tilemap-aligned 2x2 group instead of four.
+One quad per tilemap-aligned 2x2 group instead of four. On hardware: BG
+quads ~2244 -> ~370 per eye, and 45 -> 60 FPS in the fire room with the
+slider down (see **Step A measured**). Switchable at runtime from the debug
+tools menu, because that is how it was measured and how the next change
+will be.
 
 - [x] Atlas grows to 512x1024, split into a tile region (rows 0..63,
       addressing untouched) and a 16x16 block region (rows 64..127, 1024
@@ -364,16 +385,31 @@ quads, and which this document demoted on the strength of the quad model.
 - [ ] The BG3 haze path (`sHazeRT`) already does exactly this for one layer
       -- read it first, it is the working precedent.
 
-### C. Occlusion culling -- not started, and now lower priority
+### C. Occlusion culling -- PROMOTED, probably the next thing to do
 
 Skip tiles fully covered by an opaque higher-priority tile.
 
+This was demoted "below A and B" on the reasoning that it removes quads only
+where layers overlap, whereas A removes them everywhere -- back when removing
+quads was the point. After step A that reasoning inverts: quads are no longer
+what costs, and this is the only item in the plan that removes **pixels**.
+The fire room draws four BG layers plus OBJ over the same 240x160, so the
+overdraw it would cut is most of the frame's fill.
+
+- [ ] **Confirm the premise first.** A capture with the 'MZP4' `px/frame`
+      column, on the fire room, at both display styles and both slider
+      positions. If frame time tracks that column, this is the work; if it
+      tracks quads after all, step B is.
 - [ ] Needs a coverage mask over the 32x21 screen cells walked
       front-to-back, plus a "tile is FULLY opaque" test (today's is "has any
       opaque pixel").
 - [ ] Must never cull what sits under an alpha-blended first-target layer.
-- [ ] Demoted below A and B: it removes quads (which is what matters) but
-      only where layers actually overlap, whereas A removes them everywhere.
+- [ ] The 16x16 block pass helps here rather than competing: a block is
+      already known-opaque or not as a unit, so coverage can be tested per
+      block instead of per tile.
+- [ ] Consider the BG3 haze pass in the same breath. It renders 640-660
+      tiles into an offscreen target every frame in that room -- nearly twice
+      the BG quad count, and every one of those is fill nobody has looked at.
 
 ### D. The second eye -- superseded, keep for reference
 
@@ -382,6 +418,17 @@ Skip tiles fully covered by an opaque higher-priority tile.
       cannot share a rasterisation, and the offsets differ per depth plane.
       A and B both fix it as a side effect by making the scene cheap enough
       to draw twice. Only revisit if both fail.
+- [ ] **Still the dominant term, and now for a different reason.** In the
+      fire room the second eye is the difference between 9,12 ms and 18,37
+      ms -- it doubles the frame. Step A made the scene six times cheaper in
+      quads and barely moved it, which says the second eye costs what it
+      costs because it draws the same PIXELS again, not because it submits
+      the same quads again. Anything that makes it cheap has to reduce
+      per-eye fill: step C, or a lower-cost target format.
+
+Note for whoever picks this up: the eyes are also where the scaled cost
+lands. Two eyes at 3:2 cost 2,3 ms more than two eyes at 1:1 on the same
+scene, for the same quads -- 2,25x the pixels.
 
 ## Open, unrelated to speed
 
@@ -405,7 +452,16 @@ Everything here is on hardware and by hand. The formats each recipe produces
 are documented in [3ds-debug-tools.md](3ds-debug-tools.md).
 
 **Speed** -- the only measurement that means anything, and the reason the
-rest of this document exists.
+rest of this document exists. Read a capture with:
+
+```sh
+python3 tools/perf_report.py <mzm-perf-NN.bin>
+```
+
+It groups the samples by the settings in force, drops the frames either side
+of each change, and prints GPU/CPU time, FPS, the quad census and -- from
+'MZP4' captures on -- the device pixels the frame's quads covered, which is
+the column that says whether cost tracks quads or pixels.
 
 One perf capture, standing still in the same room, cycling the settings:
 `captureFlags` records the display style, slider, overlay, bezel, FX grade
@@ -458,5 +514,6 @@ is all it should be relied on for today.
 | Perf / scene recorders, file rotation | `platform/3ds/source/platform_gpu_3ds.c`, `port/port_debug_files.c` |
 | Reference renderer (host) | `platform/3ds/tests/rec_render.c` |
 | Comparison harness | `tools/compare_render.py` |
+| Perf capture reader | `tools/perf_report.py` |
 | Depth assignment unit tests | `platform/3ds/tests/stereo_depth_test.c` |
 | OAM census unit tests | `platform/3ds/tests/oam_census_test.c` |

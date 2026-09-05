@@ -48,6 +48,10 @@ typedef struct {
     uint32_t cpuTileX100;      /* VRAM reads + tile cache hash/decode + sort */
     uint32_t cpuUploadX100;    /* atlas texture upload (blocking transfer) */
     uint32_t cpuDrawX100;      /* draw-call submission, every eye */
+    /* Device pixels the frame's quads covered, summed over every eye. The
+     * quad count alone cannot separate "cost is per-quad" from "cost is per
+     * pixel", and after step A the two disagree -- see the definition. */
+    uint32_t drawnPixels;
     uint8_t layerComposes;     /* step B: layers re-composed this frame; 0 = all reused */
     bool layerCacheOn;         /* step B enabled at all, so 0 composes can be told from off */
     uint8_t eyesRendered;      /* 1, or 2 while the 3D slider is up */
