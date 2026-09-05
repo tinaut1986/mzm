@@ -73,7 +73,11 @@ typedef enum {
 
 void Port_DebugLog_SetMode(PortDebugLogMode mode);
 PortDebugLogMode Port_DebugLog_GetMode(void);
-void Port_DebugLog_CycleMode(void);        /* NONE -> ALL -> GPU -> AUDIO -> PERF -> NONE */
+void Port_DebugLog_CycleMode(void);
+/* Path of the file the current logging session is writing to, or "" while
+ * logging has never been enabled. One rotating file per session -- see the
+ * comment in port_debug_log.c. */
+const char* Port_DebugLog_CurrentPath(void);        /* NONE -> ALL -> GPU -> AUDIO -> PERF -> NONE */
 const char* Port_DebugLog_ModeName(void);  /* "OFF" / "ALL" / "GPU" / "AUDIO" / "PERF" */
 
 /* Stream-scoped loggers: write only when the current mode includes that
