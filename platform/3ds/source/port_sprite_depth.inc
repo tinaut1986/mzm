@@ -1,25 +1,31 @@
 /* Overrides de profundidad estereoscópica por TIPO de sprite, para el port 3DS.
+ * Generado por tools/layer-workbench (modo SPRITES) -- recárgalo ahí para editar.
  *
  * PORT_SPRITE_DEPTH(spriteId, esSecundario, code)
- *
- *   spriteId       constante PSPRITE_* (o SSPRITE_* si esSecundario = 1)
- *   esSecundario   0 = sprite primario, 1 = secundario
- *   code           PORT_SPRITE_DEPTH_BG_COPLANAR  -> al plano del BG cuya
- *                      prioridad coincide con la prioridad OAM del sprite
- *                      (el sprite ya la fija a propósito para fundirse con él)
- *                  PORT_SPRITE_DEPTH_NONE         -> sin override (plano único)
- *                  >= 0                           -> un PORT_TIER_* explícito
- *
- * El renderer solo mira estos tags en gameplay. La clave es (spriteId,
- * esSecundario); una segunda línea con la misma clave gana a la anterior.
- *
- * Pensado para que lo escriba una herramienta (tools/sprite-workbench, aún por
- * hacer); de momento se edita a mano, igual que port_layer_fixes.inc.
+ *   code: PORT_SPRITE_DEPTH_BG_COPLANAR  -> al plano del BG de su prioridad OAM
+ *         PORT_SPRITE_DEPTH_NONE         -> sin override
+ *         PORT_TIER_*                    -> un plano fijo
  */
-
-/* Estatuas de Kraid / Ridley de la sala previa a Tourian: el sprite de la cara
- * fija bgPriority = prioridad de BG1 para componer con el BG que dibuja la
- * parte alta de la cabeza. En el plano único de sprites la cara se despegaba
- * de la cabeza. */
-PORT_SPRITE_DEPTH(PSPRITE_KRAID_STATUE,  0, PORT_SPRITE_DEPTH_BG_COPLANAR)
+PORT_SPRITE_DEPTH(PSPRITE_CANNON, 0, PORT_SPRITE_DEPTH_BG_COPLANAR)
+PORT_SPRITE_DEPTH(PSPRITE_CANNON2, 0, PORT_SPRITE_DEPTH_BG_COPLANAR)
+PORT_SPRITE_DEPTH(PSPRITE_CANNON3, 0, PORT_SPRITE_DEPTH_BG_COPLANAR)
+PORT_SPRITE_DEPTH(PSPRITE_HIVE, 0, PORT_SPRITE_DEPTH_BG_COPLANAR)
+PORT_SPRITE_DEPTH(PSPRITE_KRAID_STATUE, 0, PORT_SPRITE_DEPTH_BG_COPLANAR)
+PORT_SPRITE_DEPTH(PSPRITE_MELLOW, 0, PORT_SPRITE_DEPTH_BG_COPLANAR)
 PORT_SPRITE_DEPTH(PSPRITE_RIDLEY_STATUE, 0, PORT_SPRITE_DEPTH_BG_COPLANAR)
+PORT_SPRITE_DEPTH(PSPRITE_RINKA_GREEN, 0, PORT_SPRITE_DEPTH_BG_COPLANAR)
+PORT_SPRITE_DEPTH(PSPRITE_RINKA_MOTHER_BRAIN2, 0, PORT_SPRITE_DEPTH_BG_COPLANAR)
+PORT_SPRITE_DEPTH(PSPRITE_RINKA_MOTHER_BRAIN3, 0, PORT_SPRITE_DEPTH_BG_COPLANAR)
+PORT_SPRITE_DEPTH(PSPRITE_RINKA_MOTHER_BRAIN4, 0, PORT_SPRITE_DEPTH_BG_COPLANAR)
+PORT_SPRITE_DEPTH(PSPRITE_RINKA_MOTHER_BRAIN5, 0, PORT_SPRITE_DEPTH_BG_COPLANAR)
+PORT_SPRITE_DEPTH(PSPRITE_RINKA_MOTHER_BRAIN6, 0, PORT_SPRITE_DEPTH_BG_COPLANAR)
+PORT_SPRITE_DEPTH(PSPRITE_RINKA_ORANGE, 0, PORT_SPRITE_DEPTH_BG_COPLANAR)
+/* The cannon body composites with BG1 (BG_COPLANAR above), but its bullet
+ * never sets bgPriority -- coplanar would drop it to whatever its stale OAM
+ * priority happens to be (BG_MID), so it fires and sinks behind the turret.
+ * Pin it to the play plane instead, coplanar with the turret in the common
+ * room and reading as a foreground shot everywhere. 2 = PORT_TIER_BG_PLAY
+ * (port_stereo_depth.h; that header isn't visible from src/sprite.c). */
+PORT_SPRITE_DEPTH(SSPRITE_CANNON_BULLET, 1, 2)
+PORT_SPRITE_DEPTH(PSPRITE_ZIPLINE, 0, PORT_SPRITE_DEPTH_BG_COPLANAR)
+PORT_SPRITE_DEPTH(PSPRITE_ZIPLINE_BUTTON, 0, PORT_SPRITE_DEPTH_BG_COPLANAR)

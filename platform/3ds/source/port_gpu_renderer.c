@@ -624,11 +624,30 @@ static const uint8_t kObjHeights[3][4] = { { 8, 16, 32, 64 }, { 8, 8, 16, 32 }, 
  * belong. Building the state here once per frame is all this file does. */
 static PortStereoDepthState sDepthState;
 
+/* True for the current frame when a door footprint (see port_ppu_mzm.c) is
+ * within the view box, so the per-tile path must run to pull the doorway onto
+ * one plane. Cleared otherwise, leaving the layer cache / block pass on. */
+static bool sDoorDepthOnScreen = false;
+
 extern int Port_Hud_GetOamCount(void);
 
 /* Room the correction list was last selected for. Re-selecting on every frame
  * would rescan the whole list for nothing; the room only changes on a door. */
 static int sFixArea = -1, sFixRoom = -1;
+
+/* Same, for the door-footprint rects. Kept separate from sFixArea/sFixRoom so
+ * it still refreshes on a stock build with no correction list compiled in. */
+static int sDoorArea = -1, sDoorRoom = -1;
+
+static void UpdateDoorDepthRoom(void) {
+    extern u8 gCurrentArea;
+    extern u8 gCurrentRoom;
+    if ((int)gCurrentArea == sDoorArea && (int)gCurrentRoom == sDoorRoom) return;
+    sDoorArea = (int)gCurrentArea;
+    sDoorRoom = (int)gCurrentRoom;
+    extern void PortPpuMzm_SetDoorDepthRoom(int area, int room);
+    PortPpuMzm_SetDoorDepthRoom(sDoorArea, sDoorRoom);
+}
 
 static void UpdateLayerFixRoom(void) {
     if (!PortLayerFix_Present()) return;
@@ -706,6 +725,24 @@ static void ComputeDepthState(uint16_t dispcnt) {
             (uint8_t)(((uint16_t)(gIoMem[0x08 + bg * 2] | (gIoMem[0x09 + bg * 2] << 8))) & 3u);
     }
     UpdateLayerFixRoom();
+    UpdateDoorDepthRoom();
+
+    /* Whether a doorway is actually on screen this frame. Only then does the
+     * per-tile path have to run for the door depth pull; walking away from
+     * the door leaves the fast layer cache / block pass untouched. */
+    sDoorDepthOnScreen = false;
+    {
+        extern int PortPpuMzm_DoorDepthCount(void);
+        if (sDepthState.inGameplay && PortPpuMzm_DoorDepthCount() > 0) {
+            extern void PortPpuMzm_ScreenOrigin(int* outX, int* outY);
+            extern bool PortPpuMzm_DoorDepthInView(int bx0, int by0, int bx1, int by1);
+            int ox = 0, oy = 0;
+            PortPpuMzm_ScreenOrigin(&ox, &oy);
+            /* px -> 16px blocks; the 240x160 frame spans ~16x11 blocks. */
+            sDoorDepthOnScreen = PortPpuMzm_DoorDepthInView(
+                ox >> 4, oy >> 4, (ox + 240) >> 4, (oy + 160) >> 4);
+        }
+    }
 
     /* Visible item tanks are animated tiles with no BG block-map entry, so
      * they cannot go through the layer-fix list; the renderer lifts them to
@@ -1610,11 +1647,17 @@ static void CollectBgLayer(int bgIndex) {
      * depth tier and cannot. Same trade the layer-fix list already makes. */
     extern int PortPpuMzm_RoomTankCount(void);
     extern bool PortPpuMzm_IsVisibleTankBlock(int blockX, int blockY);
+    extern bool PortPpuMzm_IsDoorDepthBlock(int blockX, int blockY);
     const bool roomHasTankOnThisBg =
         (bgIndex == 1) && PortPpuMzm_RoomTankCount() > 0;
+    /* Door depth pull covers BG0/BG1/BG2 -- the lintel/sill trim that has to
+     * rejoin the frame lives on BG2 too. Never BG3 (the LZ77 backdrop). The
+     * footprint is deliberately tiny (door span, no side growth, a row or two
+     * above/below) so only actual doorway tiles are caught, not open wall. */
+    const bool roomHasDoorDepth = sDoorDepthOnScreen && bgIndex < 3;
     const bool layerCacheable =
         sLayerCacheEnabled && sLayerRtReady[bgIndex] && !sObjWindowActive &&
-        PortLayerFix_ActiveCount() == 0 && !roomHasTankOnThisBg;
+        PortLayerFix_ActiveCount() == 0 && !roomHasTankOnThisBg && !roomHasDoorDepth;
     if (layerCacheable) {
         /* Hash the tilemap window this target covers, so a room redrawing
          * its map invalidates even when the origin has not moved. */
@@ -1666,7 +1709,7 @@ static void CollectBgLayer(int bgIndex) {
      * target scrolls with the camera 1:1, so one origin serves them all.
      * Only computed when a list is actually compiled in. */
     int fixOriginTileX = 0, fixOriginTileY = 0;
-    if (PortLayerFix_ActiveCount() > 0 || roomHasTankOnThisBg) {
+    if (PortLayerFix_ActiveCount() > 0 || roomHasTankOnThisBg || roomHasDoorDepth) {
         extern void PortPpuMzm_ScreenOrigin(int* outX, int* outY);
         int originX = 0, originY = 0;
         PortPpuMzm_ScreenOrigin(&originX, &originY);
@@ -1696,7 +1739,7 @@ static void CollectBgLayer(int bgIndex) {
     memset(covered, 0, sizeof(covered));
     const bool blocksEligible =
         sBlockPassEnabled && !bpp8 && !sObjWindowActive &&
-        PortLayerFix_ActiveCount() == 0 && !roomHasTankOnThisBg;
+        PortLayerFix_ActiveCount() == 0 && !roomHasTankOnThisBg && !roomHasDoorDepth;
     if (blocksEligible) {
         for (int ty = (startTileY & 1) ? 1 : 0; ty + 1 <= 20; ty += 2) {
             const float drawY = (float)(ty * 8 - fineY);
@@ -1855,6 +1898,22 @@ static void CollectBgLayer(int bgIndex) {
                 PortPpuMzm_IsVisibleTankBlock((fixOriginTileX + tx) >> 1,
                                               (fixOriginTileY + ty) >> 1)) {
                 depthTier = PortStereoDepth_ObjTier(&sDepthState, 1);
+            }
+            /* Door footprint (per-row spans from port_ppu_mzm.c: the door
+             * columns, a couple of rows above/below, each grown to the end
+             * of the BG2 lintel/sill run): the framed tunnel sits on the
+             * play plane while the BG2 ledge stays a plane back, wedging
+             * Samus into the gap. Pull those tiles' DEPTH onto the play
+             * plane so the doorway reads as one object; 2D draw order is
+             * left untouched, so a BG2 ledge tile still draws behind Samus
+             * and behind BG1 exactly as before -- only its parallax stops
+             * sinking away from the frame. BG3 is excluded (roomHasDoorDepth
+             * is false for it). TileHasOpaquePixel above already skipped
+             * blank tiles, so the open doorway itself is never touched. */
+            if (roomHasDoorDepth &&
+                PortPpuMzm_IsDoorDepthBlock((fixOriginTileX + tx) >> 1,
+                                            (fixOriginTileY + ty) >> 1)) {
+                depthTier = PORT_TIER_BG_PLAY;
             }
             PushItem(slot, drawX, drawY, sortKey, depthTier, blendAlpha, rectWinVis, false);
         }
@@ -2542,8 +2601,15 @@ static inline C2D_DrawParams BuildDrawParams(const DrawItem* item, float screenB
     params.depth = (item->isHud && hudOutside) ? 0.7f : 0.5f;
     if (item->affine) {
         float w = item->w * scaleX, h = item->h * scaleY;
-        params.pos.x = screenBaseX + eyeOffset + item->x * scaleX - w * 0.5f;
-        params.pos.y = screenBaseY + item->y * scaleY - h * 0.5f;
+        /* Snap the bounding-box origin to a whole device pixel. The rotation
+         * itself (angle + centre) is untouched, so this does NOT quantize
+         * the spin -- it just stops the two eyes from sampling the rotated
+         * sprite at different sub-pixel phases, which on a rotating turret
+         * with a 1-3px coloured core showed up as the core changing shape
+         * between eyes instead of only shifting. With an integer origin the
+         * per-eye difference is exactly the whole-pixel parallax offset. */
+        params.pos.x = floorf(screenBaseX + eyeOffset + item->x * scaleX - w * 0.5f + 0.5f);
+        params.pos.y = floorf(screenBaseY + item->y * scaleY - h * 0.5f + 0.5f);
         params.pos.w = w;
         params.pos.h = h;
         params.center.x = w * 0.5f;
@@ -3408,6 +3474,14 @@ void Port_GpuRenderer_RenderFrame(void) {
          * (untinted vertex colour == nothing) instead of the atlas env.
          * DrawFpsOverlay flushes first and resets the TEV itself. */
         PlatformGpu3DS_DrawFpsOverlay(floorf(eyeSign * slider3d * (+2.5f) + 0.5f));
+
+        /* RetroAchievements unlock toast, when the player put it on the top
+         * screen. Same frontmost parallax as the FPS box so it floats in
+         * front of the whole scene; no-ops when the toast is on the bottom
+         * screen or none is active. */
+        extern void Port_RA_RenderToastOverlayTop(float eyeXOffset);
+        Port_RA_RenderToastOverlayTop(floorf(eyeSign * slider3d * (+2.5f) + 0.5f));
+
         sLastDrawCalls += (uint32_t)drawCount;
         ++sLastEyesRendered;
 #ifdef PORT_DEBUG_TOOLS_ACTIVE

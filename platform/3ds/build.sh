@@ -56,7 +56,7 @@ SMDH_DESC="${SMDH_DESC:0:64}"
 
 "${BANNERTOOL}" makebanner \
   -i "${ROOT}/platform/3ds/assets/banner.png" \
-  -a "${ROOT}/platform/3ds/assets/banner.wav" \
+  -a "${ROOT}/platform/3ds/assets/banner-descent-into-the-labyrinth.wav" \
   -o "${BUILD}/mzm-3ds.bnr"
 
 (

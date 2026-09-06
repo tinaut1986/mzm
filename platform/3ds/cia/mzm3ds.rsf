@@ -116,7 +116,10 @@ AccessControlInfo:
 
 SystemControlInfo:
   SaveDataSize: 0KB
-  RemasterVersion: 1
+  # Bump on any change the HOME Menu should notice (icon, banner): a reinstall
+  # with the same version can leave the HOME Menu serving its cached icon and
+  # banner for this title ID. A higher version marks the entry stale.
+  RemasterVersion: 2
   StackSize: 0x40000
   Dependency:
     ac: 0x0004013000002402

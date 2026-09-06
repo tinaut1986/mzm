@@ -68,6 +68,74 @@ static void OnEngineRate(unsigned int engineRate) {
     ndspChnSetRate(0, engineRate);
 }
 
+/* ------------------------------------------------------------------
+ * NDSP channel 1: one-shot RetroAchievements unlock sting.
+ *
+ * The MZM sound engine on channel 0 mixes everything (BGM + SFX +
+ * jingles) into ONE stream and its jingles duck the music, so routing
+ * the unlock sound through it (the old SoundPlay(MUSIC_GETTING_TANK_
+ * JINGLE)) made it inaudible whenever an item pickup was already
+ * playing that same jingle. This is a private channel that layers on
+ * top and is never ducked. Mono PCM16 from port_ra_unlock_sound_data.c,
+ * copied once into linear memory so NDSP can DMA it.
+ * ------------------------------------------------------------------ */
+extern const int16_t gRaUnlockSoundPcm[];
+extern const uint32_t gRaUnlockSoundFrames;
+extern const uint32_t gRaUnlockSoundRate;
+
+#define RA_SND_CHANNEL 1
+
+static int16_t* sRaSndBuf;
+static ndspWaveBuf sRaSndWave;
+
+static void RaSnd_Init(void) {
+    ndspChnReset(RA_SND_CHANNEL);
+    ndspChnSetInterp(RA_SND_CHANNEL, NDSP_INTERP_LINEAR);
+    ndspChnSetRate(RA_SND_CHANNEL, (float)gRaUnlockSoundRate);
+    ndspChnSetFormat(RA_SND_CHANNEL, NDSP_FORMAT_MONO_PCM16);
+    float mix[12] = { 0 };
+    mix[0] = mix[1] = 0.9f; /* front L/R */
+    ndspChnSetMix(RA_SND_CHANNEL, mix);
+
+    const size_t bytes = (size_t)gRaUnlockSoundFrames * sizeof(int16_t);
+    sRaSndBuf = (int16_t*)linearAlloc(bytes);
+    if (sRaSndBuf) {
+        memcpy(sRaSndBuf, gRaUnlockSoundPcm, bytes);
+        DSP_FlushDataCache(sRaSndBuf, bytes);
+    }
+    memset(&sRaSndWave, 0, sizeof(sRaSndWave));
+    sRaSndWave.data_pcm16 = sRaSndBuf;
+    sRaSndWave.nsamples = gRaUnlockSoundFrames;
+}
+
+static void RaSnd_Shutdown(void) {
+    if (!sRaSndBuf) return;
+    ndspChnWaveBufClear(RA_SND_CHANNEL);
+    linearFree(sRaSndBuf);
+    sRaSndBuf = NULL;
+}
+
+/* Called from the game/RA thread. Restart from the top if it is still
+ * playing -- back-to-back unlocks just retrigger. */
+void Port_MzmAudio_PlayRaUnlockSound(void) {
+    if (!sInitialized || sPaused || !sRaSndBuf) return;
+    ndspChnWaveBufClear(RA_SND_CHANNEL);
+    sRaSndWave.status = NDSP_WBUF_FREE;
+    sRaSndWave.nsamples = gRaUnlockSoundFrames;
+    ndspChnWaveBufAdd(RA_SND_CHANNEL, &sRaSndWave);
+}
+
+/* SOUND TEST toggle support: cut the sting and report whether it is live. */
+void Port_MzmAudio_StopRaUnlockSound(void) {
+    if (!sInitialized || !sRaSndBuf) return;
+    ndspChnWaveBufClear(RA_SND_CHANNEL);
+}
+
+bool Port_MzmAudio_IsRaUnlockSoundPlaying(void) {
+    if (!sInitialized || !sRaSndBuf) return false;
+    return ndspChnIsPlaying(RA_SND_CHANNEL);
+}
+
 static void FillBuffer(int index) {
     int16_t* dst = sSamples + index * BUFFER_FRAMES * 2;
 
@@ -196,6 +264,7 @@ bool Port_MzmAudio_Init(void) {
     ndspChnSetFormat(0, NDSP_FORMAT_STEREO_PCM16);
     float mix[12] = { 1.0f, 0.0f, 0.0f, 1.0f };
     ndspChnSetMix(0, mix);
+    RaSnd_Init();
 
     sSamples = (int16_t*)linearAlloc(BUFFER_COUNT * BUFFER_FRAMES * 2 * sizeof(int16_t));
     if (!sSamples) {
@@ -246,6 +315,7 @@ void Port_MzmAudio_Shutdown(void) {
         sAudioThread = NULL;
     }
     ndspChnWaveBufClear(0);
+    RaSnd_Shutdown();
     linearFree(sSamples);
     sSamples = NULL;
     ndspExit();

@@ -186,7 +186,20 @@ static uint32_t sFrameCounter = 0;
 static bool sBottomUiDirty = true;
 static uint32_t sBottomUiRedrawThrottle = 0;
 
+/* System status shown top-right of the tab bar (clock, battery, wifi).
+ * Battery/charge come from ptm:u (an IPC call, polled slowly); wifi
+ * strength is a shared-memory read done at draw time. */
+static bool sPtmuReady = false;
+static uint8_t sBattLevel = 5;   /* 0..5 from PTMU_GetBatteryLevel */
+static bool sBattCharging = false;
+static uint32_t sStatusPollCtr = 0;
+
 void Port_BottomUI_MarkDirty(void) { sBottomUiDirty = true; }
+
+/* Icon-tab layout, shared by the renderer and the touch handler (defined
+ * lower, used by both). */
+typedef struct { float x, w; PortBottomTab tab; int icon; } BottomTabSlot;
+static int BottomTabLayout(BottomTabSlot slots[4]);
 
 /* Called once per frame (even on frames the UI is not redrawn) so time-based
  * state keeps advancing: the blink counter and the RA session pump. */
@@ -194,6 +207,18 @@ void Port_BottomUI_FrameTick(void) {
     extern void Port_RA_Update(void); /* port_retroachievements_3ds.h, included below */
     ++sFrameCounter;
     Port_RA_Update();
+
+    /* Refresh battery ~every 2s; it moves far slower than the UI redraws.
+     * ptm:u may not be up yet the first time Port_BottomUI_Init ran (service
+     * bring-up order), so keep retrying the init here until it takes. */
+    if ((sStatusPollCtr++ % 120u) == 0u) {
+        if (!sPtmuReady && R_SUCCEEDED(ptmuInit())) sPtmuReady = true;
+        if (sPtmuReady) {
+            u8 lvl = 5, chg = 0;
+            if (R_SUCCEEDED(PTMU_GetBatteryLevel(&lvl))) sBattLevel = lvl > 5 ? 5 : lvl;
+            if (R_SUCCEEDED(PTMU_GetBatteryChargeState(&chg))) sBattCharging = (chg != 0);
+        }
+    }
 #ifdef PORT_DEBUG_TOOLS_ACTIVE
     { extern void PortPpuMzm_DebugCheatTick(void); PortPpuMzm_DebugCheatTick(); }
 #endif
@@ -218,6 +243,10 @@ bool Port_BottomUI_WantsRedraw(void) {
 static bool sShowRemapModal = false;
 static int sRemapSelectButtonIdx = -1; /* >= 0 when action picker popup is open */
 static bool sShowCollectiblesModal = false;
+/* When the collectibles modal is opened from the MAP tab's item badge, the
+ * row for that area is highlighted; -1 means "opened from STATUS", no row
+ * singled out. */
+static int sCollectiblesHighlightArea = -1;
 static bool sShowAchievementsModal = false;
 /* Pack chooser shown ahead of the achievement list. Only ever opened when the
  * game actually has more than one set -- with a single set a chooser with one
@@ -240,6 +269,9 @@ static bool sShowDisplayModal = false;
 static bool sShowDebugToolsModal = false;
 static bool sShowDebugWarpModal = false;
 static bool sShowDebugEquipModal = false;
+static bool sShowSoundTestModal = false;
+static void RenderSoundTestModal(int lang);
+static void HandleSoundTestModalTouch(int x, int y);
 /* MAP tab: when armed from the tools menu, the next tap on the map canvas
  * warps to the door nearest that tile instead of panning. One-shot -- it
  * disarms itself on use -- so a stray tap can't teleport the player later. */
@@ -349,6 +381,10 @@ extern void Port_Config_ResetButtonMappingDefault(void);
 extern const char* Port_Config_GetActionName(int action, int lang);
 extern int Port_Config_GetCstickMode(void);
 extern void Port_Config_SetCstickMode(int mode);
+
+/* Engine audio, for the small "tap to do what a button does" shortcuts. */
+extern void SoundPlay(uint16_t sound);
+#define SND_MISSILE_TOGGLE 0x85u /* SOUND_MISSILE_TOGGLE, include/constants/audio.h */
 
 /* GBA-look top-screen effects: level 0..3 (OFF/LOW/MEDIUM/HIGH). */
 extern int Port_Config_GetGbaFxGrade(void);
@@ -853,6 +889,77 @@ static void DrawTextCenteredClipped(float cx, float y, float scale, const char* 
     DrawTextClipped(cx - (length / 2.0f), y, scale, text, color, clipY0, clipY1);
 }
 
+/* --- Shared button chrome ------------------------------------------------
+ * One look for every tappable box on the bottom screen: a 1px border, a
+ * filled body, a 1px top bevel, and a short press flash keyed on where the
+ * last stylus tap landed (Port_BottomUI_NoteTap, called from the touch
+ * handler). DrawButtonBox draws just the frame and returns whether it is
+ * flashing, so a multi-line caller can nudge its own text; DrawButton also
+ * centres a single label on both axes and shrinks it to fit the width. */
+static int sTapFxX = -10000, sTapFxY = 0;
+static uint32_t sTapFxFrame = 0;
+#define BTN_FX_FRAMES 12u
+
+static void Port_BottomUI_NoteTap(int x, int y) {
+    sTapFxX = x; sTapFxY = y; sTapFxFrame = sFrameCounter;
+}
+
+/* True for a few frames after a tap that landed inside this rect. */
+static bool BtnTapFlash(float x, float y, float w, float h) {
+    return (uint32_t)(sFrameCounter - sTapFxFrame) < BTN_FX_FRAMES &&
+           (float)sTapFxX >= x && (float)sTapFxX < x + w &&
+           (float)sTapFxY >= y && (float)sTapFxY < y + h;
+}
+
+static bool DrawButtonBox(float x, float y, float w, float h,
+                          uint32_t bodyCol, uint32_t borderCol) {
+    bool pressed = BtnTapFlash(x, y, w, h);
+    uint32_t body = bodyCol, border = borderCol, bevel;
+    if (pressed) {
+        body   = C2D_Color32(90, 150, 220, 255);
+        border = C2D_Color32(210, 235, 255, 255);
+        bevel  = border;
+    } else {
+        bevel = C2D_Color32(90, 130, 180, 255);
+    }
+    C2D_DrawRectSolid(x, y, 0.90f, w, h, border);
+    C2D_DrawRectSolid(x + 1.0f, y + 1.0f, 0.91f, w - 2.0f, h - 2.0f, body);
+    C2D_DrawRectSolid(x + 1.0f, y + 1.0f, 0.92f, w - 2.0f, 1.0f, bevel);
+    return pressed;
+}
+
+static void DrawButton(float x, float y, float w, float h, const char* label,
+                       uint32_t textCol, uint32_t bodyCol, uint32_t borderCol) {
+    bool pressed = DrawButtonBox(x, y, w, h, bodyCol, borderCol);
+    if (!label || !*label) return;
+    float scale = 1.0f;
+    float tw = (float)Utf8CharCount(label) * 6.0f;
+    float avail = w - 4.0f;
+    if (tw > avail && tw > 0.0f) {
+        scale = avail / tw;
+        if (scale < 0.5f) scale = 0.5f;
+    }
+    float ty = y + (h - 7.0f * scale) * 0.5f + (pressed ? 1.0f : 0.0f);
+    DrawTextCentered(x + w * 0.5f, ty, scale, label, textCol);
+}
+
+/* Default palette for DrawButton/DrawButtonBox: the same blue the footer
+ * CLOSE/BACK boxes have always used. */
+#define BTN_BLUE_BODY   C2D_Color32(20, 70, 130, 255)
+#define BTN_BLUE_BORDER C2D_Color32(70, 130, 210, 255)
+
+/* Small centred glyph for play/stop toggle controls: a right-pointing
+ * triangle when idle, a filled square when something is playing. */
+static void DrawActionGlyph(float cx, float cy, bool playing, uint32_t col) {
+    float x = floorf(cx), y = floorf(cy);
+    if (playing) {
+        C2D_DrawRectSolid(x - 3.0f, y - 3.0f, 0.95f, 6.0f, 6.0f, col);
+    } else {
+        C2D_DrawTriangle(x - 3.0f, y - 4.0f, col, x - 3.0f, y + 4.0f, col,
+                         x + 4.0f, y, col, 0.95f);
+    }
+}
+
 static inline uint32_t Bgr555ToRgba8(uint16_t bgr, bool transparent) {
     if (transparent) return 0;
     uint32_t r = (bgr & 0x1F) * 255 / 31;
@@ -921,6 +1028,7 @@ static void CenterMapOnTile(uint8_t tileX, uint8_t tileY) {
 }
 
 void Port_BottomUI_Init(void) {
+    if (!sPtmuReady && R_SUCCEEDED(ptmuInit())) sPtmuReady = true;
     sCurrentTab = BOTTOM_TAB_MAP;
     sFrameCounter = 0;
     sViewArea = 0;
@@ -1017,25 +1125,23 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
      * next frame instead of waiting for the throttle. */
     Port_BottomUI_MarkDirty();
 
-    /* 4-Tab Top Navigation Bar (Y: 2 to 24) */
+    /* Remember where a fresh tap landed so any button under it flashes for a
+     * few frames (DrawButtonBox). Purely cosmetic -- the hit tests below are
+     * unchanged. */
+    if (isNewTap) Port_BottomUI_NoteTap(x, y);
+
+    /* Top navigation bar: icon tabs, left-aligned (Y: 2 to 24). */
     if (y >= 2 && y <= 24) {
         if (isNewTap) {
             PortBottomTab prevTab = sCurrentTab;
-            bool showDebug = Port_BottomUI_DebugTabVisible();
-            float totalGap = showDebug ? 12.0f : 8.0f;
-            float tabW = (320.0f - 8.0f - totalGap) / (showDebug ? 4.0f : 3.0f);
-            if (tabW > 80.0f) tabW = 80.0f;
-
-            float curX = 4.0f;
-            if (x >= curX && x <= curX + tabW) sCurrentTab = BOTTOM_TAB_MAP;
-            curX += tabW + 4.0f;
-            if (x >= curX && x <= curX + tabW) sCurrentTab = BOTTOM_TAB_STATUS;
-            curX += tabW + 4.0f;
-            if (showDebug) {
-                if (x >= curX && x <= curX + tabW) sCurrentTab = BOTTOM_TAB_DEBUG;
-                curX += tabW + 4.0f;
+            BottomTabSlot slots[4];
+            int n = BottomTabLayout(slots);
+            for (int i = 0; i < n; ++i) {
+                if ((float)x >= slots[i].x && (float)x <= slots[i].x + slots[i].w) {
+                    sCurrentTab = slots[i].tab;
+                    break;
+                }
             }
-            if (x >= curX && x <= curX + tabW) sCurrentTab = BOTTOM_TAB_OPTIONS;
             if (sCurrentTab != prevTab) Port_Config_Save();
         }
         sLastTouchX = -1;
@@ -1045,6 +1151,16 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
     }
 
     if (sCurrentTab == BOTTOM_TAB_MAP) {
+        /* Collectibles breakdown overlays the whole map -- only its CLOSE
+         * button dismisses it; all other taps are swallowed. */
+        if (isNewTap && sShowCollectiblesModal) {
+            if (x >= 100 && x <= 220 && y >= 204 && y <= 228) {
+                sShowCollectiblesModal = false;
+                sCollectiblesHighlightArea = -1;
+            }
+            return;
+        }
+
         /* Map Subheader controls (Y: 26 to 46) */
         if (y >= 26 && y <= 46) {
             if (isNewTap) {
@@ -1068,6 +1184,11 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
                     sViewArea = (sViewArea + 1) % 7;
                     CenterMapOnTile(16, 16);
                     Port_Config_Save();
+                }
+                /* Area items badge -> collectibles breakdown for this area */
+                else if (x >= 112 && x <= 156) {
+                    sShowCollectiblesModal = true;
+                    sCollectiblesHighlightArea = (int)sViewArea;
                 }
                 /* Zoom Button [ 1X / 2X / 3X ] */
                 else if (x >= 156 && x <= 196) {
@@ -1176,6 +1297,8 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
                 HandleDebugWarpModalTouch(x, y);
             } else if (sShowDebugEquipModal) {
                 HandleDebugEquipModalTouch(x, y);
+            } else if (sShowSoundTestModal) {
+                HandleSoundTestModalTouch(x, y);
             } else if (x >= 16 && x <= 304 && y >= 198 && y <= 224) {
                 sShowDebugToolsModal = true;
             }
@@ -1186,8 +1309,33 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
 
     if (sCurrentTab == BOTTOM_TAB_STATUS && isNewTap) {
         if (sShowCollectiblesModal) {
-            sShowCollectiblesModal = false;
+            /* Only the CLOSE button dismisses it; every other tap is swallowed
+             * so the status view behind it does not react. */
+            if (x >= 100 && x <= 220 && y >= 204 && y <= 228) {
+                sShowCollectiblesModal = false;
+                sCollectiblesHighlightArea = -1;
+            }
             return;
+        }
+
+        /* Tap the missile / super-missile cell in the header card to switch
+         * the selected ammo, same as the SELECT button (SamusSetHighlightedWeapon
+         * only re-derives it when one type is empty). */
+        if (y >= 48 && y <= 74) {
+            if (x >= 86 && x <= 160 && gEquipment.maxMissiles > 0 &&
+                gSamusWeaponInfo.missilesSelected != 0) {
+                gSamusWeaponInfo.missilesSelected = 0;
+                SoundPlay(SND_MISSILE_TOGGLE);
+                Port_BottomUI_MarkDirty();
+                return;
+            }
+            if (x >= 162 && x <= 236 && gEquipment.maxSuperMissiles > 0 &&
+                gSamusWeaponInfo.missilesSelected == 0) {
+                gSamusWeaponInfo.missilesSelected = 1;
+                SoundPlay(SND_MISSILE_TOGGLE);
+                Port_BottomUI_MarkDirty();
+                return;
+            }
         }
 #ifdef PORT_DEBUG_TOOLS_ACTIVE
         if (Port_BottomUI_DebugTabVisible()) {
@@ -1271,6 +1419,7 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
 #endif
         if (x >= 180 && x <= 310 && y >= 166 && y <= 186) {
             sShowCollectiblesModal = true;
+            sCollectiblesHighlightArea = -1;
             return;
         }
     }
@@ -1296,13 +1445,13 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
         float maxAchScroll = AchievementsMaxScroll();
 
         if (isNewTap) {
-            if (x >= 100 && x <= 220 && y >= 204 && y <= 230) {
+            if (x >= 100 && x <= 202 && y >= 204 && y <= 230) {
                 AchievementsBack();
                 sLastTouchX = -1;
                 sLastTouchY = -1;
                 return;
             }
-            if (x >= 224 && x <= 286 && y >= 204 && y <= 230) {
+            if (x >= 206 && x <= 286 && y >= 204 && y <= 230) {
                 CycleAchievementsSort();
                 sLastTouchX = -1;
                 sLastTouchY = -1;
@@ -1480,20 +1629,16 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
                         Port_RA_SetEnabled(!cur);
                         Port_Config_Save();
                     } else if (y >= 112 && y <= 136) {
-                        /* Hardcore Mode toggle. Turning it ON restarts the
-                         * game (rcheevos requires a clean run), so it goes
-                         * through the confirmation modal; turning it OFF is
-                         * immediate. Unavailable on debug-tools builds. */
-                        if (Port_RA_IsHardcore()) {
-                            Port_RA_SetHardcore(false);
+                        /* Notification screen row: PREVIEW button on the
+                         * right (fires a sample toast + jingle), rest of the
+                         * row toggles bottom <-> top. (Slot was the Hardcore
+                         * Mode toggle; hardcore is force-off now -- see
+                         * Port_RA_HardcoreAllowed.) */
+                        if (x >= 272) {
+                            Port_RA_ShowPreviewToast();
+                        } else {
+                            Port_RA_SetNotifyOnTopScreen(!Port_RA_GetNotifyOnTopScreen());
                             Port_Config_Save();
-                        } else if (Port_RA_HardcoreAllowed()) {
-                            /* Hand off to the confirm modal: close this one so
-                             * the confirm modal is what renders and takes
-                             * input (the render chain is a single else-if). */
-                            sShowRASettingsModal = false;
-                            sConfirmIsRestart = false;
-                            sShowConfirmModal = true;
                         }
                     } else if (y >= 140 && y <= 164) {
                         /* Sound Notification toggle */
@@ -1551,12 +1696,12 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
             float maxAchScroll = AchievementsMaxScroll();
 
             if (isNewTap) {
-                if (x >= 100 && x <= 220 && y >= 204 && y <= 230) {
+                if (x >= 100 && x <= 202 && y >= 204 && y <= 230) {
                     AchievementsBack();
                     sLastTouchX = -1; sLastTouchY = -1;
                     return;
                 }
-                if (x >= 224 && x <= 286 && y >= 204 && y <= 230) {
+                if (x >= 206 && x <= 286 && y >= 204 && y <= 230) {
                     CycleAchievementsSort();
                     sLastTouchX = -1; sLastTouchY = -1;
                     return;
@@ -1707,44 +1852,125 @@ void Port_BottomUI_TouchReleased(void) {
     sAchScrollbarDrag = false;
 }
 
-/* Render Navigation Bar (3 or 4 tabs depending on debug visibility) */
-static void RenderTabBar(void) {
-    int lang = GetLang();
-    const char* tabNames[7][4] = {
-        { "MAP", "STATUS", "DEBUG", "OPTIONS" },  /* JP */
-        { "MAP", "STATUS", "DEBUG", "OPTIONS" },  /* HIRA */
-        { "MAP", "STATUS", "DEBUG", "OPTIONS" },  /* EN */
-        { "KARTE", "STATUS", "DEBUG", "OPTIONEN" }, /* DE */
-        { "CARTE", "STATUT", "DEBUG", "OPTIONS" },  /* FR */
-        { "MAPPA", "STATO", "DEBUG", "OPZIONI" },  /* IT */
-        { "MAPA", "ESTADO", "DEBUG", "OPCIONES" }  /* ES */
-    };
+/* --- Top navigation bar: icon tabs (left) + system status (right) ------ */
 
+#define TAB_ICON_W    30.0f
+#define TAB_ICON_PITCH 34.0f   /* icon width + 4px gap */
+
+/* Shared layout used by both the renderer and the touch handler so a tap
+ * always lands on what is drawn. Left-aligned icon tabs; the freed
+ * right-hand space carries the clock/battery/wifi widget. */
+static int BottomTabLayout(BottomTabSlot slots[4]) {
     bool showDebug = Port_BottomUI_DebugTabVisible();
-    int tabCount = showDebug ? 4 : 3;
-
-    /* Distribute tabs evenly across 320px with small gaps */
-    float totalGap = (float)(tabCount - 1) * 4.0f; /* 4px gap between tabs */
-    float tabW = (320.0f - 8.0f - totalGap) / (float)tabCount; /* 4px margin each side */
-    if (tabW > 80.0f) tabW = 80.0f;
-
-    struct {
-        float x;
-        float w;
-        int nameIdx; /* index into tabNames[][4] -- debug is always idx 2 */
-        PortBottomTab tab;
-    } tabs[4];
-
-    float curX = 4.0f;
-    tabs[0].x = curX; tabs[0].w = tabW; tabs[0].nameIdx = 0; tabs[0].tab = BOTTOM_TAB_MAP;      curX += tabW + 4.0f;
-    tabs[1].x = curX; tabs[1].w = tabW; tabs[1].nameIdx = 1; tabs[1].tab = BOTTOM_TAB_STATUS;   curX += tabW + 4.0f;
+    int n = 0;
+    float x = 4.0f;
+    slots[n].x = x; slots[n].w = TAB_ICON_W; slots[n].tab = BOTTOM_TAB_MAP;     slots[n].icon = 0; n++; x += TAB_ICON_PITCH;
+    slots[n].x = x; slots[n].w = TAB_ICON_W; slots[n].tab = BOTTOM_TAB_STATUS;  slots[n].icon = 1; n++; x += TAB_ICON_PITCH;
     if (showDebug) {
-        tabs[2].x = curX; tabs[2].w = tabW; tabs[2].nameIdx = 2; tabs[2].tab = BOTTOM_TAB_DEBUG; curX += tabW + 4.0f;
+        slots[n].x = x; slots[n].w = TAB_ICON_W; slots[n].tab = BOTTOM_TAB_DEBUG; slots[n].icon = 2; n++; x += TAB_ICON_PITCH;
     }
-    tabs[showDebug ? 3 : 2].x = curX;
-    tabs[showDebug ? 3 : 2].w = tabW;
-    tabs[showDebug ? 3 : 2].nameIdx = 3;
-    tabs[showDebug ? 3 : 2].tab = BOTTOM_TAB_OPTIONS;
+    slots[n].x = x; slots[n].w = TAB_ICON_W; slots[n].tab = BOTTOM_TAB_OPTIONS; slots[n].icon = 3; n++;
+    return n;
+}
+
+/* One 14x14-ish glyph, all whole pixels, centred at (cx,cy).
+ * 0 map (room grid), 1 status (stat bars), 2 debug (bug), 3 options (sliders). */
+static void DrawTabIcon(int icon, float cx, float cy, uint32_t col, uint32_t bg) {
+    const float x = floorf(cx), y = floorf(cy);
+    (void)bg;
+    #define R(dx, dy, w, h) C2D_DrawRectSolid(x + (dx), y + (dy), 0.6f, (w), (h), col)
+    switch (icon) {
+    case 0: /* room grid (floor-plan ring: 3x3 cells, hollow centre) */
+        R(-7.0f, -7.0f, 4.0f, 4.0f); R(-2.0f, -7.0f, 4.0f, 4.0f); R(3.0f, -7.0f, 4.0f, 4.0f);
+        R(-7.0f, -2.0f, 4.0f, 4.0f);                              R(3.0f, -2.0f, 4.0f, 4.0f);
+        R(-7.0f,  3.0f, 4.0f, 4.0f); R(-2.0f,  3.0f, 4.0f, 4.0f); R(3.0f,  3.0f, 4.0f, 4.0f);
+        break;
+    case 1: /* stat bars -- 3px wide, 1px gaps, evenly spaced */
+        R(-6.0f,  1.0f, 3.0f, 4.0f);
+        R(-2.0f, -4.0f, 3.0f, 9.0f);
+        R( 2.0f, -1.0f, 3.0f, 6.0f);
+        break;
+    case 2: /* bug: head + antennae, body with a dorsal line, three legs a side
+             * (whole glyph sits 1px low so it reads centred in the tab) */
+        R(-1.0f, -7.0f, 1.0f, 2.0f); R( 1.0f, -7.0f, 1.0f, 2.0f);
+        R(-2.0f, -5.0f, 4.0f, 2.0f);
+        R(-3.0f, -3.0f, 3.0f, 8.0f); R( 1.0f, -3.0f, 3.0f, 8.0f);
+        R(-2.0f, -4.0f, 4.0f, 1.0f); R(-2.0f,  5.0f, 4.0f, 1.0f);
+        R(-6.0f, -2.0f, 3.0f, 1.0f); R(-6.0f, 1.0f, 3.0f, 1.0f); R(-6.0f, 4.0f, 3.0f, 1.0f);
+        R( 3.0f, -2.0f, 3.0f, 1.0f); R( 3.0f, 1.0f, 3.0f, 1.0f); R( 3.0f, 4.0f, 3.0f, 1.0f);
+        break;
+    default: /* sliders (nudged 1px low to read centred in the tab) */
+        R(-6.0f, -4.0f, 12.0f, 1.0f);
+        R(-6.0f,  0.0f, 12.0f, 1.0f);
+        R(-6.0f,  4.0f, 12.0f, 1.0f);
+        R(-2.0f, -5.0f, 3.0f, 3.0f);
+        R( 2.0f, -1.0f, 3.0f, 3.0f);
+        R(-5.0f,  3.0f, 3.0f, 3.0f);
+        break;
+    }
+    #undef R
+}
+
+/* Clock (HH:MM), wifi bars and a battery gauge, right-aligned in the bar. */
+static void DrawSystemStatus(void) {
+    const uint32_t frameCol = C2D_Color32(120, 132, 158, 255);
+    const uint32_t dimCol   = C2D_Color32(58, 66, 84, 255);
+    const uint32_t textCol  = C2D_Color32(210, 220, 235, 255);
+    const float cy = 13.0f;
+
+    /* Battery, at the far right. 15x8 shell + a 2x4 nub. */
+    float bx = 299.0f, by = cy - 4.0f;
+    C2D_DrawRectSolid(bx, by, 0.6f, 15.0f, 1.0f, frameCol);
+    C2D_DrawRectSolid(bx, by + 7.0f, 0.6f, 15.0f, 1.0f, frameCol);
+    C2D_DrawRectSolid(bx, by, 0.6f, 1.0f, 8.0f, frameCol);
+    C2D_DrawRectSolid(bx + 14.0f, by, 0.6f, 1.0f, 8.0f, frameCol);
+    C2D_DrawRectSolid(bx + 15.0f, by + 2.0f, 0.6f, 2.0f, 4.0f, frameCol);
+    if (sPtmuReady) {
+        int lvl = sBattLevel; if (lvl > 5) lvl = 5;
+        /* Interior is cols bx+1..bx+13 / rows by+1..by+6; inset the fill 1px on
+         * every side (max width 11, so a full gauge still shows a right margin). */
+        float fillW = (float)lvl * (11.0f / 5.0f);
+        uint32_t fc = sBattCharging      ? C2D_Color32(90, 210, 120, 255)
+                    : lvl <= 1           ? C2D_Color32(230, 80, 60, 255)
+                    : lvl == 2           ? C2D_Color32(235, 190, 70, 255)
+                                         : C2D_Color32(110, 205, 130, 255);
+        if (fillW > 0.0f) C2D_DrawRectSolid(bx + 2.0f, by + 2.0f, 0.61f, fillW, 4.0f, fc);
+        if (sBattCharging) {
+            /* small bolt, dark so it reads on the light-green charging fill */
+            const uint32_t boltCol = C2D_Color32(15, 60, 30, 255);
+            C2D_DrawTriangle(bx + 8.0f, by + 1.0f, boltCol, bx + 5.0f, by + 5.0f, boltCol,
+                             bx + 8.0f, by + 5.0f, boltCol, 0.63f);
+            C2D_DrawTriangle(bx + 7.0f, by + 3.0f, boltCol, bx + 10.0f, by + 3.0f, boltCol,
+                             bx + 7.0f, by + 6.0f, boltCol, 0.63f);
+        }
+    } else {
+        C2D_DrawRectSolid(bx + 5.0f, by + 3.0f, 0.61f, 4.0f, 2.0f, dimCol);
+    }
+
+    /* Wifi: three rising bars, lit up to the current strength (0..3). */
+    int wifi = (int)osGetWifiStrength();      /* 0..3 */
+    float wx = bx - 16.0f;
+    for (int i = 0; i < 3; ++i) {
+        float h = 3.0f + (float)i * 2.0f;
+        /* Bottom-aligned to the battery shell's lower edge (by + 8 == cy + 4)
+         * so the whole cluster shares one baseline. */
+        C2D_DrawRectSolid(wx + (float)i * 4.0f, cy + 4.0f - h, 0.6f, 2.0f, h,
+                          (i < wifi) ? frameCol : dimCol);
+    }
+
+    /* Clock, right edge just left of the wifi bars. */
+    time_t t = time(NULL);
+    struct tm lt;
+    char buf[8] = "--:--";
+    if (t != (time_t)-1 && localtime_r(&t, &lt))
+        snprintf(buf, sizeof(buf), "%02d:%02d", lt.tm_hour, lt.tm_min);
+    DrawText(wx - 4.0f - 5.0f * 6.0f, cy - 3.0f, 1.0f, buf, textCol);
+}
+
+/* Render Navigation Bar (icon tabs + system status) */
+static void RenderTabBar(void) {
+    BottomTabSlot slots[4];
+    int tabCount = BottomTabLayout(slots);
 
     /* Health tint: only active during real gameplay. Blinks to catch attention
      * even without looking directly at the screen. */
@@ -1755,8 +1981,8 @@ static void RenderTabBar(void) {
     bool blinkOn    = ((sFrameCounter & 0x0F) < 8);
 
     for (int i = 0; i < tabCount; ++i) {
-        bool active = (sCurrentTab == tabs[i].tab);
-        uint32_t bg, border, textColor;
+        bool active = (sCurrentTab == slots[i].tab);
+        uint32_t bg, border, iconColor;
 
         if (warnRed) {
             if (blinkOn) {
@@ -1766,7 +1992,7 @@ static void RenderTabBar(void) {
                 bg = active ? C2D_Color32(80, 18, 18, 255) : C2D_Color32(35, 12, 12, 255);
                 border = active ? C2D_Color32(160, 38, 30, 255) : C2D_Color32(65, 22, 18, 255);
             }
-            textColor = active ? C2D_Color32(255, 200, 190, 255) : C2D_Color32(200, 120, 110, 255);
+            iconColor = active ? C2D_Color32(255, 200, 190, 255) : C2D_Color32(200, 120, 110, 255);
         } else if (warnYellow) {
             if (blinkOn) {
                 bg = active ? C2D_Color32(130, 100, 24, 255) : C2D_Color32(55, 44, 16, 255);
@@ -1775,17 +2001,19 @@ static void RenderTabBar(void) {
                 bg = active ? C2D_Color32(90, 70, 18, 255) : C2D_Color32(38, 32, 12, 255);
                 border = active ? C2D_Color32(170, 130, 35, 255) : C2D_Color32(70, 58, 22, 255);
             }
-            textColor = active ? C2D_Color32(255, 245, 200, 255) : C2D_Color32(200, 175, 110, 255);
+            iconColor = active ? C2D_Color32(255, 245, 200, 255) : C2D_Color32(200, 175, 110, 255);
         } else {
             bg = active ? C2D_Color32(18, 70, 130, 255) : C2D_Color32(26, 30, 42, 255);
             border = active ? C2D_Color32(45, 150, 240, 255) : C2D_Color32(50, 56, 75, 255);
-            textColor = active ? C2D_Color32(255, 255, 255, 255) : C2D_Color32(140, 150, 175, 255);
+            iconColor = active ? C2D_Color32(255, 255, 255, 255) : C2D_Color32(140, 150, 175, 255);
         }
 
-        C2D_DrawRectSolid(tabs[i].x, 3.0f, 0.4f, tabs[i].w, 20.0f, border);
-        C2D_DrawRectSolid(tabs[i].x + 1.0f, 4.0f, 0.5f, tabs[i].w - 2.0f, 18.0f, bg);
-        DrawTextCentered(tabs[i].x + tabs[i].w / 2.0f, 9.0f, 1.0f, tabNames[lang][tabs[i].nameIdx], textColor);
+        C2D_DrawRectSolid(slots[i].x, 3.0f, 0.4f, slots[i].w, 20.0f, border);
+        C2D_DrawRectSolid(slots[i].x + 1.0f, 4.0f, 0.5f, slots[i].w - 2.0f, 18.0f, bg);
+        DrawTabIcon(slots[i].icon, slots[i].x + slots[i].w / 2.0f, 13.0f, iconColor, bg);
     }
+
+    DrawSystemStatus();
 }
 
 /* Decodes and draws an authentic 8x8 4bpp GBA minimap tile with correct ROM palette */
@@ -1902,6 +2130,20 @@ static void DrawPowerBombIcon(float x, float y) {
     C2D_DrawRectSolid(x + 2.0f, y + 2.0f, 0.65f, 8.0f, 6.0f, C2D_Color32(255, 240, 80, 255));
     C2D_DrawRectSolid(x + 4.0f, y + 3.0f, 0.7f, 4.0f, 4.0f, C2D_Color32(255, 100, 0, 255));
     C2D_DrawRectSolid(x + 5.0f, y + 4.0f, 0.75f, 2.0f, 2.0f, C2D_Color32(255, 255, 255, 255));
+}
+
+/* Thin remaining-ammo/health gauge: a sunk dark track with a 1px top edge
+ * and a tinted fill for cur/max. 3px tall so it tucks under the number
+ * inside the status header card. */
+static void DrawResourceBar(float x, float y, float w, uint32_t fillCol, unsigned cur, unsigned max) {
+    C2D_DrawRectSolid(x, y, 0.47f, w, 3.0f, C2D_Color32(8, 12, 20, 255));
+    C2D_DrawRectSolid(x, y, 0.475f, w, 1.0f, C2D_Color32(46, 56, 78, 255));
+    if (max > 0 && cur > 0) {
+        float fw = w * (float)cur / (float)max;
+        if (fw < 1.0f) fw = 1.0f;
+        if (fw > w) fw = w;
+        C2D_DrawRectSolid(x, y, 0.48f, fw, 3.0f, fillCol);
+    }
 }
 
 static const char* Port_Config_GetLanguageDisplayName(int lang) {
@@ -2176,38 +2418,48 @@ static void RenderCollectiblesModal(int lang) {
         GetAreaStats(a, &aStats);
         float py = 64.0f + (float)a * 19.0f;
 
-        C2D_DrawRectSolid(16.0f, py, 0.88f, 288.0f, 17.0f, (a % 2 == 0) ? C2D_Color32(20, 26, 40, 255) : C2D_Color32(14, 18, 30, 255));
+        bool hl = (a == sCollectiblesHighlightArea);
+        C2D_DrawRectSolid(16.0f, py, 0.88f, 288.0f, 17.0f,
+                          hl ? C2D_Color32(28, 54, 44, 255)
+                             : (a % 2 == 0) ? C2D_Color32(20, 26, 40, 255) : C2D_Color32(14, 18, 30, 255));
+        if (hl) {
+            C2D_DrawRectSolid(16.0f, py, 0.885f, 288.0f, 1.0f, C2D_Color32(90, 220, 150, 255));
+            C2D_DrawRectSolid(16.0f, py + 16.0f, 0.885f, 288.0f, 1.0f, C2D_Color32(90, 220, 150, 255));
+            C2D_DrawRectSolid(16.0f, py, 0.885f, 1.0f, 17.0f, C2D_Color32(90, 220, 150, 255));
+            C2D_DrawRectSolid(303.0f, py, 0.885f, 1.0f, 17.0f, C2D_Color32(90, 220, 150, 255));
+        }
 
-        DrawText(20.0f, py + 3.0f, 1.0f, AreaName(a), C2D_Color32(220, 235, 255, 255));
+        DrawText(20.0f, py + 5.0f, 1.0f, AreaName(a),
+                 hl ? C2D_Color32(180, 255, 210, 255) : C2D_Color32(220, 235, 255, 255));
 
         char cBuf[16];
         if (hideSpoilers) {
             snprintf(cBuf, sizeof(cBuf), "%u", aStats.energyObtained);
-            DrawText(115.0f, py + 3.0f, 1.0f, cBuf, aStats.energyObtained > 0 ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(90, 100, 120, 255));
+            DrawText(115.0f, py + 5.0f, 1.0f, cBuf, aStats.energyObtained > 0 ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(90, 100, 120, 255));
 
             snprintf(cBuf, sizeof(cBuf), "%u", aStats.missileObtained);
-            DrawText(155.0f, py + 3.0f, 1.0f, cBuf, aStats.missileObtained > 0 ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(90, 100, 120, 255));
+            DrawText(155.0f, py + 5.0f, 1.0f, cBuf, aStats.missileObtained > 0 ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(90, 100, 120, 255));
 
             snprintf(cBuf, sizeof(cBuf), "%u", aStats.superObtained);
-            DrawText(200.0f, py + 3.0f, 1.0f, cBuf, aStats.superObtained > 0 ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(90, 100, 120, 255));
+            DrawText(200.0f, py + 5.0f, 1.0f, cBuf, aStats.superObtained > 0 ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(90, 100, 120, 255));
 
             snprintf(cBuf, sizeof(cBuf), "%u", aStats.powerBombObtained);
-            DrawText(240.0f, py + 3.0f, 1.0f, cBuf, aStats.powerBombObtained > 0 ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(90, 100, 120, 255));
+            DrawText(240.0f, py + 5.0f, 1.0f, cBuf, aStats.powerBombObtained > 0 ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(90, 100, 120, 255));
         } else {
             snprintf(cBuf, sizeof(cBuf), "%u/%u", aStats.energyObtained, aStats.energyTotal);
-            DrawText(105.0f, py + 3.0f, 1.0f, cBuf, aStats.energyObtained == aStats.energyTotal ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 215, 0, 255));
+            DrawText(105.0f, py + 5.0f, 1.0f, cBuf, aStats.energyObtained == aStats.energyTotal ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 215, 0, 255));
 
             snprintf(cBuf, sizeof(cBuf), "%u/%u", aStats.missileObtained, aStats.missileTotal);
-            DrawText(145.0f, py + 3.0f, 1.0f, cBuf, aStats.missileObtained == aStats.missileTotal ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 140, 140, 255));
+            DrawText(145.0f, py + 5.0f, 1.0f, cBuf, aStats.missileObtained == aStats.missileTotal ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 140, 140, 255));
 
             snprintf(cBuf, sizeof(cBuf), "%u/%u", aStats.superObtained, aStats.superTotal);
-            DrawText(190.0f, py + 3.0f, 1.0f, cBuf, aStats.superObtained == aStats.superTotal ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(100, 255, 140, 255));
+            DrawText(190.0f, py + 5.0f, 1.0f, cBuf, aStats.superObtained == aStats.superTotal ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(100, 255, 140, 255));
 
             snprintf(cBuf, sizeof(cBuf), "%u/%u", aStats.powerBombObtained, aStats.powerBombTotal);
-            DrawText(230.0f, py + 3.0f, 1.0f, cBuf, aStats.powerBombObtained == aStats.powerBombTotal ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 225, 80, 255));
+            DrawText(230.0f, py + 5.0f, 1.0f, cBuf, aStats.powerBombObtained == aStats.powerBombTotal ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 225, 80, 255));
 
             snprintf(cBuf, sizeof(cBuf), "%u/%u", aStats.totalObtained, aStats.totalItems);
-            DrawText(268.0f, py + 3.0f, 1.0f, cBuf, aStats.totalObtained == aStats.totalItems ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 255, 255, 255));
+            DrawText(268.0f, py + 5.0f, 1.0f, cBuf, aStats.totalObtained == aStats.totalItems ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 255, 255, 255));
         }
     }
 
@@ -2215,8 +2467,8 @@ static void RenderCollectiblesModal(int lang) {
         "CLOSE", "CLOSE", "CLOSE",
         "SCHLIESSEN", "FERMER", "CHIUDI", "CERRAR"
     };
-    C2D_DrawRectSolid(100.0f, 204.0f, 0.9f, 120.0f, 20.0f, C2D_Color32(20, 70, 130, 255));
-    DrawTextCentered(160.0f, 209.0f, 1.0f, closeCollectiblesLabels[lang], C2D_Color32(255, 255, 255, 255));
+    DrawButton(116.0f, 204.0f, 88.0f, 20.0f, closeCollectiblesLabels[lang],
+               C2D_Color32(255, 255, 255, 255), BTN_BLUE_BODY, BTN_BLUE_BORDER);
 }
 
 static const char* AchSortLabel(int lang) {
@@ -2312,8 +2564,8 @@ static void RenderAchPacksModal(int lang) {
     static const char* backLabels[7] = {
         "BACK", "BACK", "BACK", "ZURUECK", "RETOUR", "INDIETRO", "VOLVER"
     };
-    C2D_DrawRectSolid(100.0f, 204.0f, 0.96f, 120.0f, 20.0f, C2D_Color32(20, 70, 130, 255));
-    DrawTextCentered(160.0f, 209.0f, 1.0f, backLabels[lang], C2D_Color32(255, 255, 255, 255));
+    DrawButton(116.0f, 204.0f, 88.0f, 20.0f, backLabels[lang],
+               C2D_Color32(255, 255, 255, 255), BTN_BLUE_BODY, BTN_BLUE_BORDER);
 }
 
 /* Colour RA uses for each special achievement type. */
@@ -2568,29 +2820,30 @@ static void RenderAchievementsModal(int lang) {
         "BACK", "BACK", "BACK",
         "ZURUECK", "RETOUR", "INDIETRO", "VOLVER"
     };
-    C2D_DrawRectSolid(100.0f, 204.0f, 0.96f, 120.0f, 20.0f, C2D_Color32(20, 70, 130, 255));
-    DrawTextCentered(160.0f, 209.0f, 1.0f, backLabels[lang], C2D_Color32(255, 255, 255, 255));
+    DrawButton(116.0f, 204.0f, 88.0f, 20.0f, backLabels[lang],
+               C2D_Color32(255, 255, 255, 255), BTN_BLUE_BODY, BTN_BLUE_BORDER);
 
     /* Sort cycler plus its direction arrow, on the footer bar beside BACK so
      * neither can collide with the scrolling card band above them. */
-    static const char* sortLabels[7] = {
-        "SORT", "SORT", "SORT", "SORT", "TRI", "ORDINA", "ORDEN"
-    };
-    C2D_DrawRectSolid(224.0f, 204.0f, 0.96f, 62.0f, 20.0f, C2D_Color32(24, 40, 70, 255));
-    DrawTextCentered(255.0f, 206.0f, 1.0f, sortLabels[lang], C2D_Color32(120, 150, 190, 255));
-    DrawTextCentered(255.0f, 214.0f, 1.0f, AchSortLabel(lang), C2D_Color32(150, 200, 255, 255));
+    /* Single line -- the two-line "SORT" + value never fit this 20px box and
+     * the caption clipped the top. The value alone plus the arrow next to it
+     * says enough. */
+    DrawButton(206.0f, 204.0f, 78.0f, 20.0f, AchSortLabel(lang),
+               C2D_Color32(190, 220, 255, 255),
+               C2D_Color32(24, 40, 70, 255), C2D_Color32(70, 110, 170, 255));
 
     /* Direction toggle: a chevron pointing down for descending (Z-A, most
      * points first, newest first) and up for ascending. Drawn as stacked
      * rows because this UI has no glyph for it. */
     bool descending = Port_RA_GetListDescending();
-    C2D_DrawRectSolid(288.0f, 204.0f, 0.96f, 18.0f, 20.0f, C2D_Color32(24, 40, 70, 255));
+    DrawButtonBox(288.0f, 204.0f, 18.0f, 20.0f,
+                  C2D_Color32(24, 40, 70, 255), C2D_Color32(70, 110, 170, 255));
     for (int row = 0; row < 4; ++row) {
         /* Widest row at the flat end, narrowest at the point. */
         int step = descending ? (3 - row) : row;
         float w = 2.0f + (float)step * 2.0f;
         float px = 297.0f - w * 0.5f;
-        float py = 209.0f + (float)row * 2.0f;
+        float py = 210.0f + (float)row * 2.0f;
         C2D_DrawRectSolid(px, py, 0.97f, w, 2.0f, C2D_Color32(150, 200, 255, 255));
     }
 }
@@ -2679,11 +2932,13 @@ static void RenderAchievementDetailModal(int lang) {
                            a->description[0] ? a->description : "(NO DESCRIPTION)",
                            pW - 24.0f, 12.0f, C2D_Color32(220, 235, 255, 255), clip0, clip1 - 26.0f);
 
-    C2D_DrawRectSolid(100.0f, 208.0f, 0.99f, 120.0f, 20.0f, C2D_Color32(20, 70, 130, 255));
-    static const char* backLabels[7] = {
-        "BACK", "BACK", "BACK", "ZURUECK", "RETOUR", "INDIETRO", "VOLVER"
-    };
-    DrawTextCentered(160.0f, 213.0f, 1.0f, backLabels[lang], C2D_Color32(255, 255, 255, 255));
+    {
+        static const char* backLabels[7] = {
+            "BACK", "BACK", "BACK", "ZURUECK", "RETOUR", "INDIETRO", "VOLVER"
+        };
+        DrawButton(116.0f, 208.0f, 88.0f, 20.0f, backLabels[lang],
+                   C2D_Color32(255, 255, 255, 255), BTN_BLUE_BODY, BTN_BLUE_BORDER);
+    }
 }
 
 /* Render Confirmation Dialog (hardcore enable / restart game) */
@@ -2728,16 +2983,16 @@ static void RenderConfirmModal(int lang) {
         "ACCEPT", "ACCEPT", "ACCEPT",
         "JA", "ACCEPTER", "ACCETTA", "ACEPTAR"
     };
-    C2D_DrawRectSolid(40.0f, 140.0f, 0.9f, 110.0f, 28.0f, C2D_Color32(20, 90, 45, 255));
-    DrawTextCentered(95.0f, 149.0f, 1.0f, acceptLabels[lang], C2D_Color32(255, 255, 255, 255));
+    DrawButton(40.0f, 140.0f, 110.0f, 28.0f, acceptLabels[lang], C2D_Color32(255, 255, 255, 255),
+               C2D_Color32(20, 90, 45, 255), C2D_Color32(70, 180, 100, 255));
 
     /* CANCEL button */
     static const char* const cancelModalLabels[7] = {
         "CANCEL", "CANCEL", "CANCEL",
         "NEIN", "ANNULER", "ANNULLA", "CANCELAR"
     };
-    C2D_DrawRectSolid(170.0f, 140.0f, 0.9f, 110.0f, 28.0f, C2D_Color32(110, 30, 30, 255));
-    DrawTextCentered(225.0f, 149.0f, 1.0f, cancelModalLabels[lang], C2D_Color32(255, 255, 255, 255));
+    DrawButton(170.0f, 140.0f, 110.0f, 28.0f, cancelModalLabels[lang], C2D_Color32(255, 255, 255, 255),
+               C2D_Color32(110, 30, 30, 255), C2D_Color32(200, 80, 80, 255));
 }
 
 /* Two-column grid for the DISPLAY modal. Same geometry as the debug-tools
@@ -2756,11 +3011,11 @@ static void RenderConfirmModal(int lang) {
 static void DispCell(int index, const char* label, const char* value, uint32_t valueCol) {
     float x = (index & 1) ? (float)DISP_COL_R_X : (float)DISP_COL_L_X;
     float y = (float)(DISP_GRID_Y0 + (index >> 1) * DISP_GRID_PITCH);
-    C2D_DrawRectSolid(x, y, 0.9f, (float)DISP_COL_W, (float)DISP_CELL_H, C2D_Color32(24, 32, 50, 255));
-    C2D_DrawRectSolid(x, y, 0.91f, (float)DISP_COL_W, 1.0f, C2D_Color32(50, 80, 130, 255));
-    DrawTextMaxWClipped(x + 6.0f, y + 2.0f, 1.0f, label, C2D_Color32(255, 255, 255, 255),
+    DrawButtonBox(x, y, (float)DISP_COL_W, (float)DISP_CELL_H,
+                  C2D_Color32(24, 32, 50, 255), C2D_Color32(50, 80, 130, 255));
+    DrawTextMaxWClipped(x + 6.0f, y + 4.0f, 1.0f, label, C2D_Color32(255, 255, 255, 255),
                         0.0f, 240.0f, (float)DISP_COL_W - 12.0f);
-    if (value) DrawTextMaxWClipped(x + 6.0f, y + 13.0f, 1.0f, value, valueCol,
+    if (value) DrawTextMaxWClipped(x + 6.0f, y + 14.0f, 1.0f, value, valueCol,
                                    0.0f, 240.0f, (float)DISP_COL_W - 12.0f);
 }
 
@@ -2864,12 +3119,12 @@ static void RenderDisplayModal(int lang) {
              bezelAllowed ? (bezelOn ? onCol : offCol) : idleCol);
 
     /* Close button (Y: 206 to 228) */
-    C2D_DrawRectSolid(100.0f, 206.0f, 0.9f, 120.0f, 22.0f, C2D_Color32(20, 70, 130, 255));
     static const char* const closeLabels[7] = {
         "CLOSE", "CLOSE", "CLOSE",
         "SCHLIESSEN", "FERMER", "CHIUDI", "CERRAR"
     };
-    DrawTextCentered(160.0f, 211.0f, 1.0f, closeLabels[lang], C2D_Color32(255, 255, 255, 255));
+    DrawButton(116.0f, 206.0f, 88.0f, 22.0f, closeLabels[lang],
+               C2D_Color32(255, 255, 255, 255), BTN_BLUE_BODY, BTN_BLUE_BORDER);
 }
 
 /* Render RetroAchievements Settings Modal */
@@ -2893,76 +3148,82 @@ static void RenderRASettingsModal(int lang) {
     }
     DrawText(200.0f, 32.0f, 1.0f, Port_RA_GetStatusString(lang), statusCol);
 
+    /* All four rows share one geometry: a button-styled box, the label at
+     * x+8, the value at x=170, both vertically centred. Row 3 also carries a
+     * square play sub-button flush to the right edge. */
+    const uint32_t rowBody = C2D_Color32(24, 32, 50, 255);
+    const uint32_t rowBorder = C2D_Color32(60, 90, 130, 255);
+
     /* Row 1: User Login (Y: 56 to 80) */
-    C2D_DrawRectSolid(16.0f, 56.0f, 0.9f, 288.0f, 24.0f, C2D_Color32(24, 32, 50, 255));
+    DrawButtonBox(16.0f, 56.0f, 288.0f, 24.0f, rowBody, rowBorder);
     const char* userLabels[7] = {
         "USER:", "USER:", "USER:",
         "BENUTZER:", "UTILISATEUR:", "UTENTE:", "USUARIO:"
     };
-    DrawText(24.0f, 62.0f, 1.0f, userLabels[lang], C2D_Color32(255, 255, 255, 255));
+    DrawText(24.0f, 65.0f, 1.0f, userLabels[lang], C2D_Color32(255, 255, 255, 255));
     const char* user = Port_RA_GetUsername();
     if (user && user[0] != '\0') {
-        DrawText(170.0f, 62.0f, 1.0f, user, C2D_Color32(255, 215, 0, 255));
+        DrawText(170.0f, 65.0f, 1.0f, user, C2D_Color32(255, 215, 0, 255));
     } else {
         const char* loginLabels[7] = {
             "LOGIN", "LOGIN", "LOGIN",
             "ANMELDEN", "CONNEXION", "ACCEDI", "INICIAR SESION"
         };
-        DrawText(170.0f, 62.0f, 1.0f, loginLabels[lang], C2D_Color32(255, 140, 80, 255));
+        DrawText(170.0f, 65.0f, 1.0f, loginLabels[lang], C2D_Color32(255, 140, 80, 255));
     }
 
     /* Row 2: Enable / Disable (Y: 84 to 108) */
-    C2D_DrawRectSolid(16.0f, 84.0f, 0.9f, 288.0f, 24.0f, C2D_Color32(24, 32, 50, 255));
+    DrawButtonBox(16.0f, 84.0f, 288.0f, 24.0f, rowBody, rowBorder);
     const char* sysLabels[7] = {
         "ACHIEVEMENTS SYS:", "ACHIEVEMENTS SYS:", "ACHIEVEMENTS SYS:",
         "ERFOLGE-SYSTEM:", "SYSTEME SUCCES:", "SISTEMA OBIETTIVI:", "SISTEMA LOGROS:"
     };
-    DrawText(24.0f, 90.0f, 1.0f, sysLabels[lang], C2D_Color32(255, 255, 255, 255));
+    DrawText(24.0f, 93.0f, 1.0f, sysLabels[lang], C2D_Color32(255, 255, 255, 255));
     bool raEn = Port_RA_IsEnabled();
     const char* onStr = (lang == 6) ? "ACTIVADO" : ((lang == 3) ? "AKTIVIERT" : ((lang == 4) ? "ACTIVE" : ((lang == 5) ? "ATTIVO" : "ENABLED")));
     const char* offStr = (lang == 6) ? "DESACTIVADO" : ((lang == 3) ? "DEAKTIVIERT" : ((lang == 4) ? "DESACTIVE" : ((lang == 5) ? "DISATTIVO" : "DISABLED")));
-    DrawText(170.0f, 90.0f, 1.0f, raEn ? onStr : offStr,
+    DrawText(170.0f, 93.0f, 1.0f, raEn ? onStr : offStr,
              raEn ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 100, 100, 255));
 
-    /* Row 3: Hardcore Mode (Y: 112 to 136) */
-    C2D_DrawRectSolid(16.0f, 112.0f, 0.9f, 288.0f, 24.0f, C2D_Color32(18, 24, 38, 255));
-    const char* hcLabels[7] = {
-        "HARDCORE MODE:", "HARDCORE MODE:", "HARDCORE MODE:",
-        "HARDCORE-MODUS:", "MODE HARDCORE:", "MODO HARDCORE:", "MODO HARDCORE:"
+    /* Row 3: Toast notification screen -- bottom or top (Y: 112 to 136).
+     * This slot used to be the Hardcore Mode toggle; hardcore is forced off
+     * now (Port_RA_HardcoreAllowed always false) so the row is repurposed.
+     * The play sub-button fires a sample toast (+ jingle). */
+    DrawButtonBox(16.0f, 112.0f, 288.0f, 24.0f, rowBody, rowBorder);
+    const char* scrLabels[7] = {
+        "NOTIFY SCREEN:", "NOTIFY SCREEN:", "NOTIFY SCREEN:",
+        "MELDUNG:", "ECRAN NOTIF:", "SCHERMO:", "PANTALLA AVISO:"
     };
-    DrawText(24.0f, 118.0f, 1.0f, hcLabels[lang], C2D_Color32(255, 255, 255, 255));
-    if (!Port_RA_HardcoreAllowed()) {
-        /* Debug-tools build: hardcore can never be enabled here. */
-        const char* naLabels[7] = {
-            "N/A (DEBUG BUILD)", "N/A (DEBUG BUILD)", "N/A (DEBUG BUILD)",
-            "N/A (DEBUG-BUILD)", "N/A (BUILD DEBUG)", "N/D (BUILD DEBUG)", "N/D (BUILD DEBUG)"
-        };
-        DrawText(170.0f, 118.0f, 1.0f, naLabels[lang], C2D_Color32(130, 140, 160, 255));
-    } else {
-        bool hcOn = Port_RA_IsHardcore();
-        DrawText(170.0f, 118.0f, 1.0f, hcOn ? onStr : offStr,
-                 hcOn ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 100, 100, 255));
+    DrawText(24.0f, 121.0f, 1.0f, scrLabels[lang], C2D_Color32(255, 255, 255, 255));
+    bool notifTop = Port_RA_GetNotifyOnTopScreen();
+    const char* topLabels[7] = { "TOP", "TOP", "TOP", "OBEN", "HAUT", "ALTO", "SUPERIOR" };
+    const char* botLabels[7] = { "BOTTOM", "BOTTOM", "BOTTOM", "UNTEN", "BAS", "BASSO", "INFERIOR" };
+    DrawText(170.0f, 121.0f, 1.0f, notifTop ? topLabels[lang] : botLabels[lang],
+             C2D_Color32(120, 200, 255, 255));
+    {
+        bool pp = DrawButtonBox(276.0f, 114.0f, 28.0f, 20.0f, BTN_BLUE_BODY, BTN_BLUE_BORDER);
+        DrawActionGlyph(290.0f, 124.0f + (pp ? 1.0f : 0.0f), false, C2D_Color32(255, 255, 255, 255));
     }
 
     /* Row 4: Achievement Notification Sound (Y: 140 to 164) */
-    C2D_DrawRectSolid(16.0f, 140.0f, 0.9f, 288.0f, 24.0f, C2D_Color32(24, 32, 50, 255));
+    DrawButtonBox(16.0f, 140.0f, 288.0f, 24.0f, rowBody, rowBorder);
     const char* sndLabels[7] = {
         "ACHIEVEMENT SOUND:", "ACHIEVEMENT SOUND:", "ACHIEVEMENT SOUND:",
         "ERFOLG-TON:", "SON NOTIFICATION:", "SUONO NOTIFICA:", "SONIDO LOGRO:"
     };
-    DrawText(24.0f, 146.0f, 1.0f, sndLabels[lang], C2D_Color32(255, 255, 255, 255));
+    DrawText(24.0f, 149.0f, 1.0f, sndLabels[lang], C2D_Color32(255, 255, 255, 255));
     bool snd = Port_RA_GetNotificationSound();
-    DrawText(170.0f, 146.0f, 1.0f, snd ? ((lang == 6) ? "ACTIVADO" : ((lang == 3) ? "EIN" : ((lang == 4) ? "ACTIVE" : ((lang == 5) ? "ATTIVO" : "ON"))))
+    DrawText(170.0f, 149.0f, 1.0f, snd ? ((lang == 6) ? "ACTIVADO" : ((lang == 3) ? "EIN" : ((lang == 4) ? "ACTIVE" : ((lang == 5) ? "ATTIVO" : "ON"))))
                                        : ((lang == 6) ? "DESACTIVADO" : ((lang == 3) ? "AUS" : ((lang == 4) ? "DESACTIVE" : ((lang == 5) ? "DISATTIVO" : "OFF")))),
              snd ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 100, 100, 255));
 
     /* Close button */
-    C2D_DrawRectSolid(100.0f, 206.0f, 0.9f, 120.0f, 22.0f, C2D_Color32(20, 70, 130, 255));
     const char* closeRALabels[7] = {
         "CLOSE", "CLOSE", "CLOSE",
         "SCHLIESSEN", "FERMER", "CHIUDI", "CERRAR"
     };
-    DrawTextCentered(160.0f, 212.0f, 1.0f, closeRALabels[lang], C2D_Color32(255, 255, 255, 255));
+    DrawButton(116.0f, 206.0f, 88.0f, 22.0f, closeRALabels[lang],
+               C2D_Color32(255, 255, 255, 255), BTN_BLUE_BODY, BTN_BLUE_BORDER);
 }
 
 /* Action picker popup for remapping */
@@ -3027,7 +3288,7 @@ static void RenderRemapSelectModal(int lang) {
 
         C2D_DrawRectSolid(bx, by, 0.97f, bw, bh, bdrCol);
         C2D_DrawRectSolid(bx + 1.0f, by + 1.0f, 0.98f, bw - 2.0f, bh - 2.0f, bgCol);
-        DrawTextCentered(bx + bw / 2.0f, by + 7.0f, 1.0f, Port_Config_GetActionName(act, lang), textCol);
+        DrawTextCentered(bx + bw / 2.0f, by + 9.0f, 1.0f, Port_Config_GetActionName(act, lang), textCol);
     }
 
     /* Cancel button in col 1, row 4 */
@@ -3039,7 +3300,7 @@ static void RenderRemapSelectModal(int lang) {
         "CANCEL", "CANCEL", "CANCEL",
         "ABBRECHEN", "ANNULER", "ANNULLA", "CANCELAR"
     };
-    DrawTextCentered(cx + 70.0f, cy + 7.0f, 1.0f, cancelLabels[lang], C2D_Color32(255, 140, 140, 255));
+    DrawTextCentered(cx + 70.0f, cy + 9.0f, 1.0f, cancelLabels[lang], C2D_Color32(255, 140, 140, 255));
 }
 
 static void RenderRemapModal(int lang) {
@@ -3086,13 +3347,13 @@ static void RenderRemapModal(int lang) {
             C2D_DrawRectSolid(16.0f, rY0, 0.89f, 284.0f, 1.0f, C2D_Color32(45, 60, 90, 255));
         }
 
-        DrawTextClipped(24.0f, py + 7.0f, 1.0f,
+        DrawTextClipped(24.0f, py + 9.0f, 1.0f,
             btnRowNames[lang][i],
             C2D_Color32(255, 255, 255, 255), viewY0, viewY1);
         int act = Port_Config_GetButtonMapping(i);
         bool actDisabled = ((act == 1 || act == 2) && hcActive);
         uint32_t actCol = actDisabled ? C2D_Color32(110, 120, 140, 255) : C2D_Color32(255, 215, 0, 255);
-        DrawTextClipped(150.0f, py + 7.0f, 1.0f,
+        DrawTextClipped(150.0f, py + 9.0f, 1.0f,
             Port_Config_GetActionName(act, lang),
             actCol, viewY0, viewY1);
     }
@@ -3107,7 +3368,7 @@ static void RenderRemapModal(int lang) {
             C2D_DrawRectSolid(16.0f, rY0, 0.89f, 284.0f, 1.0f, C2D_Color32(50, 80, 120, 255));
         }
 
-        DrawTextClipped(24.0f, cstickY + 7.0f, 1.0f,
+        DrawTextClipped(24.0f, cstickY + 9.0f, 1.0f,
             "C-STICK:",
             C2D_Color32(255, 255, 255, 255), viewY0, viewY1);
         int cmode = Port_Config_GetCstickMode();
@@ -3120,7 +3381,7 @@ static void RenderRemapModal(int lang) {
             { "DISATTIVO", "SOLO MIRA", "SOLO MOVIMENTO", "TUTTO" },
             { "DESACTIVADO", "SOLO APUNTAR", "SOLO MOVIMIENTO", "TODO" }
         };
-        DrawTextClipped(150.0f, cstickY + 7.0f, 1.0f,
+        DrawTextClipped(150.0f, cstickY + 9.0f, 1.0f,
             cstickModeNames[lang][cmode],
             C2D_Color32(255, 215, 0, 255), viewY0, viewY1);
     }
@@ -3136,18 +3397,12 @@ static void RenderRemapModal(int lang) {
 
     /* Bottom buttons (Fixed at bottom): RESTABLECER (Left) + CERRAR (Right) */
     /* Reset Defaults Button (X: 16 to 156, W: 140) */
-    C2D_DrawRectSolid(16.0f, 206.0f, 0.94f, 140.0f, 22.0f, C2D_Color32(90, 35, 35, 255));
-    C2D_DrawRectSolid(17.0f, 207.0f, 0.95f, 138.0f, 20.0f, C2D_Color32(60, 22, 22, 255));
-    DrawTextCentered(86.0f, 212.0f, 1.0f,
-        (lang == 6) ? "RESTABLECER" : "RESET DEFAULTS",
-        C2D_Color32(255, 170, 170, 255));
+    DrawButton(16.0f, 206.0f, 140.0f, 22.0f, (lang == 6) ? "RESTABLECER" : "RESET DEFAULTS",
+               C2D_Color32(255, 170, 170, 255), C2D_Color32(90, 35, 35, 255), C2D_Color32(190, 80, 80, 255));
 
     /* Close button (X: 164 to 304, W: 140) */
-    C2D_DrawRectSolid(164.0f, 206.0f, 0.94f, 140.0f, 22.0f, C2D_Color32(20, 70, 130, 255));
-    C2D_DrawRectSolid(165.0f, 207.0f, 0.95f, 138.0f, 20.0f, C2D_Color32(14, 45, 85, 255));
-    DrawTextCentered(234.0f, 212.0f, 1.0f,
-        (lang == 6) ? "CERRAR" : "CLOSE",
-        C2D_Color32(255, 255, 255, 255));
+    DrawButton(164.0f, 206.0f, 140.0f, 22.0f, (lang == 6) ? "CERRAR" : "CLOSE",
+               C2D_Color32(255, 255, 255, 255), BTN_BLUE_BODY, BTN_BLUE_BORDER);
 
     /* Render action picker popup if active */
     if (sRemapSelectButtonIdx >= 0) {
@@ -3429,6 +3684,10 @@ static void RenderMapView(void) {
     DrawTextCentered(warpBtnX + warpBtnW / 2.0f, warpBtnY + (warpBtnH - 8.0f) / 2.0f, 1.0f,
                      sDebugMapWarpArmed ? "WARP: ON" : "WARP: OFF", warpBtnTextCol);
 #endif
+
+    /* Per-area collectibles breakdown, opened by tapping the item badge in
+     * the subheader (the row for this area is highlighted). */
+    if (sShowCollectiblesModal) RenderCollectiblesModal(GetLang());
 }
 
 /* Render Status (Estado) View */
@@ -3469,51 +3728,55 @@ static void RenderStatusView(void) {
     else if (inRealGameplay && gEquipment.currentEnergy < 60)
         energyCol = C2D_Color32(255, 200, 50, 255);      /* warning yellow */
     DrawText(31.0f, 56.0f, 1.0f, eBuf, energyCol);
+    DrawResourceBar(14.0f, 67.0f, 66.0f, C2D_Color32(255, 200, 60, 255),
+                    gEquipment.currentEnergy, gEquipment.maxEnergy);
 
-    /* Missiles — highlight when selected */
+    /* Missiles — icon/number/bar only when owned; box highlights when selected.
+     * The whole 86..160 cell is tappable to switch to normal missiles (same as
+     * SELECT) -- see Port_BottomUI_HandleTouchDrag. */
     {
         bool normSelected = (gSamusWeaponInfo.missilesSelected == 0);
-        if (normSelected && gEquipment.maxMissiles > 0) {
-            C2D_DrawRectSolid(86.0f, 50.0f, 0.46f, 74.0f, 22.0f, C2D_Color32(30, 50, 90, 255));
-            C2D_DrawRectSolid(86.0f, 50.0f, 0.47f, 74.0f, 1.0f, C2D_Color32(80, 180, 255, 255));
-            C2D_DrawRectSolid(86.0f, 71.0f, 0.47f, 74.0f, 1.0f, C2D_Color32(80, 180, 255, 255));
-        }
-        DrawMissileIcon(90.0f, 55.0f);
-        char mBuf[32];
         if (gEquipment.maxMissiles > 0) {
+            if (normSelected) {
+                C2D_DrawRectSolid(86.0f, 50.0f, 0.46f, 74.0f, 22.0f, C2D_Color32(30, 50, 90, 255));
+                C2D_DrawRectSolid(86.0f, 50.0f, 0.47f, 74.0f, 1.0f, C2D_Color32(80, 180, 255, 255));
+                C2D_DrawRectSolid(86.0f, 71.0f, 0.47f, 74.0f, 1.0f, C2D_Color32(80, 180, 255, 255));
+            }
+            DrawMissileIcon(90.0f, 55.0f);
+            char mBuf[32];
             snprintf(mBuf, sizeof(mBuf), "%03u/%03u", gEquipment.currentMissiles, gEquipment.maxMissiles);
             DrawText(107.0f, 56.0f, 1.0f, mBuf, normSelected ? C2D_Color32(255, 200, 200, 255) : C2D_Color32(255, 140, 140, 255));
-        } else {
-            DrawText(107.0f, 56.0f, 1.0f, "---/---", C2D_Color32(100, 110, 130, 255));
+            DrawResourceBar(90.0f, 67.0f, 66.0f, C2D_Color32(232, 84, 84, 255),
+                            gEquipment.currentMissiles, gEquipment.maxMissiles);
         }
     }
 
-    /* Super Missiles — highlight when selected */
+    /* Super Missiles — same treatment; cell tap selects supers. */
     {
         bool superSelected = (gSamusWeaponInfo.missilesSelected != 0);
-        if (superSelected && gEquipment.maxSuperMissiles > 0) {
-            C2D_DrawRectSolid(162.0f, 50.0f, 0.46f, 74.0f, 22.0f, C2D_Color32(20, 50, 30, 255));
-            C2D_DrawRectSolid(162.0f, 50.0f, 0.47f, 74.0f, 1.0f, C2D_Color32(80, 255, 140, 255));
-            C2D_DrawRectSolid(162.0f, 71.0f, 0.47f, 74.0f, 1.0f, C2D_Color32(80, 255, 140, 255));
-        }
-        DrawSuperMissileIcon(166.0f, 55.0f);
-        char smBuf[32];
         if (gEquipment.maxSuperMissiles > 0) {
+            if (superSelected) {
+                C2D_DrawRectSolid(162.0f, 50.0f, 0.46f, 74.0f, 22.0f, C2D_Color32(20, 50, 30, 255));
+                C2D_DrawRectSolid(162.0f, 50.0f, 0.47f, 74.0f, 1.0f, C2D_Color32(80, 255, 140, 255));
+                C2D_DrawRectSolid(162.0f, 71.0f, 0.47f, 74.0f, 1.0f, C2D_Color32(80, 255, 140, 255));
+            }
+            DrawSuperMissileIcon(166.0f, 55.0f);
+            char smBuf[32];
             snprintf(smBuf, sizeof(smBuf), "%02u/%02u", gEquipment.currentSuperMissiles, gEquipment.maxSuperMissiles);
             DrawText(183.0f, 56.0f, 1.0f, smBuf, superSelected ? C2D_Color32(160, 255, 200, 255) : C2D_Color32(100, 255, 140, 255));
-        } else {
-            DrawText(183.0f, 56.0f, 1.0f, "--/--", C2D_Color32(100, 110, 130, 255));
+            DrawResourceBar(166.0f, 67.0f, 66.0f, C2D_Color32(96, 224, 136, 255),
+                            gEquipment.currentSuperMissiles, gEquipment.maxSuperMissiles);
         }
     }
 
-    /* Power Bombs */
-    DrawPowerBombIcon(238.0f, 55.0f);
-    char pbBuf[32];
+    /* Power Bombs — icon/number/bar only when owned. */
     if (gEquipment.maxPowerBombs > 0) {
+        DrawPowerBombIcon(238.0f, 55.0f);
+        char pbBuf[32];
         snprintf(pbBuf, sizeof(pbBuf), "%02u/%02u", gEquipment.currentPowerBombs, gEquipment.maxPowerBombs);
         DrawText(254.0f, 56.0f, 1.0f, pbBuf, C2D_Color32(255, 225, 80, 255));
-    } else {
-        DrawText(254.0f, 56.0f, 1.0f, "--/--", C2D_Color32(100, 110, 130, 255));
+        DrawResourceBar(242.0f, 67.0f, 62.0f, C2D_Color32(255, 196, 72, 255),
+                        gEquipment.currentPowerBombs, gEquipment.maxPowerBombs);
     }
 
     /* 2. Beams & Weapons Column (X: 8, W: 148, Y: 76 to 164) */
@@ -3751,8 +4014,8 @@ static void RenderOptionsView(void) {
     C2D_DrawRectSolid(viewX0, viewY0, 0.38f, viewW, viewH, C2D_Color32(35, 45, 70, 255));
 
     /* Button 1: Display settings (Y: 48 to 76, H: 28) */
-    C2D_DrawRectSolid(16.0f, 48.0f, 0.5f, 288.0f, 28.0f, C2D_Color32(20, 50, 90, 255));
-    C2D_DrawRectSolid(17.0f, 49.0f, 0.55f, 286.0f, 26.0f, C2D_Color32(12, 30, 60, 255));
+    bool p1 = DrawButtonBox(16.0f, 48.0f, 288.0f, 28.0f,
+                            C2D_Color32(16, 40, 74, 255), C2D_Color32(60, 110, 180, 255));
     static const char* const displayBtnTitles[7] = {
         "DISPLAY", "DISPLAY", "DISPLAY",
         "BILDSCHIRM", "AFFICHAGE", "SCHERMO", "PANTALLA"
@@ -3761,18 +4024,18 @@ static void RenderOptionsView(void) {
         "LANGUAGE, ASPECT, STYLE, FPS", "LANGUAGE, ASPECT, STYLE, FPS", "LANGUAGE, ASPECT, STYLE, FPS",
         "SPRACHE, BILD, STIL, FPS", "LANGUE, FORMAT, STYLE, FPS", "LINGUA, FORMATO, STILE, FPS", "IDIOMA, ASPECTO, ESTILO, FPS"
     };
-    DrawTextCentered(160.0f, 52.0f, 1.0f, displayBtnTitles[lang], C2D_Color32(100, 200, 255, 255));
-    DrawTextCentered(160.0f, 63.0f, 1.0f, displayBtnSubs[lang], C2D_Color32(140, 160, 190, 255));
+    DrawTextCentered(160.0f, 53.0f + (p1 ? 1.0f : 0.0f), 1.0f, displayBtnTitles[lang], C2D_Color32(120, 210, 255, 255));
+    DrawTextCentered(160.0f, 64.0f + (p1 ? 1.0f : 0.0f), 1.0f, displayBtnSubs[lang], C2D_Color32(150, 170, 200, 255));
 
     /* Button 2 & 3: RetroAchievements Split into 2 side-by-side buttons (Y: 82 to 118, H: 36) */
     /* 2A: RA Settings / Login (Left: X 16 to 156, W: 140) */
-    C2D_DrawRectSolid(16.0f, 82.0f, 0.5f, 140.0f, 36.0f, C2D_Color32(20, 60, 40, 255));
-    C2D_DrawRectSolid(17.0f, 83.0f, 0.55f, 138.0f, 34.0f, C2D_Color32(12, 38, 24, 255));
+    bool p2a = DrawButtonBox(16.0f, 82.0f, 140.0f, 36.0f,
+                             C2D_Color32(16, 50, 32, 255), C2D_Color32(55, 150, 95, 255));
     static const char* const raSettingsTitles[7] = {
         "RA SETTINGS", "RA SETTINGS", "RA SETTINGS",
         "RA-EINSTELL.", "PARAMETRES RA", "IMPOSTAZIONI RA", "AJUSTES RA"
     };
-    DrawTextCentered(86.0f, 87.0f, 1.0f, raSettingsTitles[lang], C2D_Color32(100, 255, 160, 255));
+    DrawTextCentered(86.0f, 91.0f + (p2a ? 1.0f : 0.0f), 1.0f, raSettingsTitles[lang], C2D_Color32(120, 255, 175, 255));
     uint32_t raStatusCol = C2D_Color32(140, 160, 190, 255);
     switch (Port_RA_GetStatus()) {
         case RA_STATUS_CONNECTED: raStatusCol = C2D_Color32(80, 255, 120, 255); break;
@@ -3780,16 +4043,16 @@ static void RenderOptionsView(void) {
         case RA_STATUS_ERROR: raStatusCol = C2D_Color32(255, 90, 90, 255); break;
         default: break;
     }
-    DrawTextCentered(86.0f, 100.0f, 1.0f, Port_RA_GetStatusString(lang), raStatusCol);
+    DrawTextCentered(86.0f, 103.0f + (p2a ? 1.0f : 0.0f), 1.0f, Port_RA_GetStatusString(lang), raStatusCol);
 
     /* 2B: RA Achievement List & Progress (Right: X 164 to 304, W: 140) */
-    C2D_DrawRectSolid(164.0f, 82.0f, 0.5f, 140.0f, 36.0f, C2D_Color32(20, 60, 40, 255));
-    C2D_DrawRectSolid(165.0f, 83.0f, 0.55f, 138.0f, 34.0f, C2D_Color32(12, 38, 24, 255));
+    bool p2b = DrawButtonBox(164.0f, 82.0f, 140.0f, 36.0f,
+                             C2D_Color32(16, 50, 32, 255), C2D_Color32(55, 150, 95, 255));
     static const char* const viewAchTitles[7] = {
         "VIEW ACHIEVEMENTS", "VIEW ACHIEVEMENTS", "VIEW ACHIEVEMENTS",
         "ERFOLGE", "VOIR SUCCES", "VEDI OBIETTIVI", "VER LOGROS"
     };
-    DrawTextCentered(234.0f, 87.0f, 1.0f, viewAchTitles[lang], C2D_Color32(100, 255, 160, 255));
+    DrawTextCentered(234.0f, 91.0f + (p2b ? 1.0f : 0.0f), 1.0f, viewAchTitles[lang], C2D_Color32(120, 255, 175, 255));
     uint32_t count = Port_RA_GetAchievementCount();
     uint32_t unlocked = Port_RA_GetUnlockedCount();
     char achSummary[32];
@@ -3801,11 +4064,11 @@ static void RenderOptionsView(void) {
         };
         snprintf(achSummary, sizeof(achSummary), "%s", achEmptyLabels[lang]);
     }
-    DrawTextCentered(234.0f, 100.0f, 1.0f, achSummary, C2D_Color32(140, 240, 180, 255));
+    DrawTextCentered(234.0f, 103.0f + (p2b ? 1.0f : 0.0f), 1.0f, achSummary, C2D_Color32(140, 240, 180, 255));
 
     /* Button 4: Controls remapping (Y: 124 to 156, H: 32) */
-    C2D_DrawRectSolid(16.0f, 124.0f, 0.5f, 288.0f, 32.0f, C2D_Color32(50, 35, 15, 255));
-    C2D_DrawRectSolid(17.0f, 125.0f, 0.55f, 286.0f, 30.0f, C2D_Color32(35, 24, 10, 255));
+    bool p4 = DrawButtonBox(16.0f, 124.0f, 288.0f, 32.0f,
+                            C2D_Color32(46, 32, 12, 255), C2D_Color32(170, 130, 60, 255));
     static const char* const ctrlTitles[7] = {
         "CONTROLS", "CONTROLS", "CONTROLS",
         "STEUERUNG", "COMMANDES", "CONTROLLI", "CONTROLES"
@@ -3814,18 +4077,16 @@ static void RenderOptionsView(void) {
         "REMAPPABLE BUTTONS & C-STICK", "REMAPPABLE BUTTONS & C-STICK", "REMAPPABLE BUTTONS & C-STICK",
         "TASTEN & C-STICK BELEGEN", "TOUCHES ET C-STICK", "RIMAPPA TASTI E C-STICK", "MAPEAR BOTONES Y C-STICK"
     };
-    DrawTextCentered(160.0f, 129.0f, 1.0f, ctrlTitles[lang], C2D_Color32(255, 210, 80, 255));
-    DrawTextCentered(160.0f, 140.0f, 1.0f, ctrlSubs[lang], C2D_Color32(180, 160, 110, 255));
+    DrawTextCentered(160.0f, 131.0f + (p4 ? 1.0f : 0.0f), 1.0f, ctrlTitles[lang], C2D_Color32(255, 215, 90, 255));
+    DrawTextCentered(160.0f, 142.0f + (p4 ? 1.0f : 0.0f), 1.0f, ctrlSubs[lang], C2D_Color32(190, 170, 120, 255));
 
     /* Restart button (Y: 164 to 192, H: 28) */
-    C2D_DrawRectSolid(16.0f, 164.0f, 0.5f, 288.0f, 28.0f, C2D_Color32(70, 25, 25, 255));
-    C2D_DrawRectSolid(17.0f, 165.0f, 0.55f, 286.0f, 26.0f, C2D_Color32(50, 18, 18, 255));
-    C2D_DrawRectSolid(17.0f, 165.0f, 0.56f, 286.0f, 1.0f, C2D_Color32(180, 60, 60, 255));
     static const char* const restartBtnTitles[7] = {
         "RESTART GAME", "RESTART GAME", "RESTART GAME",
         "SPIEL NEUSTARTEN", "RECOMMENCER PARTIE", "RIAVVIA PARTITA", "REINICIAR PARTIDA"
     };
-    DrawTextCentered(160.0f, 171.0f, 1.0f, restartBtnTitles[lang], C2D_Color32(255, 130, 130, 255));
+    DrawButton(16.0f, 164.0f, 288.0f, 28.0f, restartBtnTitles[lang],
+               C2D_Color32(255, 150, 150, 255), C2D_Color32(64, 22, 22, 255), C2D_Color32(180, 60, 60, 255));
 
     /* Footer */
     DrawTextCentered(160.0f, 212.0f, 1.0f, "METROID ZERO MISSION 3DS " MZM_PORT_VERSION, C2D_Color32(90, 115, 145, 255));
@@ -3851,17 +4112,19 @@ static void RenderOptionsView(void) {
 #define DBGTOOL_COL_L_X   16
 #define DBGTOOL_COL_R_X   164
 #define DBGTOOL_COL_W     140
-#define DBGTOOL_GRID_Y0   40
-#define DBGTOOL_GRID_PITCH 23
-#define DBGTOOL_CELL_H    22
-/* Cells 11..13 (RENDERER GPU/CPU, BLOQUES 16x16, CACHE CAPAS) only exist
+#define DBGTOOL_GRID_Y0   42   /* clears the modal title at y=32..39 */
+#define DBGTOOL_GRID_PITCH 20
+#define DBGTOOL_CELL_H    19
+/* Cells 9..11 (RENDERER GPU/CPU, BLOQUES 16x16, CACHE CAPAS) only exist
  * when the GPU tile renderer is compiled in -- a RENDERER=cpu build has
  * nothing to switch to and neither pass to switch off. */
 #ifdef PORT_GPU_TILE_RENDERER
-#define DBGTOOL_COUNT     14
+#define DBGTOOL_COUNT     13
 #else
-#define DBGTOOL_COUNT     11
+#define DBGTOOL_COUNT     10
 #endif
+/* Always the last cell: opens the SOUND TEST sub-modal. */
+#define DBGTOOL_SOUNDTEST_CELL (DBGTOOL_COUNT - 1)
 /* DERIVED, never hand-written. It used to be a literal 6, which was right
  * for twelve tools and silently wrong for the thirteenth, which drew itself
  * on row 6 -- on top of the status line and the CLOSE button --
@@ -3884,9 +4147,9 @@ _Static_assert(DBGTOOL_GRID_Y0 + (DBGTOOL_GRID_ROWS - 1) * DBGTOOL_GRID_PITCH + 
 static void DrawDebugCell(int index, const char* label, const char* state, uint32_t accent) {
     float x = DBGTOOL_CELL_X(index & 1);
     float y = DBGTOOL_CELL_Y(index >> 1);
-    C2D_DrawRectSolid(x, y, 0.9f, (float)DBGTOOL_COL_W, (float)DBGTOOL_CELL_H, C2D_Color32(24, 32, 50, 255));
-    C2D_DrawRectSolid(x, y, 0.91f, (float)DBGTOOL_COL_W, 1.0f, C2D_Color32(50, 80, 130, 255));
-    DrawTextMaxWClipped(x + 6.0f, y + 1.0f, 1.0f, label, C2D_Color32(255, 255, 255, 255),
+    DrawButtonBox(x, y, (float)DBGTOOL_COL_W, (float)DBGTOOL_CELL_H,
+                  C2D_Color32(24, 32, 50, 255), C2D_Color32(50, 80, 130, 255));
+    DrawTextMaxWClipped(x + 6.0f, y + 2.0f, 1.0f, label, C2D_Color32(255, 255, 255, 255),
                         0.0f, 240.0f, (float)DBGTOOL_COL_W - 12.0f);
     if (state) DrawText(x + 6.0f, y + 11.0f, 1.0f, state, accent);
 }
@@ -3955,9 +4218,9 @@ static int DebugCellHit(int x, int y, int count) {
 
 static void DrawDebugRow(int i, const char* label, const char* value, uint32_t valueCol) {
     float ry = DBGTOOL_ROW_Y(i);
-    C2D_DrawRectSolid((float)DBGTOOL_ROW_X0, ry, 0.9f,
-                      (float)(DBGTOOL_ROW_X1 - DBGTOOL_ROW_X0), (float)DBGTOOL_ROW_H,
-                      C2D_Color32(24, 32, 50, 255));
+    DrawButtonBox((float)DBGTOOL_ROW_X0, ry,
+                  (float)(DBGTOOL_ROW_X1 - DBGTOOL_ROW_X0), (float)DBGTOOL_ROW_H,
+                  C2D_Color32(24, 32, 50, 255), C2D_Color32(60, 90, 130, 255));
     DrawText((float)DBGTOOL_ROW_X0 + 8.0f, ry + 6.0f, 1.0f, label, C2D_Color32(255, 255, 255, 255));
     if (value) DrawText(224.0f, ry + 6.0f, 1.0f, value, valueCol);
 }
@@ -3975,8 +4238,8 @@ static void DrawDebugModalFrame(int lang, const char* titleEs, const char* title
     C2D_DrawRectSolid(10.0f, 26.0f, 0.85f, 300.0f, 210.0f, C2D_Color32(10, 14, 24, 250));
     C2D_DrawRectSolid(10.0f, 26.0f, 0.84f, 300.0f, 210.0f, C2D_Color32(40, 70, 120, 255));
     DrawText(20.0f, 32.0f, 1.0f, (lang == 6) ? titleEs : titleEn, C2D_Color32(255, 215, 0, 255));
-    C2D_DrawRectSolid(100.0f, 214.0f, 0.9f, 120.0f, 20.0f, C2D_Color32(20, 70, 130, 255));
-    DrawTextCentered(160.0f, 219.0f, 1.0f, (lang == 6) ? "CERRAR" : "CLOSE", C2D_Color32(255, 255, 255, 255));
+    DrawButton(116.0f, 214.0f, 88.0f, 20.0f, (lang == 6) ? "CERRAR" : "CLOSE",
+               C2D_Color32(255, 255, 255, 255), BTN_BLUE_BODY, BTN_BLUE_BORDER);
 }
 
 static bool DebugCloseHit(int x, int y) {
@@ -4011,9 +4274,6 @@ static void RenderDebugToolsModal(int lang) {
     DrawDebugCell(5, (lang == 6) ? "MATAR A SAMUS" : "KILL SAMUS",
                   (lang == 6) ? "MATAR" : "KILL", C2D_Color32(255, 130, 130, 255));
     DrawDebugCell(6, (lang == 6) ? "TELETRANSPORTE" : "WARP", ">", colMenu);
-    DrawDebugCell(7, (lang == 6) ? "EQUIPO Y OBJETOS" : "EQUIPMENT", ">", colMenu);
-    DrawDebugCell(8, (lang == 6) ? "REVELAR MAPAS" : "REVEAL MAPS",
-                  (lang == 6) ? "REVELAR" : "REVEAL", colMenu);
 
     /* Nothing is written to the SD card while LOG is stopped even in a debug
      * build (see port_debug_log.h). Tapping the middle of LOG A SD cycles
@@ -4023,10 +4283,10 @@ static void RenderDebugToolsModal(int lang) {
      * RAM" for a hang. */
     const bool logOn = Port_DebugLog_IsEnabled();
     const bool logBuf = Port_DebugLog_IsBuffered();
-    DrawDebugCell(9, (lang == 6) ? "LOG A SD" : "SD LOGGING",
+    DrawDebugCell(7, (lang == 6) ? "LOG A SD" : "SD LOGGING",
                   DebugLogSelName(), colMenu);
-    DrawDebugCellSideButton(9, logOn);
-    DrawDebugCell(10, (lang == 6) ? "LOG EN BUFFER" : "LOG BUFFERING",
+    DrawDebugCellSideButton(7, logOn);
+    DrawDebugCell(8, (lang == 6) ? "LOG EN BUFFER" : "LOG BUFFERING",
                   logBuf ? onTxt : offTxt, logBuf ? colOn : colAct);
 
 #ifdef PORT_GPU_TILE_RENDERER
@@ -4036,7 +4296,7 @@ static void RenderDebugToolsModal(int lang) {
      * per-frame CanRenderFrame() fallback still applies on top of this. */
     {
         const bool gpuOn = Port_GpuRenderer_IsActive();
-        DrawDebugCell(11, (lang == 6) ? "RENDERER" : "RENDERER",
+        DrawDebugCell(9, (lang == 6) ? "RENDERER" : "RENDERER",
                       gpuOn ? "GPU" : "CPU", gpuOn ? colAct : colOn);
     }
     /* Step A (one quad per 16x16 tilemap-aligned block instead of four).
@@ -4046,7 +4306,7 @@ static void RenderDebugToolsModal(int lang) {
      * per-tile loop. */
     {
         const bool blocks = Port_GpuRenderer_BlockPassEnabled();
-        DrawDebugCell(12, (lang == 6) ? "BLOQUES 16x16" : "16x16 BLOCKS",
+        DrawDebugCell(10, (lang == 6) ? "BLOQUES 16x16" : "16x16 BLOCKS",
                       blocks ? onTxt : offTxt,
                       blocks ? C2D_Color32(120, 230, 140, 255) : C2D_Color32(150, 170, 200, 255));
         /* Two renderer experiments share this cell, because the grid has no
@@ -4060,11 +4320,13 @@ static void RenderDebugToolsModal(int lang) {
         char expTxt[28];
         snprintf(expTxt, sizeof(expTxt), "CAPAS %s HAZE %s",
                  layers ? "ON" : "--", hazeTxt[haze & 3]);
-        DrawDebugCell(13, (lang == 6) ? "CAPAS / HAZE" : "LAYERS / HAZE", expTxt,
+        DrawDebugCell(11, (lang == 6) ? "CAPAS / HAZE" : "LAYERS / HAZE", expTxt,
                       (layers || haze) ? C2D_Color32(230, 200, 120, 255)
                                        : C2D_Color32(150, 170, 200, 255));
     }
 #endif
+
+    DrawDebugCell(DBGTOOL_SOUNDTEST_CELL, (lang == 6) ? "SOUND TEST" : "SOUND TEST", ">", colMenu);
 
     if (sDebugToolsMsg[0] && sFrameCounter < sDebugToolsMsgUntil) {
         DrawTextCentered(160.0f, 204.0f, 1.0f, sDebugToolsMsg, C2D_Color32(120, 255, 160, 255));
@@ -4116,14 +4378,14 @@ static bool HandleDebugToolsModalTouch(int x, int y) {
         return true;
     }
 #ifdef PORT_GPU_TILE_RENDERER
-    if (cell == 12) {
+    if (cell == 10) {
         const bool on = !Port_GpuRenderer_BlockPassEnabled();
         Port_GpuRenderer_SetBlockPass(on);
         DebugToolsSetMsg(on ? "BLOQUES 16x16: ON" : "BLOQUES 16x16: OFF");
         return true;
     }
-    if (cell == 13) {
-        if (DebugCellRightZoneHit(x, 13)) {
+    if (cell == 11) {
+        if (DebugCellRightZoneHit(x, 11)) {
             static const char* const msg[4] = { "HAZE: COMPLETA", "HAZE: SIN COMPONER",
                                                 "HAZE: APAGADA", "HAZE: A TARGET (RT)" };
             Port_GpuRenderer_CycleHazeMode();
@@ -4136,7 +4398,7 @@ static bool HandleDebugToolsModalTouch(int x, int y) {
         return true;
     }
 #endif
-    if (cell == 9 && DebugCellRightZoneHit(x, 9)) {
+    if (cell == 7 && DebugCellRightZoneHit(x, 7)) {
         /* Side button: start/stop logging on the selected stream. */
         if (Port_DebugLog_IsEnabled()) {
             Port_DebugLog_SetMode(PORT_LOG_MODE_NONE);
@@ -4180,18 +4442,7 @@ static bool HandleDebugToolsModalTouch(int x, int y) {
             sShowDebugToolsModal = false;
             sShowDebugWarpModal = true;
             break;
-        case 7:
-            sShowDebugToolsModal = false;
-            sShowDebugEquipModal = true;
-            break;
-        case 8:
-            PortPpuMzm_DebugRevealAllMaps();
-            /* The MAP tab caches the decompressed tiles of whichever area it
-             * last drew that wasn't the current one; that copy is now stale. */
-            sCachedOtherArea = 0xFF;
-            DebugToolsSetMsg("MAPAS REVELADOS");
-            break;
-        case 9: {
+        case 7: {
             /* Middle: cycle the stream selection (ALL/GPU/AUDIO/PERF, no
              * OFF -- the side button does on/off). Applied live if logging
              * is running. */
@@ -4203,14 +4454,14 @@ static bool HandleDebugToolsModalTouch(int x, int y) {
             DebugToolsSetMsg(msg);
             break;
         }
-        case 10: {
+        case 8: {
             const bool buf = !Port_DebugLog_IsBuffered();
             Port_DebugLog_SetBuffered(buf);
             DebugToolsSetMsg(buf ? "LOG EN BUFFER" : "LOG DIRECTO");
             break;
         }
 #ifdef PORT_GPU_TILE_RENDERER
-        case 11: {
+        case 9: {
             const bool gpuOn = !Port_GpuRenderer_IsActive();
             Port_GpuRenderer_SetActive(gpuOn);
             Port_DebugLog(gpuOn ? "USER MARK: renderer -> GPU"
@@ -4219,6 +4470,10 @@ static bool HandleDebugToolsModalTouch(int x, int y) {
             break;
         }
 #endif
+        case DBGTOOL_SOUNDTEST_CELL:
+            sShowDebugToolsModal = false;
+            sShowSoundTestModal = true;
+            break;
         default:
             break;
     }
@@ -4230,7 +4485,7 @@ static bool HandleDebugToolsModalTouch(int x, int y) {
  * number plus coordinates. The door spinner shows which room each door
  * leads into, so a room can be found by stepping doors without knowing any
  * door ids beforehand. */
-#define DBGWARP_ROW_COUNT 6
+#define DBGWARP_ROW_COUNT 5
 
 static void RenderDebugWarpModal(int lang) {
     DrawDebugModalFrame(lang, "TELETRANSPORTE", "WARP");
@@ -4267,11 +4522,6 @@ static void RenderDebugWarpModal(int lang) {
                  hasWarp ? ((lang == 6) ? "IR" : "GO") : "--",
                  hasWarp ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(110, 120, 140, 255));
 
-    DrawDebugRow(5, (lang == 6) ? "IR TOCANDO EL MAPA" : "WARP BY TOUCHING MAP",
-                 sDebugMapWarpArmed ? ((lang == 6) ? "ARMADO" : "ARMED")
-                                    : ((lang == 6) ? "ARMAR" : "ARM"),
-                 sDebugMapWarpArmed ? C2D_Color32(80, 255, 120, 255) : C2D_Color32(255, 215, 0, 255));
-
     char warpInfo[48];
     PortPpuMzm_DebugGetWarpPointInfo(warpInfo, (int)sizeof(warpInfo));
     DrawText((float)DBGTOOL_ROW_X0, 176.0f, 1.0f, warpInfo, C2D_Color32(150, 190, 240, 255));
@@ -4292,6 +4542,7 @@ static void RenderDebugWarpModal(int lang) {
 static void HandleDebugWarpModalTouch(int x, int y) {
     if (DebugCloseHit(x, y)) {
         sShowDebugWarpModal = false;
+        sShowDebugToolsModal = true;   /* back to the parent grid, not the tab */
         return;
     }
     int row = DebugRowHit(x, y, DBGWARP_ROW_COUNT);
@@ -4326,18 +4577,103 @@ static void HandleDebugWarpModalTouch(int x, int y) {
                 DebugToolsSetMsg("NO HAY PUNTO GUARDADO");
             }
             break;
-        case 5:
-            /* Arms the MAP tab's tap-to-warp and gets out of the way, so the
-             * next thing the player touches is the map itself. */
-            sDebugMapWarpArmed = !sDebugMapWarpArmed;
-            if (sDebugMapWarpArmed) {
-                sShowDebugWarpModal = false;
-                sCurrentTab = BOTTOM_TAB_MAP;
-                DebugToolsSetMsg("TOCA UN PUNTO DEL MAPA");
-            }
-            break;
         default:
             break;
+    }
+}
+
+/* SOUND TEST submenu: audition any engine sound id (0x00..0x2C3) plus the
+ * custom RA unlock sting, straight from the console. DEBUG_TOOLS only, no
+ * state persisted. Sound ids: include/constants/audio.h. */
+extern void SoundPlay(uint16_t sound);
+extern void StopAllMusicAndSounds(void);
+extern void Port_MzmAudio_PlayRaUnlockSound(void);
+extern void Port_MzmAudio_StopRaUnlockSound(void);
+extern bool Port_MzmAudio_IsRaUnlockSoundPlaying(void);
+
+#define SNDTEST_MAX_ID   0x2C3
+#define SNDTEST_ROW_COUNT 4
+static int sSndTestId = 0x37; /* MUSIC_GETTING_ITEM_JINGLE */
+static bool sSndTestEnginePlaying = false;
+
+static void SndTestStep(int d) {
+    int v = sSndTestId + d;
+    if (v < 0) v = 0;
+    if (v > SNDTEST_MAX_ID) v = SNDTEST_MAX_ID;
+    sSndTestId = v;
+}
+
+static void RenderSoundTestModal(int lang) {
+    DrawDebugModalFrame(lang, "SOUND TEST", "SOUND TEST");
+
+    char buf[40];
+    snprintf(buf, sizeof(buf), "0x%03X  (%d)", sSndTestId, sSndTestId);
+    DrawDebugRow(0, "ID", NULL, 0);
+    DrawText(120.0f, DBGTOOL_ROW_Y(0) + 6.0f, 1.0f, "<", C2D_Color32(255, 215, 0, 255));
+    DrawText(140.0f, DBGTOOL_ROW_Y(0) + 6.0f, 1.0f, buf, C2D_Color32(220, 235, 255, 255));
+    DrawText(288.0f, DBGTOOL_ROW_Y(0) + 6.0f, 1.0f, ">", C2D_Color32(255, 215, 0, 255));
+
+    DrawDebugRow(1, "ID  x16", NULL, 0);
+    DrawText(120.0f, DBGTOOL_ROW_Y(1) + 6.0f, 1.0f, "<<", C2D_Color32(255, 215, 0, 255));
+    DrawText(286.0f, DBGTOOL_ROW_Y(1) + 6.0f, 1.0f, ">>", C2D_Color32(255, 215, 0, 255));
+
+    /* One toggle per source: tap plays it, tap again stops it. The glyph is
+     * a play triangle when idle and a stop square while it is sounding. */
+    const uint32_t glyphIdle = C2D_Color32(120, 255, 140, 255);
+    const uint32_t glyphLive = C2D_Color32(255, 120, 120, 255);
+
+    DrawDebugRow(2, (lang == 6) ? "SONIDO DEL MOTOR" : "ENGINE SOUND", NULL, 0);
+    DrawActionGlyph(292.0f, DBGTOOL_ROW_Y(2) + (float)DBGTOOL_ROW_H * 0.5f,
+                    sSndTestEnginePlaying, sSndTestEnginePlaying ? glyphLive : glyphIdle);
+
+    bool raLive = Port_MzmAudio_IsRaUnlockSoundPlaying();
+    DrawDebugRow(3, (lang == 6) ? "SONIDO DE LOGRO (RA)" : "RA UNLOCK SOUND", NULL, 0);
+    DrawActionGlyph(292.0f, DBGTOOL_ROW_Y(3) + (float)DBGTOOL_ROW_H * 0.5f,
+                    raLive, raLive ? glyphLive : glyphIdle);
+
+    DrawText((float)DBGTOOL_ROW_X0, 176.0f, 1.0f,
+             (lang == 6) ? "0x01-0x5F musica/jingles  |  0x60+ efectos"
+                         : "0x01-0x5F music/jingles  |  0x60+ SFX",
+             C2D_Color32(150, 190, 240, 255));
+
+    if (sDebugToolsMsg[0] && sFrameCounter < sDebugToolsMsgUntil)
+        DrawTextCentered(160.0f, 190.0f, 1.0f, sDebugToolsMsg, C2D_Color32(120, 255, 160, 255));
+}
+
+static void HandleSoundTestModalTouch(int x, int y) {
+    if (DebugCloseHit(x, y)) {
+        sShowSoundTestModal = false;
+        sShowDebugToolsModal = true;   /* back to the parent grid */
+        return;
+    }
+    int row = DebugRowHit(x, y, SNDTEST_ROW_COUNT);
+    const int dir = (x < 140) ? -1 : (x > 270 ? 1 : 0);
+    char m[24];
+    switch (row) {
+        case 0: if (dir) { SndTestStep(dir); sSndTestEnginePlaying = false; } break;
+        case 1: if (dir) { SndTestStep(dir * 16); sSndTestEnginePlaying = false; } break;
+        case 2:
+            if (sSndTestEnginePlaying) {
+                StopAllMusicAndSounds();
+                sSndTestEnginePlaying = false;
+                DebugToolsSetMsg("STOP");
+            } else {
+                SoundPlay((uint16_t)sSndTestId);
+                sSndTestEnginePlaying = true;
+                snprintf(m, sizeof(m), "PLAY 0x%03X", sSndTestId);
+                DebugToolsSetMsg(m);
+            }
+            break;
+        case 3:
+            if (Port_MzmAudio_IsRaUnlockSoundPlaying()) {
+                Port_MzmAudio_StopRaUnlockSound();
+                DebugToolsSetMsg("STOP");
+            } else {
+                Port_MzmAudio_PlayRaUnlockSound();
+                DebugToolsSetMsg("RA SOUND");
+            }
+            break;
+        default: break;
     }
 }
 
@@ -4416,8 +4752,8 @@ static void DrawEquipCell(float x, float y, const struct DebugEquipEntry* e, int
 }
 
 static void DrawEquipAction(float x, float y, float w, const char* label, uint32_t col) {
-    C2D_DrawRectSolid(x, y, 0.9f, w, (float)DBGEQUIP_ACT_H, C2D_Color32(28, 44, 70, 255));
-    DrawTextCentered(x + w / 2.0f, y + 5.0f, 1.0f, label, col);
+    DrawButton(x, y, w, (float)DBGEQUIP_ACT_H, label, col,
+               C2D_Color32(24, 40, 66, 255), C2D_Color32(70, 110, 160, 255));
 }
 
 static void RenderDebugEquipModal(int lang) {
@@ -4453,6 +4789,7 @@ static void RenderDebugEquipModal(int lang) {
 static void HandleDebugEquipModalTouch(int x, int y) {
     if (DebugCloseHit(x, y)) {
         sShowDebugEquipModal = false;
+        sShowDebugToolsModal = true;
         return;
     }
 
@@ -4583,16 +4920,14 @@ static void RenderDebugView(void) {
      * *_DIAG_LOG build -- a production build has no way to reach any of the
      * actions behind it, matching how the L+R+<btn> combos are compiled out
      * entirely rather than just hidden (see port_debug_tools.h). */
-    C2D_DrawRectSolid(16.0f, 198.0f, 0.5f, 288.0f, 26.0f, C2D_Color32(30, 55, 90, 255));
-    C2D_DrawRectSolid(17.0f, 199.0f, 0.55f, 286.0f, 24.0f, C2D_Color32(18, 34, 58, 255));
-    C2D_DrawRectSolid(17.0f, 199.0f, 0.56f, 286.0f, 1.0f, C2D_Color32(90, 160, 240, 255));
-    DrawTextCentered(160.0f, 205.0f, 1.0f,
+    DrawButton(16.0f, 198.0f, 288.0f, 26.0f,
         (GetLang() == 6) ? "HERRAMIENTAS DE DEPURACION" : "DEBUG TOOLS",
-        C2D_Color32(150, 210, 255, 255));
+        C2D_Color32(180, 225, 255, 255), C2D_Color32(30, 55, 90, 255), C2D_Color32(90, 160, 240, 255));
 
     if (sShowDebugToolsModal) RenderDebugToolsModal(GetLang());
     else if (sShowDebugWarpModal) RenderDebugWarpModal(GetLang());
     else if (sShowDebugEquipModal) RenderDebugEquipModal(GetLang());
+    else if (sShowSoundTestModal) RenderSoundTestModal(GetLang());
 #else
     DrawText(16.0f, 212.0f, 1.0f, (GetLang() == 6) ? "TOCA LA PESTANA [MAPA] PARA VOLVER" : "TOUCH [MAP] TAB TO RETURN TO MAP VIEW", C2D_Color32(120, 140, 170, 255));
 #endif

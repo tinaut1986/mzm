@@ -225,11 +225,13 @@ void Port_Config_Save(void) {
     extern bool Port_RA_IsEnabled(void);
     extern bool Port_RA_IsHardcore(void);
     extern bool Port_RA_GetNotificationSound(void);
+    extern bool Port_RA_GetNotifyOnTopScreen(void);
     extern const char* Port_RA_GetUsername(void);
     extern const char* Port_RA_GetToken(void);
     fprintf(file, "ra_enabled=%u\n", Port_RA_IsEnabled() ? 1u : 0u);
     fprintf(file, "ra_hardcore=%u\n", Port_RA_IsHardcore() ? 1u : 0u);
     fprintf(file, "ra_sound=%u\n", Port_RA_GetNotificationSound() ? 1u : 0u);
+    fprintf(file, "ra_notify_top=%u\n", Port_RA_GetNotifyOnTopScreen() ? 1u : 0u);
     fprintf(file, "ra_username=%s\n", Port_RA_GetUsername());
     fprintf(file, "ra_token=%s\n", Port_RA_GetToken());
     fclose(file);
@@ -265,6 +267,9 @@ void Port_Config_Load(void) {
         } else if (strcmp(key, "ra_sound") == 0) {
             extern void Port_RA_SetNotificationSound(bool);
             Port_RA_SetNotificationSound(val != 0);
+        } else if (strcmp(key, "ra_notify_top") == 0) {
+            extern void Port_RA_SetNotifyOnTopScreen(bool);
+            Port_RA_SetNotifyOnTopScreen(val != 0);
         } else if (strcmp(key, "language") == 0) {
             if (val >= 0 && val < LANGUAGE_COUNT) {
                 extern void SramWrite_Language(void);
@@ -1706,6 +1711,122 @@ int PortPpuMzm_RoomTankCount(void) {
 bool PortPpuMzm_IsVisibleTankBlock(int blockX, int blockY) {
     for (int i = 0; i < sTankCount; ++i) {
         if (sTankBlockX[i] == (uint16_t)blockX && sTankBlockY[i] == (uint16_t)blockY)
+            return true;
+    }
+    return false;
+}
+
+/* ------------------------------------------------------------------
+ * Door footprint depth unification
+ *
+ * A doorway reads as one object -- the recessed tunnel on BG1 plus the
+ * lintel/sill ledge that MZM paints on BG2 right above and below it.
+ * BG1 lands on the play plane, BG2 a plane back, so in stereo the ledge
+ * detaches from the frame and Samus wedges into the gap.
+ *
+ * The renderer pulls the DEPTH of the opaque BG0/BG1/BG2 tiles in this
+ * footprint onto the play plane (BG3, the parallax backdrop, is never
+ * touched). The footprint per door is a tight rectangle, NO horizontal
+ * growth:
+ *
+ *   - the door's own column span (xStart..xEnd) from sAreaDoorsPointers,
+ *     widened one block each side -- the outboard one is wall (BG1,
+ *     already on the play plane, a no-op), the inboard one is the animated
+ *     hatch "capsule",
+ *   - a couple of rows above and below for the lintel/sill (and whatever
+ *     sits directly under the capsule).
+ *
+ * An earlier version grew each row along the BG2 run to avoid cutting a
+ * ledge mid-run. It reached too far and dragged actual background forward,
+ * so it is gone: only the blocks immediately around the opening move.
+ *
+ * Rebuilt on room change; the on-screen test and per-tile lookup run per
+ * frame. Stored as per-row spans (all rows the same x range here) so the
+ * lookup and the seam-free bbox share one path.
+ * ------------------------------------------------------------------ */
+#define PORT_DOOR_DEPTH_SPANS 96
+#define PORT_DOOR_DEPTH_MARGIN_Y 2   /* rows added above and below */
+
+static uint16_t sDoorSpanY[PORT_DOOR_DEPTH_SPANS];
+static uint16_t sDoorSpanX0[PORT_DOOR_DEPTH_SPANS];
+static uint16_t sDoorSpanX1[PORT_DOOR_DEPTH_SPANS];
+static int sDoorSpanCount = 0;
+
+void PortPpuMzm_SetDoorDepthRoom(int area, int room) {
+    sDoorSpanCount = 0;
+    if (area < 0 || area >= AREA_ENTRY_COUNT) return;
+    const struct Door* doors = sAreaDoorsPointers[area];
+    if (doors == NULL) return;
+
+    const int bw = (int)gBgPointersAndDimensions.backgrounds[1].width;
+
+    /* Clipdata, for telling a real hatch door from a plain screen edge.
+     * The Door table also holds vertical "fall through the floor / climb
+     * through the ceiling" transitions and area seams; their rect is a wide
+     * strip along a room edge, and pulling all of that forward looked wrong
+     * (a free-fall transition floated the whole floor band). A genuine door
+     * has CLIP_BEHAVIOR_DOOR_TRANSITION somewhere in its rect; the edge
+     * transitions have CLIP_BEHAVIOR_VERTICAL_* or nothing. */
+    const uint16_t* clip = gBgPointersAndDimensions.pClipDecomp;
+    const uint16_t* clipBeh = gTilemapAndClipPointers.pClipBehaviors;
+    const int cw = (int)gBgPointersAndDimensions.clipdataWidth;
+    const int ch = (int)gBgPointersAndDimensions.clipdataHeight;
+
+    for (int i = 0; i < PORT_WARP_MAX_DOORS; ++i) {
+        const struct Door* d = &doors[i];
+        if (d->type == DOOR_TYPE_NONE) break;          /* table terminator */
+        if (d->sourceRoom != (u8)room) continue;
+
+        /* Require a DOOR_TRANSITION block inside the door's own rect. */
+        if (clip != NULL && clipBeh != NULL && cw > 0 && ch > 0) {
+            bool isHatchDoor = false;
+            for (int cy = (int)d->yStart; cy <= (int)d->yEnd && !isHatchDoor; ++cy) {
+                if (cy < 0 || cy >= ch) continue;
+                for (int cx = (int)d->xStart; cx <= (int)d->xEnd; ++cx) {
+                    if (cx < 0 || cx >= cw) continue;
+                    if (clipBeh[clip[cy * cw + cx]] == CLIP_BEHAVIOR_DOOR_TRANSITION) {
+                        isHatchDoor = true;
+                        break;
+                    }
+                }
+            }
+            if (!isHatchDoor) continue;
+        }
+
+        int dx0 = (int)d->xStart - 1, dx1 = (int)d->xEnd + 1;
+        if (dx0 < 0) dx0 = 0;
+        if (bw > 0 && dx1 > bw - 1) dx1 = bw - 1;
+        int y0 = (int)d->yStart - PORT_DOOR_DEPTH_MARGIN_Y;
+        int y1 = (int)d->yEnd   + PORT_DOOR_DEPTH_MARGIN_Y;
+        if (y0 < 0) y0 = 0;
+
+        for (int y = y0; y <= y1; ++y) {
+            if (sDoorSpanCount >= PORT_DOOR_DEPTH_SPANS) return;
+            sDoorSpanY[sDoorSpanCount]  = (uint16_t)y;
+            sDoorSpanX0[sDoorSpanCount] = (uint16_t)dx0;
+            sDoorSpanX1[sDoorSpanCount] = (uint16_t)dx1;
+            ++sDoorSpanCount;
+        }
+    }
+}
+
+int PortPpuMzm_DoorDepthCount(void) { return sDoorSpanCount; }
+
+/* Any door span overlapping the block-space box [bx0,bx1] x [by0,by1]. */
+bool PortPpuMzm_DoorDepthInView(int bx0, int by0, int bx1, int by1) {
+    for (int i = 0; i < sDoorSpanCount; ++i) {
+        int y = (int)sDoorSpanY[i];
+        if (y >= by0 && y <= by1 &&
+            (int)sDoorSpanX0[i] <= bx1 && (int)sDoorSpanX1[i] >= bx0)
+            return true;
+    }
+    return false;
+}
+
+bool PortPpuMzm_IsDoorDepthBlock(int blockX, int blockY) {
+    for (int i = 0; i < sDoorSpanCount; ++i) {
+        if ((int)sDoorSpanY[i] == blockY &&
+            blockX >= (int)sDoorSpanX0[i] && blockX <= (int)sDoorSpanX1[i])
             return true;
     }
     return false;
