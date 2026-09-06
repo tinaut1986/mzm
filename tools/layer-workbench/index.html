@@ -119,6 +119,9 @@
                            border:1px solid var(--line); background:#000; }
   #realscreen canvas { display:block; image-rendering:pixelated; }
   #realscreen .rs-hint { margin:0; flex:0 0 auto; font-size:11px; color:var(--faint); }
+  #realscreen[hidden] { display:none; }
+  #realscreen.rs-min { height:auto !important; min-height:0; resize:none; }
+  #realscreen.rs-min #rs-scroll, #realscreen.rs-min .rs-hint { display:none; }
 
   .mmctl button { padding:1px 7px; font-size:10px; margin-left:4px; cursor:pointer; }
   .mmbody { padding:9px; overflow:auto; flex:1 1 0; min-height:0; }
@@ -364,6 +367,7 @@
     <button class="tab" id="rs-zout" title="Alejar">−</button>
     <span class="meta" id="rs-zlab">1×</span>
     <button class="tab" id="rs-zin" title="Acercar">+</button>
+    <button class="tab" id="rs-min" title="Minimizar">_</button>
     <button class="tab" id="rs-close" title="Cerrar">×</button>
   </div>
   <div id="rs-scroll"><canvas id="rs-canvas"></canvas></div>
@@ -403,7 +407,7 @@
    "copy","clear","save","zin","zout","zlab","relayout","torail","toside",
    "minbar","divrail","divside","restore","autobadge","load",
    "mMap","mRec","mSprites",
-   "realscreen","rs-canvas","rs-info","rs-close","rs-title","rs-scroll",
+   "realscreen","rs-canvas","rs-info","rs-close","rs-min","rs-title","rs-scroll",
    "rs-zin","rs-zout","rs-zlab"].forEach(function(id){els[id]=document.getElementById(id);});
 
   function u16(b,o){return b[o]|(b[o+1]<<8);}
@@ -441,9 +445,14 @@
       els["rs-title"].textContent="PANTALLA REAL (post-GPU)";
       els["rs-title"].style.color="";
     }
-    els.realscreen.hidden=false;
+    rsHasContent=true;
+    /* Sólo tiene sentido junto a la grabación: en mapa o sprites estorba. Se
+       recuerda que hay contenido y se vuelve a mostrar al entrar en "rec". */
+    if(mode==="rec")els.realscreen.hidden=false;
+    else if(els.meta)els.meta.textContent=name+" cargada · visible en modo GRABACIÓN";
     rsApplyZoom();
   }
+  var rsHasContent=false;
   var rsZoom=1;
   function rsApplyZoom(){
     var cv=els["rs-canvas"];
@@ -457,7 +466,14 @@
   els["rs-canvas"].addEventListener("wheel",function(e){
     e.preventDefault(); rsSetZoom(rsZoom+(e.deltaY<0?1:-1));
   },{passive:false});
+  /* Cerrar sólo lo oculta: si hay contenido, vuelve al entrar en modo
+     grabación. Para quitarlo de en medio sin perderlo está minimizar. */
   els["rs-close"].addEventListener("click",function(){ els.realscreen.hidden=true; });
+  els["rs-min"].addEventListener("click",function(){
+    var min=els.realscreen.classList.toggle("rs-min");
+    this.textContent=min?"□":"_";
+    this.title=min?"Restaurar":"Minimizar";
+  });
 
   /* Pair mzm-rec-shot-NNNN.rgb frames with the loaded recording: NNNN is the
      0-indexed sample number the 3DS embedded when it wrote the shot (they are
@@ -913,6 +929,11 @@
     el.addEventListener("scroll",function(){
       if(!visible(el))return;
       if(isOurs(el))return;          // lo hemos movido nosotros, no el usuario
+      /* El usuario ha movido este scroller (rueda o arrastrando su barra). Si
+         estaba pulsado, lo que venga después no es un clic: arrastrar la barra
+         de scroll captura el puntero de forma nativa, así que no llegan
+         pointermove y el pointerup caería en pickAt deseleccionándolo todo. */
+      if(down)scrolled=true;
       var dx=el.scrollLeft-(el._syncL||0),dy=el.scrollTop-(el._syncT||0);
       el._syncL=el.scrollLeft;el._syncT=el.scrollTop;
       panBy(dx,dy,el);
@@ -923,12 +944,12 @@
     },{passive:false});
 
     var DRAG_PX=5;
-    var down=false,mode=null,px=0,py=0,ox=0,oy=0,pid=null,a=null;
+    var down=false,mode=null,px=0,py=0,ox=0,oy=0,pid=null,a=null,scrolled=false;
 
     el.addEventListener("pointerdown",function(ev){
       if(ev.button!==0)return;
       if(target&&!onCanvas(el,target.cv,ev))return;   // barra de scroll
-      down=true;mode=null;pid=ev.pointerId;
+      down=true;mode=null;scrolled=false;pid=ev.pointerId;
       px=ox=ev.clientX;py=oy=ev.clientY;
       a=(target&&!ev.shiftKey)?cellCoords(target.cv,ev):null;
     });
@@ -971,6 +992,7 @@
           return;
         }
         mode=null;
+        if(scrolled){ selBox=null;return; }   // fue un arrastre de la barra de scroll, no un clic
         pickAt(ev,target.cv,target.bg,ev.ctrlKey||ev.metaKey);
       });
     });
@@ -2421,6 +2443,8 @@
     els.mMap.setAttribute("aria-pressed",String(m==="map"));
     els.mRec.setAttribute("aria-pressed",String(m==="rec"));
     els.mSprites.setAttribute("aria-pressed",String(m==="sprites"));
+    /* La pantalla real (.rgb) sólo acompaña a la grabación. */
+    els.realscreen.hidden = !(m==="rec" && rsHasContent);
     if(m==="map")      enterMap();
     else if(m==="rec") enterRec();
     else               enterSprites();
