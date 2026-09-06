@@ -108,6 +108,7 @@ SRCS_3DS := \
 	$(CURDIR)/source/port_retroachievements_3ds.c \
 	$(CURDIR)/source/port_ra_iwram_map.c \
 	$(CURDIR)/source/port_ra_badges_data.c \
+	$(CURDIR)/source/port_ra_unlock_sound_data.c \
 	$(CURDIR)/source/port_haze_3ds.c \
 	$(CURDIR)/source/port_gba_screen_fx.c \
 	$(CURDIR)/source/port_gba_bezel.c \
@@ -387,10 +388,10 @@ $(TARGET).cia: $(TARGET).elf $(BUILD)/mzm-3ds.smdh $(BUILD)/banner.bnr
 		-icon $(BUILD)/mzm-3ds.smdh -banner $(BUILD)/banner.bnr -DAPP_ROMFS=$(CURDIR)/romfs
 	@echo "CIA build successful: $@"
 
-$(BUILD)/banner.bnr: $(CURDIR)/assets/banner.png $(CURDIR)/assets/banner.wav
+$(BUILD)/banner.bnr: $(CURDIR)/assets/banner.png $(CURDIR)/assets/banner-descent-into-the-labyrinth.wav
 	@mkdir -p $(dir $@)
 	@echo "Creating Banner: $(notdir $@)"
-	@$(BANNERTOOL) makebanner -i $(CURDIR)/assets/banner.png -a $(CURDIR)/assets/banner.wav -o $@
+	@$(BANNERTOOL) makebanner -i $(CURDIR)/assets/banner.png -a $(CURDIR)/assets/banner-descent-into-the-labyrinth.wav -o $@
 
 $(BUILD)/mzm-3ds.smdh: $(CURDIR)/assets/icon-48.png
 	@mkdir -p $(dir $@)

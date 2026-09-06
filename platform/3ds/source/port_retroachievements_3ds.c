@@ -57,6 +57,8 @@ static bool sRAEnabled = false;
  * the build allows it. Never defaults on: a fresh install is softcore. */
 static bool sRAHardcore = false;
 static bool sRANotifSound = true;
+/* false = unlock toast on the bottom screen (default), true = top screen. */
+static bool sRANotifyTop = false;
 static char sRAUsername[64] = "";
 static char sRAToken[64] = "";
 static RetroAchievementsStatus sRAStatus = RA_STATUS_DISABLED;
@@ -72,14 +74,18 @@ static struct {
     bool hardcore;
 } sToast = { false, 0, "", "", 0, false };
 
-/* The classic "got a tank" jingle (MUSIC_GETTING_TANK_JINGLE, see
- * include/constants/audio.h). Played through the decomp sound engine when an
- * unlock fires and the notification sound is enabled. SoundPlay runs on the
- * game-logic thread, which is where this event handler already executes -- the
- * unlock is delivered from rc_client_do_frame inside Port_RA_EvaluateTriggers,
- * called once per frame from agbmain. */
+/* The unlock sting. It used to be MUSIC_GETTING_TANK_JINGLE (0x3A) played
+ * through the decomp sound engine, but that engine mixes everything into one
+ * stream and its jingles duck the music, so an achievement that fired on an
+ * item pickup collided with the pickup's own jingle and went unheard. It now
+ * plays on a private NDSP channel (port_mzm_audio_3ds.c) that layers on top
+ * and is never ducked. Runs on the game-logic thread, where this event
+ * handler already executes (rc_client_do_frame inside
+ * Port_RA_EvaluateTriggers, once per frame from agbmain). The old id is kept
+ * for reference / a quick fallback. */
 #define RA_UNLOCK_JINGLE 0x3Au
 extern void SoundPlay(uint16_t sound);
+extern void Port_MzmAudio_PlayRaUnlockSound(void);
 
 static void LogLine(const char* fmt, ...) {
     va_list args;
@@ -726,6 +732,15 @@ static void RefreshAchievementList(void) {
             const rc_client_achievement_t* source = group->achievements[index];
             RetroAchievementItem* item;
 
+            /* rcheevos injects a synthetic 0-point "WARNING: UNKNOWN
+             * EMULATOR" entry when it can't identify the client. It is just
+             * noise for an unofficial port -- keep it out of the list and
+             * out of every count / point total. */
+            if (source->points == 0 && source->title &&
+                strcasecmp(source->title, "WARNING: UNKNOWN EMULATOR") == 0) {
+                continue;
+            }
+
             if (sAchievementCount >= MAX_RA_ACHIEVEMENTS) {
                 /* Only the list the UI shows is capped -- rcheevos still
                  * evaluates and unlocks every achievement it loaded -- but
@@ -776,7 +791,7 @@ static void ShowUnlockToast(const rc_client_achievement_t* achievement) {
     sToast.hardcore = sRAHardcore;
 
     if (sRANotifSound) {
-        SoundPlay(RA_UNLOCK_JINGLE);
+        Port_MzmAudio_PlayRaUnlockSound();
     }
 }
 
@@ -1112,13 +1127,17 @@ void Port_RA_SetEnabled(bool enabled) {
 bool Port_RA_IsHardcore(void) { return sRAHardcore; }
 
 bool Port_RA_HardcoreAllowed(void) {
-#ifdef PORT_DEBUG_TOOLS_ACTIVE
-    /* This build carries the debug-tools cheat harness (god mode, no-clip);
-     * hardcore unlocks must never be possible from it. */
+    /* Always off for now: RetroAchievements does not sanction unofficial
+     * ports, so a hardcore unlock from this build would never be honoured.
+     * Rather than let players grind a run under rules that will not count,
+     * the mode is forced off and its toggle is removed from the settings
+     * UI. Everything else (the rc_client hardcore flag, the gold
+     * hardcore-styled toast, the HC unlock counters) is left intact so this
+     * is a one-line change to undo if that ever changes.
+     *
+     * (Debug-tools builds carry a god-mode / no-clip cheat harness and were
+     * already barred here for the same "must never count" reason.) */
     return false;
-#else
-    return true;
-#endif
 }
 
 void Port_RA_SetHardcore(bool hardcore) {
@@ -1134,6 +1153,25 @@ void Port_RA_SetHardcore(bool hardcore) {
 
 bool Port_RA_GetNotificationSound(void) { return sRANotifSound; }
 void Port_RA_SetNotificationSound(bool sound) { sRANotifSound = sound; }
+
+bool Port_RA_GetNotifyOnTopScreen(void) { return sRANotifyTop; }
+void Port_RA_SetNotifyOnTopScreen(bool onTop) { sRANotifyTop = onTop; }
+
+/* Fires a sample unlock toast (with the jingle, if the sound is on) so the
+ * player can see where it lands before an achievement actually unlocks.
+ * Same struct a real unlock fills, so it honours the bottom/top setting and
+ * the on-screen duration exactly. */
+void Port_RA_ShowPreviewToast(void) {
+    sToast.active = true;
+    sToast.timer = 180; /* 3 s at 60 fps, same as a real unlock */
+    snprintf(sToast.title, sizeof(sToast.title), "%s", "VISTA PREVIA");
+    sToast.badge[0] = '\0'; /* no badge -> drawn trophy fallback */
+    sToast.points = 5;
+    sToast.hardcore = false;
+    if (sRANotifSound) {
+        Port_MzmAudio_PlayRaUnlockSound();
+    }
+}
 
 const char* Port_RA_GetUsername(void) { return sRAUsername; }
 
@@ -1437,43 +1475,55 @@ static const uint8_t* GetToastUtf8Glyph(const char** textPtr) {
     return NULL;
 }
 
-static void DrawToastText(float x, float y, const char* text, uint32_t color) {
-    float scale = 1.0f;
-    float charW = 6.0f;
+/* Every coordinate here is snapped to a whole pixel. The bitmap font is
+ * drawn as integer rects (1px at scale 1.0, 1-2px at 1.25) so a non-integer
+ * scale can't land a glyph edge on a fractional pixel -- that is what made
+ * the top-screen toast text look fuzzy / jittery in 3D. With integer
+ * coordinates the only per-eye difference is the whole-pixel parallax
+ * shift, same as every other stereo overlay. Inputs are all >= 0 here, so
+ * (int)v is a floor. */
+static void DrawToastText(int ox, int oy, const char* text, uint32_t color, float scale) {
+    const int adv = (int)(6.0f * scale + 0.5f);
     while (*text) {
         const uint8_t* glyph = GetToastUtf8Glyph(&text);
-        if (!glyph) {
-            x += charW;
-            continue;
-        }
+        if (!glyph) { ox += adv; continue; }
         for (int row = 0; row < 7; ++row) {
-            float py = y + (float)row * scale;
+            int y0 = oy + (int)((float)row * scale);
+            int y1 = oy + (int)((float)(row + 1) * scale);
+            if (y1 <= y0) y1 = y0 + 1;
             uint8_t rowVal = glyph[row];
             for (int col = 0; col < 5;) {
-                if ((rowVal & (1u << (4 - col))) == 0) {
-                    ++col;
-                    continue;
-                }
+                if ((rowVal & (1u << (4 - col))) == 0) { ++col; continue; }
                 int end = col + 1;
                 while (end < 5 && (rowVal & (1u << (4 - end))) != 0) ++end;
-                C2D_DrawRectSolid(x + (float)col * scale, py, 0.96f,
-                                  (float)(end - col) * scale, scale, color);
+                int x0 = ox + (int)((float)col * scale);
+                int x1 = ox + (int)((float)end * scale);
+                if (x1 <= x0) x1 = x0 + 1;
+                C2D_DrawRectSolid((float)x0, (float)y0, 0.96f,
+                                  (float)(x1 - x0), (float)(y1 - y0), color);
                 col = end;
             }
         }
-        x += charW;
+        ox += adv;
     }
 }
 
-void Port_RA_RenderToastOverlay(void) {
-    if (!sToast.active) return;
-
+/* Draws the toast box + text. screenW centres it; xShift is the per-eye
+ * stereo parallax offset (0 on the bottom screen); scale sizes the whole
+ * thing -- 1.0 on the 320px bottom screen, 1.25 on the 400px top screen so
+ * it covers the same fraction of the wider panel instead of reading small.
+ * xShift is NOT scaled: parallax is a fixed pixel amount. Everything is
+ * pixel-snapped -- see DrawToastText. */
+static void RA_DrawToast(float screenW, float xShift, float scale) {
     bool hc = sToast.hardcore;
 
-    float boxW = 280.0f;
-    float boxH = 36.0f;
-    float boxX = (320.0f - boxW) / 2.0f;
-    float boxY = 6.0f;
+    /* S(k): k design-units at the current scale, floored to a whole pixel. */
+    #define S(k) ((int)((float)(k) * scale))
+
+    const int boxW = S(280);
+    const int boxH = S(36);
+    const int boxX = (int)((screenW - (float)boxW) / 2.0f + xShift);
+    const int boxY = S(6);
 
     /* Hardcore and softcore toasts read differently at a glance: hardcore gets
      * a gold double frame and a red accent stripe, softcore a single green
@@ -1481,43 +1531,71 @@ void Port_RA_RenderToastOverlay(void) {
     uint32_t frameCol = hc ? C2D_Color32(255, 215, 0, 255) : C2D_Color32(80, 220, 120, 255);
     uint32_t accentCol = hc ? C2D_Color32(230, 60, 60, 255) : C2D_Color32(40, 150, 90, 255);
 
-    C2D_DrawRectSolid(boxX, boxY, 0.94f, boxW, boxH, frameCol);
-    C2D_DrawRectSolid(boxX + 1.0f, boxY + 1.0f, 0.945f, boxW - 2.0f, boxH - 2.0f, C2D_Color32(14, 20, 32, 250));
+    C2D_DrawRectSolid((float)boxX, (float)boxY, 0.94f, (float)boxW, (float)boxH, frameCol);
+    C2D_DrawRectSolid((float)(boxX + S(1)), (float)(boxY + S(1)), 0.945f,
+                      (float)(boxW - S(2)), (float)(boxH - S(2)), C2D_Color32(14, 20, 32, 250));
     if (hc) {
-        /* Inner second frame line, only for hardcore. */
-        C2D_DrawRectSolid(boxX + 2.0f, boxY + 2.0f, 0.946f, boxW - 4.0f, 1.0f, frameCol);
-        C2D_DrawRectSolid(boxX + 2.0f, boxY + boxH - 3.0f, 0.946f, boxW - 4.0f, 1.0f, frameCol);
+        C2D_DrawRectSolid((float)(boxX + S(2)), (float)(boxY + S(2)), 0.946f, (float)(boxW - S(4)), (float)S(1), frameCol);
+        C2D_DrawRectSolid((float)(boxX + S(2)), (float)(boxY + boxH - S(3)), 0.946f, (float)(boxW - S(4)), (float)S(1), frameCol);
     }
-    /* Accent stripe down the left edge. */
-    C2D_DrawRectSolid(boxX + 2.0f, boxY + 2.0f, 0.95f, 2.0f, boxH - 4.0f, accentCol);
+    C2D_DrawRectSolid((float)(boxX + S(2)), (float)(boxY + S(2)), 0.95f, (float)S(2), (float)(boxH - S(4)), accentCol);
 
     /* Achievement badge on the left. Falls back to a drawn trophy when the
-     * 20x20 pixel copy for this badge is not bundled (see
-     * port_ra_badges_data.c). */
-    float iconX = boxX + 7.0f;
-    float iconY = boxY + 8.0f;
+     * 20x20 pixel copy for this badge is not bundled. */
+    const int iconX = boxX + S(7);
+    const int iconY = boxY + S(8);
     const uint32_t* badge = Port_RA_GetBadgePixels(sToast.badge);
     if (badge) {
-        C2D_DrawRectSolid(iconX - 1.0f, iconY - 1.0f, 0.955f, 22.0f, 22.0f, frameCol);
+        C2D_DrawRectSolid((float)(iconX - S(1)), (float)(iconY - S(1)), 0.955f, (float)S(22), (float)S(22), frameCol);
         for (int by = 0; by < 20; ++by) {
+            int py0 = iconY + (int)((float)by * scale);
+            int py1 = iconY + (int)((float)(by + 1) * scale);
+            if (py1 <= py0) py1 = py0 + 1;
             for (int bx = 0; bx < 20; ++bx) {
-                C2D_DrawRectSolid(iconX + (float)bx, iconY + (float)by, 0.96f, 1.0f, 1.0f,
-                                  badge[by * 20 + bx]);
+                int px0 = iconX + (int)((float)bx * scale);
+                int px1 = iconX + (int)((float)(bx + 1) * scale);
+                if (px1 <= px0) px1 = px0 + 1;
+                C2D_DrawRectSolid((float)px0, (float)py0, 0.96f,
+                                  (float)(px1 - px0), (float)(py1 - py0), badge[by * 20 + bx]);
             }
         }
     } else {
         uint32_t goldCol = C2D_Color32(255, 215, 0, 255);
-        C2D_DrawRectSolid(iconX + 4.0f, iconY, 0.96f, 12.0f, 7.0f, goldCol);
-        C2D_DrawRectSolid(iconX + 8.0f, iconY + 7.0f, 0.96f, 4.0f, 6.0f, goldCol);
-        C2D_DrawRectSolid(iconX + 5.0f, iconY + 13.0f, 0.96f, 10.0f, 3.0f, goldCol);
+        C2D_DrawRectSolid((float)(iconX + S(4)), (float)iconY, 0.96f, (float)S(12), (float)S(7), goldCol);
+        C2D_DrawRectSolid((float)(iconX + S(8)), (float)(iconY + S(7)), 0.96f, (float)S(4), (float)S(6), goldCol);
+        C2D_DrawRectSolid((float)(iconX + S(5)), (float)(iconY + S(13)), 0.96f, (float)S(10), (float)S(3), goldCol);
     }
 
-    float textX = boxX + 34.0f;
-    DrawToastText(textX, boxY + 6.0f,
+    const int textX = boxX + S(34);
+    DrawToastText(textX, boxY + S(6),
                   hc ? "! LOGRO DESBLOQUEADO (HARDCORE) !" : "! LOGRO DESBLOQUEADO !",
-                  hc ? C2D_Color32(255, 120, 120, 255) : frameCol);
+                  hc ? C2D_Color32(255, 120, 120, 255) : frameCol, scale);
 
     char titleBuf[80];
     snprintf(titleBuf, sizeof(titleBuf), "%s (+%lu PTS)", sToast.title, (unsigned long)sToast.points);
-    DrawToastText(textX, boxY + 20.0f, titleBuf, C2D_Color32(255, 255, 255, 255));
+    DrawToastText(textX, boxY + S(20), titleBuf, C2D_Color32(255, 255, 255, 255), scale);
+
+    #undef S
+}
+
+/* Bottom screen: called from the bottom UI's own C2D pass, so the render
+ * state is already what RA_DrawToast wants. Skipped when the player put the
+ * toast on the top screen. */
+void Port_RA_RenderToastOverlay(void) {
+    if (!sToast.active || sRANotifyTop) return;
+    RA_DrawToast(320.0f, 0.0f, 1.0f);
+}
+
+/* Top screen: called once per eye from the GPU renderer right after the FPS
+ * overlay, so it lands in front of everything. Flush + reset the TEV first
+ * (same reason as PlatformGpu3DS_DrawFpsOverlay: textured tile quads may
+ * still be queued, and RA_DrawToast draws only solid rects). */
+void Port_RA_RenderToastOverlayTop(float eyeXOffset) {
+    if (!sToast.active || !sRANotifyTop) return;
+    extern void PlatformGpu3DS_ResetSolidTexEnv(void);
+    C2D_Flush();
+    PlatformGpu3DS_ResetSolidTexEnv();
+    /* 400/320: match the fraction of screen width the bottom-screen toast
+     * covers, so it does not read smaller on the wider top panel. */
+    RA_DrawToast(400.0f, eyeXOffset, 1.25f);
 }

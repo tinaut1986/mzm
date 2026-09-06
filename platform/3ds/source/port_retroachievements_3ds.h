@@ -74,13 +74,25 @@ void Port_RA_SetEnabled(bool enabled);
 
 bool Port_RA_IsHardcore(void);
 void Port_RA_SetHardcore(bool hardcore);
-/* False when the build forbids hardcore outright (debug-tools builds carry a
- * god-mode / no-clip cheat harness). Port_RA_SetHardcore(true) is a no-op in
- * that case, and the UI shows hardcore as unavailable rather than off. */
+/* Currently always false: RetroAchievements does not sanction unofficial
+ * ports, so hardcore unlocks would never count. The mode is forced off and
+ * the toggle is hidden from the settings UI. The plumbing (rc_client
+ * hardcore flag, hardcore-styled toasts, HC unlock counters) is left in
+ * place for the day that changes -- flip this back to a real check then.
+ * Port_RA_SetHardcore(true) is a no-op while this returns false. */
 bool Port_RA_HardcoreAllowed(void);
 
 bool Port_RA_GetNotificationSound(void);
 void Port_RA_SetNotificationSound(bool sound);
+
+/* Which screen the unlock toast draws on: false (default) = bottom screen,
+ * true = top screen, where it rides in front of everything. */
+bool Port_RA_GetNotifyOnTopScreen(void);
+void Port_RA_SetNotifyOnTopScreen(bool onTop);
+
+/* Fire a sample unlock toast (+ jingle if the sound is enabled) for the
+ * settings-screen preview button. */
+void Port_RA_ShowPreviewToast(void);
 
 const char* Port_RA_GetUsername(void);
 void Port_RA_SetUsername(const char* username);
@@ -125,8 +137,12 @@ uint32_t Port_RA_GetViewCount(void);
 const RetroAchievementItem* Port_RA_GetViewAchievement(uint32_t index);
 const uint32_t* Port_RA_GetBadgePixels(const char* badgeName);
 
-/* Toast Notification Overlay Render (e.g. top or bottom screen) */
+/* Unlock toast overlay. RenderToastOverlay draws it on the BOTTOM screen
+ * (called from the bottom UI) and no-ops when the top-screen mode is on;
+ * RenderToastOverlayTop draws it on the TOP screen frontmost, once per eye
+ * with the given horizontal parallax offset, and no-ops otherwise. */
 void Port_RA_RenderToastOverlay(void);
+void Port_RA_RenderToastOverlayTop(float eyeXOffset);
 
 #ifdef __cplusplus
 }
