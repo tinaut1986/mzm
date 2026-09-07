@@ -10,7 +10,8 @@
 #include <stdio.h>
 #include <string.h>
 
-static bool sIsNew3DS;
+static bool sIsNew3DS;      /* EFFECTIVE profile: what Platform3DS_IsNew3DS() reports */
+static bool sHwIsNew3DS;    /* what the console actually is -- never changes */
 static bool sRunning;
 static bool sGameplayDisplayActive;
 static bool sCore1Available;
@@ -69,7 +70,8 @@ Thread Platform3DS_GetLogicThreadHandle(void) {
 int Platform3DS_Init(void) {
     gfxInitDefault();
 
-    APT_CheckNew3DS(&sIsNew3DS);
+    APT_CheckNew3DS(&sHwIsNew3DS);
+    sIsNew3DS = sHwIsNew3DS;
 #ifdef PORT_FORCE_OLD3DS_PROFILE
     /* Build-time override (see platform/3ds/Makefile's FORCE_OLD3DS) to make
      * real New3DS hardware behave like an Old3DS for benchmarking: every
@@ -128,6 +130,36 @@ bool Platform3DS_IsRunning(void) {
 
 bool Platform3DS_IsNew3DS(void) {
     return sIsNew3DS;
+}
+
+bool Platform3DS_HardwareIsNew3DS(void) {
+    return sHwIsNew3DS;
+}
+
+bool Platform3DS_ForcedOld3DSProfile(void) {
+    return sHwIsNew3DS && !sIsNew3DS;
+}
+
+/* Runtime New3DS <-> Old3DS-profile switch for the debug menu -- so the
+ * Old3DS behaviour can be tested on New3DS hardware without a FORCE_OLD3DS
+ * rebuild. No-op on a real Old3DS: the missing clock/cores/L2 cannot be
+ * conjured, so the toggle is locked there.
+ *
+ * Flips what Platform3DS_IsNew3DS() reports (per-frame consumers pick it
+ * up), changes the real CPU clock via osSetSpeedupEnable, and re-applies
+ * the mode1 / GPU old-profile flags. The Core1 grant and any worker threads
+ * already spawned are NOT undone -- a minor fidelity gap that only touches
+ * the CPU scanline renderer, not the default GPU path. */
+void Platform3DS_SetForcedOld3DSProfile(bool forced) {
+    if (!sHwIsNew3DS) return;                 /* real Old3DS: nothing to force */
+    const bool wantNew = !forced;
+    if (wantNew == sIsNew3DS) return;
+    sIsNew3DS = wantNew;
+    osSetSpeedupEnable(sIsNew3DS);
+    extern void virtuappu_mode1_set_old3ds_profile(bool old);
+    virtuappu_mode1_set_old3ds_profile(!sIsNew3DS);
+    extern void PlatformGpu3DS_SetOld3DSProfile(bool on);
+    PlatformGpu3DS_SetOld3DSProfile(!sIsNew3DS);
 }
 
 bool Platform3DS_CanUseCore1(void) {

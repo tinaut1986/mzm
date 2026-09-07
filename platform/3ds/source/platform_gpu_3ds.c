@@ -290,6 +290,8 @@ void PlatformGpu3DS_ResetSolidTexEnv(void) {
     }
 }
 
+void PlatformGpu3DS_SetOld3DSProfile(bool on) { sOld3DSProfile = on; }
+
 bool PlatformGpu3DS_Init(bool old3dsProfile) {
     memset(&sStats, 0, sizeof(sStats));
     LightLock_Init(&sGpuSubmitLock);

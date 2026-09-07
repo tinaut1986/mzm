@@ -4137,7 +4137,7 @@ static void RenderOptionsView(void) {
  * when the GPU tile renderer is compiled in -- a RENDERER=cpu build has
  * nothing to switch to and neither pass to switch off. */
 #ifdef PORT_GPU_TILE_RENDERER
-#define DBGTOOL_COUNT     13
+#define DBGTOOL_COUNT     14
 #else
 #define DBGTOOL_COUNT     10
 #endif
@@ -4379,6 +4379,19 @@ static void RenderDebugToolsModal(int lang) {
                            layers ? "CACHE ON" : "cache --",
                            layers ? C2D_Color32(230, 200, 120, 255) : C2D_Color32(150, 170, 200, 255),
                            hazeTxt[haze & 3], haze ? C2D_Color32(230, 200, 120, 255) : C2D_Color32(120, 135, 160, 255));
+        /* Run the Old3DS profile on New3DS hardware without a FORCE_OLD3DS
+         * rebuild. Locked on a real Old3DS (nothing to force). */
+        {
+            extern bool Platform3DS_HardwareIsNew3DS(void);
+            extern bool Platform3DS_ForcedOld3DSProfile(void);
+            const bool hwNew = Platform3DS_HardwareIsNew3DS();
+            const bool forced = Platform3DS_ForcedOld3DSProfile();
+            const char* st = !hwNew ? "OLD (hw)" : (forced ? "OLD (forz.)" : "NEW");
+            DrawDebugCell(12, "PERFIL 3DS", st,
+                          !hwNew ? C2D_Color32(120, 135, 160, 255)
+                                 : (forced ? C2D_Color32(230, 200, 120, 255)
+                                           : C2D_Color32(120, 230, 140, 255)));
+        }
     }
 #endif
 
@@ -4548,6 +4561,20 @@ static bool HandleDebugToolsModalTouch(int x, int y) {
                 Port_DebugLog(gpuOn ? "USER MARK: renderer -> GPU"
                                     : "USER MARK: renderer -> CPU");
                 DebugToolsSetMsg(gpuOn ? "RENDERER: GPU" : "RENDERER: CPU");
+            }
+            break;
+        }
+        case 12: {
+            extern bool Platform3DS_HardwareIsNew3DS(void);
+            extern bool Platform3DS_ForcedOld3DSProfile(void);
+            extern void Platform3DS_SetForcedOld3DSProfile(bool forced);
+            if (!Platform3DS_HardwareIsNew3DS()) {
+                DebugToolsSetMsg("PERFIL 3DS: OLD (hardware, fijo)");
+            } else {
+                const bool forced = !Platform3DS_ForcedOld3DSProfile();
+                Platform3DS_SetForcedOld3DSProfile(forced);
+                DebugToolsSetMsg(forced ? "PERFIL 3DS: OLD (forzado)"
+                                        : "PERFIL 3DS: NEW");
             }
             break;
         }
