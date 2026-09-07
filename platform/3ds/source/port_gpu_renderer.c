@@ -260,6 +260,12 @@ static int sCacheCount;
 static DrawItem sDrawItems[MAX_DRAW_ITEMS];
 static int sDrawItemCount;
 static bool sAnyDirtySlot;
+/* Monotonic count of atlas (re)decodes this frame. sAnyDirtySlot only goes
+ * false->true, so "did MY layer decode anything" cannot be read from it once
+ * an earlier layer already set it -- a later layer with a stale cached
+ * target but all-cache-hit tiles then never re-composed. A counter is
+ * unambiguous: entry value != end value means this layer touched a slot. */
+static uint32_t sDecodeSeq;
 static int sLastObjItemCount;
 
 /* --- issue #29: per-scanline BG3 ripple (water / lava / acid / heat haze) ---
@@ -422,7 +428,15 @@ int Port_GpuRenderer_HazeMode(void) { return sHazeMode; }
 static int sCaptureLayer = -1;
 static float sCaptureOffX, sCaptureOffY;
 static bool sLayerSameKey;
-static bool sLayerDirtyAtEntry;
+static uint32_t sLayerDecodeSeqAtEntry;
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
+typedef struct {
+    uint8_t captured, sameKey, needsCompose;
+    int tiles, orgX, orgY;
+    uint32_t mapHash, decodedThisLayer;
+} LayerCacheDiag;
+static LayerCacheDiag sLCdiag[4];
+#endif
 /* How many layers had to be composed this frame -- 0 means every cached
  * layer was reused, which is what the cache is for. Recorded per perf
  * sample so the toggle produces a number and not an impression. */
@@ -773,6 +787,45 @@ static void ComputeDepthState(uint16_t dispcnt) {
     }
     UpdateLayerFixRoom();
     UpdateDoorDepthRoom();
+
+    /* Invalidate the content caches on any room/area/mode change, and keep
+     * them invalidated for a SETTLE WINDOW afterwards. A transition takes
+     * several frames to fully land -- screenmap, then tile graphics, then
+     * palettes, each its own DMA -- and any frame sampled mid-way lets stale
+     * VRAM match a stale cache entry, so a cached layer bakes in the
+     * previous screen (file-select text, the intro starfield over the whole
+     * frame, another room's scenery -- confirmed from a hardware GPUDIAG log
+     * where the compose ran with dec=0, i.e. trusting the atlas completely
+     * while the atlas was still stale). One clean frame is not enough; a
+     * dozen covers the whole multi-DMA settle and is invisible under the
+     * transition fade. */
+    {
+        extern u8 gCurrentArea;
+        extern u8 gCurrentRoom;
+        static int sCacheRoomArea = -1, sCacheRoomNum = -1, sCacheGameMode = -1;
+        static int sCacheSettleFrames;
+        if ((int)gCurrentArea != sCacheRoomArea || (int)gCurrentRoom != sCacheRoomNum ||
+            (int)gMainGameMode != sCacheGameMode) {
+            sCacheRoomArea = (int)gCurrentArea;
+            sCacheRoomNum = (int)gCurrentRoom;
+            sCacheGameMode = (int)gMainGameMode;
+            sCacheSettleFrames = 16;
+        }
+        if (sCacheSettleFrames > 0) {
+            --sCacheSettleFrames;
+            for (int i = 0; i < 4; ++i) {
+                sLayerComposed[i] = false;
+                sLayerNeedsCompose[i] = true; /* re-bake every frame of the window */
+            }
+            sBlockCacheResetPending = true; /* rebuild blocks from VRAM each frame */
+            sB32CacheResetPending = true;
+            /* Per-tile cache too: it normally persists (OBJ + fallbacks) but
+             * across a transition its stale entries are exactly the problem.
+             * Clearing it costs one frame of redecode, hidden by the fade. */
+            for (int i = 0; i < HASH_BUCKETS; ++i) sHashBucketHead[i] = -1;
+            sCacheCount = 0;
+        }
+    }
 
     /* Whether a doorway is actually on screen this frame. Only then does the
      * per-tile path have to run for the door depth pull; walking away from
@@ -1428,6 +1481,7 @@ static void DecodeTileIntoSlot(int slot, const uint8_t* src, bool bpp8, const ui
 
     MarkAtlasRowDirty(slot / ATLAS_TILES_PER_ROW);
     sAnyDirtySlot = true;
+    ++sDecodeSeq;
 }
 
 static inline uint32_t BlockKeyHash(const BlockCacheKey* k) {
@@ -1480,6 +1534,7 @@ static void DecodeBlockIntoSlot(int block, const uint8_t* src[4], const uint16_t
     MarkAtlasRowDirty(base / ATLAS_TILES_PER_ROW);
     MarkAtlasRowDirty(base / ATLAS_TILES_PER_ROW + 1);
     sAnyDirtySlot = true;
+    ++sDecodeSeq;
 }
 
 /* Atlas block index for this 2x2 tilemap group, decoding only if needed;
@@ -1585,6 +1640,7 @@ static void DecodeBlock32IntoSlot(int b32, const uint8_t* src[16], const uint16_
     }
     for (int r = 0; r < 4; ++r) MarkAtlasRowDirty(base / ATLAS_TILES_PER_ROW + r);
     sAnyDirtySlot = true;
+    ++sDecodeSeq;
 }
 
 /* Atlas 32x32 block index for this 4x4 tilemap group; -1 when the region is
@@ -1884,6 +1940,11 @@ static void CollectBgLayer(int bgIndex) {
     const bool layerCacheable =
         sLayerCacheEnabled && sLayerRtReady[bgIndex] && !sObjWindowActive && !sHazeActive &&
         PortLayerFix_ActiveCount() == 0 && !roomHasTankOnThisBg && !roomHasDoorDepth;
+    /* Not cacheable this frame -> its composed target is now stale and its
+     * sLayerKey frozen. Clear the flag so if the layer becomes cacheable
+     * again it is forced to re-compose instead of matching the old key and
+     * drawing a target from another room / scroll position. */
+    if (!layerCacheable) sLayerComposed[bgIndex] = false;
     if (layerCacheable) {
         /* Hash the tilemap window this target covers, so a room redrawing
          * its map invalidates even when the origin has not moved. */
@@ -1914,7 +1975,7 @@ static void CollectBgLayer(int bgIndex) {
                         prev->bpp8 == key.bpp8;
         sLayerKey[bgIndex] = key;
         sLayerTileCount[bgIndex] = 0;
-        sLayerDirtyAtEntry = sAnyDirtySlot;
+        sLayerDecodeSeqAtEntry = sDecodeSeq;
         /* Capture the tiles regardless: they still have to go through the
          * atlas staleness checks, which is what catches an animated tile
          * whose bytes changed without the tilemap moving. Whether the
@@ -2237,7 +2298,15 @@ static void CollectBgLayer(int bgIndex) {
         /* Compose again unless nothing moved at all: same key AND no atlas
          * slot rewritten while collecting this layer (an animated tile, a
          * palette phase, an evy step). */
-        sLayerNeedsCompose[bgIndex] = !(sLayerSameKey && sAnyDirtySlot == sLayerDirtyAtEntry);
+        sLayerNeedsCompose[bgIndex] =
+            !(sLayerSameKey && sDecodeSeq == sLayerDecodeSeqAtEntry);
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
+        sLCdiag[bgIndex] = (LayerCacheDiag){
+            1, sLayerSameKey, sLayerNeedsCompose[bgIndex], sLayerTileCount[bgIndex],
+            startTileX, startTileY, sLayerKey[bgIndex].mapHash,
+            sDecodeSeq - sLayerDecodeSeqAtEntry
+        };
+#endif
 
         /* The sampled rectangle carries the fine scroll. Same full-span,
          * eighth-of-a-texel-shifted convention as the atlas and the
@@ -2251,6 +2320,18 @@ static void CollectBgLayer(int bgIndex) {
             .right = ((float)(fineX + 240) + sh) * inv,
             .bottom = 1.0f - ((float)(fineY + 160) + sh) * inv,
         };
+        /* Nothing collected: this layer is fully transparent over the visible
+         * window right now. The compose loop skips a zero-tile layer (there
+         * is nothing to draw into the target), so the target still holds
+         * WHATEVER WAS COMPOSED INTO IT LAST -- the file-select screen, the
+         * intro starfield, the previous room. Pushing the quad anyway
+         * plastered that over the frame. Draw nothing, and drop the composed
+         * flag so no later frame trusts those pixels either. */
+        if (sLayerTileCount[bgIndex] == 0) {
+            sLayerComposed[bgIndex] = false;
+            sLayerNeedsCompose[bgIndex] = false;
+            return;
+        }
         PushLayerQuad(&sLayerTex[bgIndex], &sLayerSubtex[bgIndex],
                       (3 - priority) * 10 + (3 - bgIndex),
                       PortStereoDepth_BgTier(&sDepthState, bgIndex), blendAlpha, rectWinVis);
@@ -3217,6 +3298,21 @@ void Port_GpuRenderer_RenderFrame(void) {
                   PortHaze_Bg3RowScroll(sHazeRowDelta, &sHazeBakeHofs);
     if (sHazeActive) CollectHazeBg3();
 
+    /* Any layer NOT collected as a cached layer this frame has a stale
+     * composed target and a frozen sLayerKey. Drop sLayerComposed for all
+     * four up front; CollectBgLayer sets it true again only for the ones it
+     * actually composes. Without this, a layer that stopped being cacheable
+     * (near a doorway, OBJWIN, a room edge) and later became cacheable again
+     * could match its OLD key and draw the target from another room -- seen
+     * as sprites from another area scrolling a corridor. */
+    for (int bg = 0; bg < 4; ++bg) {
+        bool disabled = !(dispcnt & (1u << (8 + bg)));
+        bool hazeBg3 = sHazeActive && bg == 3;
+        if (disabled || hazeBg3) sLayerComposed[bg] = false;
+    }
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
+    for (int bg = 0; bg < 4; ++bg) sLCdiag[bg] = (LayerCacheDiag){ 0 };
+#endif
     for (int bg = 3; bg >= 0; --bg) {
         if (!(dispcnt & (1u << (8 + bg)))) continue;
         if (sHazeActive && bg == 3) continue; /* drawn via the offscreen strip pass */
@@ -3257,7 +3353,7 @@ void Port_GpuRenderer_RenderFrame(void) {
     {
         static unsigned sDiagCounter;
         if ((sDiagCounter++ % 5u) == 0u) {
-            char msg[512];
+            char msg[900];
             int objItems = 0, cacheSlots = sCacheCount;
             float minY = 999.0f, maxY = -999.0f;
             for (int i = 0; i < sDrawItemCount; ++i) {
@@ -3281,6 +3377,18 @@ void Port_GpuRenderer_RenderFrame(void) {
                 off += __builtin_snprintf(msg + off, sizeof(msg) - (size_t)off, " bg%d[cnt=%04x h=%u v=%u]", bg,
                                           bgcnt, hofs, vofs);
                 if (off >= (int)sizeof(msg)) break;
+            }
+            {
+                extern u8 gCurrentArea; extern u8 gCurrentRoom;
+                off += __builtin_snprintf(msg + off, sizeof(msg) - (size_t)off, " room=%u,%u lce=%d haze=%d",
+                                          gCurrentArea, gCurrentRoom, sLayerCacheEnabled, sHazeActive);
+            }
+            for (int bg = 0; bg < 4 && off < (int)sizeof(msg); ++bg) {
+                const LayerCacheDiag* d = &sLCdiag[bg];
+                off += __builtin_snprintf(msg + off, sizeof(msg) - (size_t)off,
+                                          " LC%d[cap=%d sk=%d cmp=%d til=%d org=%d,%d mh=%08x dec=%u composed=%d]",
+                                          bg, d->captured, d->sameKey, d->needsCompose, d->tiles,
+                                          d->orgX, d->orgY, d->mapHash, d->decodedThisLayer, sLayerComposed[bg]);
             }
             Port_DebugLog(msg);
         }
@@ -3465,7 +3573,15 @@ void Port_GpuRenderer_RenderFrame(void) {
      * pixels its own tiles cover. Once per frame, not once per eye -- both
      * eyes sample the same target, which is the point. */
     for (int li = 0; li < 4; ++li) {
-        if (!sLayerRtReady[li] || !sLayerNeedsCompose[li] || sLayerTileCount[li] == 0) continue;
+        if (!sLayerRtReady[li] || !sLayerNeedsCompose[li]) continue;
+        if (sLayerTileCount[li] == 0) {
+            /* Nothing to compose. Belt and braces with CollectBgLayer's own
+             * zero-tile bail: never leave the flag set on a target whose
+             * pixels belong to some earlier screen. */
+            sLayerComposed[li] = false;
+            sLayerNeedsCompose[li] = false;
+            continue;
+        }
         C2D_SceneBegin(sLayerRT[li]);
         C3D_RenderTargetClear(sLayerRT[li], C3D_CLEAR_COLOR, 0, 0);
         C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_ALL);
