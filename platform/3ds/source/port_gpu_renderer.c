@@ -442,6 +442,8 @@ typedef struct {
     uint32_t mapHash, decodedThisLayer;
 } LayerCacheDiag;
 static LayerCacheDiag sLCdiag[4];
+static int sDiagAffineDrawn[2], sDiagBlendDrawn[2];
+static int sDiagSemiTransColl, sDiagAffineColl, sDiagMosaicColl, sDiagSemiTransX, sDiagSemiTransOam;
 #endif
 /* How many layers had to be composed this frame -- 0 means every cached
  * layer was reused, which is what the cache is for. Recorded per perf
@@ -2583,6 +2585,11 @@ static void CollectSprite(int oamIndex, bool obj1D) {
      * sprites over Samus on the elevator (BG1) and the eye glow (BG0);
      * without this they draw opaque and hide both behind a solid blob. */
     bool objSemiTransparent = (objMode == 1);
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
+    if (objSemiTransparent) { ++sDiagSemiTransColl; sDiagSemiTransX = x; sDiagSemiTransOam = oamIndex; }
+    if (isAffine) ++sDiagAffineColl;
+    if ((attr0 & 0x1000u)) ++sDiagMosaicColl;  /* attr0 bit12 = OBJ mosaic */
+#endif
     BrightAdjust brightAdjust = BRIGHT_ADJUST_NONE;
     bool blendAlpha;
     if (objSemiTransparent) {
@@ -3318,6 +3325,10 @@ void Port_GpuRenderer_RenderFrame(void) {
     }
 #ifdef PORT_DEBUG_TOOLS_ACTIVE
     for (int bg = 0; bg < 4; ++bg) sLCdiag[bg] = (LayerCacheDiag){ 0 };
+    sDiagAffineDrawn[0] = sDiagAffineDrawn[1] = 0;
+    sDiagBlendDrawn[0] = sDiagBlendDrawn[1] = 0;
+    sDiagSemiTransColl = sDiagAffineColl = sDiagMosaicColl = 0;
+    sDiagSemiTransX = sDiagSemiTransOam = -1;
 #endif
     for (int bg = 3; bg >= 0; --bg) {
         if (!(dispcnt & (1u << (8 + bg)))) continue;
@@ -3386,8 +3397,11 @@ void Port_GpuRenderer_RenderFrame(void) {
             }
             {
                 extern u8 gCurrentArea; extern u8 gCurrentRoom;
-                off += __builtin_snprintf(msg + off, sizeof(msg) - (size_t)off, " room=%u,%u lce=%d haze=%d",
-                                          gCurrentArea, gCurrentRoom, sLayerCacheEnabled, sHazeActive);
+                off += __builtin_snprintf(msg + off, sizeof(msg) - (size_t)off,
+                                          " room=%u,%u lce=%d haze=%d semiT=%d aff=%d mos=%d stX=%d stOam=%d",
+                                          gCurrentArea, gCurrentRoom, sLayerCacheEnabled, sHazeActive,
+                                          sDiagSemiTransColl, sDiagAffineColl, sDiagMosaicColl,
+                                          sDiagSemiTransX, sDiagSemiTransOam);
             }
             for (int bg = 0; bg < 4 && off < (int)sizeof(msg); ++bg) {
                 const LayerCacheDiag* d = &sLCdiag[bg];
@@ -3765,6 +3779,10 @@ void Port_GpuRenderer_RenderFrame(void) {
                 C2D_DrawParams params = BuildDrawParams(item, screenBaseX, screenBaseY, eyeOffset, scaleX, scaleY, false);
                 C2D_DrawImage(item->img, &params, NULL);
                 ++drawCount;
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
+                if (item->affine)      ++sDiagAffineDrawn[eye & 1];
+                if (item->blendAlpha)  ++sDiagBlendDrawn[eye & 1];
+#endif
                 /* Device pixels this quad covers, summed over every eye.
                  * The point of counting it is to separate two explanations
                  * of where a frame goes that the quad count alone cannot:
@@ -3930,9 +3948,10 @@ void Port_GpuRenderer_RenderFrame(void) {
              * confusion before the parity was noticed. */
             static unsigned sEyeDrawLogCounter[2];
             if ((sEyeDrawLogCounter[eye]++ % 30u) == 0u) {
-                char msg[64];
-                snprintf(msg, sizeof(msg), "EYE%d drawCount=%d reasserted=%d", eye, drawCount,
-                         (int)reassertedTexEnv);
+                char msg[96];
+                snprintf(msg, sizeof(msg), "EYE%d drawCount=%d reasserted=%d affine=%d blend=%d slider=%.2f",
+                         eye, drawCount, (int)reassertedTexEnv,
+                         sDiagAffineDrawn[eye & 1], sDiagBlendDrawn[eye & 1], (double)slider3d);
                 Port_DebugLog(msg);
             }
         }
