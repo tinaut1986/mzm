@@ -1745,10 +1745,13 @@ bool PortPpuMzm_IsVisibleTankBlock(int blockX, int blockY) {
  *
  *   - the door's own column span (xStart..xEnd) from sAreaDoorsPointers,
  *     widened one block each side -- the outboard one is wall (BG1,
- *     already on the play plane, a no-op), the inboard one is the animated
- *     hatch "capsule",
- *   - a couple of rows above and below for the lintel/sill (and whatever
- *     sits directly under the capsule).
+ *     already on the play plane, a no-op), the inboard one is the trim
+ *     next to the hatch,
+ *   - ONLY the PORT_DOOR_DEPTH_MARGIN_Y rows above yStart and below yEnd,
+ *     the lintel/sill ledge. The door's own rows (yStart..yEnd) are the
+ *     animated hatch capsule and are left on their own plane -- pulling
+ *     them forward made the backdrop revealed as the capsule opens draw on
+ *     top of the scene.
  *
  * An earlier version grew each row along the BG2 run to avoid cutting a
  * ledge mid-run. It reached too far and dragged actual background forward,
@@ -1815,6 +1818,14 @@ void PortPpuMzm_SetDoorDepthRoom(int area, int room) {
         if (y0 < 0) y0 = 0;
 
         for (int y = y0; y <= y1; ++y) {
+            /* Only the lintel/sill trim -- the MARGIN_Y rows above yStart and
+             * below yEnd. The door's own rows (yStart..yEnd) are the animated
+             * hatch capsule; pulling those forward makes the background
+             * revealed as the capsule opens draw ON TOP of the scene even
+             * though it is drawn behind. The capsule's presence is still what
+             * puts the trim rows in the footprint -- but the capsule tiles
+             * themselves stay on their own plane. */
+            if (y >= (int)d->yStart && y <= (int)d->yEnd) continue;
             if (sDoorSpanCount >= PORT_DOOR_DEPTH_SPANS) return;
             sDoorSpanY[sDoorSpanCount]  = (uint16_t)y;
             sDoorSpanX0[sDoorSpanCount] = (uint16_t)dx0;
