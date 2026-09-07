@@ -378,9 +378,15 @@ typedef struct {
 } LayerKey;
 static LayerKey sLayerKey[4];
 
-/* Off by default: this is a performance change whose payoff depends on the
- * room, and the only machine that can judge it is a console. */
-static bool sLayerCacheEnabled;
+/* On by default. Measured on hardware (2026-09): ~2ms GPU + ~1ms CPU and
+ * ~100 fewer BG quads per eye in busy rooms, and 4-5 FPS in spots where
+ * that tips a frame under a vblank boundary. Auto-declines while the BG3
+ * haze pass runs (they would both drive a target compose + C3D_FrameSplit)
+ * and per layer when anything resolves visibility/placement per tile. The
+ * one case to watch is an ANIMATED-PALETTE room with no haze: a palette
+ * change invalidates the composed target, so the cache re-composes every
+ * frame there -- toggle it off (debug menu) if such a room regresses. */
+static bool sLayerCacheEnabled = true;
 void Port_GpuRenderer_SetLayerCache(bool on) { sLayerCacheEnabled = on; }
 bool Port_GpuRenderer_LayerCacheEnabled(void) { return sLayerCacheEnabled; }
 
@@ -881,7 +887,7 @@ bool Port_GpuRenderer_BlockDebugTintEnabled(void) { return sBlockDebugTint; }
 /* 32x32 block pass (see the Block32 cache). Opt-in, like step A was: a
  * measured-on-hardware change, and the 16x16 pass has to be on for it to do
  * anything (32x32 groups are tried first, the rest fall through to 16x16). */
-static bool sBlock32PassEnabled = false;
+static bool sBlock32PassEnabled = true;
 void Port_GpuRenderer_SetBlock32Pass(bool on) {
     if (on == sBlock32PassEnabled) return;
     sBlock32PassEnabled = on;

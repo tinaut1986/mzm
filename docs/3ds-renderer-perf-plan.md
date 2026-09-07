@@ -423,14 +423,23 @@ cannot be talked out of them.
 | Switch | Default | Why |
 |---|---|---|
 | 16x16 block pass | **ON** | 45 -> 60 FPS measured; shipped in v0.4.5 |
-| BG3 haze mode | **RT** | 17,77 -> 11,26 ms measured |
-| Layer cache (step B) | **OFF** | 2% measured, and only ever tested standing still |
+| 32x32 block pass | **ON** | (2026-09) another /4 on aligned interior; ~2-3 ms, 4-5 FPS where it crosses a vblank boundary. Still owes the exhaustive host alignment test the 16x16 pass got |
+| BG3 haze mode | **RT** | 17,77 -> 11,26 ms measured. `nocomp` is a measurement aid only -- it blits a stale strip target, so on hardware the heat distortion is visible but frozen |
+| Layer cache (step B) | **ON** | (2026-09) ~2 ms GPU + ~1 ms CPU, ~100 fewer BG quads/eye, 4-5 FPS in spots. Auto-off under haze and per-tile-resolved layers |
 
-The layer cache is deliberately off. It bought 16,87 -> 16,49 ms in its very
-best case -- standing still, reused every frame, 0 composes -- and it has
-never been exercised while scrolling, where it composes, nor in a room with
-animated tiles, where its invalidation actually has work to do. It is not
-worth carrying that risk for 2% until something measures it moving.
+The block pass now stays on in layer-fix / tank / door rooms too -- only the
+individual 16x16 groups a correction touches fall through to per-tile,
+instead of the whole layer. That is what took the worst measured room from
+~1230 BG quads/eye to ~240 and 25 ms CPU to ~12.
+
+The layer cache was off for a long time (2% standing still, untested
+moving). What changed: the block-decline fix reshaped every busy room, a
+hardware pass showed 4-5 FPS in real spots, and the haze conflict that
+corrupted lava rooms is now an explicit exclusion (`!sHazeActive` in
+`layerCacheable`). The remaining risk is an ANIMATED-PALETTE room with no
+haze -- a palette change invalidates the composed target, so the cache
+re-composes every frame there. None measured yet; the debug toggle
+(`CAPAS/HAZE` cell) is the escape hatch if one turns up.
 
 ## Dead ends
 
