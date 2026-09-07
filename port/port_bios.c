@@ -320,6 +320,48 @@ static bool Port_Bios_DecideRenderSkip(bool locked30) {
     return drift < 0;
 }
 
+/* ---- Temporal OAM merge for frame-skipped rendering -----------------
+ * The game logic ticks at 60 Hz; under the render throttle we only sample
+ * OAM every 2nd/3rd frame. MZM blinks sprites on and off every game frame
+ * -- the screw-attack glow, the i-frames after damage, the save-capsule
+ * shimmer -- meant to read as ~50% on a persistent LCD. Sampled at ~30 Hz
+ * with a drifting phase it strobes: fully lit one render, gone the next.
+ *
+ * So OR sprite visibility across every game frame skipped since the last
+ * render and hand the renderer that merged OAM: a sprite drawn in ANY of
+ * those frames is drawn now, which turns the strobe back into a steady
+ * "mostly on". Costs one 1 KB copy per game frame and nothing at a
+ * sustained 60 (every frame renders -> the merge just reseeds from live).
+ * A sprite that legitimately vanishes lingers at most one render (~33 ms). */
+static u16 sOamMerged[0x400 / 2];
+static bool sOamMergeSeeded;
+
+static inline bool Port_Bios_OamSlotVisible(const u16* oam, int i) {
+    const u16 a0 = oam[i * 4 + 0], a1 = oam[i * 4 + 1];
+    const bool affine = (a0 >> 8) & 1u;
+    if (((a0 >> 9) & 1u) && !affine) return false;   /* non-affine hidden bit */
+    if (((a0 >> 10) & 3u) == 2u) return false;        /* OBJ window, not drawn */
+    int y = a0 & 0xFF; if (y >= 160) y -= 256;
+    int x = (int)(a1 & 0x1FF); if (x >= 240) x -= 512;
+    return y > -64 && y < 160 && x > -64 && x < 240;  /* roughly on screen */
+}
+
+/* Fold the current frame's OAM into sOamMerged. Called every game frame,
+ * right after the logic tick, before the skip decision. */
+static void Port_Bios_OamMergeTick(void) {
+    const u16* cur = gOamMem;
+    if (!sOamMergeSeeded) {
+        memcpy(sOamMerged, cur, sizeof sOamMerged);
+        sOamMergeSeeded = true;
+        return;
+    }
+    for (int i = 0; i < 128; ++i) {
+        if (Port_Bios_OamSlotVisible(cur, i) || !Port_Bios_OamSlotVisible(sOamMerged, i))
+            memcpy(&sOamMerged[i * 4], &cur[i * 4], 8);
+        /* else current is a blink-off of a slot that was on -> keep it on */
+    }
+}
+
 static void Port_Bios_PaceFrame(void) {
     const u64 ticksPerSec = Platform3DS_TicksPerSecond();
     const u64 ticksPerFrame = (ticksPerSec * PORT_BIOS_FRAME_NS) / 1000000000ull;
@@ -383,6 +425,7 @@ extern bool Port_PPU_3DS_LastFrameUsedGpu(void);
      * meaningful once the GPU renderer is actually the pacer. */
     bool skipRender = sGpuFrameSkipEnabled && Port_PPU_3DS_LastFrameUsedGpu() &&
                       Port_Bios_DecideRenderSkip(Port_Config_GetFramePacing() == 1);
+    Port_Bios_OamMergeTick();
     if (!skipRender) PlatformGpu3DS_PerfRecordTick();
     if (skipRender) {
 #ifdef PORT_VERBOSE_FRAME_LOG
@@ -392,7 +435,16 @@ extern bool Port_PPU_3DS_LastFrameUsedGpu(void);
          * paced this tick (fast return for ADAPTIVE, sleep-to-sim-clock for
          * LOCKED 30). The present thread keeps showing the last frame. */
     } else {
+        /* Render from the merged OAM so a sprite blinked off this frame but
+         * on in a skipped one is still drawn (see Port_Bios_OamMergeTick).
+         * Restore the live OAM right after -- game logic must never see the
+         * merged copy. */
+        u16 liveOam[0x400 / 2];
+        memcpy(liveOam, gOamMem, sizeof liveOam);
+        memcpy(gOamMem, sOamMerged, sizeof sOamMerged);
         Port_PPU_RenderFrame();
+        memcpy(gOamMem, liveOam, sizeof liveOam);
+        sOamMergeSeeded = false; /* next frame reseeds the merge from live */
 #ifdef PORT_VERBOSE_FRAME_LOG
         Port_DebugLog("Port_Bios_Halt: after Port_PPU_RenderFrame");
 #endif
