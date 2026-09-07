@@ -1144,7 +1144,19 @@ void PlatformGpu3DS_TogglePerfRecording(void) {
         extern void Port_DebugLog(const char* msg);
         char msg[80];
         char perfPath[256];
-        if (!Port_DebugFiles_NextPath("mzm-perf", ".bin", PORT_KEEP_PERF, perfPath, sizeof(perfPath)))
+        /* Round-robin the slot within the session so back-to-back captures
+         * land on mzm-perf-01, -02, -03, ... without leaving the game. The
+         * first of the session picks a free slot (Port_DebugFiles_NextPath's
+         * own choice); after that just advance, wrapping at PORT_KEEP_PERF.
+         * A plain in-memory counter, because SD st_mtime is unreliable here
+         * so "least recently modified" collapses to slot 1 every time. */
+        static unsigned sPerfSlot; /* 0 until the first capture of the session */
+        if (sPerfSlot == 0) {
+            sPerfSlot = Port_DebugFiles_NextSetIndex("mzm-perf", ".bin", PORT_KEEP_PERF);
+        } else {
+            sPerfSlot = (sPerfSlot % PORT_KEEP_PERF) + 1u;
+        }
+        if (!Port_DebugFiles_SetPath("mzm-perf", sPerfSlot, ".bin", perfPath, sizeof(perfPath)))
             snprintf(perfPath, sizeof(perfPath), "sdmc:/3ds/mzm-perf-01.bin");
         snprintf(msg, sizeof(msg), "PERF REC STOP: %u frames -> %s", sPerfCount, perfPath);
         Port_DebugLog(msg);
