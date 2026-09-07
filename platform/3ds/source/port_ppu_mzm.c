@@ -141,6 +141,13 @@ static int sGbaFxGrade = 0;
 static int sGbaFxGrid = 0;
 static int sGbaFxVignette = 0;
 
+/* Frame pacing on the GPU path. 0 = ADAPTIVE: run at whatever rate the scene
+ * allows, skipping the render (never the logic) to keep game speed correct
+ * when a frame overruns -- fluid, variable 30..60. 1 = LOCKED 30: render
+ * every other logic tick for a steady 30 Hz picture at correct game speed.
+ * See Port_Bios_Halt / Port_Bios_ShouldSkipRender. */
+static int sFramePacing = 0;
+
 /* Button Actions:
  * 0 = NINGUNA (NONE)
  * 1 = AUTODISPARO (RAPID FIRE)
@@ -206,6 +213,7 @@ void Port_Config_Save(void) {
     fprintf(file, "gba_fx_grade=%d\n", sGbaFxGrade);
     fprintf(file, "gba_fx_grid=%d\n", sGbaFxGrid);
     fprintf(file, "gba_fx_vignette=%d\n", sGbaFxVignette);
+    fprintf(file, "frame_pacing=%d\n", sFramePacing);
     fprintf(file, "btn_map_a=%d\n", sBtnRemap[0]);
     fprintf(file, "btn_map_b=%d\n", sBtnRemap[1]);
     fprintf(file, "btn_map_x=%d\n", sBtnRemap[2]);
@@ -302,6 +310,8 @@ void Port_Config_Load(void) {
             if (val >= 0 && val < 4) sGbaFxGrid = val;
         } else if (strcmp(key, "gba_fx_vignette") == 0) {
             if (val >= 0 && val < 4) sGbaFxVignette = val;
+        } else if (strcmp(key, "frame_pacing") == 0) {
+            if (val >= 0 && val < 2) sFramePacing = val;
         } else if (strcmp(key, "btn_map_a") == 0) {
             if (val >= 0 && val < BTN_ACTION_COUNT) sBtnRemap[0] = val;
         } else if (strcmp(key, "btn_map_b") == 0) {
@@ -373,6 +383,10 @@ void Port_Config_SetGbaFxGrid(int level) { if (level >= 0 && level < 4) { sGbaFx
 
 int Port_Config_GetGbaFxVignette(void) { return sGbaFxVignette; }
 void Port_Config_SetGbaFxVignette(int level) { if (level >= 0 && level < 4) { sGbaFxVignette = level; Port_Config_Save(); } }
+
+/* 0 = ADAPTIVE (default), 1 = LOCKED 30. */
+int Port_Config_GetFramePacing(void) { return sFramePacing; }
+void Port_Config_SetFramePacing(int mode) { if (mode >= 0 && mode < 2) { sFramePacing = mode; Port_Config_Save(); } }
 
 int Port_Config_GetBtnRemap(int btn) {
     if (btn >= 0 && btn < 10) return sBtnRemap[btn];

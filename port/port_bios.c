@@ -230,6 +230,7 @@ extern void PlatformGpu3DS_RecordTick(void);
 extern void PlatformGpu3DS_PerfRecordTick(void);
 extern u64 Platform3DS_SystemTick(void);
 extern u64 Platform3DS_TicksPerSecond(void);
+extern void Platform3DS_WaitForVBlank(void);
 
 /* Guards gMusicInfo/TrackData against the audio thread's own production
  * ticks (see platform/3ds/source/port_mzm_audio_3ds.c's doc comment on
@@ -254,6 +255,70 @@ extern void Port_AudioStateLock_Release(void);
  * write, ...), rather than free-running to catch up. */
 #define PORT_BIOS_FRAME_NS 16724400ull
 static u64 sNextFrameDeadlineTicks;
+
+/* ---- Render throttle for the GPU path --------------------------------
+ * The GPU renderer's C3D_FrameSync() is the frame pacer: one game-logic
+ * tick (CallbackCallVblank) per presented frame. When a frame overruns the
+ * 16.7ms vblank budget C3D_FrameSync blocks to the NEXT vblank, so the
+ * whole loop -- logic included -- drops to 30Hz and the game runs in slow
+ * motion (audio stays real-time on its own thread, so it desyncs).
+ *
+ * A "sim clock" tracks where game time has got to; every logic tick (never
+ * skipped) advances it one frame. The render is what gets skipped:
+ *
+ *   ADAPTIVE  -- render whenever the sim is not behind real time; while it
+ *                is behind, skip the render and RETURN FAST so agbmain runs
+ *                the next logic tick and the sim catches up. Fluid, and its
+ *                rate settles at whatever the scene sustains.
+ *   LOCKED 30 -- render on every other logic tick and, on the skipped tick,
+ *                sleep just until real time reaches the sim clock. A fast
+ *                scene pair is render(~16.7) + sleep(~16.7) = 33.3ms; a
+ *                heavy pair is render(~33, two vblanks) + sleep(~0) = 33.3.
+ *                Steady 30 Hz picture, 60 Hz logic, either way.
+ *
+ * Both resync (rather than chase a huge backlog) after a stall -- debugger,
+ * slow SD write. */
+static u64 sSimClockTicks;      /* where game time has reached */
+static int sLocked30Parity;
+static bool sGpuFrameSkipEnabled = true;
+extern int Port_Config_GetFramePacing(void); /* 0 adaptive, 1 locked 30 */
+
+void Port_Bios_SetAdaptiveFrameSkip(bool on) {
+    sGpuFrameSkipEnabled = on;
+    sSimClockTicks = 0;
+}
+bool Port_Bios_AdaptiveFrameSkipEnabled(void) { return sGpuFrameSkipEnabled; }
+
+/* Decides skip for the logic tick that just ran, and for LOCKED 30 also
+ * paces the skipped tick. Returns true to skip the render. */
+static bool Port_Bios_DecideRenderSkip(bool locked30) {
+    if (!sGpuFrameSkipEnabled) return false;
+    const u64 tps = Platform3DS_TicksPerSecond();
+    const u64 tpf = (tps * PORT_BIOS_FRAME_NS) / 1000000000ull;
+    const u64 now = Platform3DS_SystemTick();
+    if (sSimClockTicks == 0) sSimClockTicks = now;
+    sSimClockTicks += tpf;                       /* this logic tick */
+    const s64 drift = (s64)(sSimClockTicks - now); /* >0: sim ahead of real time */
+    if (drift < -(s64)(4ull * tpf) || drift > (s64)(4ull * tpf)) {
+        sSimClockTicks = now;                    /* stall: resync, don't chase it */
+        sLocked30Parity = 0;
+        return false;
+    }
+    if (locked30) {
+        sLocked30Parity ^= 1;
+        if (sLocked30Parity == 0) return false;  /* render tick */
+        /* Skipped tick: sleep until real time catches up to the sim clock,
+         * so the render/skip pair lands on 33.3ms regardless of how long the
+         * render took. Never sleeps when the render already overran. */
+        if (drift > 0) {
+            const s64 ns = (s64)(((u64)drift * 1000000000ull) / tps);
+            if (ns > 0) svcSleepThread(ns);
+        }
+        return true;
+    }
+    /* Adaptive: render while the sim is keeping up; skip (fast) while behind. */
+    return drift < 0;
+}
 
 static void Port_Bios_PaceFrame(void) {
     const u64 ticksPerSec = Platform3DS_TicksPerSecond();
@@ -287,7 +352,10 @@ void Port_Bios_Halt(void) {
     }
     Platform3DS_PollKeysIntoGba();
     PlatformGpu3DS_RecordTick();
-    PlatformGpu3DS_PerfRecordTick();
+    /* PlatformGpu3DS_PerfRecordTick() is deferred to the render branch below:
+     * a skipped frame must not emit a sample (it has no cost data and its
+     * near-zero wall time reads as a false 800 FPS). Folding it forward keeps
+     * durationUs a true frame-to-frame interval. */
     /* Temporarily sleep-paced instead of gspWaitForEvent(0, true): the
      * latter never unblocks on real hardware here (confirmed via
      * sdmc:/3ds/mzm-debug.log bisection -- neither the GSP-event-thread
@@ -310,17 +378,32 @@ extern bool Port_PPU_3DS_LastFrameUsedGpu(void);
 #ifdef PORT_VERBOSE_FRAME_LOG
     Port_DebugLog("Port_Bios_Halt: after CallbackCallVblank");
 #endif
-    Port_PPU_RenderFrame();
+    /* Skip the render (never the logic tick above) to keep game speed
+     * correct -- see Port_Bios_DecideRenderSkip for the two modes. Only
+     * meaningful once the GPU renderer is actually the pacer. */
+    bool skipRender = sGpuFrameSkipEnabled && Port_PPU_3DS_LastFrameUsedGpu() &&
+                      Port_Bios_DecideRenderSkip(Port_Config_GetFramePacing() == 1);
+    if (!skipRender) PlatformGpu3DS_PerfRecordTick();
+    if (skipRender) {
 #ifdef PORT_VERBOSE_FRAME_LOG
-    Port_DebugLog("Port_Bios_Halt: after Port_PPU_RenderFrame");
+        Port_DebugLog("Port_Bios_Halt: render SKIPPED");
 #endif
-    /* If the frame was submitted via the synchronous GPU renderer, C3D_FrameSync()
-     * in PlatformGpu3DS_EndBottom has already synchronized to hardware VBlank (60Hz).
-     * Only the asynchronous CPU renderer handoff path needs software pacing. */
-    if (!Port_PPU_3DS_LastFrameUsedGpu()) {
-        Port_Bios_PaceFrame();
+        /* No submit, no C3D_FrameSync -- Port_Bios_DecideRenderSkip already
+         * paced this tick (fast return for ADAPTIVE, sleep-to-sim-clock for
+         * LOCKED 30). The present thread keeps showing the last frame. */
     } else {
-        sNextFrameDeadlineTicks = 0;
+        Port_PPU_RenderFrame();
+#ifdef PORT_VERBOSE_FRAME_LOG
+        Port_DebugLog("Port_Bios_Halt: after Port_PPU_RenderFrame");
+#endif
+        /* If the frame was submitted via the synchronous GPU renderer, C3D_FrameSync()
+         * in PlatformGpu3DS_EndBottom has already synchronized to hardware VBlank (60Hz).
+         * Only the asynchronous CPU renderer handoff path needs software pacing. */
+        if (!Port_PPU_3DS_LastFrameUsedGpu()) {
+            Port_Bios_PaceFrame();
+        } else {
+            sNextFrameDeadlineTicks = 0;
+        }
     }
     Port_AudioStateLock_Acquire();
 #endif

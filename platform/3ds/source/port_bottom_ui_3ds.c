@@ -397,6 +397,8 @@ extern int Port_Config_GetGbaFxGrid(void);
 extern void Port_Config_SetGbaFxGrid(int level);
 extern int Port_Config_GetGbaFxVignette(void);
 extern void Port_Config_SetGbaFxVignette(int level);
+extern int Port_Config_GetFramePacing(void);
+extern void Port_Config_SetFramePacing(int mode);
 
 /* RetroAchievements Helpers */
 #include "port_retroachievements_3ds.h"
@@ -1683,6 +1685,9 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
                         if (Port_Config_Get3DSDisplayStyle() == 0 || Port_Config_Get3DSAspectRatio() == 1) {
                             Port_Config_ToggleGbaBezel();
                         }
+                        break;
+                    case 11:
+                        Port_Config_SetFramePacing((Port_Config_GetFramePacing() + 1) % 2);
                         break;
                     default: break;
                 }
@@ -3009,7 +3014,7 @@ static void RenderConfirmModal(int lang) {
 #define DISP_GRID_PITCH 26
 #define DISP_CELL_H     24
 #define DISP_GRID_ROWS  6
-#define DISP_CELL_COUNT 11
+#define DISP_CELL_COUNT 12
 
 /* One label line plus a value/state line under it, tinted by `valueCol`. */
 static void DispCell(int index, const char* label, const char* value, uint32_t valueCol) {
@@ -3121,6 +3126,15 @@ static void RenderDisplayModal(int lang) {
     DispCell(10, bezelL[lang],
              bezelAllowed ? (bezelOn ? onTxt : offTxt) : lockedTxt,
              bezelAllowed ? (bezelOn ? onCol : offCol) : idleCol);
+
+    /* Frame pacing: ADAPTIVE (variable 30..60, fluid) vs LOCKED 30 (steady).
+     * There is no 60 option -- the renderer never exceeds the vblank. */
+    static const char* const paceL[7] = { "FRAME PACING","FRAME PACING","FRAME PACING",
+                                          "BILDRATE","CADENCE","CADENZA","RITMO FPS" };
+    int pace = Port_Config_GetFramePacing();
+    const char* paceTxt = (pace == 1) ? ((lang == 6) ? "30 FIJO" : "LOCK 30")
+                                      : ((lang == 6) ? "ADAPTABLE" : "ADAPTIVE");
+    DispCell(11, paceL[lang], paceTxt, pace ? valCol : onCol);
 
     /* Close button (Y: 206 to 228) */
     static const char* const closeLabels[7] = {
@@ -4320,9 +4334,14 @@ static void RenderDebugToolsModal(int lang) {
      * isolate renderer-specific bugs without a RENDERER=cpu rebuild. The
      * per-frame CanRenderFrame() fallback still applies on top of this. */
     {
+        extern bool Port_Bios_AdaptiveFrameSkipEnabled(void);
         const bool gpuOn = Port_GpuRenderer_IsActive();
-        DrawDebugCell(9, (lang == 6) ? "RENDERER" : "RENDERER",
-                      gpuOn ? "GPU" : "CPU", gpuOn ? colAct : colOn);
+        const bool skipOn = Port_Bios_AdaptiveFrameSkipEnabled();
+        /* Left: GPU/CPU renderer. Right: adaptive render-skip (game speed
+         * stays correct when frames overrun -- judder, not slow motion). */
+        DrawDebugCellSplit(9, "RENDERER", gpuOn ? "GPU" : "CPU", gpuOn ? colAct : colOn,
+                           skipOn ? "SKIP" : "skip",
+                           skipOn ? C2D_Color32(140, 235, 150, 255) : C2D_Color32(120, 135, 160, 255));
     }
     /* Step A (one quad per 16x16 tilemap-aligned block instead of four).
      * A switch rather than a build flag because it is a PERFORMANCE change
@@ -4513,11 +4532,20 @@ static bool HandleDebugToolsModalTouch(int x, int y) {
         }
 #ifdef PORT_GPU_TILE_RENDERER
         case 9: {
-            const bool gpuOn = !Port_GpuRenderer_IsActive();
-            Port_GpuRenderer_SetActive(gpuOn);
-            Port_DebugLog(gpuOn ? "USER MARK: renderer -> GPU"
-                                : "USER MARK: renderer -> CPU");
-            DebugToolsSetMsg(gpuOn ? "RENDERER: GPU" : "RENDERER: CPU");
+            extern void Port_Bios_SetAdaptiveFrameSkip(bool on);
+            extern bool Port_Bios_AdaptiveFrameSkipEnabled(void);
+            if (DebugCellRightZoneHit(x, 9)) {
+                const bool on = !Port_Bios_AdaptiveFrameSkipEnabled();
+                Port_Bios_SetAdaptiveFrameSkip(on);
+                DebugToolsSetMsg(on ? "FRAME-SKIP ADAPTATIVO: ON"
+                                    : "FRAME-SKIP ADAPTATIVO: OFF");
+            } else {
+                const bool gpuOn = !Port_GpuRenderer_IsActive();
+                Port_GpuRenderer_SetActive(gpuOn);
+                Port_DebugLog(gpuOn ? "USER MARK: renderer -> GPU"
+                                    : "USER MARK: renderer -> CPU");
+                DebugToolsSetMsg(gpuOn ? "RENDERER: GPU" : "RENDERER: CPU");
+            }
             break;
         }
 #endif
