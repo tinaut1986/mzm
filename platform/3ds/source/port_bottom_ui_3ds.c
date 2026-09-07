@@ -4190,7 +4190,12 @@ static void DrawDebugCellSplit(int index, const char* label,
         DrawTextMaxWClipped(x + 6.0f, y + 11.0f, 1.0f, leftTxt, leftCol, 0.0f, 240.0f, bx - x - 8.0f);
     C2D_DrawRectSolid(bx - 1.0f, y + 3.0f, 0.92f, 1.0f, (float)DBGTOOL_CELL_H - 6.0f,
                       C2D_Color32(90, 110, 150, 255));
-    if (rightTxt) DrawText(bx + 4.0f, y + 11.0f, 1.0f, rightTxt, rightCol);
+    /* Centred in the right zone (bx .. x+COL_W), horizontally and
+     * vertically -- one short tag, mid-cell (glyphs are 7px in a 19px
+     * cell). ~45px fits 7 glyphs at 6px each, so keep right tags short. */
+    if (rightTxt)
+        DrawTextCentered(bx + ((float)DBGTOOL_COL_W - (bx - x)) * 0.5f,
+                         y + ((float)DBGTOOL_CELL_H - 7.0f) * 0.5f, 1.0f, rightTxt, rightCol);
 }
 
 /* The right ~48px of a cell is a start/stop side button (DebugCellRightZoneHit):
@@ -4367,15 +4372,13 @@ static void RenderDebugToolsModal(int lang) {
          * cell toggles the layer cache; tapping its right edge toggles the
          * BG3 haze pass. */
         const bool layers = Port_GpuRenderer_LayerCacheEnabled();
-        static const char* const hazeTxt[4] = { "ON", "NOCOMP", "OFF", "RT" };
+        static const char* const hazeTxt[4] = { "FULL", "NC", "OFF", "RT" };
         const int haze = Port_GpuRenderer_HazeMode();
-        char hz[10];
-        snprintf(hz, sizeof(hz), "H:%s", hazeTxt[haze & 3]);
         /* Left: layer cache on/off. Right: cycle the BG3 haze mode. */
         DrawDebugCellSplit(11, (lang == 6) ? "CAPAS/HAZE" : "LAYERS/HAZE",
                            layers ? "CACHE ON" : "cache --",
                            layers ? C2D_Color32(230, 200, 120, 255) : C2D_Color32(150, 170, 200, 255),
-                           hz, haze ? C2D_Color32(230, 200, 120, 255) : C2D_Color32(120, 135, 160, 255));
+                           hazeTxt[haze & 3], haze ? C2D_Color32(230, 200, 120, 255) : C2D_Color32(120, 135, 160, 255));
     }
 #endif
 
