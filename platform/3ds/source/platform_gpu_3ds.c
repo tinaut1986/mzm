@@ -290,6 +290,8 @@ void PlatformGpu3DS_ResetSolidTexEnv(void) {
     }
 }
 
+void PlatformGpu3DS_SetOld3DSProfile(bool on) { sOld3DSProfile = on; }
+
 bool PlatformGpu3DS_Init(bool old3dsProfile) {
     memset(&sStats, 0, sizeof(sStats));
     LightLock_Init(&sGpuSubmitLock);
@@ -1015,6 +1017,15 @@ static void OamCensus(unsigned* outTotal, unsigned* outVisible, unsigned* outAff
  *   bit  17    Old3DS runtime profile forced
  *   bit  18    the frame was drawn by the GPU renderer (clear = CPU fallback,
  *              in which case the draw-call census describes a stale frame)
+ *   bits 19-21 GBA screen-FX LCD grid level (0 = off)
+ *   bits 22-24 GBA screen-FX vignette level (0 = off)
+ *   bits 25-26 block pass mode (0 per-tile, 1 = 16x16, 2 = 16x16 + 32x32)
+ *
+ * The grid and vignette levels are here because they share the grade's cost
+ * model -- all three bake into one mask drawn as a single alpha-blended quad
+ * per eye, so none of them moves drawCount or drawnPixels, and a capture
+ * that leaves the grid out silently merges grid-on and grid-off frames (the
+ * grid adds ~1/3 screen of blended framebuffer read-modify-write per eye).
  */
 static uint32_t PackCaptureFlags(void) {
     extern int Port_Config_Get3DSDisplayStyle(void);
@@ -1023,12 +1034,21 @@ static uint32_t PackCaptureFlags(void) {
     extern bool Port_Config_GetHudOutside(void);
     extern bool Port_Config_GetGbaBezel(void);
     extern int Port_Config_GetGbaFxGrade(void);
+    extern int Port_Config_GetGbaFxGrid(void);
+    extern int Port_Config_GetGbaFxVignette(void);
     extern bool Port_PPU_3DS_LastFrameUsedGpu(void);
     extern bool Platform3DS_IsNew3DS(void);
+    extern bool Port_GpuRenderer_BlockPassEnabled(void);
+    extern bool Port_GpuRenderer_Block32PassEnabled(void);
 
     const float slider = PlatformGpu3DS_Get3DSlider();
     uint32_t sliderX100 = (uint32_t)(slider * 100.0f + 0.5f);
     if (sliderX100 > 100u) sliderX100 = 100u;
+
+    /* 0 = per-tile only, 1 = 16x16 block pass, 2 = 16x16 + 32x32. */
+    uint32_t blockMode = Port_GpuRenderer_BlockPassEnabled()
+                             ? (Port_GpuRenderer_Block32PassEnabled() ? 2u : 1u)
+                             : 0u;
 
     return ((uint32_t)Port_Config_Get3DSDisplayStyle() & 3u)
          | (((uint32_t)Port_Config_Get3DSAspectRatio() & 3u) << 2)
@@ -1038,7 +1058,10 @@ static uint32_t PackCaptureFlags(void) {
          | ((uint32_t)(Port_Config_GetGbaBezel() ? 1u : 0u) << 13)
          | (((uint32_t)Port_Config_GetGbaFxGrade() & 7u) << 14)
          | ((uint32_t)(Platform3DS_IsNew3DS() ? 0u : 1u) << 17)
-         | ((uint32_t)(Port_PPU_3DS_LastFrameUsedGpu() ? 1u : 0u) << 18);
+         | ((uint32_t)(Port_PPU_3DS_LastFrameUsedGpu() ? 1u : 0u) << 18)
+         | (((uint32_t)Port_Config_GetGbaFxGrid() & 7u) << 19)
+         | (((uint32_t)Port_Config_GetGbaFxVignette() & 7u) << 22)
+         | ((blockMode & 3u) << 25);
 }
 
 /* Packs Port_GpuRenderer_GetLastFrameDrawStats' flags into one word for the
@@ -1123,7 +1146,19 @@ void PlatformGpu3DS_TogglePerfRecording(void) {
         extern void Port_DebugLog(const char* msg);
         char msg[80];
         char perfPath[256];
-        if (!Port_DebugFiles_NextPath("mzm-perf", ".bin", PORT_KEEP_PERF, perfPath, sizeof(perfPath)))
+        /* Round-robin the slot within the session so back-to-back captures
+         * land on mzm-perf-01, -02, -03, ... without leaving the game. The
+         * first of the session picks a free slot (Port_DebugFiles_NextPath's
+         * own choice); after that just advance, wrapping at PORT_KEEP_PERF.
+         * A plain in-memory counter, because SD st_mtime is unreliable here
+         * so "least recently modified" collapses to slot 1 every time. */
+        static unsigned sPerfSlot; /* 0 until the first capture of the session */
+        if (sPerfSlot == 0) {
+            sPerfSlot = Port_DebugFiles_NextSetIndex("mzm-perf", ".bin", PORT_KEEP_PERF);
+        } else {
+            sPerfSlot = (sPerfSlot % PORT_KEEP_PERF) + 1u;
+        }
+        if (!Port_DebugFiles_SetPath("mzm-perf", sPerfSlot, ".bin", perfPath, sizeof(perfPath)))
             snprintf(perfPath, sizeof(perfPath), "sdmc:/3ds/mzm-perf-01.bin");
         snprintf(msg, sizeof(msg), "PERF REC STOP: %u frames -> %s", sPerfCount, perfPath);
         Port_DebugLog(msg);

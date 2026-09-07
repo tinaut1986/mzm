@@ -154,18 +154,33 @@ static void ConfigurePlainTextureEnv(void) {
  * batch) whenever the texture pointer changes between draws, and the draw
  * order interleaves layers by priority, so putting blocks in a second
  * texture would flush on every alternation and cost more than it saves. */
+/* Grown to 1024 WIDE (2026, step A 32x32 pass) -- was 512. The height is
+ * already at the PICA200's 1024 texture limit, so a third block region had
+ * to come out of the width. Partitioned so the tile and 16x16 regions keep
+ * their exact old capacity (4096 / 1024): with 128 slots per row now, the
+ * tile region is 32 rows instead of 64, the 16x16 region 32 rows, and the
+ * rest (rows 64..127) is the new 32x32 region. Every offset still derives
+ * from the enum, so the slot->row math and subtex tables follow. Costs 4MB
+ * of linear RAM (was 2MB); SystemMode is 64MB on both consoles (see
+ * cia/mzm3ds.rsf) with ~14MB free, so the 2MB delta is comfortable. */
 enum {
-    ATLAS_W = 512,
+    ATLAS_W = 1024,
     ATLAS_H = 1024,
     ATLAS_TILES_PER_ROW = ATLAS_W / 8,
     ATLAS_SLOT_ROWS = ATLAS_H / 8,
-    /* Tile region: unchanged, the first 64 slot rows. */
-    ATLAS_TILE_ROWS = 64,
+    /* Tile region: 4096 slots, now the first 32 slot rows (128 per row). */
+    ATLAS_TILE_ROWS = ATLAS_SLOT_ROWS / 4,
     ATLAS_MAX_SLOTS = ATLAS_TILES_PER_ROW * ATLAS_TILE_ROWS,
-    /* Block region: the rest, in aligned 2x2 slot groups. */
+    /* 16x16 block region: aligned 2x2 slot groups, next 32 slot rows. Same
+     * 1024-block capacity as before the atlas grew. */
     ATLAS_BLOCK_ROW0 = ATLAS_TILE_ROWS,
+    ATLAS_BLOCK_ROWS = ATLAS_SLOT_ROWS / 4,
     ATLAS_BLOCKS_PER_ROW = ATLAS_TILES_PER_ROW / 2,
-    ATLAS_MAX_BLOCKS = ATLAS_BLOCKS_PER_ROW * ((ATLAS_SLOT_ROWS - ATLAS_BLOCK_ROW0) / 2),
+    ATLAS_MAX_BLOCKS = ATLAS_BLOCKS_PER_ROW * (ATLAS_BLOCK_ROWS / 2),
+    /* 32x32 block region: aligned 4x4 slot groups, the remaining slot rows. */
+    ATLAS_B32_ROW0 = ATLAS_BLOCK_ROW0 + ATLAS_BLOCK_ROWS,
+    ATLAS_B32_PER_ROW = ATLAS_TILES_PER_ROW / 4,
+    ATLAS_MAX_B32 = ATLAS_B32_PER_ROW * ((ATLAS_SLOT_ROWS - ATLAS_B32_ROW0) / 4),
     MAX_DRAW_ITEMS = 3200,
 };
 
@@ -245,6 +260,12 @@ static int sCacheCount;
 static DrawItem sDrawItems[MAX_DRAW_ITEMS];
 static int sDrawItemCount;
 static bool sAnyDirtySlot;
+/* Monotonic count of atlas (re)decodes this frame. sAnyDirtySlot only goes
+ * false->true, so "did MY layer decode anything" cannot be read from it once
+ * an earlier layer already set it -- a later layer with a stale cached
+ * target but all-cache-hit tiles then never re-composed. A counter is
+ * unambiguous: entry value != end value means this layer touched a slot. */
+static uint32_t sDecodeSeq;
 static int sLastObjItemCount;
 
 /* --- issue #29: per-scanline BG3 ripple (water / lava / acid / heat haze) ---
@@ -357,9 +378,15 @@ typedef struct {
 } LayerKey;
 static LayerKey sLayerKey[4];
 
-/* Off by default: this is a performance change whose payoff depends on the
- * room, and the only machine that can judge it is a console. */
-static bool sLayerCacheEnabled;
+/* On by default. Measured on hardware (2026-09): ~2ms GPU + ~1ms CPU and
+ * ~100 fewer BG quads per eye in busy rooms, and 4-5 FPS in spots where
+ * that tips a frame under a vblank boundary. Auto-declines while the BG3
+ * haze pass runs (they would both drive a target compose + C3D_FrameSplit)
+ * and per layer when anything resolves visibility/placement per tile. The
+ * one case to watch is an ANIMATED-PALETTE room with no haze: a palette
+ * change invalidates the composed target, so the cache re-composes every
+ * frame there -- toggle it off (debug menu) if such a room regresses. */
+static bool sLayerCacheEnabled = true;
 void Port_GpuRenderer_SetLayerCache(bool on) { sLayerCacheEnabled = on; }
 bool Port_GpuRenderer_LayerCacheEnabled(void) { return sLayerCacheEnabled; }
 
@@ -407,7 +434,17 @@ int Port_GpuRenderer_HazeMode(void) { return sHazeMode; }
 static int sCaptureLayer = -1;
 static float sCaptureOffX, sCaptureOffY;
 static bool sLayerSameKey;
-static bool sLayerDirtyAtEntry;
+static uint32_t sLayerDecodeSeqAtEntry;
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
+typedef struct {
+    uint8_t captured, sameKey, needsCompose;
+    int tiles, orgX, orgY;
+    uint32_t mapHash, decodedThisLayer;
+} LayerCacheDiag;
+static LayerCacheDiag sLCdiag[4];
+static int sDiagAffineDrawn[2], sDiagBlendDrawn[2];
+static int sDiagSemiTransColl, sDiagAffineColl, sDiagMosaicColl, sDiagSemiTransX, sDiagSemiTransOam;
+#endif
 /* How many layers had to be composed this frame -- 0 means every cached
  * layer was reused, which is what the cache is for. Recorded per perf
  * sample so the toggle produces a number and not an impression. */
@@ -540,7 +577,32 @@ static int sBlockItemsThisFrame;
 static int sBlockOverflowThisFrame;
 static bool sBlockCacheResetPending;
 
-/* Called once per frame before any collection: empties the block cache if
+/* ---- 32x32 block cache -------------------------------------------------
+ * Exactly the 16x16 cache one size up: an aligned 4x4 tilemap group into a
+ * 4x4 slot region of the atlas, one quad instead of sixteen. Same rules --
+ * 4bpp only, wholly-in-frame groups only, staleness by source-byte memcmp
+ * plus palette hash and evy, overflow degrades to the 16x16 / per-tile
+ * paths. Off by default (sBlock32PassEnabled): it is a perf change and the
+ * only place its cost can be read is a console. */
+typedef struct Block32CacheKey {
+    uint16_t entry[16];  /* tilemap entries, reading order, row-major */
+    uint32_t charBase;
+    uint8_t palBankHint;
+    uint8_t brightAdjust;
+} Block32CacheKey;
+
+static Block32CacheKey sB32Keys[ATLAS_MAX_B32];
+static uint8_t sB32SourceBytes[ATLAS_MAX_B32][16 * 32]; /* 4bpp: 32B/tile */
+static uint32_t sB32PalHash[ATLAS_MAX_B32];
+static uint8_t sB32Evy[ATLAS_MAX_B32];
+static int sB32Count;
+static int32_t sB32HashHead[HASH_BUCKETS];
+static int32_t sB32HashNext[ATLAS_MAX_B32];
+static int sB32ItemsThisFrame;
+static int sB32OverflowThisFrame;
+static bool sB32CacheResetPending;
+
+/* Called once per frame before any collection: empties the block caches if
  * the previous frame ran out of block slots. Safe here and nowhere else --
  * no DrawItem from the previous frame survives into this one. */
 static void BlockCacheBeginFrame(void) {
@@ -549,8 +611,15 @@ static void BlockCacheBeginFrame(void) {
         for (int i = 0; i < HASH_BUCKETS; ++i) sBlockHashHead[i] = -1;
         sBlockCacheResetPending = false;
     }
+    if (sB32CacheResetPending) {
+        sB32Count = 0;
+        for (int i = 0; i < HASH_BUCKETS; ++i) sB32HashHead[i] = -1;
+        sB32CacheResetPending = false;
+    }
     sBlockItemsThisFrame = 0;
     sBlockOverflowThisFrame = 0;
+    sB32ItemsThisFrame = 0;
+    sB32OverflowThisFrame = 0;
 }
 
 
@@ -727,6 +796,45 @@ static void ComputeDepthState(uint16_t dispcnt) {
     UpdateLayerFixRoom();
     UpdateDoorDepthRoom();
 
+    /* Invalidate the content caches on any room/area/mode change, and keep
+     * them invalidated for a SETTLE WINDOW afterwards. A transition takes
+     * several frames to fully land -- screenmap, then tile graphics, then
+     * palettes, each its own DMA -- and any frame sampled mid-way lets stale
+     * VRAM match a stale cache entry, so a cached layer bakes in the
+     * previous screen (file-select text, the intro starfield over the whole
+     * frame, another room's scenery -- confirmed from a hardware GPUDIAG log
+     * where the compose ran with dec=0, i.e. trusting the atlas completely
+     * while the atlas was still stale). One clean frame is not enough; a
+     * dozen covers the whole multi-DMA settle and is invisible under the
+     * transition fade. */
+    {
+        extern u8 gCurrentArea;
+        extern u8 gCurrentRoom;
+        static int sCacheRoomArea = -1, sCacheRoomNum = -1, sCacheGameMode = -1;
+        static int sCacheSettleFrames;
+        if ((int)gCurrentArea != sCacheRoomArea || (int)gCurrentRoom != sCacheRoomNum ||
+            (int)gMainGameMode != sCacheGameMode) {
+            sCacheRoomArea = (int)gCurrentArea;
+            sCacheRoomNum = (int)gCurrentRoom;
+            sCacheGameMode = (int)gMainGameMode;
+            sCacheSettleFrames = 16;
+        }
+        if (sCacheSettleFrames > 0) {
+            --sCacheSettleFrames;
+            for (int i = 0; i < 4; ++i) {
+                sLayerComposed[i] = false;
+                sLayerNeedsCompose[i] = true; /* re-bake every frame of the window */
+            }
+            sBlockCacheResetPending = true; /* rebuild blocks from VRAM each frame */
+            sB32CacheResetPending = true;
+            /* Per-tile cache too: it normally persists (OBJ + fallbacks) but
+             * across a transition its stale entries are exactly the problem.
+             * Clearing it costs one frame of redecode, hidden by the fade. */
+            for (int i = 0; i < HASH_BUCKETS; ++i) sHashBucketHead[i] = -1;
+            sCacheCount = 0;
+        }
+    }
+
     /* Whether a doorway is actually on screen this frame. Only then does the
      * per-tile path have to run for the door depth pull; walking away from
      * the door leaves the fast layer cache / block pass untouched. */
@@ -762,6 +870,33 @@ static bool sBlockPassEnabled = true;
 void Port_GpuRenderer_SetBlockPass(bool on) { sBlockPassEnabled = on; }
 bool Port_GpuRenderer_BlockPassEnabled(void) { return sBlockPassEnabled; }
 
+/* Debug aid: when on, every 16x16 group the block pass composes gets a
+ * bright perimeter drawn into its atlas cell, so on screen each block-drawn
+ * region is outlined. A group that fell through to the per-tile loop (block
+ * region full, or the pass disabled) has no outline -- so a misaligned or
+ * stale block shows up immediately as a box off the 16px grid or a gap in
+ * it. Toggling it clears the block cache so the change takes effect at once.
+ * Costs nothing when off. */
+static bool sBlockDebugTint = false;
+void Port_GpuRenderer_SetBlockDebugTint(bool on) {
+    if (on == sBlockDebugTint) return;
+    sBlockDebugTint = on;
+    sBlockCacheResetPending = true; /* re-decode every block next frame */
+    sB32CacheResetPending = true;
+}
+bool Port_GpuRenderer_BlockDebugTintEnabled(void) { return sBlockDebugTint; }
+
+/* 32x32 block pass (see the Block32 cache). Opt-in, like step A was: a
+ * measured-on-hardware change, and the 16x16 pass has to be on for it to do
+ * anything (32x32 groups are tried first, the rest fall through to 16x16). */
+static bool sBlock32PassEnabled = true;
+void Port_GpuRenderer_SetBlock32Pass(bool on) {
+    if (on == sBlock32PassEnabled) return;
+    sBlock32PassEnabled = on;
+    sB32CacheResetPending = true;
+}
+bool Port_GpuRenderer_Block32PassEnabled(void) { return sBlock32PassEnabled; }
+
 bool Port_GpuRenderer_IsActive(void) { return sGpuRendererActive; }
 void Port_GpuRenderer_SetActive(bool active) { sGpuRendererActive = active; }
 
@@ -785,12 +920,21 @@ static inline void FlushAtlasRange(void* addr, size_t size) {
 
 static Tex3DS_SubTexture sSlotSubtexTable[ATLAS_MAX_SLOTS];
 static Tex3DS_SubTexture sBlockSubtexTable[ATLAS_MAX_BLOCKS];
+static Tex3DS_SubTexture sB32SubtexTable[ATLAS_MAX_B32];
 
 /* First 8x8 slot of a 16x16 block: its top-left quadrant. The other three
  * are +1, +ATLAS_TILES_PER_ROW and +ATLAS_TILES_PER_ROW+1. */
 static inline int BlockBaseSlot(int block) {
     const int brow = ATLAS_BLOCK_ROW0 + (block / ATLAS_BLOCKS_PER_ROW) * 2;
     const int bcol = (block % ATLAS_BLOCKS_PER_ROW) * 2;
+    return brow * ATLAS_TILES_PER_ROW + bcol;
+}
+
+/* First 8x8 slot of a 32x32 block: its top-left corner. The other fifteen
+ * are base + r*ATLAS_TILES_PER_ROW + c for r,c in 0..3. */
+static inline int Block32BaseSlot(int b32) {
+    const int brow = ATLAS_B32_ROW0 + (b32 / ATLAS_B32_PER_ROW) * 4;
+    const int bcol = (b32 % ATLAS_B32_PER_ROW) * 4;
     return brow * ATLAS_TILES_PER_ROW + bcol;
 }
 
@@ -875,6 +1019,19 @@ static void InitSlotSubtexTable(void) {
             .bottom = 1.0f - ((float)(sy + 16) + sh) * invV,
         };
     }
+    for (int b32 = 0; b32 < ATLAS_MAX_B32; ++b32) {
+        const int base = Block32BaseSlot(b32);
+        int sx = (base % ATLAS_TILES_PER_ROW) * 8;
+        int sy = (base / ATLAS_TILES_PER_ROW) * 8;
+        sB32SubtexTable[b32] = (Tex3DS_SubTexture){
+            .width = 32,
+            .height = 32,
+            .left = ((float)sx + sh) * invU,
+            .top = 1.0f - ((float)sy + sh) * invV,
+            .right = ((float)(sx + 32) + sh) * invU,
+            .bottom = 1.0f - ((float)(sy + 32) + sh) * invV,
+        };
+    }
 }
 
 bool Port_GpuRenderer_Init(void) {
@@ -944,6 +1101,8 @@ bool Port_GpuRenderer_Init(void) {
     sCacheCount = 0;
     for (int i = 0; i < HASH_BUCKETS; ++i) sBlockHashHead[i] = -1;
     sBlockCount = 0;
+    for (int i = 0; i < HASH_BUCKETS; ++i) sB32HashHead[i] = -1;
+    sB32Count = 0;
 
     sInitialized = true;
     return true;
@@ -1330,6 +1489,7 @@ static void DecodeTileIntoSlot(int slot, const uint8_t* src, bool bpp8, const ui
 
     MarkAtlasRowDirty(slot / ATLAS_TILES_PER_ROW);
     sAnyDirtySlot = true;
+    ++sDecodeSeq;
 }
 
 static inline uint32_t BlockKeyHash(const BlockCacheKey* k) {
@@ -1361,10 +1521,28 @@ static void DecodeBlockIntoSlot(int block, const uint8_t* src[4], const uint16_t
     }
     sBlockPalHash[block] = palHash;
     sBlockEvy[block] = (key->brightAdjust != BRIGHT_ADJUST_NONE) ? (uint8_t)sBldEvy : 0;
+    if (sBlockDebugTint) {
+        /* Outline the 16x16 region on the four quadrant slots' perimeter
+         * edges -- see Port_GpuRenderer_SetBlockDebugTint. */
+        const int q[4] = { base, base + 1, base + ATLAS_TILES_PER_ROW, base + ATLAS_TILES_PER_ROW + 1 };
+        const u32 c = (255u << 24) | (255u << 16) | (0u << 8) | 255u; /* opaque magenta */
+        u32* atlasWords = (u32*)sAtlasTexture.data;
+        for (int i = 0; i < 8; ++i) {
+            atlasWords[(size_t)q[0] * 64 + kSwizzleLUT[0 * 8 + i]] = c;
+            atlasWords[(size_t)q[0] * 64 + kSwizzleLUT[i * 8 + 0]] = c;
+            atlasWords[(size_t)q[1] * 64 + kSwizzleLUT[0 * 8 + i]] = c;
+            atlasWords[(size_t)q[1] * 64 + kSwizzleLUT[i * 8 + 7]] = c;
+            atlasWords[(size_t)q[2] * 64 + kSwizzleLUT[7 * 8 + i]] = c;
+            atlasWords[(size_t)q[2] * 64 + kSwizzleLUT[i * 8 + 0]] = c;
+            atlasWords[(size_t)q[3] * 64 + kSwizzleLUT[7 * 8 + i]] = c;
+            atlasWords[(size_t)q[3] * 64 + kSwizzleLUT[i * 8 + 7]] = c;
+        }
+    }
     /* Both slot rows the block spans. */
     MarkAtlasRowDirty(base / ATLAS_TILES_PER_ROW);
     MarkAtlasRowDirty(base / ATLAS_TILES_PER_ROW + 1);
     sAnyDirtySlot = true;
+    ++sDecodeSeq;
 }
 
 /* Atlas block index for this 2x2 tilemap group, decoding only if needed;
@@ -1415,6 +1593,99 @@ static int GetOrDecodeBlockSlot(const uint16_t entry[4], uint32_t charBase, cons
     sBlockHashHead[h] = block;
     DecodeBlockIntoSlot(block, src, pal, &key, palHash);
     return block;
+}
+
+/* ---- 32x32 block: the 16x16 path one size up (4x4 tiles / slots) ---- */
+
+static inline uint32_t Block32KeyHash(const Block32CacheKey* k) {
+    uint32_t h = 2166136261u;
+    const uint8_t* b = (const uint8_t*)k;
+    for (size_t i = 0; i < sizeof(*k); ++i) h = (h ^ b[i]) * 16777619u;
+    return h & HASH_MASK;
+}
+
+static inline bool Block32KeyEqual(const Block32CacheKey* a, const Block32CacheKey* b) {
+    if (a->charBase != b->charBase || a->palBankHint != b->palBankHint ||
+        a->brightAdjust != b->brightAdjust)
+        return false;
+    for (int q = 0; q < 16; ++q)
+        if (a->entry[q] != b->entry[q]) return false;
+    return true;
+}
+
+/* Decodes the sixteen 8x8 tiles of a 32x32 block into its 4x4 slot region. */
+static void DecodeBlock32IntoSlot(int b32, const uint8_t* src[16], const uint16_t* pal,
+                                  const Block32CacheKey* key, uint32_t palHash) {
+    const int base = Block32BaseSlot(b32);
+    for (int q = 0; q < 16; ++q) {
+        const int slot = base + (q / 4) * ATLAS_TILES_PER_ROW + (q % 4);
+        const uint16_t entry = key->entry[q];
+        DecodeTileTexels(slot, src[q], false, pal, (entry >> 12) & 0x0Fu,
+                         (entry & 0x0400u) != 0u, (entry & 0x0800u) != 0u,
+                         (BrightAdjust)key->brightAdjust);
+        memcpy(&sB32SourceBytes[b32][q * 32], src[q], 32u);
+    }
+    sB32PalHash[b32] = palHash;
+    sB32Evy[b32] = (key->brightAdjust != BRIGHT_ADJUST_NONE) ? (uint8_t)sBldEvy : 0;
+    if (sBlockDebugTint) {
+        /* Outline the 32x32 region: top/bottom edge on the top/bottom slot
+         * row, left/right edge on the left/right slot column. Cyan, so a
+         * 32x32 group reads differently from a 16x16 (magenta) one. */
+        const u32 c = (255u << 24) | (255u << 16) | (255u << 8) | 0u; /* opaque cyan */
+        u32* atlasWords = (u32*)sAtlasTexture.data;
+        for (int k = 0; k < 4; ++k) {
+            const int topSlot = base + k;
+            const int botSlot = base + 3 * ATLAS_TILES_PER_ROW + k;
+            const int leftSlot = base + k * ATLAS_TILES_PER_ROW;
+            const int rightSlot = base + k * ATLAS_TILES_PER_ROW + 3;
+            for (int i = 0; i < 8; ++i) {
+                atlasWords[(size_t)topSlot * 64 + kSwizzleLUT[0 * 8 + i]] = c;
+                atlasWords[(size_t)botSlot * 64 + kSwizzleLUT[7 * 8 + i]] = c;
+                atlasWords[(size_t)leftSlot * 64 + kSwizzleLUT[i * 8 + 0]] = c;
+                atlasWords[(size_t)rightSlot * 64 + kSwizzleLUT[i * 8 + 7]] = c;
+            }
+        }
+    }
+    for (int r = 0; r < 4; ++r) MarkAtlasRowDirty(base / ATLAS_TILES_PER_ROW + r);
+    sAnyDirtySlot = true;
+    ++sDecodeSeq;
+}
+
+/* Atlas 32x32 block index for this 4x4 tilemap group; -1 when the region is
+ * full, which the caller answers by trying the 16x16 pass / per-tile loop. */
+static int GetOrDecodeBlock32Slot(const uint16_t entry[16], uint32_t charBase, const uint16_t* pal,
+                                  uint32_t palHash, BrightAdjust brightAdjust, const uint8_t* src[16]) {
+    Block32CacheKey key;
+    memset(&key, 0, sizeof(key));
+    for (int q = 0; q < 16; ++q) key.entry[q] = entry[q];
+    key.charBase = charBase;
+    key.brightAdjust = (uint8_t)brightAdjust;
+    key.palBankHint = (uint8_t)((entry[0] >> 12) & 0x0Fu);
+
+    const uint32_t h = Block32KeyHash(&key);
+    const uint8_t curEvy = (brightAdjust != BRIGHT_ADJUST_NONE) ? (uint8_t)sBldEvy : 0;
+    for (int32_t i = sB32HashHead[h]; i >= 0; i = sB32HashNext[i]) {
+        if (!Block32KeyEqual(&sB32Keys[i], &key)) continue;
+        bool fresh = sB32PalHash[i] == palHash && sB32Evy[i] == curEvy;
+        for (int q = 0; fresh && q < 16; ++q) {
+            if (memcmp(&sB32SourceBytes[i][q * 32], src[q], 32u) != 0) fresh = false;
+        }
+        if (fresh) return i;
+        DecodeBlock32IntoSlot(i, src, pal, &key, palHash);
+        return i;
+    }
+
+    if (sB32Count >= ATLAS_MAX_B32) {
+        ++sB32OverflowThisFrame;
+        sB32CacheResetPending = true;
+        return -1;
+    }
+    const int b32 = sB32Count++;
+    sB32Keys[b32] = key;
+    sB32HashNext[b32] = sB32HashHead[h];
+    sB32HashHead[h] = b32;
+    DecodeBlock32IntoSlot(b32, src, pal, &key, palHash);
+    return b32;
 }
 
 /* Returns the atlas slot for this tile, decoding it only if needed. Unlike
@@ -1587,6 +1858,18 @@ static inline void PushAffineItem(int slot, float centerX, float centerY, float 
     item->plainEnv = false;
 }
 
+/* A 16x16 room block that a per-tile correction touches -- used by the
+ * block passes to skip just that block instead of the whole layer. */
+static inline bool BlockGroupNeedsPerTile(int bgIndex, int blockX, int blockY,
+                                          bool hasLayerFix, bool hasTank, bool hasDoor) {
+    extern int PortLayerFix_DestFor(int bg, int blockX, int blockY);
+    extern bool PortPpuMzm_IsVisibleTankBlock(int blockX, int blockY);
+    extern bool PortPpuMzm_IsDoorDepthBlock(int blockX, int blockY);
+    return (hasLayerFix && PortLayerFix_DestFor(bgIndex, blockX, blockY) >= 0) ||
+           (hasTank && PortPpuMzm_IsVisibleTankBlock(blockX, blockY)) ||
+           (hasDoor && PortPpuMzm_IsDoorDepthBlock(blockX, blockY));
+}
+
 /* Text-mode BG tilemap addressing, byte-identical to the formula validated
  * in port/ppu/src/mode1.c (screen_block_x/y + blocks_per_row quadrant
  * layout for the 32x32/64x32/32x64/64x64 GBA screen sizes). */
@@ -1655,9 +1938,21 @@ static void CollectBgLayer(int bgIndex) {
      * footprint is deliberately tiny (door span, no side growth, a row or two
      * above/below) so only actual doorway tiles are caught, not open wall. */
     const bool roomHasDoorDepth = sDoorDepthOnScreen && bgIndex < 3;
+    /* Declined while the BG3 haze pass runs: it already drives a
+     * render-target compose + C3D_FrameSplit this frame, and stacking the
+     * layer cache's own target compose and split on top is the one
+     * combination step B was never exercised in -- it corrupts the frame in
+     * lava/heat rooms (reported from hardware). Matches the OBJWIN / layer-
+     * fix exclusions above: whenever another feature is already compositing
+     * per-frame, the cache stands down. */
     const bool layerCacheable =
-        sLayerCacheEnabled && sLayerRtReady[bgIndex] && !sObjWindowActive &&
+        sLayerCacheEnabled && sLayerRtReady[bgIndex] && !sObjWindowActive && !sHazeActive &&
         PortLayerFix_ActiveCount() == 0 && !roomHasTankOnThisBg && !roomHasDoorDepth;
+    /* Not cacheable this frame -> its composed target is now stale and its
+     * sLayerKey frozen. Clear the flag so if the layer becomes cacheable
+     * again it is forced to re-compose instead of matching the old key and
+     * drawing a target from another room / scroll position. */
+    if (!layerCacheable) sLayerComposed[bgIndex] = false;
     if (layerCacheable) {
         /* Hash the tilemap window this target covers, so a room redrawing
          * its map invalidates even when the origin has not moved. */
@@ -1688,7 +1983,7 @@ static void CollectBgLayer(int bgIndex) {
                         prev->bpp8 == key.bpp8;
         sLayerKey[bgIndex] = key;
         sLayerTileCount[bgIndex] = 0;
-        sLayerDirtyAtEntry = sAnyDirtySlot;
+        sLayerDecodeSeqAtEntry = sDecodeSeq;
         /* Capture the tiles regardless: they still have to go through the
          * atlas staleness checks, which is what catches an animated tile
          * whose bytes changed without the tilemap moving. Whether the
@@ -1708,14 +2003,38 @@ static void CollectBgLayer(int bgIndex) {
      * block (9,43) also fired on (9,59)). Every room layer a correction can
      * target scrolls with the camera 1:1, so one origin serves them all.
      * Only computed when a list is actually compiled in. */
+    const bool sHasLayerFix = PortLayerFix_ActiveCount() > 0;
+    const bool roomHasBlockCorrections = sHasLayerFix || roomHasTankOnThisBg || roomHasDoorDepth;
     int fixOriginTileX = 0, fixOriginTileY = 0;
-    if (PortLayerFix_ActiveCount() > 0 || roomHasTankOnThisBg || roomHasDoorDepth) {
+    if (roomHasBlockCorrections) {
         extern void PortPpuMzm_ScreenOrigin(int* outX, int* outY);
         int originX = 0, originY = 0;
         PortPpuMzm_ScreenOrigin(&originX, &originY);
         fixOriginTileX = originX >> 3;
         fixOriginTileY = originY >> 3;
     }
+    /* True when the 16x16 tilemap group whose top-left screen tile is
+     * (tx,ty) carries a per-tile correction -- a layer-fix dest, a
+     * visible-tank tile or a door-depth tile -- so it must stay per-tile
+     * rather than merge into one block quad. Corrections are already keyed
+     * on 16x16 room blocks, so this is exact. Cheap no-op when the room has
+     * none. */
+    #define TILE_CORRECTED(TX, TY)                                            \
+        BlockGroupNeedsPerTile(bgIndex, (fixOriginTileX + (TX)) >> 1,         \
+                               (fixOriginTileY + (TY)) >> 1,                  \
+                               sHasLayerFix, roomHasTankOnThisBg, roomHasDoorDepth)
+    /* Any tile of the WxH-tile group at (TX,TY) touched by a correction. The
+     * >>1 room-block lattice can straddle the tilemap-aligned group, so
+     * every tile is checked, not just the corner. No-op when the room has
+     * no corrections. */
+    #define GROUP_CORRECTED(TX, TY, W, H) ({                                  \
+        bool c__ = false;                                                    \
+        if (roomHasBlockCorrections)                                         \
+            for (int gy__ = 0; gy__ < (H) && !c__; ++gy__)                   \
+                for (int gx__ = 0; gx__ < (W) && !c__; ++gx__)              \
+                    c__ = TILE_CORRECTED((TX) + gx__, (TY) + gy__);          \
+        c__;                                                                 \
+    })
 
     /* ---- 16x16 block pass -------------------------------------------
      * One quad per tilemap-aligned 2x2 group instead of four, which is the
@@ -1725,21 +2044,82 @@ static void CollectBgLayer(int bgIndex) {
      * declines falls through to that loop unchanged, so this is purely
      * subtractive and any eligibility bug costs speed, not correctness.
      *
-     * Declined wholesale for the layer when:
+     * Declined wholesale for the layer only when:
      *   - 8bpp: not worth a second staleness-byte layout for a case MZM's
      *     backgrounds do not use.
      *   - OBJWIN active: visibility is resolved per-TILE at collection time
      *     (ObjWinItemVisible), so a 16x16 quad could straddle the mask.
-     *   - a layer-fix list is compiled in: corrections are keyed per tile
-     *     and can move a single tile to another plane and draw order.
-     * And per group, only groups landing wholly inside the 240x160 frame
-     * are taken -- the border ring stays per-tile, which keeps every
-     * partial-visibility and letterbox interaction exactly as it was. */
+     * A layer-fix list, a visible tank or a door-depth footprint used to
+     * disable the pass for the whole layer; now only the individual 16x16
+     * groups those touch fall through to per-tile (GROUP_CORRECTED),
+     * so a room with a handful of corrections still gets the pass everywhere
+     * else. And per group, only groups wholly inside the 240x160 frame are
+     * taken -- the border ring stays per-tile. */
     uint64_t covered[21]; /* tx runs -1..31, so bit index 0..32: needs 64 */
     memset(covered, 0, sizeof(covered));
-    const bool blocksEligible =
-        sBlockPassEnabled && !bpp8 && !sObjWindowActive &&
-        PortLayerFix_ActiveCount() == 0 && !roomHasTankOnThisBg && !roomHasDoorDepth;
+    const bool blocksEligible = sBlockPassEnabled && !bpp8 && !sObjWindowActive;
+
+    /* ---- 32x32 block pass: tried first, same rules one size up. A 4x4
+     * tilemap-aligned group cannot straddle a 32x32 screen block (32 % 4 ==
+     * 0) or a 32-entry map row, so 16 entries reach from one base address by
+     * +r*64 (row, 32 entries of 2 bytes) and +c*2 (column). Whatever it
+     * takes is marked in `covered` and skipped by both passes below;
+     * whatever it declines falls through to the 16x16 pass unchanged. */
+    const int sk = (3 - priority) * 10 + (3 - bgIndex);
+    const int depthTierBg = PortStereoDepth_BgTier(&sDepthState, bgIndex);
+    if (blocksEligible && sBlock32PassEnabled) {
+        const int ty0 = (4 - (startTileY & 3)) & 3;
+        const int tx0 = (4 - (startTileX & 3)) & 3;
+        for (int ty = ty0; ty + 3 <= 20; ty += 4) {
+            const float drawY = (float)(ty * 8 - fineY);
+            if (drawY < 0.0f || drawY + 32.0f > 160.0f) continue;
+            const int tileRow = (startTileY + ty) & (mapHeightTiles - 1);
+            const int screenBlockY = tileRow / 32;
+            const int localRow = tileRow % 32;
+            for (int tx = tx0; tx + 3 <= 31; tx += 4) {
+                const float drawX = (float)(tx * 8 - fineX);
+                if (drawX < 0.0f || drawX + 32.0f > 240.0f) continue;
+                /* Any tile corrected -> leave the whole 4x4 group to the
+                 * 16x16 pass, which re-checks per sub-block. */
+                if (GROUP_CORRECTED(tx, ty, 4, 4)) continue;
+                const int tileCol = (startTileX + tx) & (mapWidthTiles - 1);
+                const int screenBlockX = tileCol / 32;
+                const int localCol = tileCol % 32;
+                const int screenBlockIndex = screenBlockX + screenBlockY * blocksPerRow;
+                const uint32_t mapAddr =
+                    screenBase + (uint32_t)screenBlockIndex * 0x800u + (uint32_t)(localRow * 32 + localCol) * 2u;
+                uint16_t entry[16];
+                const uint8_t* src[16];
+                bool anyOpaque = false;
+                for (int q = 0; q < 16; ++q) {
+                    const uint32_t a = mapAddr + (uint32_t)(q / 4) * 64u + (uint32_t)(q % 4) * 2u;
+                    entry[q] = (uint16_t)(gVram[a] | (gVram[a + 1] << 8));
+                    const uint32_t byteOffset = charBase + (uint32_t)(entry[q] & 0x3FFu) * 32u;
+                    src[q] = &gVram[byteOffset];
+                    if (TileHasOpaquePixel(byteOffset, false)) anyOpaque = true;
+                }
+                const uint64_t span = 0xFull << (tx + 1);
+                if (!anyOpaque) {
+                    for (int r = 0; r < 4; ++r) covered[ty + r] |= span;
+                    continue;
+                }
+                uint32_t palHash = 2166136261u;
+                for (int q = 0; q < 16; ++q) {
+                    const uint32_t bankHash = sBgPalBankHash[(entry[q] >> 12) & 0x0Fu];
+                    for (int b = 0; b < 4; ++b)
+                        palHash = (palHash ^ ((bankHash >> (b * 8)) & 0xFFu)) * 16777619u;
+                }
+                const int b32 =
+                    GetOrDecodeBlock32Slot(entry, charBase, pal, palHash, brightAdjust, src);
+                if (b32 < 0) continue; /* region full: leave it to the 16x16 pass */
+                PushItemSubtex(&sB32SubtexTable[b32], drawX, drawY, 32.0f, 32.0f, sk,
+                               depthTierBg, blendAlpha, rectWinVis, false);
+                ++sB32ItemsThisFrame;
+                for (int r = 0; r < 4; ++r) covered[ty + r] |= span;
+            }
+        }
+    }
+
     if (blocksEligible) {
         for (int ty = (startTileY & 1) ? 1 : 0; ty + 1 <= 20; ty += 2) {
             const float drawY = (float)(ty * 8 - fineY);
@@ -1748,8 +2128,10 @@ static void CollectBgLayer(int bgIndex) {
             const int screenBlockY = tileRow / 32;
             const int localRow = tileRow % 32;
             for (int tx = (startTileX & 1) ? 1 : 0; tx + 1 <= 31; tx += 2) {
+                if (covered[ty] & (3ull << (tx + 1))) continue; /* taken by the 32x32 pass */
                 const float drawX = (float)(tx * 8 - fineX);
                 if (drawX < 0.0f || drawX + 16.0f > 240.0f) continue;
+                if (GROUP_CORRECTED(tx, ty, 2, 2)) continue; /* per-tile handles this block */
                 const int tileCol = (startTileX + tx) & (mapWidthTiles - 1);
                 const int screenBlockX = tileCol / 32;
                 const int localCol = tileCol % 32;
@@ -1924,7 +2306,15 @@ static void CollectBgLayer(int bgIndex) {
         /* Compose again unless nothing moved at all: same key AND no atlas
          * slot rewritten while collecting this layer (an animated tile, a
          * palette phase, an evy step). */
-        sLayerNeedsCompose[bgIndex] = !(sLayerSameKey && sAnyDirtySlot == sLayerDirtyAtEntry);
+        sLayerNeedsCompose[bgIndex] =
+            !(sLayerSameKey && sDecodeSeq == sLayerDecodeSeqAtEntry);
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
+        sLCdiag[bgIndex] = (LayerCacheDiag){
+            1, sLayerSameKey, sLayerNeedsCompose[bgIndex], sLayerTileCount[bgIndex],
+            startTileX, startTileY, sLayerKey[bgIndex].mapHash,
+            sDecodeSeq - sLayerDecodeSeqAtEntry
+        };
+#endif
 
         /* The sampled rectangle carries the fine scroll. Same full-span,
          * eighth-of-a-texel-shifted convention as the atlas and the
@@ -1938,6 +2328,18 @@ static void CollectBgLayer(int bgIndex) {
             .right = ((float)(fineX + 240) + sh) * inv,
             .bottom = 1.0f - ((float)(fineY + 160) + sh) * inv,
         };
+        /* Nothing collected: this layer is fully transparent over the visible
+         * window right now. The compose loop skips a zero-tile layer (there
+         * is nothing to draw into the target), so the target still holds
+         * WHATEVER WAS COMPOSED INTO IT LAST -- the file-select screen, the
+         * intro starfield, the previous room. Pushing the quad anyway
+         * plastered that over the frame. Draw nothing, and drop the composed
+         * flag so no later frame trusts those pixels either. */
+        if (sLayerTileCount[bgIndex] == 0) {
+            sLayerComposed[bgIndex] = false;
+            sLayerNeedsCompose[bgIndex] = false;
+            return;
+        }
         PushLayerQuad(&sLayerTex[bgIndex], &sLayerSubtex[bgIndex],
                       (3 - priority) * 10 + (3 - bgIndex),
                       PortStereoDepth_BgTier(&sDepthState, bgIndex), blendAlpha, rectWinVis);
@@ -2183,6 +2585,11 @@ static void CollectSprite(int oamIndex, bool obj1D) {
      * sprites over Samus on the elevator (BG1) and the eye glow (BG0);
      * without this they draw opaque and hide both behind a solid blob. */
     bool objSemiTransparent = (objMode == 1);
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
+    if (objSemiTransparent) { ++sDiagSemiTransColl; sDiagSemiTransX = x; sDiagSemiTransOam = oamIndex; }
+    if (isAffine) ++sDiagAffineColl;
+    if ((attr0 & 0x1000u)) ++sDiagMosaicColl;  /* attr0 bit12 = OBJ mosaic */
+#endif
     BrightAdjust brightAdjust = BRIGHT_ADJUST_NONE;
     bool blendAlpha;
     if (objSemiTransparent) {
@@ -2904,6 +3311,25 @@ void Port_GpuRenderer_RenderFrame(void) {
                   PortHaze_Bg3RowScroll(sHazeRowDelta, &sHazeBakeHofs);
     if (sHazeActive) CollectHazeBg3();
 
+    /* Any layer NOT collected as a cached layer this frame has a stale
+     * composed target and a frozen sLayerKey. Drop sLayerComposed for all
+     * four up front; CollectBgLayer sets it true again only for the ones it
+     * actually composes. Without this, a layer that stopped being cacheable
+     * (near a doorway, OBJWIN, a room edge) and later became cacheable again
+     * could match its OLD key and draw the target from another room -- seen
+     * as sprites from another area scrolling a corridor. */
+    for (int bg = 0; bg < 4; ++bg) {
+        bool disabled = !(dispcnt & (1u << (8 + bg)));
+        bool hazeBg3 = sHazeActive && bg == 3;
+        if (disabled || hazeBg3) sLayerComposed[bg] = false;
+    }
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
+    for (int bg = 0; bg < 4; ++bg) sLCdiag[bg] = (LayerCacheDiag){ 0 };
+    sDiagAffineDrawn[0] = sDiagAffineDrawn[1] = 0;
+    sDiagBlendDrawn[0] = sDiagBlendDrawn[1] = 0;
+    sDiagSemiTransColl = sDiagAffineColl = sDiagMosaicColl = 0;
+    sDiagSemiTransX = sDiagSemiTransOam = -1;
+#endif
     for (int bg = 3; bg >= 0; --bg) {
         if (!(dispcnt & (1u << (8 + bg)))) continue;
         if (sHazeActive && bg == 3) continue; /* drawn via the offscreen strip pass */
@@ -2944,7 +3370,7 @@ void Port_GpuRenderer_RenderFrame(void) {
     {
         static unsigned sDiagCounter;
         if ((sDiagCounter++ % 5u) == 0u) {
-            char msg[512];
+            char msg[900];
             int objItems = 0, cacheSlots = sCacheCount;
             float minY = 999.0f, maxY = -999.0f;
             for (int i = 0; i < sDrawItemCount; ++i) {
@@ -2968,6 +3394,21 @@ void Port_GpuRenderer_RenderFrame(void) {
                 off += __builtin_snprintf(msg + off, sizeof(msg) - (size_t)off, " bg%d[cnt=%04x h=%u v=%u]", bg,
                                           bgcnt, hofs, vofs);
                 if (off >= (int)sizeof(msg)) break;
+            }
+            {
+                extern u8 gCurrentArea; extern u8 gCurrentRoom;
+                off += __builtin_snprintf(msg + off, sizeof(msg) - (size_t)off,
+                                          " room=%u,%u lce=%d haze=%d semiT=%d aff=%d mos=%d stX=%d stOam=%d",
+                                          gCurrentArea, gCurrentRoom, sLayerCacheEnabled, sHazeActive,
+                                          sDiagSemiTransColl, sDiagAffineColl, sDiagMosaicColl,
+                                          sDiagSemiTransX, sDiagSemiTransOam);
+            }
+            for (int bg = 0; bg < 4 && off < (int)sizeof(msg); ++bg) {
+                const LayerCacheDiag* d = &sLCdiag[bg];
+                off += __builtin_snprintf(msg + off, sizeof(msg) - (size_t)off,
+                                          " LC%d[cap=%d sk=%d cmp=%d til=%d org=%d,%d mh=%08x dec=%u composed=%d]",
+                                          bg, d->captured, d->sameKey, d->needsCompose, d->tiles,
+                                          d->orgX, d->orgY, d->mapHash, d->decodedThisLayer, sLayerComposed[bg]);
             }
             Port_DebugLog(msg);
         }
@@ -3152,7 +3593,15 @@ void Port_GpuRenderer_RenderFrame(void) {
      * pixels its own tiles cover. Once per frame, not once per eye -- both
      * eyes sample the same target, which is the point. */
     for (int li = 0; li < 4; ++li) {
-        if (!sLayerRtReady[li] || !sLayerNeedsCompose[li] || sLayerTileCount[li] == 0) continue;
+        if (!sLayerRtReady[li] || !sLayerNeedsCompose[li]) continue;
+        if (sLayerTileCount[li] == 0) {
+            /* Nothing to compose. Belt and braces with CollectBgLayer's own
+             * zero-tile bail: never leave the flag set on a target whose
+             * pixels belong to some earlier screen. */
+            sLayerComposed[li] = false;
+            sLayerNeedsCompose[li] = false;
+            continue;
+        }
         C2D_SceneBegin(sLayerRT[li]);
         C3D_RenderTargetClear(sLayerRT[li], C3D_CLEAR_COLOR, 0, 0);
         C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_ALL);
@@ -3330,6 +3779,10 @@ void Port_GpuRenderer_RenderFrame(void) {
                 C2D_DrawParams params = BuildDrawParams(item, screenBaseX, screenBaseY, eyeOffset, scaleX, scaleY, false);
                 C2D_DrawImage(item->img, &params, NULL);
                 ++drawCount;
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
+                if (item->affine)      ++sDiagAffineDrawn[eye & 1];
+                if (item->blendAlpha)  ++sDiagBlendDrawn[eye & 1];
+#endif
                 /* Device pixels this quad covers, summed over every eye.
                  * The point of counting it is to separate two explanations
                  * of where a frame goes that the quad count alone cannot:
@@ -3495,9 +3948,10 @@ void Port_GpuRenderer_RenderFrame(void) {
              * confusion before the parity was noticed. */
             static unsigned sEyeDrawLogCounter[2];
             if ((sEyeDrawLogCounter[eye]++ % 30u) == 0u) {
-                char msg[64];
-                snprintf(msg, sizeof(msg), "EYE%d drawCount=%d reasserted=%d", eye, drawCount,
-                         (int)reassertedTexEnv);
+                char msg[96];
+                snprintf(msg, sizeof(msg), "EYE%d drawCount=%d reasserted=%d affine=%d blend=%d slider=%.2f",
+                         eye, drawCount, (int)reassertedTexEnv,
+                         sDiagAffineDrawn[eye & 1], sDiagBlendDrawn[eye & 1], (double)slider3d);
                 Port_DebugLog(msg);
             }
         }

@@ -28,6 +28,8 @@ typedef struct PlatformGpu3DSStats {
 } PlatformGpu3DSStats;
 
 bool PlatformGpu3DS_Init(bool old3dsProfile);
+/* Runtime override for the debug New3DS/Old3DS-profile toggle. */
+void PlatformGpu3DS_SetOld3DSProfile(bool on);
 float PlatformGpu3DS_Get3DSlider(void);
 uint32_t* PlatformGpu3DS_TopBuffer(void);
 uint32_t* PlatformGpu3DS_TopRightBuffer(void);

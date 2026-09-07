@@ -141,6 +141,13 @@ static int sGbaFxGrade = 0;
 static int sGbaFxGrid = 0;
 static int sGbaFxVignette = 0;
 
+/* Frame pacing on the GPU path. 0 = ADAPTIVE: run at whatever rate the scene
+ * allows, skipping the render (never the logic) to keep game speed correct
+ * when a frame overruns -- fluid, variable 30..60. 1 = LOCKED 30: render
+ * every other logic tick for a steady 30 Hz picture at correct game speed.
+ * See Port_Bios_Halt / Port_Bios_ShouldSkipRender. */
+static int sFramePacing = 0;
+
 /* Button Actions:
  * 0 = NINGUNA (NONE)
  * 1 = AUTODISPARO (RAPID FIRE)
@@ -206,6 +213,7 @@ void Port_Config_Save(void) {
     fprintf(file, "gba_fx_grade=%d\n", sGbaFxGrade);
     fprintf(file, "gba_fx_grid=%d\n", sGbaFxGrid);
     fprintf(file, "gba_fx_vignette=%d\n", sGbaFxVignette);
+    fprintf(file, "frame_pacing=%d\n", sFramePacing);
     fprintf(file, "btn_map_a=%d\n", sBtnRemap[0]);
     fprintf(file, "btn_map_b=%d\n", sBtnRemap[1]);
     fprintf(file, "btn_map_x=%d\n", sBtnRemap[2]);
@@ -302,6 +310,8 @@ void Port_Config_Load(void) {
             if (val >= 0 && val < 4) sGbaFxGrid = val;
         } else if (strcmp(key, "gba_fx_vignette") == 0) {
             if (val >= 0 && val < 4) sGbaFxVignette = val;
+        } else if (strcmp(key, "frame_pacing") == 0) {
+            if (val >= 0 && val < 2) sFramePacing = val;
         } else if (strcmp(key, "btn_map_a") == 0) {
             if (val >= 0 && val < BTN_ACTION_COUNT) sBtnRemap[0] = val;
         } else if (strcmp(key, "btn_map_b") == 0) {
@@ -373,6 +383,10 @@ void Port_Config_SetGbaFxGrid(int level) { if (level >= 0 && level < 4) { sGbaFx
 
 int Port_Config_GetGbaFxVignette(void) { return sGbaFxVignette; }
 void Port_Config_SetGbaFxVignette(int level) { if (level >= 0 && level < 4) { sGbaFxVignette = level; Port_Config_Save(); } }
+
+/* 0 = ADAPTIVE (default), 1 = LOCKED 30. */
+int Port_Config_GetFramePacing(void) { return sFramePacing; }
+void Port_Config_SetFramePacing(int mode) { if (mode >= 0 && mode < 2) { sFramePacing = mode; Port_Config_Save(); } }
 
 int Port_Config_GetBtnRemap(int btn) {
     if (btn >= 0 && btn < 10) return sBtnRemap[btn];
@@ -1731,10 +1745,13 @@ bool PortPpuMzm_IsVisibleTankBlock(int blockX, int blockY) {
  *
  *   - the door's own column span (xStart..xEnd) from sAreaDoorsPointers,
  *     widened one block each side -- the outboard one is wall (BG1,
- *     already on the play plane, a no-op), the inboard one is the animated
- *     hatch "capsule",
- *   - a couple of rows above and below for the lintel/sill (and whatever
- *     sits directly under the capsule).
+ *     already on the play plane, a no-op), the inboard one is the trim
+ *     next to the hatch,
+ *   - ONLY the PORT_DOOR_DEPTH_MARGIN_Y rows above yStart and below yEnd,
+ *     the lintel/sill ledge. The door's own rows (yStart..yEnd) are the
+ *     animated hatch capsule and are left on their own plane -- pulling
+ *     them forward made the backdrop revealed as the capsule opens draw on
+ *     top of the scene.
  *
  * An earlier version grew each row along the BG2 run to avoid cutting a
  * ledge mid-run. It reached too far and dragged actual background forward,
@@ -1801,6 +1818,14 @@ void PortPpuMzm_SetDoorDepthRoom(int area, int room) {
         if (y0 < 0) y0 = 0;
 
         for (int y = y0; y <= y1; ++y) {
+            /* Only the lintel/sill trim -- the MARGIN_Y rows above yStart and
+             * below yEnd. The door's own rows (yStart..yEnd) are the animated
+             * hatch capsule; pulling those forward makes the background
+             * revealed as the capsule opens draw ON TOP of the scene even
+             * though it is drawn behind. The capsule's presence is still what
+             * puts the trim rows in the footprint -- but the capsule tiles
+             * themselves stay on their own plane. */
+            if (y >= (int)d->yStart && y <= (int)d->yEnd) continue;
             if (sDoorSpanCount >= PORT_DOOR_DEPTH_SPANS) return;
             sDoorSpanY[sDoorSpanCount]  = (uint16_t)y;
             sDoorSpanX0[sDoorSpanCount] = (uint16_t)dx0;

@@ -182,7 +182,14 @@ static uint32_t sFrameCounter = 0;
  * genuine change (tab switch, zoom, pan, any touch) forces the next frame
  * to redraw immediately via Port_BottomUI_MarkDirty so interaction still
  * feels instant. */
-#define PORT_BOTTOM_UI_REDRAW_INTERVAL 3 /* frames; 3 -> ~20Hz at 60fps */
+/* frames between idle bottom-screen redraws. 6 -> ~10Hz at 60fps: the map
+ * follows Samus per map-cell (a cell change is seconds apart, not smooth
+ * panning) so it does not need more, and the only ~4-6Hz animated bits
+ * (Chozo-hint target pulse, post-boss statue flames, low-health blink) are
+ * situational and still read fine at 10Hz. Halves the map's redraw cost on
+ * the frames in between. Interaction still forces an immediate redraw via
+ * Port_BottomUI_MarkDirty. */
+#define PORT_BOTTOM_UI_REDRAW_INTERVAL 6
 static bool sBottomUiDirty = true;
 static uint32_t sBottomUiRedrawThrottle = 0;
 
@@ -224,6 +231,10 @@ void Port_BottomUI_FrameTick(void) {
 #endif
 }
 
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
+static bool AnyDebugModalOpen(void); /* defined with the debug modal statics below */
+#endif
+
 /* Whether Port_BottomUI_Render should run this frame. Has the side effect of
  * advancing the throttle, so call exactly once per frame. */
 bool Port_BottomUI_WantsRedraw(void) {
@@ -232,7 +243,17 @@ bool Port_BottomUI_WantsRedraw(void) {
         sBottomUiRedrawThrottle = 0;
         return true;
     }
-    if (++sBottomUiRedrawThrottle >= PORT_BOTTOM_UI_REDRAW_INTERVAL) {
+    /* The map/FPS/battery want a ~20Hz refresh, but the DEBUG TOOLS modal
+     * (14 bordered cells + text + the live LINEAR readout) is expensive
+     * enough that redrawing it that often inside a stereo + haze frame
+     * makes every third frame overrun the vblank -- a periodic present
+     * hitch that reads as flicker on moving sprites. Its content changes
+     * slowly, so throttle it hard when it is the thing on screen. */
+    int interval = PORT_BOTTOM_UI_REDRAW_INTERVAL;
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
+    if (AnyDebugModalOpen()) interval = 20; /* ~3Hz */
+#endif
+    if (++sBottomUiRedrawThrottle >= interval) {
         sBottomUiRedrawThrottle = 0;
         return true;
     }
@@ -272,6 +293,9 @@ static bool sShowDebugEquipModal = false;
 static bool sShowSoundTestModal = false;
 static void RenderSoundTestModal(int lang);
 static void HandleSoundTestModalTouch(int x, int y);
+static bool AnyDebugModalOpen(void) {
+    return sShowDebugToolsModal || sShowDebugWarpModal || sShowDebugEquipModal || sShowSoundTestModal;
+}
 /* MAP tab: when armed from the tools menu, the next tap on the map canvas
  * warps to the door nearest that tile instead of panning. One-shot -- it
  * disarms itself on use -- so a stray tap can't teleport the player later. */
@@ -292,6 +316,10 @@ extern bool Port_GpuRenderer_IsActive(void);
 extern void Port_GpuRenderer_SetActive(bool active);
 extern void Port_GpuRenderer_SetBlockPass(bool on);
 extern bool Port_GpuRenderer_BlockPassEnabled(void);
+extern void Port_GpuRenderer_SetBlockDebugTint(bool on);
+extern bool Port_GpuRenderer_BlockDebugTintEnabled(void);
+extern void Port_GpuRenderer_SetBlock32Pass(bool on);
+extern bool Port_GpuRenderer_Block32PassEnabled(void);
 extern void Port_GpuRenderer_SetLayerCache(bool on);
 extern bool Port_GpuRenderer_LayerCacheEnabled(void);
 extern void Port_GpuRenderer_CycleHazeMode(void);
@@ -393,6 +421,8 @@ extern int Port_Config_GetGbaFxGrid(void);
 extern void Port_Config_SetGbaFxGrid(int level);
 extern int Port_Config_GetGbaFxVignette(void);
 extern void Port_Config_SetGbaFxVignette(int level);
+extern int Port_Config_GetFramePacing(void);
+extern void Port_Config_SetFramePacing(int mode);
 
 /* RetroAchievements Helpers */
 #include "port_retroachievements_3ds.h"
@@ -1679,6 +1709,9 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
                         if (Port_Config_Get3DSDisplayStyle() == 0 || Port_Config_Get3DSAspectRatio() == 1) {
                             Port_Config_ToggleGbaBezel();
                         }
+                        break;
+                    case 11:
+                        Port_Config_SetFramePacing((Port_Config_GetFramePacing() + 1) % 2);
                         break;
                     default: break;
                 }
@@ -3005,7 +3038,7 @@ static void RenderConfirmModal(int lang) {
 #define DISP_GRID_PITCH 26
 #define DISP_CELL_H     24
 #define DISP_GRID_ROWS  6
-#define DISP_CELL_COUNT 11
+#define DISP_CELL_COUNT 12
 
 /* One label line plus a value/state line under it, tinted by `valueCol`. */
 static void DispCell(int index, const char* label, const char* value, uint32_t valueCol) {
@@ -3117,6 +3150,15 @@ static void RenderDisplayModal(int lang) {
     DispCell(10, bezelL[lang],
              bezelAllowed ? (bezelOn ? onTxt : offTxt) : lockedTxt,
              bezelAllowed ? (bezelOn ? onCol : offCol) : idleCol);
+
+    /* Frame pacing: ADAPTIVE (variable 30..60, fluid) vs LOCKED 30 (steady).
+     * There is no 60 option -- the renderer never exceeds the vblank. */
+    static const char* const paceL[7] = { "FRAME PACING","FRAME PACING","FRAME PACING",
+                                          "BILDRATE","CADENCE","CADENZA","RITMO FPS" };
+    int pace = Port_Config_GetFramePacing();
+    const char* paceTxt = (pace == 1) ? ((lang == 6) ? "30 FIJO" : "LOCK 30")
+                                      : ((lang == 6) ? "ADAPTABLE" : "ADAPTIVE");
+    DispCell(11, paceL[lang], paceTxt, pace ? valCol : onCol);
 
     /* Close button (Y: 206 to 228) */
     static const char* const closeLabels[7] = {
@@ -4119,7 +4161,7 @@ static void RenderOptionsView(void) {
  * when the GPU tile renderer is compiled in -- a RENDERER=cpu build has
  * nothing to switch to and neither pass to switch off. */
 #ifdef PORT_GPU_TILE_RENDERER
-#define DBGTOOL_COUNT     13
+#define DBGTOOL_COUNT     14
 #else
 #define DBGTOOL_COUNT     10
 #endif
@@ -4152,6 +4194,32 @@ static void DrawDebugCell(int index, const char* label, const char* state, uint3
     DrawTextMaxWClipped(x + 6.0f, y + 2.0f, 1.0f, label, C2D_Color32(255, 255, 255, 255),
                         0.0f, 240.0f, (float)DBGTOOL_COL_W - 12.0f);
     if (state) DrawText(x + 6.0f, y + 11.0f, 1.0f, state, accent);
+}
+
+/* A cell whose left and right halves do different things (DebugCellRightZoneHit
+ * splits them at COL_W-46). Draws the label, the left state clipped to the
+ * left half, a divider, and the right state in the right ~44px zone -- so it
+ * is obvious at a glance that the cell has two tap targets. */
+static void DrawDebugCellSplit(int index, const char* label,
+                               const char* leftTxt, uint32_t leftCol,
+                               const char* rightTxt, uint32_t rightCol) {
+    float x = DBGTOOL_CELL_X(index & 1);
+    float y = DBGTOOL_CELL_Y(index >> 1);
+    float bx = x + (float)DBGTOOL_COL_W - 46.0f; /* divider / right-zone edge */
+    DrawButtonBox(x, y, (float)DBGTOOL_COL_W, (float)DBGTOOL_CELL_H,
+                  C2D_Color32(24, 32, 50, 255), C2D_Color32(50, 80, 130, 255));
+    DrawTextMaxWClipped(x + 6.0f, y + 2.0f, 1.0f, label, C2D_Color32(255, 255, 255, 255),
+                        0.0f, 240.0f, bx - x - 8.0f);
+    if (leftTxt)
+        DrawTextMaxWClipped(x + 6.0f, y + 11.0f, 1.0f, leftTxt, leftCol, 0.0f, 240.0f, bx - x - 8.0f);
+    C2D_DrawRectSolid(bx - 1.0f, y + 3.0f, 0.92f, 1.0f, (float)DBGTOOL_CELL_H - 6.0f,
+                      C2D_Color32(90, 110, 150, 255));
+    /* Centred in the right zone (bx .. x+COL_W), horizontally and
+     * vertically -- one short tag, mid-cell (glyphs are 7px in a 19px
+     * cell). ~45px fits 7 glyphs at 6px each, so keep right tags short. */
+    if (rightTxt)
+        DrawTextCentered(bx + ((float)DBGTOOL_COL_W - (bx - x)) * 0.5f,
+                         y + ((float)DBGTOOL_CELL_H - 7.0f) * 0.5f, 1.0f, rightTxt, rightCol);
 }
 
 /* The right ~48px of a cell is a start/stop side button (DebugCellRightZoneHit):
@@ -4295,9 +4363,14 @@ static void RenderDebugToolsModal(int lang) {
      * isolate renderer-specific bugs without a RENDERER=cpu rebuild. The
      * per-frame CanRenderFrame() fallback still applies on top of this. */
     {
+        extern bool Port_Bios_AdaptiveFrameSkipEnabled(void);
         const bool gpuOn = Port_GpuRenderer_IsActive();
-        DrawDebugCell(9, (lang == 6) ? "RENDERER" : "RENDERER",
-                      gpuOn ? "GPU" : "CPU", gpuOn ? colAct : colOn);
+        const bool skipOn = Port_Bios_AdaptiveFrameSkipEnabled();
+        /* Left: GPU/CPU renderer. Right: adaptive render-skip (game speed
+         * stays correct when frames overrun -- judder, not slow motion). */
+        DrawDebugCellSplit(9, "RENDERER", gpuOn ? "GPU" : "CPU", gpuOn ? colAct : colOn,
+                           skipOn ? "SKIP" : "skip",
+                           skipOn ? C2D_Color32(140, 235, 150, 255) : C2D_Color32(120, 135, 160, 255));
     }
     /* Step A (one quad per 16x16 tilemap-aligned block instead of four).
      * A switch rather than a build flag because it is a PERFORMANCE change
@@ -4306,23 +4379,43 @@ static void RenderDebugToolsModal(int lang) {
      * per-tile loop. */
     {
         const bool blocks = Port_GpuRenderer_BlockPassEnabled();
-        DrawDebugCell(10, (lang == 6) ? "BLOQUES 16x16" : "16x16 BLOCKS",
-                      blocks ? onTxt : offTxt,
-                      blocks ? C2D_Color32(120, 230, 140, 255) : C2D_Color32(150, 170, 200, 255));
+        const bool blocks32 = Port_GpuRenderer_Block32PassEnabled();
+        const bool blockGrid = Port_GpuRenderer_BlockDebugTintEnabled();
+        /* Tap cycles OFF -> 16 -> 16+32 -> OFF; right edge toggles the debug
+         * outline (16x16 magenta, 32x32 cyan). */
+        const char* bTxt = blocks ? (blocks32 ? "16+32" : "16") : offTxt;
+        /* Left: cycle OFF -> 16 -> 16+32. Right: debug outline (16 magenta,
+         * 32 cyan). */
+        DrawDebugCellSplit(10, (lang == 6) ? "BLOQUES" : "BLOCKS",
+                           bTxt, blocks ? C2D_Color32(120, 230, 140, 255) : C2D_Color32(150, 170, 200, 255),
+                           blockGrid ? "REJ" : "rej",
+                           blockGrid ? C2D_Color32(230, 120, 230, 255) : C2D_Color32(120, 135, 160, 255));
         /* Two renderer experiments share this cell, because the grid has no
          * room for a fifteenth two-line row without running into the status
          * line and the CLOSE button (see DBGTOOL_GRID_ROWS). Tapping the
          * cell toggles the layer cache; tapping its right edge toggles the
          * BG3 haze pass. */
         const bool layers = Port_GpuRenderer_LayerCacheEnabled();
-        static const char* const hazeTxt[4] = { "ON", "NOCOMP", "OFF", "RT" };
+        static const char* const hazeTxt[4] = { "FULL", "NC", "OFF", "RT" };
         const int haze = Port_GpuRenderer_HazeMode();
-        char expTxt[28];
-        snprintf(expTxt, sizeof(expTxt), "CAPAS %s HAZE %s",
-                 layers ? "ON" : "--", hazeTxt[haze & 3]);
-        DrawDebugCell(11, (lang == 6) ? "CAPAS / HAZE" : "LAYERS / HAZE", expTxt,
-                      (layers || haze) ? C2D_Color32(230, 200, 120, 255)
-                                       : C2D_Color32(150, 170, 200, 255));
+        /* Left: layer cache on/off. Right: cycle the BG3 haze mode. */
+        DrawDebugCellSplit(11, (lang == 6) ? "CAPAS/HAZE" : "LAYERS/HAZE",
+                           layers ? "CACHE ON" : "cache --",
+                           layers ? C2D_Color32(230, 200, 120, 255) : C2D_Color32(150, 170, 200, 255),
+                           hazeTxt[haze & 3], haze ? C2D_Color32(230, 200, 120, 255) : C2D_Color32(120, 135, 160, 255));
+        /* Run the Old3DS profile on New3DS hardware without a FORCE_OLD3DS
+         * rebuild. Locked on a real Old3DS (nothing to force). */
+        {
+            extern bool Platform3DS_HardwareIsNew3DS(void);
+            extern bool Platform3DS_ForcedOld3DSProfile(void);
+            const bool hwNew = Platform3DS_HardwareIsNew3DS();
+            const bool forced = Platform3DS_ForcedOld3DSProfile();
+            const char* st = !hwNew ? "OLD (hw)" : (forced ? "OLD (forz.)" : "NEW");
+            DrawDebugCell(12, "PERFIL 3DS", st,
+                          !hwNew ? C2D_Color32(120, 135, 160, 255)
+                                 : (forced ? C2D_Color32(230, 200, 120, 255)
+                                           : C2D_Color32(120, 230, 140, 255)));
+        }
     }
 #endif
 
@@ -4379,9 +4472,26 @@ static bool HandleDebugToolsModalTouch(int x, int y) {
     }
 #ifdef PORT_GPU_TILE_RENDERER
     if (cell == 10) {
-        const bool on = !Port_GpuRenderer_BlockPassEnabled();
-        Port_GpuRenderer_SetBlockPass(on);
-        DebugToolsSetMsg(on ? "BLOQUES 16x16: ON" : "BLOQUES 16x16: OFF");
+        if (DebugCellRightZoneHit(x, 10)) {
+            const bool on = !Port_GpuRenderer_BlockDebugTintEnabled();
+            Port_GpuRenderer_SetBlockDebugTint(on);
+            DebugToolsSetMsg(on ? "REJILLA BLOQUES: ON" : "REJILLA BLOQUES: OFF");
+        } else {
+            /* Cycle OFF -> 16 -> 16+32 -> OFF. */
+            const bool b16 = Port_GpuRenderer_BlockPassEnabled();
+            const bool b32 = Port_GpuRenderer_Block32PassEnabled();
+            if (!b16) {
+                Port_GpuRenderer_SetBlockPass(true);
+                DebugToolsSetMsg("BLOQUES: 16x16");
+            } else if (!b32) {
+                Port_GpuRenderer_SetBlock32Pass(true);
+                DebugToolsSetMsg("BLOQUES: 16x16 + 32x32");
+            } else {
+                Port_GpuRenderer_SetBlock32Pass(false);
+                Port_GpuRenderer_SetBlockPass(false);
+                DebugToolsSetMsg("BLOQUES: OFF");
+            }
+        }
         return true;
     }
     if (cell == 11) {
@@ -4462,11 +4572,34 @@ static bool HandleDebugToolsModalTouch(int x, int y) {
         }
 #ifdef PORT_GPU_TILE_RENDERER
         case 9: {
-            const bool gpuOn = !Port_GpuRenderer_IsActive();
-            Port_GpuRenderer_SetActive(gpuOn);
-            Port_DebugLog(gpuOn ? "USER MARK: renderer -> GPU"
-                                : "USER MARK: renderer -> CPU");
-            DebugToolsSetMsg(gpuOn ? "RENDERER: GPU" : "RENDERER: CPU");
+            extern void Port_Bios_SetAdaptiveFrameSkip(bool on);
+            extern bool Port_Bios_AdaptiveFrameSkipEnabled(void);
+            if (DebugCellRightZoneHit(x, 9)) {
+                const bool on = !Port_Bios_AdaptiveFrameSkipEnabled();
+                Port_Bios_SetAdaptiveFrameSkip(on);
+                DebugToolsSetMsg(on ? "FRAME-SKIP ADAPTATIVO: ON"
+                                    : "FRAME-SKIP ADAPTATIVO: OFF");
+            } else {
+                const bool gpuOn = !Port_GpuRenderer_IsActive();
+                Port_GpuRenderer_SetActive(gpuOn);
+                Port_DebugLog(gpuOn ? "USER MARK: renderer -> GPU"
+                                    : "USER MARK: renderer -> CPU");
+                DebugToolsSetMsg(gpuOn ? "RENDERER: GPU" : "RENDERER: CPU");
+            }
+            break;
+        }
+        case 12: {
+            extern bool Platform3DS_HardwareIsNew3DS(void);
+            extern bool Platform3DS_ForcedOld3DSProfile(void);
+            extern void Platform3DS_SetForcedOld3DSProfile(bool forced);
+            if (!Platform3DS_HardwareIsNew3DS()) {
+                DebugToolsSetMsg("PERFIL 3DS: OLD (hardware, fijo)");
+            } else {
+                const bool forced = !Platform3DS_ForcedOld3DSProfile();
+                Platform3DS_SetForcedOld3DSProfile(forced);
+                DebugToolsSetMsg(forced ? "PERFIL 3DS: OLD (forzado)"
+                                        : "PERFIL 3DS: NEW");
+            }
             break;
         }
 #endif

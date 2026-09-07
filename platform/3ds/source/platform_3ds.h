@@ -80,7 +80,13 @@ void Platform3DS_Shutdown(void);
  * timing. Returns false if the thread could not be created. */
 bool Platform3DS_StartLogicThread(void (*entry)(void));
 bool Platform3DS_IsRunning(void);
+/* Platform3DS_IsNew3DS() is the EFFECTIVE profile (Old3DS-forced builds and
+ * the debug toggle make it report false on New3DS hardware).
+ * Platform3DS_HardwareIsNew3DS() is the real console and never changes. */
 bool Platform3DS_IsNew3DS(void);
+bool Platform3DS_HardwareIsNew3DS(void);
+bool Platform3DS_ForcedOld3DSProfile(void);
+void Platform3DS_SetForcedOld3DSProfile(bool forced);
 bool Platform3DS_CanUseCore1(void);
 unsigned Platform3DS_Core1TimeLimit(void);
 void Platform3DS_ShowSplash(void);
