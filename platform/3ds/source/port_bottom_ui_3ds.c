@@ -292,6 +292,10 @@ extern bool Port_GpuRenderer_IsActive(void);
 extern void Port_GpuRenderer_SetActive(bool active);
 extern void Port_GpuRenderer_SetBlockPass(bool on);
 extern bool Port_GpuRenderer_BlockPassEnabled(void);
+extern void Port_GpuRenderer_SetBlockDebugTint(bool on);
+extern bool Port_GpuRenderer_BlockDebugTintEnabled(void);
+extern void Port_GpuRenderer_SetBlock32Pass(bool on);
+extern bool Port_GpuRenderer_Block32PassEnabled(void);
 extern void Port_GpuRenderer_SetLayerCache(bool on);
 extern bool Port_GpuRenderer_LayerCacheEnabled(void);
 extern void Port_GpuRenderer_CycleHazeMode(void);
@@ -4154,6 +4158,27 @@ static void DrawDebugCell(int index, const char* label, const char* state, uint3
     if (state) DrawText(x + 6.0f, y + 11.0f, 1.0f, state, accent);
 }
 
+/* A cell whose left and right halves do different things (DebugCellRightZoneHit
+ * splits them at COL_W-46). Draws the label, the left state clipped to the
+ * left half, a divider, and the right state in the right ~44px zone -- so it
+ * is obvious at a glance that the cell has two tap targets. */
+static void DrawDebugCellSplit(int index, const char* label,
+                               const char* leftTxt, uint32_t leftCol,
+                               const char* rightTxt, uint32_t rightCol) {
+    float x = DBGTOOL_CELL_X(index & 1);
+    float y = DBGTOOL_CELL_Y(index >> 1);
+    float bx = x + (float)DBGTOOL_COL_W - 46.0f; /* divider / right-zone edge */
+    DrawButtonBox(x, y, (float)DBGTOOL_COL_W, (float)DBGTOOL_CELL_H,
+                  C2D_Color32(24, 32, 50, 255), C2D_Color32(50, 80, 130, 255));
+    DrawTextMaxWClipped(x + 6.0f, y + 2.0f, 1.0f, label, C2D_Color32(255, 255, 255, 255),
+                        0.0f, 240.0f, bx - x - 8.0f);
+    if (leftTxt)
+        DrawTextMaxWClipped(x + 6.0f, y + 11.0f, 1.0f, leftTxt, leftCol, 0.0f, 240.0f, bx - x - 8.0f);
+    C2D_DrawRectSolid(bx - 1.0f, y + 3.0f, 0.92f, 1.0f, (float)DBGTOOL_CELL_H - 6.0f,
+                      C2D_Color32(90, 110, 150, 255));
+    if (rightTxt) DrawText(bx + 4.0f, y + 11.0f, 1.0f, rightTxt, rightCol);
+}
+
 /* The right ~48px of a cell is a start/stop side button (DebugCellRightZoneHit):
  * a divider, a tinted panel, and either a play triangle (idle) or a stop
  * square (running). The button's colour is the only running indicator -- the
@@ -4306,9 +4331,17 @@ static void RenderDebugToolsModal(int lang) {
      * per-tile loop. */
     {
         const bool blocks = Port_GpuRenderer_BlockPassEnabled();
-        DrawDebugCell(10, (lang == 6) ? "BLOQUES 16x16" : "16x16 BLOCKS",
-                      blocks ? onTxt : offTxt,
-                      blocks ? C2D_Color32(120, 230, 140, 255) : C2D_Color32(150, 170, 200, 255));
+        const bool blocks32 = Port_GpuRenderer_Block32PassEnabled();
+        const bool blockGrid = Port_GpuRenderer_BlockDebugTintEnabled();
+        /* Tap cycles OFF -> 16 -> 16+32 -> OFF; right edge toggles the debug
+         * outline (16x16 magenta, 32x32 cyan). */
+        const char* bTxt = blocks ? (blocks32 ? "16+32" : "16") : offTxt;
+        /* Left: cycle OFF -> 16 -> 16+32. Right: debug outline (16 magenta,
+         * 32 cyan). */
+        DrawDebugCellSplit(10, (lang == 6) ? "BLOQUES" : "BLOCKS",
+                           bTxt, blocks ? C2D_Color32(120, 230, 140, 255) : C2D_Color32(150, 170, 200, 255),
+                           blockGrid ? "REJ" : "rej",
+                           blockGrid ? C2D_Color32(230, 120, 230, 255) : C2D_Color32(120, 135, 160, 255));
         /* Two renderer experiments share this cell, because the grid has no
          * room for a fifteenth two-line row without running into the status
          * line and the CLOSE button (see DBGTOOL_GRID_ROWS). Tapping the
@@ -4317,12 +4350,13 @@ static void RenderDebugToolsModal(int lang) {
         const bool layers = Port_GpuRenderer_LayerCacheEnabled();
         static const char* const hazeTxt[4] = { "ON", "NOCOMP", "OFF", "RT" };
         const int haze = Port_GpuRenderer_HazeMode();
-        char expTxt[28];
-        snprintf(expTxt, sizeof(expTxt), "CAPAS %s HAZE %s",
-                 layers ? "ON" : "--", hazeTxt[haze & 3]);
-        DrawDebugCell(11, (lang == 6) ? "CAPAS / HAZE" : "LAYERS / HAZE", expTxt,
-                      (layers || haze) ? C2D_Color32(230, 200, 120, 255)
-                                       : C2D_Color32(150, 170, 200, 255));
+        char hz[10];
+        snprintf(hz, sizeof(hz), "H:%s", hazeTxt[haze & 3]);
+        /* Left: layer cache on/off. Right: cycle the BG3 haze mode. */
+        DrawDebugCellSplit(11, (lang == 6) ? "CAPAS/HAZE" : "LAYERS/HAZE",
+                           layers ? "CACHE ON" : "cache --",
+                           layers ? C2D_Color32(230, 200, 120, 255) : C2D_Color32(150, 170, 200, 255),
+                           hz, haze ? C2D_Color32(230, 200, 120, 255) : C2D_Color32(120, 135, 160, 255));
     }
 #endif
 
@@ -4379,9 +4413,26 @@ static bool HandleDebugToolsModalTouch(int x, int y) {
     }
 #ifdef PORT_GPU_TILE_RENDERER
     if (cell == 10) {
-        const bool on = !Port_GpuRenderer_BlockPassEnabled();
-        Port_GpuRenderer_SetBlockPass(on);
-        DebugToolsSetMsg(on ? "BLOQUES 16x16: ON" : "BLOQUES 16x16: OFF");
+        if (DebugCellRightZoneHit(x, 10)) {
+            const bool on = !Port_GpuRenderer_BlockDebugTintEnabled();
+            Port_GpuRenderer_SetBlockDebugTint(on);
+            DebugToolsSetMsg(on ? "REJILLA BLOQUES: ON" : "REJILLA BLOQUES: OFF");
+        } else {
+            /* Cycle OFF -> 16 -> 16+32 -> OFF. */
+            const bool b16 = Port_GpuRenderer_BlockPassEnabled();
+            const bool b32 = Port_GpuRenderer_Block32PassEnabled();
+            if (!b16) {
+                Port_GpuRenderer_SetBlockPass(true);
+                DebugToolsSetMsg("BLOQUES: 16x16");
+            } else if (!b32) {
+                Port_GpuRenderer_SetBlock32Pass(true);
+                DebugToolsSetMsg("BLOQUES: 16x16 + 32x32");
+            } else {
+                Port_GpuRenderer_SetBlock32Pass(false);
+                Port_GpuRenderer_SetBlockPass(false);
+                DebugToolsSetMsg("BLOQUES: OFF");
+            }
+        }
         return true;
     }
     if (cell == 11) {

@@ -154,18 +154,33 @@ static void ConfigurePlainTextureEnv(void) {
  * batch) whenever the texture pointer changes between draws, and the draw
  * order interleaves layers by priority, so putting blocks in a second
  * texture would flush on every alternation and cost more than it saves. */
+/* Grown to 1024 WIDE (2026, step A 32x32 pass) -- was 512. The height is
+ * already at the PICA200's 1024 texture limit, so a third block region had
+ * to come out of the width. Partitioned so the tile and 16x16 regions keep
+ * their exact old capacity (4096 / 1024): with 128 slots per row now, the
+ * tile region is 32 rows instead of 64, the 16x16 region 32 rows, and the
+ * rest (rows 64..127) is the new 32x32 region. Every offset still derives
+ * from the enum, so the slot->row math and subtex tables follow. Costs 4MB
+ * of linear RAM (was 2MB); SystemMode is 64MB on both consoles (see
+ * cia/mzm3ds.rsf) with ~14MB free, so the 2MB delta is comfortable. */
 enum {
-    ATLAS_W = 512,
+    ATLAS_W = 1024,
     ATLAS_H = 1024,
     ATLAS_TILES_PER_ROW = ATLAS_W / 8,
     ATLAS_SLOT_ROWS = ATLAS_H / 8,
-    /* Tile region: unchanged, the first 64 slot rows. */
-    ATLAS_TILE_ROWS = 64,
+    /* Tile region: 4096 slots, now the first 32 slot rows (128 per row). */
+    ATLAS_TILE_ROWS = ATLAS_SLOT_ROWS / 4,
     ATLAS_MAX_SLOTS = ATLAS_TILES_PER_ROW * ATLAS_TILE_ROWS,
-    /* Block region: the rest, in aligned 2x2 slot groups. */
+    /* 16x16 block region: aligned 2x2 slot groups, next 32 slot rows. Same
+     * 1024-block capacity as before the atlas grew. */
     ATLAS_BLOCK_ROW0 = ATLAS_TILE_ROWS,
+    ATLAS_BLOCK_ROWS = ATLAS_SLOT_ROWS / 4,
     ATLAS_BLOCKS_PER_ROW = ATLAS_TILES_PER_ROW / 2,
-    ATLAS_MAX_BLOCKS = ATLAS_BLOCKS_PER_ROW * ((ATLAS_SLOT_ROWS - ATLAS_BLOCK_ROW0) / 2),
+    ATLAS_MAX_BLOCKS = ATLAS_BLOCKS_PER_ROW * (ATLAS_BLOCK_ROWS / 2),
+    /* 32x32 block region: aligned 4x4 slot groups, the remaining slot rows. */
+    ATLAS_B32_ROW0 = ATLAS_BLOCK_ROW0 + ATLAS_BLOCK_ROWS,
+    ATLAS_B32_PER_ROW = ATLAS_TILES_PER_ROW / 4,
+    ATLAS_MAX_B32 = ATLAS_B32_PER_ROW * ((ATLAS_SLOT_ROWS - ATLAS_B32_ROW0) / 4),
     MAX_DRAW_ITEMS = 3200,
 };
 
@@ -540,7 +555,32 @@ static int sBlockItemsThisFrame;
 static int sBlockOverflowThisFrame;
 static bool sBlockCacheResetPending;
 
-/* Called once per frame before any collection: empties the block cache if
+/* ---- 32x32 block cache -------------------------------------------------
+ * Exactly the 16x16 cache one size up: an aligned 4x4 tilemap group into a
+ * 4x4 slot region of the atlas, one quad instead of sixteen. Same rules --
+ * 4bpp only, wholly-in-frame groups only, staleness by source-byte memcmp
+ * plus palette hash and evy, overflow degrades to the 16x16 / per-tile
+ * paths. Off by default (sBlock32PassEnabled): it is a perf change and the
+ * only place its cost can be read is a console. */
+typedef struct Block32CacheKey {
+    uint16_t entry[16];  /* tilemap entries, reading order, row-major */
+    uint32_t charBase;
+    uint8_t palBankHint;
+    uint8_t brightAdjust;
+} Block32CacheKey;
+
+static Block32CacheKey sB32Keys[ATLAS_MAX_B32];
+static uint8_t sB32SourceBytes[ATLAS_MAX_B32][16 * 32]; /* 4bpp: 32B/tile */
+static uint32_t sB32PalHash[ATLAS_MAX_B32];
+static uint8_t sB32Evy[ATLAS_MAX_B32];
+static int sB32Count;
+static int32_t sB32HashHead[HASH_BUCKETS];
+static int32_t sB32HashNext[ATLAS_MAX_B32];
+static int sB32ItemsThisFrame;
+static int sB32OverflowThisFrame;
+static bool sB32CacheResetPending;
+
+/* Called once per frame before any collection: empties the block caches if
  * the previous frame ran out of block slots. Safe here and nowhere else --
  * no DrawItem from the previous frame survives into this one. */
 static void BlockCacheBeginFrame(void) {
@@ -549,8 +589,15 @@ static void BlockCacheBeginFrame(void) {
         for (int i = 0; i < HASH_BUCKETS; ++i) sBlockHashHead[i] = -1;
         sBlockCacheResetPending = false;
     }
+    if (sB32CacheResetPending) {
+        sB32Count = 0;
+        for (int i = 0; i < HASH_BUCKETS; ++i) sB32HashHead[i] = -1;
+        sB32CacheResetPending = false;
+    }
     sBlockItemsThisFrame = 0;
     sBlockOverflowThisFrame = 0;
+    sB32ItemsThisFrame = 0;
+    sB32OverflowThisFrame = 0;
 }
 
 
@@ -762,6 +809,33 @@ static bool sBlockPassEnabled = true;
 void Port_GpuRenderer_SetBlockPass(bool on) { sBlockPassEnabled = on; }
 bool Port_GpuRenderer_BlockPassEnabled(void) { return sBlockPassEnabled; }
 
+/* Debug aid: when on, every 16x16 group the block pass composes gets a
+ * bright perimeter drawn into its atlas cell, so on screen each block-drawn
+ * region is outlined. A group that fell through to the per-tile loop (block
+ * region full, or the pass disabled) has no outline -- so a misaligned or
+ * stale block shows up immediately as a box off the 16px grid or a gap in
+ * it. Toggling it clears the block cache so the change takes effect at once.
+ * Costs nothing when off. */
+static bool sBlockDebugTint = false;
+void Port_GpuRenderer_SetBlockDebugTint(bool on) {
+    if (on == sBlockDebugTint) return;
+    sBlockDebugTint = on;
+    sBlockCacheResetPending = true; /* re-decode every block next frame */
+    sB32CacheResetPending = true;
+}
+bool Port_GpuRenderer_BlockDebugTintEnabled(void) { return sBlockDebugTint; }
+
+/* 32x32 block pass (see the Block32 cache). Opt-in, like step A was: a
+ * measured-on-hardware change, and the 16x16 pass has to be on for it to do
+ * anything (32x32 groups are tried first, the rest fall through to 16x16). */
+static bool sBlock32PassEnabled = false;
+void Port_GpuRenderer_SetBlock32Pass(bool on) {
+    if (on == sBlock32PassEnabled) return;
+    sBlock32PassEnabled = on;
+    sB32CacheResetPending = true;
+}
+bool Port_GpuRenderer_Block32PassEnabled(void) { return sBlock32PassEnabled; }
+
 bool Port_GpuRenderer_IsActive(void) { return sGpuRendererActive; }
 void Port_GpuRenderer_SetActive(bool active) { sGpuRendererActive = active; }
 
@@ -785,12 +859,21 @@ static inline void FlushAtlasRange(void* addr, size_t size) {
 
 static Tex3DS_SubTexture sSlotSubtexTable[ATLAS_MAX_SLOTS];
 static Tex3DS_SubTexture sBlockSubtexTable[ATLAS_MAX_BLOCKS];
+static Tex3DS_SubTexture sB32SubtexTable[ATLAS_MAX_B32];
 
 /* First 8x8 slot of a 16x16 block: its top-left quadrant. The other three
  * are +1, +ATLAS_TILES_PER_ROW and +ATLAS_TILES_PER_ROW+1. */
 static inline int BlockBaseSlot(int block) {
     const int brow = ATLAS_BLOCK_ROW0 + (block / ATLAS_BLOCKS_PER_ROW) * 2;
     const int bcol = (block % ATLAS_BLOCKS_PER_ROW) * 2;
+    return brow * ATLAS_TILES_PER_ROW + bcol;
+}
+
+/* First 8x8 slot of a 32x32 block: its top-left corner. The other fifteen
+ * are base + r*ATLAS_TILES_PER_ROW + c for r,c in 0..3. */
+static inline int Block32BaseSlot(int b32) {
+    const int brow = ATLAS_B32_ROW0 + (b32 / ATLAS_B32_PER_ROW) * 4;
+    const int bcol = (b32 % ATLAS_B32_PER_ROW) * 4;
     return brow * ATLAS_TILES_PER_ROW + bcol;
 }
 
@@ -875,6 +958,19 @@ static void InitSlotSubtexTable(void) {
             .bottom = 1.0f - ((float)(sy + 16) + sh) * invV,
         };
     }
+    for (int b32 = 0; b32 < ATLAS_MAX_B32; ++b32) {
+        const int base = Block32BaseSlot(b32);
+        int sx = (base % ATLAS_TILES_PER_ROW) * 8;
+        int sy = (base / ATLAS_TILES_PER_ROW) * 8;
+        sB32SubtexTable[b32] = (Tex3DS_SubTexture){
+            .width = 32,
+            .height = 32,
+            .left = ((float)sx + sh) * invU,
+            .top = 1.0f - ((float)sy + sh) * invV,
+            .right = ((float)(sx + 32) + sh) * invU,
+            .bottom = 1.0f - ((float)(sy + 32) + sh) * invV,
+        };
+    }
 }
 
 bool Port_GpuRenderer_Init(void) {
@@ -944,6 +1040,8 @@ bool Port_GpuRenderer_Init(void) {
     sCacheCount = 0;
     for (int i = 0; i < HASH_BUCKETS; ++i) sBlockHashHead[i] = -1;
     sBlockCount = 0;
+    for (int i = 0; i < HASH_BUCKETS; ++i) sB32HashHead[i] = -1;
+    sB32Count = 0;
 
     sInitialized = true;
     return true;
@@ -1361,6 +1459,23 @@ static void DecodeBlockIntoSlot(int block, const uint8_t* src[4], const uint16_t
     }
     sBlockPalHash[block] = palHash;
     sBlockEvy[block] = (key->brightAdjust != BRIGHT_ADJUST_NONE) ? (uint8_t)sBldEvy : 0;
+    if (sBlockDebugTint) {
+        /* Outline the 16x16 region on the four quadrant slots' perimeter
+         * edges -- see Port_GpuRenderer_SetBlockDebugTint. */
+        const int q[4] = { base, base + 1, base + ATLAS_TILES_PER_ROW, base + ATLAS_TILES_PER_ROW + 1 };
+        const u32 c = (255u << 24) | (255u << 16) | (0u << 8) | 255u; /* opaque magenta */
+        u32* atlasWords = (u32*)sAtlasTexture.data;
+        for (int i = 0; i < 8; ++i) {
+            atlasWords[(size_t)q[0] * 64 + kSwizzleLUT[0 * 8 + i]] = c;
+            atlasWords[(size_t)q[0] * 64 + kSwizzleLUT[i * 8 + 0]] = c;
+            atlasWords[(size_t)q[1] * 64 + kSwizzleLUT[0 * 8 + i]] = c;
+            atlasWords[(size_t)q[1] * 64 + kSwizzleLUT[i * 8 + 7]] = c;
+            atlasWords[(size_t)q[2] * 64 + kSwizzleLUT[7 * 8 + i]] = c;
+            atlasWords[(size_t)q[2] * 64 + kSwizzleLUT[i * 8 + 0]] = c;
+            atlasWords[(size_t)q[3] * 64 + kSwizzleLUT[7 * 8 + i]] = c;
+            atlasWords[(size_t)q[3] * 64 + kSwizzleLUT[i * 8 + 7]] = c;
+        }
+    }
     /* Both slot rows the block spans. */
     MarkAtlasRowDirty(base / ATLAS_TILES_PER_ROW);
     MarkAtlasRowDirty(base / ATLAS_TILES_PER_ROW + 1);
@@ -1415,6 +1530,98 @@ static int GetOrDecodeBlockSlot(const uint16_t entry[4], uint32_t charBase, cons
     sBlockHashHead[h] = block;
     DecodeBlockIntoSlot(block, src, pal, &key, palHash);
     return block;
+}
+
+/* ---- 32x32 block: the 16x16 path one size up (4x4 tiles / slots) ---- */
+
+static inline uint32_t Block32KeyHash(const Block32CacheKey* k) {
+    uint32_t h = 2166136261u;
+    const uint8_t* b = (const uint8_t*)k;
+    for (size_t i = 0; i < sizeof(*k); ++i) h = (h ^ b[i]) * 16777619u;
+    return h & HASH_MASK;
+}
+
+static inline bool Block32KeyEqual(const Block32CacheKey* a, const Block32CacheKey* b) {
+    if (a->charBase != b->charBase || a->palBankHint != b->palBankHint ||
+        a->brightAdjust != b->brightAdjust)
+        return false;
+    for (int q = 0; q < 16; ++q)
+        if (a->entry[q] != b->entry[q]) return false;
+    return true;
+}
+
+/* Decodes the sixteen 8x8 tiles of a 32x32 block into its 4x4 slot region. */
+static void DecodeBlock32IntoSlot(int b32, const uint8_t* src[16], const uint16_t* pal,
+                                  const Block32CacheKey* key, uint32_t palHash) {
+    const int base = Block32BaseSlot(b32);
+    for (int q = 0; q < 16; ++q) {
+        const int slot = base + (q / 4) * ATLAS_TILES_PER_ROW + (q % 4);
+        const uint16_t entry = key->entry[q];
+        DecodeTileTexels(slot, src[q], false, pal, (entry >> 12) & 0x0Fu,
+                         (entry & 0x0400u) != 0u, (entry & 0x0800u) != 0u,
+                         (BrightAdjust)key->brightAdjust);
+        memcpy(&sB32SourceBytes[b32][q * 32], src[q], 32u);
+    }
+    sB32PalHash[b32] = palHash;
+    sB32Evy[b32] = (key->brightAdjust != BRIGHT_ADJUST_NONE) ? (uint8_t)sBldEvy : 0;
+    if (sBlockDebugTint) {
+        /* Outline the 32x32 region: top/bottom edge on the top/bottom slot
+         * row, left/right edge on the left/right slot column. Cyan, so a
+         * 32x32 group reads differently from a 16x16 (magenta) one. */
+        const u32 c = (255u << 24) | (255u << 16) | (255u << 8) | 0u; /* opaque cyan */
+        u32* atlasWords = (u32*)sAtlasTexture.data;
+        for (int k = 0; k < 4; ++k) {
+            const int topSlot = base + k;
+            const int botSlot = base + 3 * ATLAS_TILES_PER_ROW + k;
+            const int leftSlot = base + k * ATLAS_TILES_PER_ROW;
+            const int rightSlot = base + k * ATLAS_TILES_PER_ROW + 3;
+            for (int i = 0; i < 8; ++i) {
+                atlasWords[(size_t)topSlot * 64 + kSwizzleLUT[0 * 8 + i]] = c;
+                atlasWords[(size_t)botSlot * 64 + kSwizzleLUT[7 * 8 + i]] = c;
+                atlasWords[(size_t)leftSlot * 64 + kSwizzleLUT[i * 8 + 0]] = c;
+                atlasWords[(size_t)rightSlot * 64 + kSwizzleLUT[i * 8 + 7]] = c;
+            }
+        }
+    }
+    for (int r = 0; r < 4; ++r) MarkAtlasRowDirty(base / ATLAS_TILES_PER_ROW + r);
+    sAnyDirtySlot = true;
+}
+
+/* Atlas 32x32 block index for this 4x4 tilemap group; -1 when the region is
+ * full, which the caller answers by trying the 16x16 pass / per-tile loop. */
+static int GetOrDecodeBlock32Slot(const uint16_t entry[16], uint32_t charBase, const uint16_t* pal,
+                                  uint32_t palHash, BrightAdjust brightAdjust, const uint8_t* src[16]) {
+    Block32CacheKey key;
+    memset(&key, 0, sizeof(key));
+    for (int q = 0; q < 16; ++q) key.entry[q] = entry[q];
+    key.charBase = charBase;
+    key.brightAdjust = (uint8_t)brightAdjust;
+    key.palBankHint = (uint8_t)((entry[0] >> 12) & 0x0Fu);
+
+    const uint32_t h = Block32KeyHash(&key);
+    const uint8_t curEvy = (brightAdjust != BRIGHT_ADJUST_NONE) ? (uint8_t)sBldEvy : 0;
+    for (int32_t i = sB32HashHead[h]; i >= 0; i = sB32HashNext[i]) {
+        if (!Block32KeyEqual(&sB32Keys[i], &key)) continue;
+        bool fresh = sB32PalHash[i] == palHash && sB32Evy[i] == curEvy;
+        for (int q = 0; fresh && q < 16; ++q) {
+            if (memcmp(&sB32SourceBytes[i][q * 32], src[q], 32u) != 0) fresh = false;
+        }
+        if (fresh) return i;
+        DecodeBlock32IntoSlot(i, src, pal, &key, palHash);
+        return i;
+    }
+
+    if (sB32Count >= ATLAS_MAX_B32) {
+        ++sB32OverflowThisFrame;
+        sB32CacheResetPending = true;
+        return -1;
+    }
+    const int b32 = sB32Count++;
+    sB32Keys[b32] = key;
+    sB32HashNext[b32] = sB32HashHead[h];
+    sB32HashHead[h] = b32;
+    DecodeBlock32IntoSlot(b32, src, pal, &key, palHash);
+    return b32;
 }
 
 /* Returns the atlas slot for this tile, decoding it only if needed. Unlike
@@ -1740,6 +1947,65 @@ static void CollectBgLayer(int bgIndex) {
     const bool blocksEligible =
         sBlockPassEnabled && !bpp8 && !sObjWindowActive &&
         PortLayerFix_ActiveCount() == 0 && !roomHasTankOnThisBg && !roomHasDoorDepth;
+
+    /* ---- 32x32 block pass: tried first, same rules one size up. A 4x4
+     * tilemap-aligned group cannot straddle a 32x32 screen block (32 % 4 ==
+     * 0) or a 32-entry map row, so 16 entries reach from one base address by
+     * +r*64 (row, 32 entries of 2 bytes) and +c*2 (column). Whatever it
+     * takes is marked in `covered` and skipped by both passes below;
+     * whatever it declines falls through to the 16x16 pass unchanged. */
+    const int sk = (3 - priority) * 10 + (3 - bgIndex);
+    const int depthTierBg = PortStereoDepth_BgTier(&sDepthState, bgIndex);
+    if (blocksEligible && sBlock32PassEnabled) {
+        const int ty0 = (4 - (startTileY & 3)) & 3;
+        const int tx0 = (4 - (startTileX & 3)) & 3;
+        for (int ty = ty0; ty + 3 <= 20; ty += 4) {
+            const float drawY = (float)(ty * 8 - fineY);
+            if (drawY < 0.0f || drawY + 32.0f > 160.0f) continue;
+            const int tileRow = (startTileY + ty) & (mapHeightTiles - 1);
+            const int screenBlockY = tileRow / 32;
+            const int localRow = tileRow % 32;
+            for (int tx = tx0; tx + 3 <= 31; tx += 4) {
+                const float drawX = (float)(tx * 8 - fineX);
+                if (drawX < 0.0f || drawX + 32.0f > 240.0f) continue;
+                const int tileCol = (startTileX + tx) & (mapWidthTiles - 1);
+                const int screenBlockX = tileCol / 32;
+                const int localCol = tileCol % 32;
+                const int screenBlockIndex = screenBlockX + screenBlockY * blocksPerRow;
+                const uint32_t mapAddr =
+                    screenBase + (uint32_t)screenBlockIndex * 0x800u + (uint32_t)(localRow * 32 + localCol) * 2u;
+                uint16_t entry[16];
+                const uint8_t* src[16];
+                bool anyOpaque = false;
+                for (int q = 0; q < 16; ++q) {
+                    const uint32_t a = mapAddr + (uint32_t)(q / 4) * 64u + (uint32_t)(q % 4) * 2u;
+                    entry[q] = (uint16_t)(gVram[a] | (gVram[a + 1] << 8));
+                    const uint32_t byteOffset = charBase + (uint32_t)(entry[q] & 0x3FFu) * 32u;
+                    src[q] = &gVram[byteOffset];
+                    if (TileHasOpaquePixel(byteOffset, false)) anyOpaque = true;
+                }
+                const uint64_t span = 0xFull << (tx + 1);
+                if (!anyOpaque) {
+                    for (int r = 0; r < 4; ++r) covered[ty + r] |= span;
+                    continue;
+                }
+                uint32_t palHash = 2166136261u;
+                for (int q = 0; q < 16; ++q) {
+                    const uint32_t bankHash = sBgPalBankHash[(entry[q] >> 12) & 0x0Fu];
+                    for (int b = 0; b < 4; ++b)
+                        palHash = (palHash ^ ((bankHash >> (b * 8)) & 0xFFu)) * 16777619u;
+                }
+                const int b32 =
+                    GetOrDecodeBlock32Slot(entry, charBase, pal, palHash, brightAdjust, src);
+                if (b32 < 0) continue; /* region full: leave it to the 16x16 pass */
+                PushItemSubtex(&sB32SubtexTable[b32], drawX, drawY, 32.0f, 32.0f, sk,
+                               depthTierBg, blendAlpha, rectWinVis, false);
+                ++sB32ItemsThisFrame;
+                for (int r = 0; r < 4; ++r) covered[ty + r] |= span;
+            }
+        }
+    }
+
     if (blocksEligible) {
         for (int ty = (startTileY & 1) ? 1 : 0; ty + 1 <= 20; ty += 2) {
             const float drawY = (float)(ty * 8 - fineY);
@@ -1748,6 +2014,7 @@ static void CollectBgLayer(int bgIndex) {
             const int screenBlockY = tileRow / 32;
             const int localRow = tileRow % 32;
             for (int tx = (startTileX & 1) ? 1 : 0; tx + 1 <= 31; tx += 2) {
+                if (covered[ty] & (3ull << (tx + 1))) continue; /* taken by the 32x32 pass */
                 const float drawX = (float)(tx * 8 - fineX);
                 if (drawX < 0.0f || drawX + 16.0f > 240.0f) continue;
                 const int tileCol = (startTileX + tx) & (mapWidthTiles - 1);

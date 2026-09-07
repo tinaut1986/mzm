@@ -21,6 +21,17 @@ void Port_GpuRenderer_Shutdown(void);
  * falls back to the per-tile loop, for measuring the change on hardware. */
 void Port_GpuRenderer_SetBlockPass(bool on);
 bool Port_GpuRenderer_BlockPassEnabled(void);
+/* Debug: outline every 16x16 group the block pass composes, drawn into its
+ * atlas cell so each block-drawn screen region gets a magenta border and
+ * per-tile regions do not. Lets a misaligned or stale block be spotted by
+ * eye. Toggling clears the block cache. No cost when off. */
+void Port_GpuRenderer_SetBlockDebugTint(bool on);
+bool Port_GpuRenderer_BlockDebugTintEnabled(void);
+/* One quad per tilemap-aligned 4x4 group -- tried before the 16x16 pass,
+ * the rest falls through to it. Opt-in, off by default; needs the 16x16
+ * pass on. See the Block32 cache in port_gpu_renderer.c. */
+void Port_GpuRenderer_SetBlock32Pass(bool on);
+bool Port_GpuRenderer_Block32PassEnabled(void);
 /* Step B: compose each eligible scrolling BG layer into its own render
  * target once per frame and draw it as ONE quad per eye. See the definition
  * -- off by default, because whether it pays depends on the room. */
