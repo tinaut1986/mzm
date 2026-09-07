@@ -182,7 +182,14 @@ static uint32_t sFrameCounter = 0;
  * genuine change (tab switch, zoom, pan, any touch) forces the next frame
  * to redraw immediately via Port_BottomUI_MarkDirty so interaction still
  * feels instant. */
-#define PORT_BOTTOM_UI_REDRAW_INTERVAL 3 /* frames; 3 -> ~20Hz at 60fps */
+/* frames between idle bottom-screen redraws. 6 -> ~10Hz at 60fps: the map
+ * follows Samus per map-cell (a cell change is seconds apart, not smooth
+ * panning) so it does not need more, and the only ~4-6Hz animated bits
+ * (Chozo-hint target pulse, post-boss statue flames, low-health blink) are
+ * situational and still read fine at 10Hz. Halves the map's redraw cost on
+ * the frames in between. Interaction still forces an immediate redraw via
+ * Port_BottomUI_MarkDirty. */
+#define PORT_BOTTOM_UI_REDRAW_INTERVAL 6
 static bool sBottomUiDirty = true;
 static uint32_t sBottomUiRedrawThrottle = 0;
 
@@ -224,6 +231,10 @@ void Port_BottomUI_FrameTick(void) {
 #endif
 }
 
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
+static bool AnyDebugModalOpen(void); /* defined with the debug modal statics below */
+#endif
+
 /* Whether Port_BottomUI_Render should run this frame. Has the side effect of
  * advancing the throttle, so call exactly once per frame. */
 bool Port_BottomUI_WantsRedraw(void) {
@@ -232,7 +243,17 @@ bool Port_BottomUI_WantsRedraw(void) {
         sBottomUiRedrawThrottle = 0;
         return true;
     }
-    if (++sBottomUiRedrawThrottle >= PORT_BOTTOM_UI_REDRAW_INTERVAL) {
+    /* The map/FPS/battery want a ~20Hz refresh, but the DEBUG TOOLS modal
+     * (14 bordered cells + text + the live LINEAR readout) is expensive
+     * enough that redrawing it that often inside a stereo + haze frame
+     * makes every third frame overrun the vblank -- a periodic present
+     * hitch that reads as flicker on moving sprites. Its content changes
+     * slowly, so throttle it hard when it is the thing on screen. */
+    int interval = PORT_BOTTOM_UI_REDRAW_INTERVAL;
+#ifdef PORT_DEBUG_TOOLS_ACTIVE
+    if (AnyDebugModalOpen()) interval = 20; /* ~3Hz */
+#endif
+    if (++sBottomUiRedrawThrottle >= interval) {
         sBottomUiRedrawThrottle = 0;
         return true;
     }
@@ -272,6 +293,9 @@ static bool sShowDebugEquipModal = false;
 static bool sShowSoundTestModal = false;
 static void RenderSoundTestModal(int lang);
 static void HandleSoundTestModalTouch(int x, int y);
+static bool AnyDebugModalOpen(void) {
+    return sShowDebugToolsModal || sShowDebugWarpModal || sShowDebugEquipModal || sShowSoundTestModal;
+}
 /* MAP tab: when armed from the tools menu, the next tap on the map canvas
  * warps to the door nearest that tile instead of panning. One-shot -- it
  * disarms itself on use -- so a stray tap can't teleport the player later. */
