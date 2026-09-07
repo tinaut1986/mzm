@@ -83,16 +83,23 @@ def report(path):
         # rendererFlags. Leaving any of them out merges conditions that
         # differ by a large part of the frame -- which has now happened twice
         # to A/B captures taken specifically to separate them.
+        # The LCD grid and vignette share the grade's cost model -- one baked
+        # mask, one alpha-blended quad per eye, invisible to drawCount and
+        # drawnPixels -- so they belong in the key for the same reason grade
+        # does. Leaving the grid out merged grid-on and grid-off frames and
+        # showed up as a healthy median with the p10 collapsing to 30.
         key = (cf & 3, (cf >> 2) & 3, (cf >> 4) & 0x7F, (cf >> 18) & 1,
                (cf >> 13) & 1, (cf >> 14) & 7,
-               (rf >> 9) & 1, (rf >> 15) & 1, (rf >> 28) & 3)
+               (rf >> 9) & 1, (rf >> 15) & 1, (rf >> 28) & 3,
+               (cf >> 19) & 7, (cf >> 22) & 7, (cf >> 25) & 3)
         groups.setdefault(key, []).append(r)
 
     for key, group in sorted(groups.items(), key=lambda kv: -len(kv[1])):
         if len(group) < MIN_GROUP:
             continue
         group = group[SETTLE:-SETTLE]
-        style, aspect, slider, used_gpu, bezel, grade, haze_on, cache_on, haze_mode = key
+        (style, aspect, slider, used_gpu, bezel, grade, haze_on, cache_on,
+         haze_mode, grid, vig, block_mode) = key
         flags = group[len(group) // 2]["rendererFlags"]
         gpu = sorted((r["gpuDrawX100"] + r["gpuProcX100"]) / 100.0 for r in group)
         cpu = sorted((r["cpuTileX100"] + r["cpuUploadX100"] + r["cpuDrawX100"]) / 100.0 for r in group)
@@ -100,10 +107,12 @@ def report(path):
         # Missing when the capture predates the column (see read()).
         avg = lambda k: (sum(r[k] for r in group) // len(group)) if k in group[0] else -1
 
-        print("  %-14s %-7s slider %3d%%  bezel %-3s  colour %d  haze %-3s  layers %-3s  n=%d" % (
+        BLOCK_MODE = {0: "per-tile", 1: "16x16", 2: "16+32"}
+        print("  %-14s %-7s slider %3d%%  bezel %-3s  colour %d  grid %d  vign %d  haze %-3s  layers %-3s  blocks %-8s  n=%d" % (
             STYLE.get(style, style), ASPECT.get(aspect, aspect), slider,
-            "on" if bezel else "off", grade,
-            HAZE_MODE[haze_mode] if haze_on else "OFF", "on" if cache_on else "off", len(group)))
+            "on" if bezel else "off", grade, grid, vig,
+            HAZE_MODE[haze_mode] if haze_on else "OFF", "on" if cache_on else "off",
+            BLOCK_MODE.get(block_mode, block_mode), len(group)))
         print("     GPU %5.2f ms (p90 %5.2f)   CPU %5.2f ms   FPS %5.1f (p10 %5.1f)   budget 16,675 ms" % (
             percentile(gpu, 0.5), percentile(gpu, 0.9), percentile(cpu, 0.5),
             percentile(fps, 0.5), percentile(fps, 0.1)))

@@ -1015,6 +1015,15 @@ static void OamCensus(unsigned* outTotal, unsigned* outVisible, unsigned* outAff
  *   bit  17    Old3DS runtime profile forced
  *   bit  18    the frame was drawn by the GPU renderer (clear = CPU fallback,
  *              in which case the draw-call census describes a stale frame)
+ *   bits 19-21 GBA screen-FX LCD grid level (0 = off)
+ *   bits 22-24 GBA screen-FX vignette level (0 = off)
+ *   bits 25-26 block pass mode (0 per-tile, 1 = 16x16, 2 = 16x16 + 32x32)
+ *
+ * The grid and vignette levels are here because they share the grade's cost
+ * model -- all three bake into one mask drawn as a single alpha-blended quad
+ * per eye, so none of them moves drawCount or drawnPixels, and a capture
+ * that leaves the grid out silently merges grid-on and grid-off frames (the
+ * grid adds ~1/3 screen of blended framebuffer read-modify-write per eye).
  */
 static uint32_t PackCaptureFlags(void) {
     extern int Port_Config_Get3DSDisplayStyle(void);
@@ -1023,12 +1032,21 @@ static uint32_t PackCaptureFlags(void) {
     extern bool Port_Config_GetHudOutside(void);
     extern bool Port_Config_GetGbaBezel(void);
     extern int Port_Config_GetGbaFxGrade(void);
+    extern int Port_Config_GetGbaFxGrid(void);
+    extern int Port_Config_GetGbaFxVignette(void);
     extern bool Port_PPU_3DS_LastFrameUsedGpu(void);
     extern bool Platform3DS_IsNew3DS(void);
+    extern bool Port_GpuRenderer_BlockPassEnabled(void);
+    extern bool Port_GpuRenderer_Block32PassEnabled(void);
 
     const float slider = PlatformGpu3DS_Get3DSlider();
     uint32_t sliderX100 = (uint32_t)(slider * 100.0f + 0.5f);
     if (sliderX100 > 100u) sliderX100 = 100u;
+
+    /* 0 = per-tile only, 1 = 16x16 block pass, 2 = 16x16 + 32x32. */
+    uint32_t blockMode = Port_GpuRenderer_BlockPassEnabled()
+                             ? (Port_GpuRenderer_Block32PassEnabled() ? 2u : 1u)
+                             : 0u;
 
     return ((uint32_t)Port_Config_Get3DSDisplayStyle() & 3u)
          | (((uint32_t)Port_Config_Get3DSAspectRatio() & 3u) << 2)
@@ -1038,7 +1056,10 @@ static uint32_t PackCaptureFlags(void) {
          | ((uint32_t)(Port_Config_GetGbaBezel() ? 1u : 0u) << 13)
          | (((uint32_t)Port_Config_GetGbaFxGrade() & 7u) << 14)
          | ((uint32_t)(Platform3DS_IsNew3DS() ? 0u : 1u) << 17)
-         | ((uint32_t)(Port_PPU_3DS_LastFrameUsedGpu() ? 1u : 0u) << 18);
+         | ((uint32_t)(Port_PPU_3DS_LastFrameUsedGpu() ? 1u : 0u) << 18)
+         | (((uint32_t)Port_Config_GetGbaFxGrid() & 7u) << 19)
+         | (((uint32_t)Port_Config_GetGbaFxVignette() & 7u) << 22)
+         | ((blockMode & 3u) << 25);
 }
 
 /* Packs Port_GpuRenderer_GetLastFrameDrawStats' flags into one word for the
