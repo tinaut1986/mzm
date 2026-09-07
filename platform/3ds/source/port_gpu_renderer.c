@@ -1794,6 +1794,18 @@ static inline void PushAffineItem(int slot, float centerX, float centerY, float 
     item->plainEnv = false;
 }
 
+/* A 16x16 room block that a per-tile correction touches -- used by the
+ * block passes to skip just that block instead of the whole layer. */
+static inline bool BlockGroupNeedsPerTile(int bgIndex, int blockX, int blockY,
+                                          bool hasLayerFix, bool hasTank, bool hasDoor) {
+    extern int PortLayerFix_DestFor(int bg, int blockX, int blockY);
+    extern bool PortPpuMzm_IsVisibleTankBlock(int blockX, int blockY);
+    extern bool PortPpuMzm_IsDoorDepthBlock(int blockX, int blockY);
+    return (hasLayerFix && PortLayerFix_DestFor(bgIndex, blockX, blockY) >= 0) ||
+           (hasTank && PortPpuMzm_IsVisibleTankBlock(blockX, blockY)) ||
+           (hasDoor && PortPpuMzm_IsDoorDepthBlock(blockX, blockY));
+}
+
 /* Text-mode BG tilemap addressing, byte-identical to the formula validated
  * in port/ppu/src/mode1.c (screen_block_x/y + blocks_per_row quadrant
  * layout for the 32x32/64x32/32x64/64x64 GBA screen sizes). */
@@ -1915,14 +1927,38 @@ static void CollectBgLayer(int bgIndex) {
      * block (9,43) also fired on (9,59)). Every room layer a correction can
      * target scrolls with the camera 1:1, so one origin serves them all.
      * Only computed when a list is actually compiled in. */
+    const bool sHasLayerFix = PortLayerFix_ActiveCount() > 0;
+    const bool roomHasBlockCorrections = sHasLayerFix || roomHasTankOnThisBg || roomHasDoorDepth;
     int fixOriginTileX = 0, fixOriginTileY = 0;
-    if (PortLayerFix_ActiveCount() > 0 || roomHasTankOnThisBg || roomHasDoorDepth) {
+    if (roomHasBlockCorrections) {
         extern void PortPpuMzm_ScreenOrigin(int* outX, int* outY);
         int originX = 0, originY = 0;
         PortPpuMzm_ScreenOrigin(&originX, &originY);
         fixOriginTileX = originX >> 3;
         fixOriginTileY = originY >> 3;
     }
+    /* True when the 16x16 tilemap group whose top-left screen tile is
+     * (tx,ty) carries a per-tile correction -- a layer-fix dest, a
+     * visible-tank tile or a door-depth tile -- so it must stay per-tile
+     * rather than merge into one block quad. Corrections are already keyed
+     * on 16x16 room blocks, so this is exact. Cheap no-op when the room has
+     * none. */
+    #define TILE_CORRECTED(TX, TY)                                            \
+        BlockGroupNeedsPerTile(bgIndex, (fixOriginTileX + (TX)) >> 1,         \
+                               (fixOriginTileY + (TY)) >> 1,                  \
+                               sHasLayerFix, roomHasTankOnThisBg, roomHasDoorDepth)
+    /* Any tile of the WxH-tile group at (TX,TY) touched by a correction. The
+     * >>1 room-block lattice can straddle the tilemap-aligned group, so
+     * every tile is checked, not just the corner. No-op when the room has
+     * no corrections. */
+    #define GROUP_CORRECTED(TX, TY, W, H) ({                                  \
+        bool c__ = false;                                                    \
+        if (roomHasBlockCorrections)                                         \
+            for (int gy__ = 0; gy__ < (H) && !c__; ++gy__)                   \
+                for (int gx__ = 0; gx__ < (W) && !c__; ++gx__)              \
+                    c__ = TILE_CORRECTED((TX) + gx__, (TY) + gy__);          \
+        c__;                                                                 \
+    })
 
     /* ---- 16x16 block pass -------------------------------------------
      * One quad per tilemap-aligned 2x2 group instead of four, which is the
@@ -1932,21 +1968,20 @@ static void CollectBgLayer(int bgIndex) {
      * declines falls through to that loop unchanged, so this is purely
      * subtractive and any eligibility bug costs speed, not correctness.
      *
-     * Declined wholesale for the layer when:
+     * Declined wholesale for the layer only when:
      *   - 8bpp: not worth a second staleness-byte layout for a case MZM's
      *     backgrounds do not use.
      *   - OBJWIN active: visibility is resolved per-TILE at collection time
      *     (ObjWinItemVisible), so a 16x16 quad could straddle the mask.
-     *   - a layer-fix list is compiled in: corrections are keyed per tile
-     *     and can move a single tile to another plane and draw order.
-     * And per group, only groups landing wholly inside the 240x160 frame
-     * are taken -- the border ring stays per-tile, which keeps every
-     * partial-visibility and letterbox interaction exactly as it was. */
+     * A layer-fix list, a visible tank or a door-depth footprint used to
+     * disable the pass for the whole layer; now only the individual 16x16
+     * groups those touch fall through to per-tile (GROUP_CORRECTED),
+     * so a room with a handful of corrections still gets the pass everywhere
+     * else. And per group, only groups wholly inside the 240x160 frame are
+     * taken -- the border ring stays per-tile. */
     uint64_t covered[21]; /* tx runs -1..31, so bit index 0..32: needs 64 */
     memset(covered, 0, sizeof(covered));
-    const bool blocksEligible =
-        sBlockPassEnabled && !bpp8 && !sObjWindowActive &&
-        PortLayerFix_ActiveCount() == 0 && !roomHasTankOnThisBg && !roomHasDoorDepth;
+    const bool blocksEligible = sBlockPassEnabled && !bpp8 && !sObjWindowActive;
 
     /* ---- 32x32 block pass: tried first, same rules one size up. A 4x4
      * tilemap-aligned group cannot straddle a 32x32 screen block (32 % 4 ==
@@ -1968,6 +2003,9 @@ static void CollectBgLayer(int bgIndex) {
             for (int tx = tx0; tx + 3 <= 31; tx += 4) {
                 const float drawX = (float)(tx * 8 - fineX);
                 if (drawX < 0.0f || drawX + 32.0f > 240.0f) continue;
+                /* Any tile corrected -> leave the whole 4x4 group to the
+                 * 16x16 pass, which re-checks per sub-block. */
+                if (GROUP_CORRECTED(tx, ty, 4, 4)) continue;
                 const int tileCol = (startTileX + tx) & (mapWidthTiles - 1);
                 const int screenBlockX = tileCol / 32;
                 const int localCol = tileCol % 32;
@@ -2017,6 +2055,7 @@ static void CollectBgLayer(int bgIndex) {
                 if (covered[ty] & (3ull << (tx + 1))) continue; /* taken by the 32x32 pass */
                 const float drawX = (float)(tx * 8 - fineX);
                 if (drawX < 0.0f || drawX + 16.0f > 240.0f) continue;
+                if (GROUP_CORRECTED(tx, ty, 2, 2)) continue; /* per-tile handles this block */
                 const int tileCol = (startTileX + tx) & (mapWidthTiles - 1);
                 const int screenBlockX = tileCol / 32;
                 const int localCol = tileCol % 32;
