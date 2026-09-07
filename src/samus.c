@@ -7550,6 +7550,14 @@ void SamusUpdateGraphicsOam(struct SamusData* pData, u8 direction)
     // Update OAM
     pPhysics->pScrewSpeedOam = RESOLVE_SAMUS_PTR(pEffectAnim->pOam);
 
+    /* Flag SamusUpdateGraphicsOam to actually emit the screw/speedbooster
+     * effect OAM (the electric arcs). The vanilla assignment
+     * `pPhysics->unk_36 = 1 * SAMUS_GFX_PART_SIZE;` -- unk_36 doubles as a
+     * flags byte, and 0x20 gates the `unk_36 & 0x20` draw block -- was
+     * dropped by the ROM-pointer-resolve pass (c69da7ea), so the arcs never
+     * drew on the port. Set it here, once pScrewSpeedOam is known valid. */
+    pPhysics->unk_36 = 1 * SAMUS_GFX_PART_SIZE;
+
     // Update graphics
     pGraphics = RESOLVE_SAMUS_PTR(pEffectAnim->pGraphics);
     pPhysics->screwSpeedGfxSize = *pGraphics++ * SAMUS_GFX_PART_SIZE;
