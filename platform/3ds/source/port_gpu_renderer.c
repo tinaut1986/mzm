@@ -1874,8 +1874,15 @@ static void CollectBgLayer(int bgIndex) {
      * footprint is deliberately tiny (door span, no side growth, a row or two
      * above/below) so only actual doorway tiles are caught, not open wall. */
     const bool roomHasDoorDepth = sDoorDepthOnScreen && bgIndex < 3;
+    /* Declined while the BG3 haze pass runs: it already drives a
+     * render-target compose + C3D_FrameSplit this frame, and stacking the
+     * layer cache's own target compose and split on top is the one
+     * combination step B was never exercised in -- it corrupts the frame in
+     * lava/heat rooms (reported from hardware). Matches the OBJWIN / layer-
+     * fix exclusions above: whenever another feature is already compositing
+     * per-frame, the cache stands down. */
     const bool layerCacheable =
-        sLayerCacheEnabled && sLayerRtReady[bgIndex] && !sObjWindowActive &&
+        sLayerCacheEnabled && sLayerRtReady[bgIndex] && !sObjWindowActive && !sHazeActive &&
         PortLayerFix_ActiveCount() == 0 && !roomHasTankOnThisBg && !roomHasDoorDepth;
     if (layerCacheable) {
         /* Hash the tilemap window this target covers, so a room redrawing
