@@ -10,8 +10,10 @@ import datetime
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 
 # Force UTF-8 on stdout/stderr. This script prints non-ASCII status glyphs
 # (checkmarks, arrows, box drawing); on a legacy Windows console the default
@@ -498,6 +500,113 @@ def parse_ftp_argument(ftp_str, explicit_ip=None, default_port=5000):
     return raw, default_port
 
 
+def local_ipv4():
+    """Best-effort local IPv4. A UDP 'connect' picks the outbound interface
+    without sending a packet; returns None if that can't be resolved."""
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))
+        return s.getsockname()[0]
+    except OSError:
+        return None
+    finally:
+        s.close()
+
+
+def probe_ftp(host, port, timeout=0.4, want_banner=True):
+    """Return `host` when a TCP connection opens (and, when want_banner is set,
+    the peer sends an FTP '220' greeting); otherwise return None."""
+    try:
+        with socket.create_connection((host, port), timeout=timeout) as c:
+            if not want_banner:
+                return host
+            c.settimeout(timeout)
+            try:
+                banner = c.recv(64)
+            except OSError:
+                return None
+            return host if banner.startswith(b"220") else None
+    except OSError:
+        return None
+
+
+def scan_ftp_hosts(port=5000, base_ip=None, timeout=0.4, workers=128):
+    """Scan the local /24 for hosts answering on the FTP port. Falls back to the
+    last-used IP's prefix when the local address can't be determined. Returns a
+    list of IP strings sorted by last octet."""
+    base_ip = base_ip or local_ipv4()
+    if not base_ip:
+        last = load_last_ip()
+        base_ip = last if last and last.count(".") == 3 else None
+    if not base_ip:
+        return []
+    prefix = base_ip.rsplit(".", 1)[0]
+    targets = [f"{prefix}.{i}" for i in range(1, 255)]
+    found = []
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for res in pool.map(lambda h: probe_ftp(h, port, timeout), targets):
+            if res:
+                found.append(res)
+    return sorted(found, key=lambda ip: int(ip.rsplit(".", 1)[1]))
+
+
+def prompt_ftp_host_manual(default_ip, default_port):
+    """Ask for the 3DS IP by hand until a valid one is given."""
+    while True:
+        ip_input = prompt_text(
+            "Introduce la dirección IP de la Nintendo 3DS",
+            default_value=default_ip,
+        )
+        host, port = parse_ftp_argument(ip_input, default_port=default_port)
+        if host:
+            save_last_ip(host)
+            return host, port
+        print(f"{RED}Error: Debes introducir una dirección IP válida.{RESET}")
+
+
+def detect_ftp_host_interactive(default_port):
+    """Scan the LAN for FTP servers and let the user pick one; fall back to
+    manual entry when nothing is found or the user asks for it."""
+    last_ip = load_last_ip()
+
+    clear_screen()
+    print(f"{BOLD}{CYAN}=================================================={RESET}")
+    print(f"{BOLD}{WHITE} Metroid Zero Mission 3DS - Asistente de Build{RESET}")
+    print(f"{BOLD}{CYAN}=================================================={RESET}\n")
+    print(f"{BOLD}Buscando Nintendo 3DS con FTP en la red local...{RESET}")
+    print(f"{DIM}(puerto {default_port}; suele tardar uno o dos segundos){RESET}")
+
+    hosts = scan_ftp_hosts(port=default_port)
+
+    if not hosts:
+        print(f"\n{YELLOW}No se encontró ninguna 3DS con FTP activo.{RESET}")
+        print(f"{DIM}Comprueba que FBI o ftpd está abierto y en la misma Wi-Fi.{RESET}")
+        try:
+            input(f"{DIM}Pulsa Enter para introducir la IP manualmente...{RESET}")
+        except (KeyboardInterrupt, EOFError):
+            sys.exit(0)
+        return prompt_ftp_host_manual(last_ip, default_port)
+
+    options = [
+        (h, "Última IP utilizada" if h == last_ip else "")
+        for h in hosts
+    ]
+    options.append(("Introducir otra IP manualmente", ""))
+    default_index = hosts.index(last_ip) if last_ip in hosts else 0
+
+    idx = interactive_select(
+        "Se encontraron estas 3DS con FTP. ¿A cuál quieres enviar el CIA?",
+        options,
+        default_index=default_index,
+    )
+    if idx == len(hosts):
+        return prompt_ftp_host_manual(last_ip, default_port)
+
+    host = hosts[idx]
+    save_last_ip(host)
+    return host, default_port
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Compila Metroid Zero Mission 3DS en modo Debug o Producción, con opción de envío FTP.",
@@ -600,36 +709,27 @@ def main():
 
         # Menú 2: Enviar por FTP
         ftp_options = [
+            ("Sí, detectar automáticamente las 3DS con FTP en la red",
+             "Escanea la subred local en busca de servidores FTP (FBI / ftpd) y te deja elegir."),
+            ("Sí, introducir la IP de la 3DS manualmente",
+             "Requiere tener la 3DS encendida con FBI o FTPD en la misma red Wi-Fi."),
             ("No, solo compilar el archivo .cia localmente",
              "El archivo .cia quedará en platform/3ds/mzm-3ds.cia"),
-            ("Sí, compilar y enviar automáticamente por FTP a la 3DS",
-             "Requiere tener la 3DS encendida con FBI o FTPD en la misma red Wi-Fi.")
         ]
-        # Si estamos en modo debug o test, preseleccionar según preferencia habitual
         ftp_idx = interactive_select(
             "¿Deseas enviar el CIA por FTP a tu Nintendo 3DS?",
             ftp_options,
             default_index=0
         )
-        send_ftp = (ftp_idx == 1)
+        send_ftp = ftp_idx in (0, 1)
 
         ftp_host = ""
         ftp_port = args.port or 5000
 
-        if send_ftp:
-            last_ip = load_last_ip()
-            while not ftp_host:
-                ip_input = prompt_text(
-                    "Introduce la dirección IP de la Nintendo 3DS",
-                    default_value=last_ip
-                )
-                host, port = parse_ftp_argument(ip_input, default_port=ftp_port)
-                if host:
-                    ftp_host = host
-                    ftp_port = port
-                    save_last_ip(host)
-                else:
-                    print(f"{RED}Error: Debes introducir una dirección IP válida.{RESET}")
+        if ftp_idx == 0:
+            ftp_host, ftp_port = detect_ftp_host_interactive(ftp_port)
+        elif ftp_idx == 1:
+            ftp_host, ftp_port = prompt_ftp_host_manual(load_last_ip(), ftp_port)
 
         # Menú 3: Clean build
         clean_options = [
