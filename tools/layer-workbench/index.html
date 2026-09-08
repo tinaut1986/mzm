@@ -72,10 +72,21 @@
   .side { flex:0 0 auto; width:310px; }
   .main { flex:1 1 auto; min-width:0; }
 
-  .rail { border-right:1px solid var(--line); background:var(--panel); overflow:auto;
-          max-height:calc(100vh - 52px); position:relative; z-index:60; }
+  .rail { border-right:1px solid var(--line); background:var(--panel); overflow:hidden;
+          max-height:calc(100vh - 52px); position:relative; z-index:60;
+          display:flex; flex-direction:column; }
+  /* Header + per-mode selector stay put; only the list below scrolls. */
+  .railtop { flex:0 0 auto; background:var(--panel); border-bottom:1px solid var(--line); }
+  #shots { flex:1 1 auto; overflow-y:auto; overflow-x:hidden; }
+  #railctl { padding:8px 11px; }
+  #railctl:empty { display:none; }
   .rail h3,.side h3 { font-size:10.5px; letter-spacing:.13em; text-transform:uppercase; color:var(--faint);
     margin:0; padding:13px 13px 7px; font-family:"JetBrains Mono",monospace; font-weight:500; }
+  .railhd { display:flex; align-items:center; justify-content:space-between; gap:6px; padding-right:7px; }
+  #railadd { display:flex; align-items:center; justify-content:center; padding:4px; margin:6px 0 0;
+             color:var(--dim); background:var(--sunk); border:1px solid var(--line);
+             border-radius:3px; cursor:pointer; }
+  #railadd:hover { color:var(--ink); border-color:var(--dim); }
   .shot { display:flex; align-items:center; gap:9px; padding:5px 11px; cursor:pointer; border:0;
           border-left:3px solid transparent; background:transparent; width:100%; text-align:left; color:var(--dim); }
   .shot:hover { background:var(--sunk); }
@@ -88,7 +99,7 @@
   .shot.room { justify-content:space-between; padding:4px 11px; }
   .shot.room .dim { font-size:10px; color:var(--faint); }
   .shot.room .dim i { font-style:normal; color:var(--warn); }
-  .areasel { width:calc(100% - 22px); margin:0 11px 8px; padding:4px 6px;
+  .areasel { width:100%; box-sizing:border-box; margin:0; padding:4px 6px;
              font-family:"JetBrains Mono",monospace; font-size:11.5px;
              background:var(--sunk); color:var(--ink); border:1px solid var(--line);
              border-radius:3px; }
@@ -239,7 +250,7 @@
   .grp.modes button[aria-pressed="true"] { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
 
   /* modo sprites */
-  #spfilter { width:100%; box-sizing:border-box; margin:7px 11px; width:calc(100% - 22px);
+  #spfilter { width:100%; box-sizing:border-box; margin:0;
     font-size:11px; padding:3px 6px; background:var(--sunk); color:var(--ink);
     border:1px solid var(--line); border-radius:3px; font-family:"JetBrains Mono",monospace; }
   .shot.sprite { justify-content:space-between; padding:4px 11px; font-family:"JetBrains Mono",monospace;
@@ -290,6 +301,37 @@
   .okbox { color:var(--ok); }
   kbd { font-family:"JetBrains Mono",monospace; font-size:10px; border:1px solid var(--line);
         border-bottom-width:2px; border-radius:3px; padding:0 4px; color:var(--dim); }
+  /* Sprite inspector: hover tooltip + click-pinned card over the Map result. */
+  #sptip { position:fixed; z-index:90; max-width:280px; pointer-events:none;
+           background:var(--panel); color:var(--ink); border:1px solid var(--dim);
+           border-radius:6px; box-shadow:0 6px 22px rgba(0,0,0,.35);
+           font-size:11.5px; line-height:1.5; padding:8px 10px; }
+  #sptip.pinned { pointer-events:auto; max-width:320px; max-height:82vh; overflow:auto; }
+  #sptip .spprev { margin:7px 0 2px; gap:9px; }
+  #sptip .spprev .frame { min-width:80px; min-height:80px; padding:6px; }
+  #sptip .spprev .cap { max-width:150px; font-size:10px; }
+  #sptip .nm { font-weight:700; font-size:12px; word-break:break-all; display:block; margin-bottom:3px; }
+  #sptip dl { margin:0; display:grid; grid-template-columns:auto 1fr; gap:1px 8px; }
+  #sptip dt { color:var(--dim); }
+  #sptip dd { margin:0; }
+  #sptip .swatch { display:inline-block; width:9px; height:9px; border-radius:50%;
+                   border:1px solid rgba(0,0,0,.5); vertical-align:-1px; margin-right:4px; }
+  #sptip img { image-rendering:pixelated; background:var(--sunk); border:1px solid var(--line);
+               margin-top:6px; display:block; max-width:100%; }
+  #sptip .tipbtns { margin-top:7px; display:flex; gap:6px; }
+  #sptip .tipbtns button { font-size:10px; padding:2px 7px; background:var(--sunk);
+                           color:var(--dim); border:1px solid var(--line); border-radius:3px; cursor:pointer; }
+  #sptip .tipbtns button:hover { color:var(--ink); border-color:var(--dim); }
+  #sptip .tiphint { color:var(--faint); margin-top:5px; }
+  #sptip .tipdepth { margin-top:8px; border-top:1px solid var(--line); padding-top:7px; }
+  #sptip .tipdepth label { display:block; color:var(--dim); font-size:10px;
+                           text-transform:uppercase; letter-spacing:.04em; margin-bottom:3px; }
+  #sptip .tipdepth select { width:100%; font-size:11px; padding:3px 6px; background:var(--sunk);
+                            color:var(--ink); border:1px solid var(--line); border-radius:3px; }
+  #sptip .tipsave { margin-top:6px; display:flex; gap:7px; align-items:center;
+                    color:var(--warn); font-size:10.5px; }
+  #sptip .tipsave button { font-size:10px; padding:2px 8px; background:var(--sunk);
+                           color:var(--ink); border:1px solid var(--dim); border-radius:3px; cursor:pointer; }
   @media (prefers-reduced-motion: reduce){ *{transition:none!important} }
 </style>
 </head>
@@ -304,10 +346,9 @@
     <button id="mSprites" aria-pressed="false">SPRITES</button>
   </div>
 
-  <div class="grp" role="group" aria-label="Datos">
-    <label class="filebtn ui" tabindex="0">MAPAS<input type="file" id="mapsfile" accept=".json,.gz"></label>
-    <label class="filebtn ui" tabindex="0">GRABACIÓN<input type="file" id="file" accept=".bin,.rgb" multiple></label>
-  </div>
+  <input type="file" id="mapsfile" accept=".json,.gz" hidden>
+  <input type="file" id="file" accept=".bin,.rgb" multiple hidden>
+  <input type="file" id="spritesfile" accept=".json" hidden>
 
   <div class="grp" role="group" aria-label="Vista">
     <button id="zout" title="Alejar">−</button><b id="zlab">2×</b><button id="zin" title="Acercar">+</button>
@@ -332,7 +373,22 @@
 </div>
 
 <div class="layout">
-  <nav class="rail"><h3 id="railTitle">Salas</h3><div id="shots"></div></nav>
+  <nav class="rail">
+    <div class="railtop">
+      <div class="railhd">
+        <h3 id="railTitle">Salas</h3>
+        <button id="railadd" title="Abrir un archivo" aria-label="Abrir un archivo">
+          <svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true" focusable="false">
+            <path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M10 3v9m0-9L6.5 6.5M10 3l3.5 3.5M4 13v2.5A1.5 1.5 0 0 0 5.5 17h9a1.5 1.5 0 0 0 1.5-1.5V13"/>
+          </svg>
+        </button>
+      </div>
+      <div id="railctl"></div>
+    </div>
+    <div id="shots"></div>
+  </nav>
   <div class="divider left" id="divrail" title="Arrastra para cambiar el ancho">
     <button class="tab" id="torail" title="Esconder o mostrar la lista">‹</button>
   </div>
@@ -373,7 +429,7 @@
   </div>
   <div id="rs-scroll"><canvas id="rs-canvas"></canvas></div>
   <p class="rs-hint">Suelta un <code>.rgb</code> del 3DS (<code>mzm-dump-*.rgb</code> o varios
-     <code>mzm-rec-shot-NNNN.rgb</code> para emparejar con la grabación). Es el
+     <code>...shot-NNNN.rgb</code> para emparejar con la grabación). Es el
      fotograma tal cual sale de la GPU a la pantalla.</p>
 </div>
 
@@ -520,6 +576,241 @@
     ctx.restore();
   }
 
+  /* ---------- sprite inspector (Map mode) ----------
+     The markers above are just dots; this tells you WHICH sprite each one is
+     and its depth characteristics. Hover shows a tooltip; clicking a marker
+     pins it (with a thumbnail, once sprites.json is loaded, and a COPIAR
+     button). Everything shown here is static room data + the same wasm engine
+     answer the marker color uses -- nothing guessed. */
+  var spTipEl=null,spTipPinned=null,spSpritesTried=false;
+
+  function ensureSpTipEl(){
+    if(spTipEl)return spTipEl;
+    spTipEl=document.createElement("div");
+    spTipEl.id="sptip";spTipEl.hidden=true;
+    document.body.appendChild(spTipEl);
+    return spTipEl;
+  }
+
+  /* Marker whose dot is under the pointer, or null. Same client->room-pixel
+     mapping as pickAt(); radius is half a block. */
+  function spriteMarkerAt(ev){
+    if(!state||state.kind!=="map"||!state.room||!state.room.sprites)return null;
+    if(state.stageLayers&&state.stageLayers.obj===false)return null;
+    var cv=state.stage;if(!cv)return null;
+    var r=cv.getBoundingClientRect();
+    if(!r.width||!r.height)return null;
+    var rx=(ev.clientX-r.left)/r.width*dimW();
+    var ry=(ev.clientY-r.top)/r.height*dimH();
+    var best=null,bd=64; /* (8 px)^2 */
+    state.room.sprites.forEach(function(s){
+      var dx=rx-(s.x*16+8),dy=ry-(s.y*16+8),d=dx*dx+dy*dy;
+      if(d<bd){bd=d;best=s;}
+    });
+    return best;
+  }
+
+  function spTierText(s){
+    if(!s.spriteId)return {txt:"sin resolver a un PSPRITE_*",color:null};
+    var t=staticSpriteTier(s.spriteId);
+    if(!t)return {txt:"motor wasm no cargado",color:null};
+    if(t.dynamic)return {txt:"dinámico · BG_COPLANAR (lo fija la IA; míralo en una grabación)",
+                         color:TIER_COPLANAR_COLOR};
+    var names=["BG_FAR","BG_MID","BG_PLAY","BG_OVERLAY","OBJ_P1","OBJ_HUD","OBJ_MAP"];
+    return {txt:(names[t.tier]||("tier "+t.tier))+
+            (t.tier===4?" · plano por defecto":""),color:TIER_MARKER_COLOR[t.tier]};
+  }
+
+  function spOverrideText(s){
+    if(!s.spriteId)return "—";
+    var fx=spriteFixes[spKey(s.spriteId,0)];
+    if(!fx)return "ninguno (PORT_SPRITE_DEPTH_NONE)";
+    return (typeof spCodeToken==="function"?spCodeToken(fx.code):String(fx.code));
+  }
+
+  /* The SPRITES-tab catalog entry for a PSPRITE_* name (has .thumb), or null.
+     Same data buildSpritePreview() consumes there. */
+  function spEntryFor(name){
+    if(!sprites||!sprites.primary)return null;
+    return sprites.primary.filter(function(p){return p.name===name;})[0]||null;
+  }
+
+  function spTipHtml(s,pinned){
+    var tier=spTierText(s);
+    var sw=tier.color?'<span class="swatch" style="background:'+tier.color+'"></span>':"";
+    var h='<span class="nm">'+(s.spriteId||"(sprite sin nombre)")+'</span><dl>'+
+      '<dt>plano</dt><dd>'+sw+tier.txt+'</dd>'+
+      '<dt>override</dt><dd>'+spOverrideText(s)+'</dd>'+
+      '<dt>bloque</dt><dd>'+s.x+', '+s.y+'</dd>'+
+      '<dt>spriteset</dt><dd>por defecto de la sala</dd></dl>';
+    var e=s.spriteId?spEntryFor(s.spriteId):null;
+    if(pinned){
+      /* Full SPRITES-tab preview (animation from the OAM strip, tile-sheet
+         toggle) goes in this slot after innerHTML is set -- see renderPinnedTip. */
+      if(e&&e.thumb)h+='<div class="spprevslot"></div>';
+      else if(s.spriteId&&!sprites)h+='<div class="tiphint">cargando miniatura…</div>';
+      else if(s.spriteId)h+='<div class="tiphint">sin miniatura para este tipo (la IA la compone por partes)</div>';
+      h+='<div class="tipbtns"><button data-act="copy">COPIAR</button>'+
+         '<button data-act="close">CERRAR</button></div>';
+    } else {
+      /* Hover tip is pointer-events:none, so no animated canvas -- a still
+         sheet image is enough to recognise the sprite. */
+      if(e&&e.thumb&&e.thumb.sheet)h+='<img src="'+e.thumb.sheet+'" alt="">';
+      else if(s.spriteId&&!sprites&&!spSpritesTried)h+='<div class="tiphint">cargando miniatura…</div>';
+      else if(s.spriteId&&sprites)h+='<div class="tiphint">sin miniatura para este tipo</div>';
+      h+='<div class="tiphint">clic para fijar</div>';
+    }
+    return h;
+  }
+
+  function spTipReport(s){
+    var tier=spTierText(s);
+    return [s.spriteId||"(sprite sin nombre)",
+            "plano: "+tier.txt,
+            "override: "+spOverrideText(s),
+            "bloque: "+s.x+", "+s.y,
+            "spriteset por defecto de la sala"].join("\n");
+  }
+
+  var spTipAnchor={x:0,y:0};
+  function placeSpTip(ev){
+    var el=spTipEl;if(!el||el.hidden)return;
+    if(ev)spTipAnchor={x:ev.clientX,y:ev.clientY};
+    var a=spTipAnchor,pad=14,w=el.offsetWidth,h=el.offsetHeight;
+    var x=a.x+pad,y=a.y+pad;
+    if(x+w>innerWidth-6)x=a.x-pad-w;
+    if(y+h>innerHeight-6)y=Math.max(6,innerHeight-6-h);
+    el.style.left=Math.max(6,x)+"px";el.style.top=Math.max(6,y)+"px";
+  }
+
+  function showSpTipHover(s,ev){
+    if(spTipPinned)return;
+    var el=ensureSpTipEl();
+    el.className="";el.innerHTML=spTipHtml(s,false);el.hidden=false;
+    placeSpTip(ev);
+    maybeLoadSpritesForTip(s);
+  }
+
+  function hideSpTip(force){
+    if(spTipPinned&&!force)return;
+    if(typeof stopSpritePreview==="function")stopSpritePreview();
+    if(spTipEl)spTipEl.hidden=true;
+  }
+
+  /* (Re)builds the pinned tip body: buttons + the reused SPRITES-tab preview. */
+  function renderPinnedTip(s){
+    var el=spTipEl;if(!el)return;
+    if(typeof stopSpritePreview==="function")stopSpritePreview();
+    el.innerHTML=spTipHtml(s,true);
+    var slot=el.querySelector(".spprevslot");
+    if(slot&&typeof buildSpritePreview==="function"){
+      var e=spEntryFor(s.spriteId);
+      var prev=e?buildSpritePreview(e):null;
+      if(prev)slot.replaceWith(prev); else slot.remove();
+    }
+    var btnRow=el.querySelector(".tipbtns");
+    var depthUi=buildDepthEditor(s);
+    if(depthUi&&btnRow)el.insertBefore(depthUi,btnRow);
+    el.querySelectorAll(".tipbtns button").forEach(function(b){
+      b.addEventListener("click",function(ev){
+        ev.stopPropagation();
+        if(b.dataset.act==="close"){ unpinSpTip();return; }
+        navigator.clipboard.writeText(spTipReport(s)).then(function(){
+          b.textContent="COPIADO";setTimeout(function(){b.textContent="COPIAR";},1200);
+        }).catch(function(){});
+      });
+    });
+  }
+
+  /* The same forced-plane dropdown as the SPRITES tab, editing the same
+     spriteFixes / port_sprite_depth.inc. Returns a DOM node, or null when the
+     catalog is not loaded / the marker is unresolved. */
+  function buildDepthEditor(s){
+    if(!s.spriteId||!sprites||!sprites.tiers)return null;
+    var key=spKey(s.spriteId,0);
+    var cur=spriteFixes[key],curCode=cur?cur.code:-1;
+
+    var wrap=document.createElement("div");wrap.className="tipdepth";
+    var lab=document.createElement("label");lab.textContent="plano forzado";
+    var sel=document.createElement("select");
+    var opts=[{v:-1,t:"— sin override (plano único de sprites) —"}];
+    sprites.specialCodes.forEach(function(c){
+      if(c.value===-1)return;
+      opts.push({v:c.value,t:c.name.replace("PORT_SPRITE_DEPTH_","")+
+        (c.value===-2?" · coplanar con el BG de su prioridad OAM":"")});
+    });
+    sprites.tiers.forEach(function(c){ opts.push({v:c.value,t:(SP_TIERLABEL[c.name]||c.name)}); });
+    opts.forEach(function(o){
+      var op=document.createElement("option");op.value=String(o.v);op.textContent=o.t;
+      if(o.v===curCode)op.selected=true;sel.appendChild(op);
+    });
+    sel.addEventListener("pointerdown",function(e){ e.stopPropagation(); });
+    sel.addEventListener("change",function(){
+      var v=parseInt(sel.value,10);
+      if(v===-1)delete spriteFixes[key];
+      else spriteFixes[key]={name:s.spriteId,sec:0,
+                             id:(spEntryFor(s.spriteId)||{}).id||0,code:v};
+      markSpriteDirty();
+      if(mode==="sprites"){ fillSpriteRail();renderSpriteList(); }
+      if(state&&state.kind==="map")redraw();   /* recolour the marker */
+      renderPinnedTip(s);placeSpTip();          /* refresh plano line + save row */
+    });
+    wrap.appendChild(lab);wrap.appendChild(sel);
+
+    /* Persisting: same server .inc as the SPRITES tab's SAVE. */
+    if(serverSpriteFixes&&lastSpriteSaved!==null&&
+       typeof spriteExportText==="function"&&spriteExportText()!==lastSpriteSaved){
+      var sr=document.createElement("div");sr.className="tipsave";
+      var w=document.createElement("span");w.textContent="sin guardar en port_sprite_depth.inc";
+      var g=document.createElement("button");g.textContent="GUARDAR";
+      g.addEventListener("click",function(e){
+        e.stopPropagation();
+        saveSpriteFixesToServer().then(function(){ renderPinnedTip(s);placeSpTip(); });
+      });
+      sr.appendChild(w);sr.appendChild(g);wrap.appendChild(sr);
+    } else if(!serverSpriteFixes){
+      var h=document.createElement("div");h.className="tiphint";
+      h.textContent="abre con serve.py para escribir el .inc; aquí solo queda en memoria";
+      wrap.appendChild(h);
+    }
+    return wrap;
+  }
+
+  function pinSpTip(s,ev){
+    var el=ensureSpTipEl();
+    spTipPinned=s;
+    el.className="pinned";el.hidden=false;
+    renderPinnedTip(s);
+    placeSpTip(ev);
+    maybeLoadSpritesForTip(s);
+  }
+
+  function unpinSpTip(){
+    spTipPinned=null;
+    if(typeof stopSpritePreview==="function")stopSpritePreview();
+    if(spTipEl)spTipEl.hidden=true;
+  }
+
+  function maybeLoadSpritesForTip(s){
+    if(!s.spriteId||sprites||spSpritesTried)return;
+    if(typeof loadSprites!=="function")return;
+    spSpritesTried=true;
+    loadSprites().then(function(){
+      var el=spTipEl;if(!el||el.hidden)return;
+      /* Redraw whichever tip is still up so the preview appears. */
+      if(spTipPinned){ renderPinnedTip(spTipPinned);placeSpTip(); }
+      else el.innerHTML=spTipHtml(s,false);
+    });
+  }
+
+  /* Dismiss a pinned tip when clicking anywhere that is not a marker. */
+  document.addEventListener("pointerdown",function(ev){
+    if(!spTipPinned)return;
+    if(spTipEl&&spTipEl.contains(ev.target))return;
+    if(spriteMarkerAt(ev))return; /* pickAt will re-pin the new one */
+    unpinSpTip();
+  },true);
+
   var samples=[],state=null,sel=null,fixes={},zoom=2,fileName="";
   /* Modo activo del shell y lo propio del modo sprites (ver el bloque
      "modos" más abajo). El catálogo y sus overrides viven aquí para que
@@ -536,7 +827,7 @@
    "side","tilebox","list","export",
    "copy","clear","save","zin","zout","zlab","relayout","torail","toside",
    "minbar","divrail","divside","restore","autobadge","load",
-   "mMap","mRec","mSprites",
+   "mMap","mRec","mSprites","railadd","spritesfile","railctl",
    "realscreen","rs-canvas","rs-info","rs-close","rs-min","rs-title","rs-scroll",
    "rs-zin","rs-zout","rs-zlab"].forEach(function(id){els[id]=document.getElementById(id);});
 
@@ -571,7 +862,7 @@
     ctx.putImageData(out,0,0);
     var kind = SH>=400 ? "arriba 400x240" : SH>=300 ? "abajo 320x240" : SH+" px alto";
     els["rs-info"].textContent = name+"  ("+kind+")";
-    if(!/rec-shot-0*\d+\.rgb$/i.test(name)){
+    if(!/shot-0*\d+\.rgb$/i.test(name)){
       els["rs-title"].textContent="PANTALLA REAL (post-GPU)";
       els["rs-title"].style.color="";
     }
@@ -605,10 +896,12 @@
     this.title=min?"Restaurar":"Minimizar";
   });
 
-  /* Pair mzm-rec-shot-NNNN.rgb frames with the loaded recording: NNNN is the
+  /* Pair ...shot-NNNN.rgb frames with the loaded recording: NNNN is the
      0-indexed sample number the 3DS embedded when it wrote the shot (they are
      only taken every few samples, so a scrub lands on the newest shot <= the
-     current sample). Non-indexed dumps (mzm-dump-*.rgb) show straight away. */
+     current sample). The name may carry a recording index too
+     (mzm-rec-01-shot-0000.rgb), so match on "shot-NNNN.rgb" alone. Non-indexed
+     dumps (mzm-dump-*.rgb) have no "shot-NNNN" and show straight away. */
   var rsShots={};
   /* Green dot on every rail thumbnail that has a matching .rgb, so the
      pairing is visible at a glance. */
@@ -619,7 +912,7 @@
     });
   }
   function rsAddShot(buf,name){
-    var m=/rec-shot-0*(\d+)\.rgb$/i.exec(name);
+    var m=/shot-0*(\d+)\.rgb$/i.exec(name);
     if(!m){ showRealScreen(buf,name); return; }
     rsShots[+m[1]]={buf:buf,name:name};
     var keys=Object.keys(rsShots).map(Number).sort(function(a,b){return a-b;});
@@ -1589,6 +1882,17 @@
     grid.appendChild(sp.card);
     state.stage=cv;
 
+    /* Sprite inspector hover (Map mode). Click-to-pin is handled in pickAt. */
+    if(state.kind==="map"){
+      cv.addEventListener("mousemove",function(ev){
+        var s=spriteMarkerAt(ev);
+        cv.style.cursor=s?"help":"";
+        if(s)showSpTipHover(s,ev);
+        else hideSpTip(false);
+      });
+      cv.addEventListener("mouseleave",function(){ hideSpTip(false); });
+    }
+
     /* --- una por capa --- */
     [0,1,2,3].forEach(function(bg){
       if(!state.on[bg])return;
@@ -1635,6 +1939,12 @@
   }
 
   function pickAt(ev,cv,bg,add){
+    /* A click that lands on a Map-mode sprite marker inspects the sprite
+       instead of selecting a background block. */
+    if(state&&state.kind==="map"){
+      var mk=spriteMarkerAt(ev);
+      if(mk){ pinSpTip(mk,ev);return; }
+    }
     var r=cv.getBoundingClientRect();
     /* Un lienzo escondido mide 0 y la regla de tres daría NaN, que acabaría en
        una selección en la posición NaN,NaN. */
@@ -2083,6 +2393,7 @@
   }
 
   function loadRoom(area,idx){
+    unpinSpTip();
     var room=maps.areas[area][idx];
     var ts=maps.tilesets[String(room.tileset)];
     if(!ts){els.meta.textContent="sala "+room.id+": falta el tileset "+room.tileset;return;}
@@ -2127,7 +2438,7 @@
 
   function buildMapRail(){
     els.railTitle.textContent="Salas";
-    els.shots.innerHTML="";
+    els.railctl.innerHTML="";els.shots.innerHTML="";
     var sel2=document.createElement("select");sel2.className="areasel";
     Object.keys(maps.areas).forEach(function(a){
       var o=document.createElement("option");o.value=a;
@@ -2139,7 +2450,7 @@
          área elegida, no el de la anterior. */
       if(maps.areas[sel2.value].length)loadRoom(sel2.value,0);
     });
-    els.shots.appendChild(sel2);
+    els.railctl.appendChild(sel2);
     var list=document.createElement("div");list.id="roomlist";els.shots.appendChild(list);
     sel2.value=curArea||Object.keys(maps.areas)[0];
     buildRoomList(sel2.value);
@@ -2529,7 +2840,7 @@
 
   function buildRail(){
     els.railTitle.textContent="Capturas";
-    els.shots.innerHTML="";
+    els.railctl.innerHTML="";els.shots.innerHTML="";
     samples.forEach(function(s,i){
       var b=document.createElement("button");b.className="shot";
       var cv=document.createElement("canvas");
@@ -2578,6 +2889,11 @@
     els.mMap.setAttribute("aria-pressed",String(m==="map"));
     els.mRec.setAttribute("aria-pressed",String(m==="rec"));
     els.mSprites.setAttribute("aria-pressed",String(m==="sprites"));
+    els.railadd.title = m==="map" ? "Abrir un maps.json"
+                      : m==="rec" ? "Abrir un mzm-rec.bin y/o sus mzm-rec-shot-NNNN.rgb"
+                      : "Abrir un sprites.json";
+    els.railadd.setAttribute("aria-label",els.railadd.title);
+    els.railctl.innerHTML="";   /* per-mode selector slot; the builders refill it */
     /* La pantalla real (.rgb) sólo acompaña a la grabación. */
     els.realscreen.hidden = !(m==="rec" && rsHasContent);
     if(m==="map")      enterMap();
@@ -2591,7 +2907,7 @@
       els.railTitle.textContent="Salas";els.shots.innerHTML="";
       mainHint('<div class="ui" style="font-size:15px;font-weight:700;color:var(--ink)">Sin maps.json</div>'+
         '<p>Genera <code>maps.json</code> con <code>python3 tools/layer-workbench/build_maps.py</code> '+
-        'y súbelo con <b>MAPAS</b>, o suéltalo aquí.</p>');
+        'y ábrelo con el icono <b>↥</b> de arriba de la lista, o suéltalo aquí.</p>');
       autoloadMaps();
       return;
     }
@@ -2604,7 +2920,9 @@
       els.railTitle.textContent="Capturas";els.shots.innerHTML="";
       mainHint('<div class="ui" style="font-size:15px;font-weight:700;color:var(--ink)">Sin grabación</div>'+
         '<p>En la consola: <b>DEBUG → HERRAMIENTAS → GRAB. ESCENA</b>. Queda en '+
-        '<code>sdmc:/3ds/mzm-rec.bin</code>. Súbelo con <b>GRABACIÓN</b> o suéltalo aquí.</p>');
+        '<code>sdmc:/3ds/mzm-rec-NN.bin</code>. Ábrelo con el icono <b>↥</b> de arriba '+
+        'de la lista o suéltalo aquí; puedes añadir también sus '+
+        '<code>mzm-rec-NN-shot-NNNN.rgb</code> en la misma selección.</p>');
       return;
     }
     buildRail();
@@ -2672,11 +2990,11 @@
   }
 
   function buildSpriteRail(){
-    els.shots.innerHTML="";
+    els.railctl.innerHTML="";els.shots.innerHTML="";
     var q=document.createElement("input");
     q.id="spfilter";q.placeholder="filtrar…  p.ej. STATUE";q.value=spFilter;
     q.addEventListener("input",function(){ spFilter=q.value; fillSpriteRail(); });
-    els.shots.appendChild(q);
+    els.railctl.appendChild(q);
     var list=document.createElement("div");list.id="splist";els.shots.appendChild(list);
     fillSpriteRail();
   }
@@ -2930,15 +3248,45 @@
   els.mSprites.addEventListener("click",function(){setMode("sprites");});
 
   /* ---------- wiring ---------- */
+  /* GRABACIÓN accepts a mix in one pick (or a whole dump folder): the recording
+     .bin plus any number of ...shot-NNNN.rgb frames. Route each by name --
+     before, a mixed selection loaded only the first file and dropped the rest.
+     The recording is the mzm-rec*.bin; other .bin (mzm-state*.bin) are ignored. */
+  function handleRecFiles(fl){
+    var rec=null;
+    [].forEach.call(fl,function(f){
+      if(/\.rgb$/i.test(f.name)){ f.arrayBuffer().then(function(b){rsAddShot(b,f.name);}); return; }
+      if(!/\.bin$/i.test(f.name)) return;
+      if(/rec.*\.bin$/i.test(f.name)){ if(!rec||!/rec/i.test(rec.name)) rec=f; }
+      else if(!rec) rec=f;   /* fall back to any .bin if none looks like a recording */
+    });
+    if(rec) rec.arrayBuffer().then(function(b){ingest(b,rec.name);});
+  }
   els.file.addEventListener("change",function(e){
-    var fl=e.target.files;if(!fl||!fl.length)return;
-    if([].every.call(fl,function(f){return /\.rgb$/i.test(f.name);})){
-      [].forEach.call(fl,function(f){f.arrayBuffer().then(function(b){rsAddShot(b,f.name);});});
-      return;
-    }
-    fl[0].arrayBuffer().then(function(b){ingest(b,fl[0].name);});});
+    if(e.target.files&&e.target.files.length)handleRecFiles(e.target.files);
+    e.target.value="";
+  });
   els.mapsfile.addEventListener("change",function(e){
-    var f=e.target.files[0];if(!f)return;f.arrayBuffer().then(function(b){ingestMaps(b,f.name);});});
+    var f=e.target.files[0];if(!f)return;
+    f.arrayBuffer().then(function(b){ingestMaps(b,f.name);});
+    e.target.value="";
+  });
+  els.spritesfile.addEventListener("change",function(e){
+    var f=e.target.files[0];if(!f)return;
+    f.arrayBuffer().then(function(b){
+      try{ sprites=JSON.parse(new TextDecoder().decode(b)); }catch(err){ badge("sprites.json ilegible","warn");return; }
+      spSpritesTried=true;
+      if(mode==="sprites")enterSprites();
+      badge("sprites.json cargado");
+    });
+    e.target.value="";
+  });
+  /* Per-tab "+ archivo": opens the picker for the current tab's file type. */
+  els.railadd.addEventListener("click",function(){
+    if(mode==="map")        els.mapsfile.click();
+    else if(mode==="rec")   els.file.click();
+    else                    els.spritesfile.click();
+  });
   els.incfile.addEventListener("change",function(e){
     var f=e.target.files[0];if(!f)return;
     f.text().then(function(t){
@@ -2972,8 +3320,10 @@
      es el que la herramienta que lo generó le puso. */
   document.addEventListener("drop",function(e){
     var fl=e.dataTransfer&&e.dataTransfer.files;if(!fl||!fl.length)return;
-    if([].every.call(fl,function(f){return /\.rgb$/i.test(f.name);})){
-      [].forEach.call(fl,function(f){f.arrayBuffer().then(function(b){rsAddShot(b,f.name);});});
+    if([].some.call(fl,function(f){return /\.rgb$/i.test(f.name);})){
+      /* Any .rgb in the drop -> treat the whole drop as recording data
+         (rec .bin + shots), same split as the GRABACIÓN picker. */
+      handleRecFiles(fl);
       return;
     }
     var f=fl[0];

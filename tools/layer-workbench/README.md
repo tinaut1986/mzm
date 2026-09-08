@@ -30,12 +30,24 @@ En Windows el ejecutable se llama `python` a secas; en Debian y Ubuntu, sólo
 Genera `maps.json` si hace falta, lo sirve y abre el navegador.
 
 También puedes abrir `index.html` a pelo, pero entonces el navegador no deja
-leer `maps.json` desde disco (mismo origen) y hay que soltarlo a mano con el
-botón `MAPAS` cada vez. Se acepta tanto `maps.json` como `maps.json.gz`, que
-pesa una quinta parte.
+leer `maps.json` desde disco (mismo origen) y hay que soltarlo a mano cada
+vez. Se acepta tanto `maps.json` como `maps.json.gz`, que pesa una quinta
+parte.
 
-Para una grabación, suelta un `mzm-rec.bin` (DEBUG → HERRAMIENTAS → GRAB.
-ESCENA en la consola; queda en `sdmc:/3ds/`).
+Cada vista tiene un icono **↥** junto al título de la lista de la izquierda
+que abre el diálogo de archivos para el tipo que le toca: `maps.json` en
+MAPA, `mzm-rec.bin` / `.rgb` en GRABACIÓN, `sprites.json` en SPRITES. Ese
+título y el selector de la vista (desplegable de área, filtro de sprites) se
+quedan fijos aunque se haga scroll por la lista. Arrastrar y soltar sigue
+valiendo desde cualquier vista —se decide por el nombre del archivo—.
+
+Para una grabación, suelta (o abre con el icono ↥) un `mzm-rec-NN.bin`
+(DEBUG → HERRAMIENTAS → GRAB. ESCENA en la consola; queda en `sdmc:/3ds/`).
+En la misma selección puedes incluir sus `mzm-rec-NN-shot-NNNN.rgb`: se
+emparejan con el frame `NNNN` de la grabación (punto verde en la lista de
+capturas; al elegir un frame se muestra el `.rgb` más reciente ≤ ese frame).
+El emparejado busca `shot-NNNN.rgb` al final del nombre, así que da igual el
+índice de grabación que lleve delante.
 
 - **El mapa de área**: el mismo de la pantalla de pausa, dibujado de los datos
   del juego (`sMinimapDataPointers`, 32×32 celdas). Pulsa una celda y abre esa
@@ -336,9 +348,16 @@ Reimplementarla en JS podría desincronizarse en silencio; compilar el C real
 no puede.
 
 ```bash
-tools/layer-workbench/wasm/build.sh      # necesita emcc (Emscripten)
+tools/layer-workbench/wasm/setup_emsdk.sh   # bootstrap: Emscripten local en wasm/emsdk/ (~1 GB, una vez)
+tools/layer-workbench/wasm/build.sh         # necesita emcc (el de setup_emsdk o uno del sistema)
 python3 tools/layer-workbench/wasm/parity_check.py   # compara wasm vs. el binario nativo del test
 ```
+
+En Windows, `run_workbench.bat` detecta que falta `emcc` y ofrece correr
+`wasm\setup_emsdk.bat` (mismo bootstrap) antes de arrancar. Una vez que
+`wasm/emsdk/` existe, `serve.py` lo mete solo en el `PATH` (ver
+`use_local_emsdk()`), sin tener que hacer `emsdk_env` a mano. El árbol
+`wasm/emsdk/` está en `.gitignore`.
 
 `build.sh` compila `platform/3ds/source/port_stereo_depth.c`,
 `port_layer_fixes.c` y el puente `tools/layer-workbench/wasm/depth_bridge.c`
@@ -367,6 +386,24 @@ El modo mapa dibuja, encima del resultado, un marcador por cada sprite del
 cualquier evento) -- el hueco que dejaba documentado más abajo, en
 "Pendiente". El botón `OBJ` de la cabecera del resultado los muestra u
 oculta, igual que los botones `BG0`/`BG1`/`BG2`.
+
+- **Qué es cada marcador.** Pasa el ratón por encima de un punto y sale un
+  globo con el tipo `PSPRITE_*`, el plano que resuelve el motor wasm
+  (`OBJ_P1 · plano por defecto`, un `PORT_TIER_*` fijo, o
+  `dinámico · BG_COPLANAR` para los del anillo discontinuo), si tiene
+  override en `port_sprite_depth.inc` y cuál, y la posición en bloques.
+  Al hacer **clic** en el marcador el globo se fija y trae la **misma vista
+  de la pestaña SPRITES**: la animación montada de los `OAM_ENTRY` del `.c`,
+  con conmutador a la hoja de tiles, más un botón `COPIAR`. Se cierra con
+  `CERRAR` o pulsando fuera. Los puntos grises son entradas que
+  `build_maps.py` extrajo pero no pudo resolver a un nombre.
+- **Cambiar el plano desde aquí.** El globo fijado lleva el desplegable
+  `PLANO FORZADO` -- el mismo `spriteFixes` que edita la pestaña SPRITES y
+  que se escribe en `port_sprite_depth.inc`. Al cambiarlo se recolorea el
+  marcador al instante; si hay servidor (`serve.py`), aparece `GUARDAR` para
+  escribir el `.inc` (sin servidor solo queda en memoria). El cambio es por
+  **tipo** de sprite, no por esta instancia: afecta a todos los del mismo
+  `PSPRITE_*`.
 
 - **De dónde sale la posición.** `build_maps.py` lee el `.c` de datos de la
   sala (`src/data/rooms/<área>/<área>_<n>.c`, el array

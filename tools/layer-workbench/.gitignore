@@ -9,6 +9,10 @@ thumbs/
 # workbench, so it is generated on demand (serve.py) rather than checked in.
 depth_engine.js
 
+# Local Emscripten toolchain, bootstrapped on demand by wasm/setup_emsdk.bat
+# (or setup_emsdk.sh) when emcc is not already on PATH.
+wasm/emsdk/
+
 __pycache__/
 
 # El .bin de prueba lo hace make_test_rec.py
