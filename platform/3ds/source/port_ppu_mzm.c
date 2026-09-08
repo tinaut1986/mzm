@@ -531,6 +531,16 @@ int Port_Samus_GetPoseClass(void) {
     }
 }
 
+/* Whether Samus can actually become a morph ball right now. The Quick Morph
+ * assist synthesises Down pulses until the pose class reaches MORPHED; if
+ * that can never happen it just bobs her crouch for the whole safety window.
+ * Suitless Samus has no morph-ball graphics and the pose machine refuses the
+ * transition (see the suitType guard in SamusCrouching), so the assist must
+ * not start a morph sequence for her. */
+int Port_Samus_CanMorph(void) {
+    return gEquipment.suitType != SUIT_SUITLESS;
+}
+
 /* Per-area, per-tank-type collected counts for the bottom-screen collectibles
  * breakdown (port_bottom_ui_3ds.c's RenderCollectiblesModal). The map's
  * "obtained item" bitmap (gMinimapTilesWithObtainedItems) only says a tile
