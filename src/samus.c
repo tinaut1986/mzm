@@ -3849,6 +3849,14 @@ SamusAnimState SamusUpdateAnimation(struct SamusData* pData, u8 slowed)
 
     pAnim = RESOLVE_SAMUS_PTR(pAnim);
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+    /* Suitless has no morph-ball pose entries (vanilla never morphs without
+     * a suit); the debug suit-swap tool can reach that state. Fall back to
+     * the power-suit pose so the deref below does not hit NULL. */
+    if (pAnim == NULL)
+        pAnim = RESOLVE_SAMUS_PTR(sSamusAnimPointers_PowerSuit[pData->pose][0]);
+#endif
+
     // Get for current frame
     pAnim = &pAnim[pData->currentAnimationFrame];
 
@@ -4325,7 +4333,14 @@ SamusPose SamusCrouching(struct SamusData* pData)
 
     // Check morphing
     if (gChangedInput & KEY_DOWN && gEquipment.suitMiscActivation & SMF_MORPH_BALL &&
-        (gSamusWeaponInfo.diagonalAim == DIAG_AIM_NONE || pData->armCannonDirection == ACD_DIAGONALLY_DOWN))
+        (gSamusWeaponInfo.diagonalAim == DIAG_AIM_NONE || pData->armCannonDirection == ACD_DIAGONALLY_DOWN)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+        /* Suitless Samus has no morph-ball graphics (vanilla never reaches
+         * this state; the debug suit-swap tool can). Just don't morph --
+         * anything else leaves her stuck re-entering a poseless morph. */
+        && gEquipment.suitType != SUIT_SUITLESS
+#endif
+        )
     {
         SoundPlay(SOUND_MORPHING);
         return SPOSE_MORPHING;
@@ -4548,7 +4563,11 @@ SamusPose SamusMidAir(struct SamusData* pData)
     u32 newVelocity;
 
     // Check morph, pressing down while aiming down
-    if (gChangedInput & KEY_DOWN && pData->armCannonDirection == ACD_DOWN && gEquipment.suitMiscActivation & SMF_MORPH_BALL)
+    if (gChangedInput & KEY_DOWN && pData->armCannonDirection == ACD_DOWN && gEquipment.suitMiscActivation & SMF_MORPH_BALL
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+        && gEquipment.suitType != SUIT_SUITLESS /* no suitless morph-ball gfx; see SamusCrouching */
+#endif
+        )
     {
         SoundPlay(SOUND_MORPHING);
         return SPOSE_MORPH_BALL_MIDAIR;
@@ -7331,6 +7350,21 @@ void SamusUpdateGraphicsOam(struct SamusData* pData, u8 direction)
     // Offset by current frame
     pAnim = RESOLVE_SAMUS_PTR(pAnim);
     pArmCannonAnim = RESOLVE_SAMUS_PTR(pArmCannonAnim);
+
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+    /* The suitless anim tables (sSamusAnimPointers_Suitless / the suitless
+     * arm-cannon tables) are designated-initializer arrays with no entries
+     * for the morph-ball poses -- vanilla Samus never morphs without a suit.
+     * The debug suit-swap tool can put her suitless mid-morph, and the
+     * missing entry is a NULL that the dereferences below fault on (observed
+     * as a data abort at FAR 0x4). Fall back to the power-suit pose so it
+     * renders the morph ball instead of crashing. */
+    if (pAnim == NULL)
+        pAnim = RESOLVE_SAMUS_PTR(sSamusAnimPointers_PowerSuit[pose][direction]);
+    if (pArmCannonAnim == NULL)
+        pArmCannonAnim = RESOLVE_SAMUS_PTR(sArmCannonAnimPointers_Suit_All[pose][direction]);
+#endif
+
     pAnim = &pAnim[pData->currentAnimationFrame];
 
     pPhysics->pBodyOam = RESOLVE_SAMUS_PTR(pAnim->pOam);
@@ -8098,6 +8132,15 @@ void SamusUpdateArmCannonPositionOffset(u8 direction)
 
     // Get current animation
     pAnim = RESOLVE_SAMUS_PTR(pAnim);
+
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+    /* Suitless has no morph-ball arm-cannon entries; the debug suit-swap
+     * tool can put Samus suitless mid-morph. Fall back to the suit table
+     * (crash was here: data abort at FAR 0x0). */
+    if (pAnim == NULL)
+        pAnim = RESOLVE_SAMUS_PTR(sArmCannonAnimPointers_Suit_All[pose][direction]);
+#endif
+
     pAnim = &pAnim[pData->currentAnimationFrame];
 
     pOffset = RESOLVE_SAMUS_PTR(pAnim->pOffset);

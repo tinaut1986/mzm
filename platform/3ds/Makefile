@@ -99,6 +99,7 @@ SRCS_3DS := \
 	$(CURDIR)/source/port_bottom_ui_3ds.c \
 	$(CURDIR)/source/port_ppu_mzm.c \
 	$(CURDIR)/source/port_gpu_renderer.c \
+	$(CURDIR)/source/port_save_state.c \
 	$(CURDIR)/source/port_stereo_depth.c \
 	$(CURDIR)/source/port_layer_fixes.c \
 	$(CURDIR)/source/port_hud_oam.c \
@@ -298,7 +299,10 @@ INCLUDES := \
 	-I$(CTRULIB)/include \
 	-I$(PORTLIBS)/include
 
-LDFLAGS  := -specs=3dsx.specs -g $(ARCH) -Wl,-Map,$(BUILD)/mzm-3ds.map -Wl,--gc-sections -T $(CURDIR)/ewram_symbols.ld
+# -B$(CURDIR): makes the -specs=3dsx.specs `-T 3dsx.ld%s` resolve to our
+# vendored copy in this directory (3dsx.ld), which adds the save-state section
+# brackets. ewram_symbols.ld stays a pure symbol-assignment augmenter.
+LDFLAGS  := -specs=3dsx.specs -B$(CURDIR) -g $(ARCH) -Wl,-Map,$(BUILD)/mzm-3ds.map -Wl,--gc-sections -T $(CURDIR)/ewram_symbols.ld
 LIBS     := -L$(CTRULIB)/lib -L$(PORTLIBS)/lib -lcitro2d -lcitro3d -lctru -lm
 
 

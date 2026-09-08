@@ -1,5 +1,6 @@
 #include "tourian_escape.h"
 #include "macros.h"
+#include "port_gba_mem.h"
 #include "animated_graphics.h"
 #include "audio_wrappers.h"
 #include "fixed_point.h"
@@ -132,6 +133,15 @@ static void TourianEscapeProcessOam(void)
     if (TOURIAN_ESCAPE_DATA.unk_BE > 2)
     {
         src = sTourianEscapeOam_375d10_Frame0;
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+        /* OAM frame pointers here trace back to raw GBA ROM addresses baked
+         * into ROM pointer tables (sTourianEscape_47ce00[] etc., and the
+         * .pFrame fields of the HugeShipExplosion / ChozodiaEscape OAM
+         * arrays). Nothing translated them when they were stored, so the
+         * explosion and ship sprites read garbage and never draw without
+         * this. Same pattern as ProcessCutsceneOam / ParticleDraw. */
+        src = GBA_RESOLVE(src);
+#endif
         part = *src++;
         nextSlot += MOD_AND(part, 0x100);
 
@@ -163,6 +173,9 @@ static void TourianEscapeProcessOam(void)
             continue;
         
         src = TOURIAN_ESCAPE_DATA.oamFramePointers[i];
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+        src = GBA_RESOLVE(src); /* see note in TourianEscapeProcessOam */
+#endif
         part = *src++;
         nextSlot += MOD_AND(part, 0x100);
 
@@ -291,6 +304,9 @@ static void unk_818cc(void)
     if (TOURIAN_ESCAPE_DATA.unk_8[0])
     {
         src = TOURIAN_ESCAPE_DATA.oamFramePointers[0];
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+        src = GBA_RESOLVE(src); /* see note in TourianEscapeProcessOam */
+#endif
         part = *src++;
         nextSlot = MOD_AND(part, 0x100);
 
@@ -317,6 +333,9 @@ static void unk_818cc(void)
     if (TOURIAN_ESCAPE_DATA.unk_8[1])
     {
         src = TOURIAN_ESCAPE_DATA.oamFramePointers[1];
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+        src = GBA_RESOLVE(src); /* see note in TourianEscapeProcessOam */
+#endif
         part = *src++;
         nextSlot += MOD_AND(part, 0x100);
 
@@ -346,6 +365,9 @@ static void unk_818cc(void)
             continue;
 
         src = TOURIAN_ESCAPE_DATA.oamFramePointers[i];
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+        src = GBA_RESOLVE(src); /* see note in TourianEscapeProcessOam */
+#endif
         part = *src++;
         nextSlot += MOD_AND(part, 0x100);
 
@@ -461,6 +483,9 @@ static void unk_81ad8(void)
             continue;
 
         src = TOURIAN_ESCAPE_DATA.oamFramePointers[i];
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+        src = GBA_RESOLVE(src); /* see note in TourianEscapeProcessOam */
+#endif
         part = *src++;
         nextSlot += MOD_AND(part, 0x100);
         

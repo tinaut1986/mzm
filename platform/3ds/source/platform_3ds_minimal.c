@@ -227,6 +227,7 @@ extern void Port_DebugLog(const char* msg);
 extern int Port_Config_GetButtonMapping(int buttonIndex);
 extern int Port_Config_GetCstickMode(void);
 extern int Port_Samus_GetPoseClass(void); /* 0 = normal, 1 = crouching, 2 = morphed */
+extern int Port_Samus_CanMorph(void);     /* 0 when suitless: no ball form */
 
 static uint16_t ProcessButtonAction(int action, uint32_t keysHeld, uint32_t keysDown, uint32_t buttonMask, bool* outMorphPulse, bool* outDiagAim) {
     if (!(keysHeld & buttonMask)) return 0;
@@ -346,7 +347,10 @@ void Platform3DS_PollKeysIntoGba(void) {
     static int sQuickMorphPhaseTimer = 0;
     static bool sQuickMorphPressing = false;
     static int sQuickMorphSafetyFrames = 0;
-    if (quickMorphPulse && sQuickMorphGoalClass < 0) {
+    if (quickMorphPulse && sQuickMorphGoalClass < 0 &&
+        (Port_Samus_GetPoseClass() == 2 || Port_Samus_CanMorph())) {
+        /* Skip entirely when suitless and not already balled: the sequence
+         * could never reach the morph goal and would just spam Down. */
         sQuickMorphGoalClass = (Port_Samus_GetPoseClass() == 2) ? 0 : 2;
         sQuickMorphPhaseTimer = 0;
         sQuickMorphPressing = false;

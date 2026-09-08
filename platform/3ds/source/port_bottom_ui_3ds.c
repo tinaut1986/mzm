@@ -9,6 +9,7 @@
 #include "platform_gpu_3ds.h"
 #include "port_debug_tools.h"
 #include "port_debug_log.h"
+#include "port_save_state.h"
 
 /* GBA & MZM minimap and state globals */
 extern uint16_t gDecompressedMinimapVisitedTiles[32 * 32];
@@ -206,7 +207,8 @@ void Port_BottomUI_MarkDirty(void) { sBottomUiDirty = true; }
 /* Icon-tab layout, shared by the renderer and the touch handler (defined
  * lower, used by both). */
 typedef struct { float x, w; PortBottomTab tab; int icon; } BottomTabSlot;
-static int BottomTabLayout(BottomTabSlot slots[4]);
+#define BOTTOM_TAB_SLOT_MAX 6
+static int BottomTabLayout(BottomTabSlot slots[BOTTOM_TAB_SLOT_MAX]);
 
 /* Called once per frame (even on frames the UI is not redrawn) so time-based
  * state keeps advancing: the blink counter and the RA session pump. */
@@ -366,6 +368,9 @@ extern void PortPpuMzm_DebugSetAllEquipment(bool on);
 extern void PortPpuMzm_DebugSetAmmo(bool full);
 extern void PortPpuMzm_DebugRefillAmmo(void);
 extern void PortPpuMzm_DebugGetAmmoText(char* out, int outSize);
+
+static void RenderStateView(void);
+static void HandleStateTouch(int x, int y, bool isNewTap);
 
 static void RenderDebugToolsModal(int lang);
 static bool HandleDebugToolsModalTouch(int x, int y);
@@ -1164,7 +1169,7 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
     if (y >= 2 && y <= 24) {
         if (isNewTap) {
             PortBottomTab prevTab = sCurrentTab;
-            BottomTabSlot slots[4];
+            BottomTabSlot slots[BOTTOM_TAB_SLOT_MAX];
             int n = BottomTabLayout(slots);
             for (int i = 0; i < n; ++i) {
                 if ((float)x >= slots[i].x && (float)x <= slots[i].x + slots[i].w) {
@@ -1173,6 +1178,8 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
                 }
             }
             if (sCurrentTab != prevTab) Port_Config_Save();
+            if (sCurrentTab == BOTTOM_TAB_STATE && prevTab != BOTTOM_TAB_STATE)
+                Port_SaveState_RefreshSlots();
         }
         sLastTouchX = -1;
         sLastTouchY = -1;
@@ -1336,6 +1343,11 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
         return;
     }
 #endif
+
+    if (sCurrentTab == BOTTOM_TAB_STATE) {
+        HandleStateTouch(x, y, isNewTap);
+        return;
+    }
 
     if (sCurrentTab == BOTTOM_TAB_STATUS && isNewTap) {
         if (sShowCollectiblesModal) {
@@ -1893,7 +1905,7 @@ void Port_BottomUI_TouchReleased(void) {
 /* Shared layout used by both the renderer and the touch handler so a tap
  * always lands on what is drawn. Left-aligned icon tabs; the freed
  * right-hand space carries the clock/battery/wifi widget. */
-static int BottomTabLayout(BottomTabSlot slots[4]) {
+static int BottomTabLayout(BottomTabSlot slots[BOTTOM_TAB_SLOT_MAX]) {
     bool showDebug = Port_BottomUI_DebugTabVisible();
     int n = 0;
     float x = 4.0f;
@@ -1902,6 +1914,7 @@ static int BottomTabLayout(BottomTabSlot slots[4]) {
     if (showDebug) {
         slots[n].x = x; slots[n].w = TAB_ICON_W; slots[n].tab = BOTTOM_TAB_DEBUG; slots[n].icon = 2; n++; x += TAB_ICON_PITCH;
     }
+    slots[n].x = x; slots[n].w = TAB_ICON_W; slots[n].tab = BOTTOM_TAB_STATE;   slots[n].icon = 4; n++; x += TAB_ICON_PITCH;
     slots[n].x = x; slots[n].w = TAB_ICON_W; slots[n].tab = BOTTOM_TAB_OPTIONS; slots[n].icon = 3; n++;
     return n;
 }
@@ -1931,6 +1944,15 @@ static void DrawTabIcon(int icon, float cx, float cy, uint32_t col, uint32_t bg)
         R(-2.0f, -4.0f, 4.0f, 1.0f); R(-2.0f,  5.0f, 4.0f, 1.0f);
         R(-6.0f, -2.0f, 3.0f, 1.0f); R(-6.0f, 1.0f, 3.0f, 1.0f); R(-6.0f, 4.0f, 3.0f, 1.0f);
         R( 3.0f, -2.0f, 3.0f, 1.0f); R( 3.0f, 1.0f, 3.0f, 1.0f); R( 3.0f, 4.0f, 3.0f, 1.0f);
+        break;
+    case 4: /* save state: floppy disk */
+        R(-6.0f, -6.0f, 12.0f, 1.0f);   /* body: top edge */
+        R(-6.0f,  5.0f, 12.0f, 1.0f);   /* body: bottom edge */
+        R(-6.0f, -6.0f, 1.0f, 12.0f);   /* body: left edge */
+        R( 5.0f, -5.0f, 1.0f, 11.0f);   /* body: right edge (clipped corner) */
+        R( 3.0f, -6.0f, 3.0f, 3.0f);    /* clipped top-right corner */
+        R(-3.0f, -6.0f, 5.0f, 4.0f);    /* metal shutter */
+        R(-4.0f,  1.0f, 8.0f, 4.0f);    /* label area */
         break;
     default: /* sliders (nudged 1px low to read centred in the tab) */
         R(-6.0f, -4.0f, 12.0f, 1.0f);
@@ -2002,7 +2024,7 @@ static void DrawSystemStatus(void) {
 
 /* Render Navigation Bar (icon tabs + system status) */
 static void RenderTabBar(void) {
-    BottomTabSlot slots[4];
+    BottomTabSlot slots[BOTTOM_TAB_SLOT_MAX];
     int tabCount = BottomTabLayout(slots);
 
     /* Health tint: only active during real gameplay. Blinks to catch attention
@@ -5066,6 +5088,131 @@ static void RenderDebugView(void) {
 #endif
 }
 
+/* ===================================================================== */
+/*  ESTADO tab: whole-machine save states (port_save_state.c)             */
+/* ===================================================================== */
+
+/* Two-tap confirm, shared by both actions. Armed while
+ * sFrameCounter - sStateArmFrame < STATE_ARM_FRAMES. sStateArmAction:
+ * 1 = save, 2 = load. */
+#define STATE_ARM_FRAMES 120
+static int      sStateArmSlot   = -1;
+static int      sStateArmAction = 0;
+static uint32_t sStateArmFrame  = 0;
+
+#define STATE_ROW_Y0    42.0f
+#define STATE_ROW_PITCH 29.0f
+#define STATE_ROW_H     25.0f
+#define STATE_BTN_SAVE_X 190.0f
+#define STATE_BTN_LOAD_X 252.0f
+#define STATE_BTN_W      58.0f
+
+static bool StateArmed(int slot, int action) {
+    return sStateArmSlot == slot && sStateArmAction == action &&
+           (sFrameCounter - sStateArmFrame) < STATE_ARM_FRAMES;
+}
+
+static void RenderStateView(void) {
+    const int lang = GetLang();
+    const bool es = (lang == 6);
+    const bool avail = Port_SaveState_Available();
+
+    DrawTextCentered(160.0f, 28.0f, 1.0f,
+        es ? "ESTADOS DE PARTIDA" : "SAVE STATES",
+        C2D_Color32(255, 215, 0, 255));
+
+    for (int s = 0; s < PORT_SAVE_STATE_SLOTS; ++s) {
+        float y = STATE_ROW_Y0 + (float)s * STATE_ROW_PITCH;
+        bool used = Port_SaveState_SlotUsed(s);
+
+        C2D_DrawRectSolid(8.0f, y, 0.5f, 304.0f, STATE_ROW_H,
+                          C2D_Color32(14, 22, 34, 255));
+        C2D_DrawRectSolid(8.0f, y, 0.5f, 304.0f, 1.0f,
+                          C2D_Color32(60, 80, 110, 255));
+
+        char num[12];
+        snprintf(num, sizeof(num), "%d", s + 1);
+        DrawTextCentered(20.0f, y + 9.0f, 1.0f, num, C2D_Color32(255, 255, 255, 255));
+
+        char label[40];
+        Port_SaveState_SlotLabel(s, label, sizeof(label));
+        DrawText(34.0f, y + 9.0f, 1.0f,
+                 used ? label : (es ? "- vacio -" : "- empty -"),
+                 used ? C2D_Color32(170, 210, 245, 255)
+                      : C2D_Color32(110, 125, 150, 255));
+
+        /* SAVE */
+        bool saveArmed = StateArmed(s, 1);
+        uint32_t saveBody = !avail ? C2D_Color32(30, 34, 40, 255)
+                          : saveArmed ? C2D_Color32(120, 90, 20, 255)
+                                      : C2D_Color32(24, 60, 34, 255);
+        DrawButton(STATE_BTN_SAVE_X, y + 1.0f, STATE_BTN_W, STATE_ROW_H - 2.0f,
+                   saveArmed ? (es ? "OK?" : "OK?") : (es ? "GUARDAR" : "SAVE"),
+                   avail ? C2D_Color32(200, 240, 205, 255) : C2D_Color32(90, 100, 115, 255),
+                   saveBody, C2D_Color32(70, 150, 90, 255));
+
+        /* LOAD */
+        bool canLoad = used && avail;
+        bool loadArmed = StateArmed(s, 2);
+        uint32_t loadBody = !canLoad ? C2D_Color32(30, 34, 40, 255)
+                          : loadArmed ? C2D_Color32(120, 90, 20, 255)
+                                      : C2D_Color32(24, 46, 70, 255);
+        DrawButton(STATE_BTN_LOAD_X, y + 1.0f, STATE_BTN_W, STATE_ROW_H - 2.0f,
+                   loadArmed ? (es ? "OK?" : "OK?") : (es ? "CARGAR" : "LOAD"),
+                   canLoad ? C2D_Color32(200, 225, 245, 255) : C2D_Color32(90, 100, 115, 255),
+                   loadBody, C2D_Color32(80, 140, 200, 255));
+    }
+
+    const char* msg = Port_SaveState_LastMessage();
+    if (msg && msg[0] && Port_SaveState_MessageTtl() > 0) {
+        DrawTextCentered(160.0f, 220.0f, 1.0f, msg, C2D_Color32(255, 235, 150, 255));
+    } else if (!avail) {
+        DrawTextCentered(160.0f, 220.0f, 1.0f,
+            es ? "SOLO DURANTE LA PARTIDA" : "ONLY DURING GAMEPLAY",
+            C2D_Color32(150, 165, 190, 255));
+    } else {
+        DrawTextCentered(160.0f, 220.0f, 1.0f,
+            es ? "PULSA DOS VECES PARA CONFIRMAR" : "TAP TWICE TO CONFIRM",
+            C2D_Color32(120, 140, 170, 255));
+    }
+}
+
+static void HandleStateTouch(int x, int y, bool isNewTap) {
+    if (!isNewTap) return;
+
+    for (int s = 0; s < PORT_SAVE_STATE_SLOTS; ++s) {
+        float ry = STATE_ROW_Y0 + (float)s * STATE_ROW_PITCH;
+        if ((float)y < ry || (float)y > ry + STATE_ROW_H) continue;
+
+        int action = 0;
+        if ((float)x >= STATE_BTN_SAVE_X && (float)x < STATE_BTN_SAVE_X + STATE_BTN_W)
+            action = 1;
+        else if ((float)x >= STATE_BTN_LOAD_X && (float)x < STATE_BTN_LOAD_X + STATE_BTN_W)
+            action = 2;
+        if (action == 0) return;
+
+        if (action == 1 && !Port_SaveState_Available()) return;
+        if (action == 2 && (!Port_SaveState_SlotUsed(s) || !Port_SaveState_Available())) return;
+
+        if (StateArmed(s, action)) {
+            if (action == 1) Port_SaveState_RequestSave(s);
+            else             Port_SaveState_RequestLoad(s);
+            sStateArmSlot = -1;
+            sStateArmAction = 0;
+        } else {
+            sStateArmSlot = s;
+            sStateArmAction = action;
+            sStateArmFrame = sFrameCounter;
+        }
+        Port_BottomUI_MarkDirty();
+        return;
+    }
+
+    /* Tap outside any button disarms. */
+    sStateArmSlot = -1;
+    sStateArmAction = 0;
+}
+
 void Port_BottomUI_Render(void) {
     /* sFrameCounter is advanced by Port_BottomUI_FrameTick every frame, not
      * here -- this function is throttled (see Port_BottomUI_WantsRedraw). */
@@ -5106,6 +5253,9 @@ void Port_BottomUI_Render(void) {
             break;
         case BOTTOM_TAB_OPTIONS:
             RenderOptionsView();
+            break;
+        case BOTTOM_TAB_STATE:
+            RenderStateView();
             break;
         default:
             RenderMapView();

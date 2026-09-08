@@ -371,6 +371,9 @@ static LayerTile sLayerTiles[4][LAYER_MAX_TILES];
 static int sLayerTileCount[4];
 static bool sLayerNeedsCompose[4];
 static bool sLayerComposed[4]; /* has valid content from some earlier frame */
+/* Set by Port_GpuRenderer_InvalidateAll (save-state load); forces the
+ * RenderFrame settle window even with area/room/mode unchanged. */
+static int sForcedSettleFrames;
 typedef struct {
     int originTileX, originTileY;
     uint32_t screenBase, charBase, mapHash, palHash;
@@ -759,19 +762,29 @@ static void ComputeDepthState(uint16_t dispcnt) {
     sDepthState.samusOnTopOfBackgrounds =
         sDepthState.inGameplay && gSamusOnTopOfBackgrounds != 0;
     /* BG0 is the pop-forward overlay layer for menus / dialogs / the pause
-     * map -- i.e. everywhere outside gameplay EXCEPT the cutscenes that
-     * draw scene artwork on BG0 while their caption is OBJ sprites:
+     * map -- i.e. everywhere outside gameplay EXCEPT the scene-art cutscenes,
+     * which draw full-screen artwork on their BGs while the caption is OBJ:
+     *   1  GM_INTRO            (opening story: portraits + Zero-Suit scene
+     *                           on BG0/BG1, story text and ship are OBJ)
      *   7  GM_CHOZODIA_ESCAPE  ("mission accomplished" over the blue ship)
+     *   9  GM_TOURIAN_ESCAPE   (post-escape montage: rooms exploding, the
+     *                           ship leaving, and the closing story text)
      *   10 GM_CUTSCENE         (in-game story cutscenes: Kraid rising, ...)
-     * Those keep BG0 on its priority-based tier so the caption is not left
-     * behind its own backdrop. */
+     * Those get the cutsceneArt mapping instead: BGs spread by raw priority
+     * (no 0/1 merge -- that merge is a gameplay-room rule and here it just
+     * flattens the parallax), caption OBJ pops forward, actor OBJ on the
+     * play plane. See PortStereoDepth_BgTierForPriority / _ObjTier. */
     switch (gMainGameMode) {
+        case 1:
         case 7:
+        case 9:
         case 10:
             sDepthState.bg0IsOverlayText = false;
+            sDepthState.cutsceneArt = true;
             break;
         default:
             sDepthState.bg0IsOverlayText = !sDepthState.inGameplay;
+            sDepthState.cutsceneArt = false;
             break;
     }
     /* Two-plane flatten for depthless screens (see flatMenu): content
@@ -819,6 +832,8 @@ static void ComputeDepthState(uint16_t dispcnt) {
             sCacheGameMode = (int)gMainGameMode;
             sCacheSettleFrames = 16;
         }
+        if (sForcedSettleFrames > sCacheSettleFrames) sCacheSettleFrames = sForcedSettleFrames;
+        if (sForcedSettleFrames > 0) --sForcedSettleFrames;
         if (sCacheSettleFrames > 0) {
             --sCacheSettleFrames;
             for (int i = 0; i < 4; ++i) {
@@ -867,6 +882,13 @@ static void ComputeDepthState(uint16_t dispcnt) {
  * per-tile loop -- the pass is purely subtractive, so this is a clean A/B
  * and not a second code path. */
 static bool sBlockPassEnabled = true;
+/* Whole-machine save-state load (port_save_state.c) just replaced VRAM,
+ * palettes and every other decode input under the renderer's feet. Force the
+ * same multi-frame cache rebuild a room transition gets -- the settle check
+ * in RenderFrame keys on area/room/mode and would not trip when a reload
+ * lands back in the same room. */
+void Port_GpuRenderer_InvalidateAll(void) { sForcedSettleFrames = 24; }
+
 void Port_GpuRenderer_SetBlockPass(bool on) { sBlockPassEnabled = on; }
 bool Port_GpuRenderer_BlockPassEnabled(void) { return sBlockPassEnabled; }
 
@@ -2737,6 +2759,12 @@ static void CollectSprite(int oamIndex, bool obj1D) {
              * flat text into Samus. */
             extern int Port_OverlayText_IsSlot(int oamIndex);
             bool isOverlayText = gMainGameMode == 4 && Port_OverlayText_IsSlot(oamIndex);
+            /* The escape countdown digits (PE_ESCAPE particle, tagged in
+             * src/particle.c). Route them exactly like real HUD: HUD depth
+             * tier, and off-screen with the HUD when that option is on. */
+            extern int Port_OverlayText_IsEscapeSlot(int oamIndex);
+            bool isEscapeHud = gMainGameMode == 4 && Port_OverlayText_IsEscapeSlot(oamIndex);
+            if (isEscapeHud) isRealHud = true;
             /* Per-sprite depth override (port_sprite_depth_oam.c): a few
              * sprite TYPES are authored to composite with a specific BG --
              * the Kraid/Ridley statues set their OAM priority to BG1's so
