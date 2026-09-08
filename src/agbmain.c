@@ -166,6 +166,17 @@ void agbmain(void)
         }
 #endif
 
+#if defined(MZM_3DS)
+        /* Whole-machine save/load state, requested from the bottom screen's
+         * ESTADO tab. Applied HERE for the same reason as the warp above:
+         * the touch handler runs mid-frame inside Port_Bios_Halt. No-op
+         * unless a slot is pending and the game is really in gameplay. */
+        {
+            extern void Port_SaveState_ServicePending(void);
+            Port_SaveState_ServicePending();
+        }
+#endif
+
         switch (gMainGameMode)
 
         {

@@ -45,6 +45,10 @@ int Port_GpuRenderer_HazeMode(void);
 bool Port_GpuRenderer_HazeRippleActive(void);
 bool Port_GpuRenderer_IsActive(void);
 void Port_GpuRenderer_SetActive(bool active);
+/* Drop every tile/block/layer cache and re-decode from VRAM over the next
+ * couple dozen frames. Called after a save-state load (port_save_state.c)
+ * replaces VRAM/palettes/tilemaps wholesale. */
+void Port_GpuRenderer_InvalidateAll(void);
 /* Item counts from the most recently rendered GPU frame, for the debug
  * overlay -- see the definition in port_gpu_renderer.c. Any output pointer
  * may be NULL. */

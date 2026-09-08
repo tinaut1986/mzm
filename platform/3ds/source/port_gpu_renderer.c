@@ -371,6 +371,9 @@ static LayerTile sLayerTiles[4][LAYER_MAX_TILES];
 static int sLayerTileCount[4];
 static bool sLayerNeedsCompose[4];
 static bool sLayerComposed[4]; /* has valid content from some earlier frame */
+/* Set by Port_GpuRenderer_InvalidateAll (save-state load); forces the
+ * RenderFrame settle window even with area/room/mode unchanged. */
+static int sForcedSettleFrames;
 typedef struct {
     int originTileX, originTileY;
     uint32_t screenBase, charBase, mapHash, palHash;
@@ -829,6 +832,8 @@ static void ComputeDepthState(uint16_t dispcnt) {
             sCacheGameMode = (int)gMainGameMode;
             sCacheSettleFrames = 16;
         }
+        if (sForcedSettleFrames > sCacheSettleFrames) sCacheSettleFrames = sForcedSettleFrames;
+        if (sForcedSettleFrames > 0) --sForcedSettleFrames;
         if (sCacheSettleFrames > 0) {
             --sCacheSettleFrames;
             for (int i = 0; i < 4; ++i) {
@@ -877,6 +882,13 @@ static void ComputeDepthState(uint16_t dispcnt) {
  * per-tile loop -- the pass is purely subtractive, so this is a clean A/B
  * and not a second code path. */
 static bool sBlockPassEnabled = true;
+/* Whole-machine save-state load (port_save_state.c) just replaced VRAM,
+ * palettes and every other decode input under the renderer's feet. Force the
+ * same multi-frame cache rebuild a room transition gets -- the settle check
+ * in RenderFrame keys on area/room/mode and would not trip when a reload
+ * lands back in the same room. */
+void Port_GpuRenderer_InvalidateAll(void) { sForcedSettleFrames = 24; }
+
 void Port_GpuRenderer_SetBlockPass(bool on) { sBlockPassEnabled = on; }
 bool Port_GpuRenderer_BlockPassEnabled(void) { return sBlockPassEnabled; }
 
