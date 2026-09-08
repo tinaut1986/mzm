@@ -69,6 +69,9 @@ def ensure_maps():
     link_worktree_assets()
     maps = os.path.join(HERE, "maps.json")
     sources = newest(os.path.join(ROOT, "src", "data", "rooms_data.c"),
+                     os.path.join(ROOT, "src", "data", "rooms"),
+                     os.path.join(ROOT, "src", "data", "spriteset.c"),
+                     os.path.join(ROOT, "platform", "3ds", "source", "port_sprite_depth.inc"),
                      os.path.join(ROOT, "data", "rooms"),
                      os.path.join(ROOT, "data", "tilesets"),
                      os.path.join(HERE, "build_maps.py"))
@@ -113,6 +116,39 @@ def ensure_sprite_thumbs(rebuilt):
     except subprocess.CalledProcessError as e:
         # Without thumbnails, SPRITES mode still works as a plain catalogue.
         print("  (fallo, sigo sin miniaturas: %s)" % e)
+
+
+def ensure_wasm():
+    """depth_engine.js: the port's own port_stereo_depth.c / port_layer_fixes.c
+    compiled to WebAssembly (see wasm/build.sh). Rebuilt when those sources,
+    the bridge, or the build script are newer -- same "regenerate if stale"
+    convention as maps.json. If emcc is not installed, the workbench still
+    runs: the Map mode's sprite depth coloring just falls back to a visible
+    "WASM ENGINE NOT BUILT" notice instead of silently using a JS
+    reimplementation that could drift from the real logic."""
+    import shutil
+    engine = os.path.join(HERE, "depth_engine.js")
+    sources = newest(
+        os.path.join(ROOT, "platform", "3ds", "source", "port_stereo_depth.c"),
+        os.path.join(ROOT, "platform", "3ds", "source", "port_stereo_depth.h"),
+        os.path.join(ROOT, "platform", "3ds", "source", "port_layer_fixes.c"),
+        os.path.join(ROOT, "platform", "3ds", "source", "port_layer_fixes.h"),
+        os.path.join(HERE, "wasm", "depth_bridge.c"),
+        os.path.join(HERE, "wasm", "build.sh"),
+    )
+    if os.path.isfile(engine) and os.path.getmtime(engine) >= sources:
+        return
+    if shutil.which("emcc") is None:
+        if not os.path.isfile(engine):
+            print("aviso: emcc no está instalado -- depth_engine.js no se genera.")
+            print("  instala Emscripten y corre tools/layer-workbench/wasm/build.sh")
+            print("  (https://emscripten.org/docs/getting_started/downloads.html)")
+        return
+    print("generando depth_engine.js (wasm)...")
+    try:
+        subprocess.run(["bash", os.path.join(HERE, "wasm", "build.sh")], check=True)
+    except subprocess.CalledProcessError as e:
+        print("  (fallo compilando el motor wasm, sigo sin él: %s)" % e)
 
 
 FIXES = os.path.join(ROOT, "platform", "3ds", "source", "port_layer_fixes.inc")
@@ -186,6 +222,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 def main():
     ensure_maps()
     ensure_sprites()
+    ensure_wasm()
     os.chdir(HERE)
     # Sólo desde esta máquina: sirve el repo y escribe en él, no hay por qué
     # exponerlo. Si el puerto está pillado -- otra copia abierta -- se prueba el

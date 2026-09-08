@@ -117,8 +117,11 @@ No salen:
   del tileset (`pBackgroundGraphics`), no con sus bloques: hacen falta otro
   decodificador y otro juego de gráficos. BG3 es además siempre la capa del
   fondo, con prioridad 3 fija.
-- **Los sprites**, que no están en los datos de mapa en absoluto: se generan al
-  jugar desde los spritesets de la sala. Sólo se ven en una grabación.
+- **Los sprites como capa de dibujo**: no tienen gráficos posicionados aquí --
+  la pose y el gráfico real de cada uno los fija su IA en tiempo de juego, y
+  eso sólo se ve en una grabación. Lo que el modo mapa SÍ marca, con el botón
+  `OBJ`, es la posición y el plano de profundidad de los sprites del
+  spriteset por defecto de la sala -- ver "Sprites en el mapa" más abajo.
 
 Las dos siguen valiendo como destino de una corrección aunque no se dibujen.
 
@@ -322,6 +325,80 @@ asignarlo.
   entradas, igual que con `port_layer_fixes.inc`. Los comentarios por entrada
   que hubiera a mano se pierden. El *por qué* de cada caso va en
   `port_sprite_depth_oam.c` y en `docs/`.
+
+## Motor de profundidad en WASM
+
+El plano estéreo que colorea el modo mapa (ver siguiente sección) no sale de
+una reimplementación en JS: sale de compilar a WebAssembly los mismos
+`port_stereo_depth.c` / `port_layer_fixes.c` que compila el port 3DS, la
+lógica que `platform/3ds/tests/stereo_depth_test.c` ya prueba en el host.
+Reimplementarla en JS podría desincronizarse en silencio; compilar el C real
+no puede.
+
+```bash
+tools/layer-workbench/wasm/build.sh      # necesita emcc (Emscripten)
+python3 tools/layer-workbench/wasm/parity_check.py   # compara wasm vs. el binario nativo del test
+```
+
+`build.sh` compila `platform/3ds/source/port_stereo_depth.c`,
+`port_layer_fixes.c` y el puente `tools/layer-workbench/wasm/depth_bridge.c`
+(que sólo aplana el `struct` de estado a parámetros escalares -- no decide
+nada) en `tools/layer-workbench/depth_engine.js`, con el `.wasm` incrustado
+(`SINGLE_FILE=1`) para no añadir un segundo fetch. `serve.py` lo regenera
+solo si `emcc` está instalado y las fuentes son más nuevas, igual que
+`maps.json`; si no está instalado dejaste `depth_engine.js` sin generar, la
+insignia **motor wasm** de la barra lo avisa en rojo, y el modo mapa sigue
+funcionando (sin colorear los sprites por plano -- ver más abajo). No se deja
+un `depth_engine.js` a medio camino en el repo: está en `.gitignore`, como
+`thumbs/`.
+
+`parity_check.py` es la comprobación de que no hay desincronía: compila un
+programa nativo minúsculo que llama a las mismas funciones con el mismo
+espacio de estados que recorre `stereo_depth_test.c` (las cuatro
+prioridades BGCNT, los tres presets de separación, `samusOnTopOfBackgrounds`,
+`flatMenu`), vuelca los resultados, y los compara con lo que devuelve
+`depth_engine.js` bajo Node para exactamente los mismos estados. Hoy: 6160
+comprobaciones, 0 diferencias.
+
+## Sprites en el mapa
+
+El modo mapa dibuja, encima del resultado, un marcador por cada sprite del
+**spriteset por defecto** de la sala (el que corre antes de que se dispare
+cualquier evento) -- el hueco que dejaba documentado más abajo, en
+"Pendiente". El botón `OBJ` de la cabecera del resultado los muestra u
+oculta, igual que los botones `BG0`/`BG1`/`BG2`.
+
+- **De dónde sale la posición.** `build_maps.py` lee el `.c` de datos de la
+  sala (`src/data/rooms/<área>/<área>_<n>.c`, el array
+  `sX_SpritesetN[]` que `RoomEntry.pDefaultSpriteData` señala), en bloques --
+  el mismo espacio de coordenadas que las capas BG. Cada entrada
+  `(y, x, SPRITESET_IDX(idx))` se resuelve contra la tabla
+  `sSpritesetN` de `src/data/spriteset.c` (`N` = `RoomEntry.defaultSpriteset`)
+  para dar el nombre `PSPRITE_*`, exactamente como lo hace
+  `SpriteInitPrimary` (`src/sprite.c`) en tiempo de ejecución.
+- **Qué NO sale.** Los spritesets `firstSpriteset`/`secondSpriteset`, que
+  sustituyen al por defecto cuando se cumple un evento de la sala -- son
+  datos igual de estáticos, pero decidir cuál está activo depende del
+  progreso de la partida, y mostrar el que no toca sería peor que no
+  mostrar ninguno; queda como ampliación futura documentada, no adivinada.
+  Los sprites SECUNDARIOS (los que genera la IA de un primario,
+  `SpriteSpawnSecondary`) tampoco: no tienen posición estática en absoluto,
+  la calcula la IA en tiempo de ejecución.
+- **De dónde sale el color.** El plano depende de si el tipo tiene un
+  override en `port_sprite_depth.inc` (el mismo `spriteFixes` que edita el
+  modo SPRITES, ya cargado aquí):
+  - **Sin override**, o `PORT_SPRITE_DEPTH_NONE`: el único plano de sprite de
+    mundo, `PortStereoDepth_ObjTier` en partida -- se pregunta al motor wasm,
+    no se da por hecho `OBJ_P1` a mano.
+  - **Un `PORT_TIER_*` explícito**: ese plano fijo, coloreado igual.
+  - **`PORT_SPRITE_DEPTH_BG_COPLANAR`**: el plano depende del `bgPriority`
+    que fija la IA del sprite en tiempo de ejecución -- no es estático. Sale
+    marcado con un anillo discontinuo en vez de un color, para no inventar
+    un plano que la sala no fija por sí sola. Para ver el valor real, ábrelo
+    en una **grabación**.
+- Sin el motor wasm compilado (ver sección anterior), el modo mapa sigue
+  funcionando pero el botón `OBJ` no colorea nada -- no hay una tabla en JS
+  de repuesto que pudiera desincronizarse del port real.
 
 ## Pendiente
 

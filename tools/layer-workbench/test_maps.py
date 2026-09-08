@@ -173,6 +173,59 @@ def test_prioridades_y_mezcla(b):
     igual(len(set(cr1["bg0"])), 1, "crateria 1: BG0 es un único bloque repetido")
 
 
+def test_sprite_placements(b):
+    """Static sprite placement extraction (build_maps.py's default-spriteset
+    reader) -- new code, so in English per CLAUDE.md. Checks the pipeline
+    end-to-end: room data -> spriteset table -> resolved PSPRITE_* name,
+    and that unresolved entries are never silently invented.
+    """
+    print("sprite placements: default spriteset, resolved against sSpritesetN")
+    total_placed = 0
+    total_resolved = 0
+    for salas in b["areas"].values():
+        for r in salas:
+            sprites = r.get("sprites", [])
+            total_placed += len(sprites)
+            for s in sprites:
+                # Coordinates are block units in the room, same space as the
+                # BG block maps -- never negative, never past a generous cap
+                # (largest room is well under 256 blocks either way).
+                check(0 <= s["x"] < 256, "sprite x in room %s/%d in range" % (r["id"], r["id"]))
+                check(0 <= s["y"] < 256, "sprite y in room %s/%d in range" % (r["id"], r["id"]))
+                if s["spriteId"] is not None:
+                    total_resolved += 1
+                    check(s["spriteId"].startswith("PSPRITE_"),
+                          "resolved sprite id looks like a PSPRITE_* name: %r" % s["spriteId"])
+
+    # Brinstar room 0's default spriteset (index 1, per RoomEntry.defaultSpriteset)
+    # is known from the source data read directly above -- pin it so a future
+    # change to the extraction (wrong field order, wrong slot decode) is caught
+    # here instead of only showing up as sprites misplaced or miscolored in the
+    # Map mode overlay.
+    b0 = [r for r in b["areas"]["brinstar"] if r["id"] == 0][0]
+    igual(len(b0["sprites"]), 8, "brinstar room 0: default-spriteset sprite count")
+    igual(b0["sprites"][0], {"x": 27, "y": 22, "spriteId": "PSPRITE_ZOOMER_YELLOW"},
+          "brinstar room 0: first placement resolves correctly")
+    igual(b0["sprites"][4], {"x": 11, "y": 27, "spriteId": "PSPRITE_MORPH_BALL"},
+          "brinstar room 0: mid-list placement resolves correctly")
+
+    check(total_placed > 0, "at least some rooms carry a default spriteset")
+    check(total_resolved == total_placed,
+          "every extracted placement resolves to a PSPRITE_* name (got %d/%d)"
+          % (total_resolved, total_placed))
+
+    # Depth overrides: keys must be genuine PSPRITE_* names and values must be
+    # either the documented codes or a bare PORT_TIER_* identifier -- never
+    # something the .inc format doesn't actually support, which would mean the
+    # regex drifted from port_sprite_depth.inc's real grammar.
+    overrides = b.get("spriteDepthOverrides", {})
+    for spriteId, code in overrides.items():
+        check(spriteId.startswith("PSPRITE_"), "override key is a PSPRITE_* name: %r" % spriteId)
+        check(code in ("PORT_SPRITE_DEPTH_NONE", "PORT_SPRITE_DEPTH_BG_COPLANAR")
+              or code.startswith("PORT_TIER_"),
+              "override code is a known form: %r" % code)
+
+
 def test_rle_no_se_desvia():
     """RoomRleDecompress no debe salirse del archivo ni quedarse a medias.
 
@@ -312,6 +365,7 @@ def main():
     test_indices_de_tile(b)
     test_minimapa(b)
     test_prioridades_y_mezcla(b)
+    test_sprite_placements(b)
     test_rle_no_se_desvia()
     got = test_regresion(b)
 

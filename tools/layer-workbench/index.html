@@ -325,6 +325,7 @@
 
   <div class="status">
     <span class="meta" id="mapsbadge">sin maps.json</span>
+    <span class="meta" id="wasmbadge" title="depth_engine.wasm: the real port_stereo_depth.c compiled to WebAssembly. Colors the static sprite markers in Map mode.">motor wasm: cargando…</span>
     <span class="meta" id="meta">sin archivo</span>
     <span class="meta okbox" id="autobadge" hidden></span>
   </div>
@@ -390,6 +391,135 @@
   var DEST=[{v:4,name:"Sprites",note:"delante de todo"},{v:0,name:"BG0",note:""},
             {v:1,name:"BG1",note:""},{v:2,name:"BG2",note:""},{v:3,name:"BG3",note:"el más al fondo"}];
 
+  /* ---------- WASM depth engine ----------
+   * The REAL port_stereo_depth.c / port_layer_fixes.c, compiled to
+   * WebAssembly by tools/layer-workbench/wasm/build.sh (see its header for
+   * why: a JS reimplementation could silently drift from the port's actual
+   * decision logic, which is the one thing this tool exists to avoid).
+   * Loaded lazily and optionally -- depth_engine.js is a generated build
+   * artifact (serve.py builds it on demand if emcc is available; it is not
+   * checked in, see tools/layer-workbench/.gitignore), so the workbench must
+   * keep working, with a visible "not built" notice, when it is absent. */
+  var DepthEngine=null,depthEngineStatus="loading";
+  function loadDepthEngine(){
+    var s=document.createElement("script");
+    s.src="depth_engine.js";
+    s.onload=function(){
+      if(typeof DepthEngineModule!=="function"){
+        depthEngineStatus="error";updateWasmBadge();return;
+      }
+      DepthEngineModule().then(function(M){
+        var argT=["number","number","number","number","number","number","number","number","number","number"];
+        DepthEngine={
+          bgTier:M.cwrap("depth_bg_tier","number",argT),
+          bgTierForPriority:M.cwrap("depth_bg_tier_for_priority","number",argT),
+          objTier:M.cwrap("depth_obj_tier","number",argT),
+          tierPxFor:M.cwrap("depth_tier_px_for","number",["number","number"])
+        };
+        depthEngineStatus="ready";updateWasmBadge();redraw();
+      }).catch(function(){ depthEngineStatus="error";updateWasmBadge(); });
+    };
+    s.onerror=function(){ depthEngineStatus="missing";updateWasmBadge(); };
+    document.head.appendChild(s);
+  }
+  function updateWasmBadge(){
+    if(!els.wasmbadge)return;
+    if(depthEngineStatus==="ready"){
+      els.wasmbadge.textContent="motor wasm: activo";
+      els.wasmbadge.className="meta okbox";
+    } else if(depthEngineStatus==="missing"){
+      els.wasmbadge.textContent="motor wasm: no compilado";
+      els.wasmbadge.title="tools/layer-workbench/depth_engine.js no está. "+
+        "Corre tools/layer-workbench/wasm/build.sh (necesita emcc) o abre esto con serve.py, "+
+        "que lo genera solo. Sin él, los marcadores de sprite en modo MAPA no salen -- "+
+        "no hay una versión en JS de repuesto, para no arriesgarse a que se desincronice "+
+        "del port_stereo_depth.c real.";
+      els.wasmbadge.className="meta warnbox";
+    } else {
+      els.wasmbadge.textContent="motor wasm: error";
+      els.wasmbadge.className="meta warnbox";
+    }
+  }
+
+  /* Depth tiers, by index (PORT_TIER_* in port_stereo_depth.h) -- one marker
+   * color each, for the Map-mode static sprite overlay below. */
+  var TIER_MARKER_COLOR=[
+    "#5b8fd6", /* 0 BG_FAR */
+    "#6fae52", /* 1 BG_MID */
+    "#e9a13b", /* 2 BG_PLAY */
+    "#d24f4f", /* 3 BG_OVERLAY */
+    "#f2f2f2", /* 4 OBJ_P1 -- the default plane, most room sprites */
+    "#b06fd6", /* 5 OBJ_HUD */
+    "#4fc7c7"  /* 6 OBJ_MAP */
+  ];
+  var TIER_COPLANAR_COLOR="#ffb400"; /* dynamic: BG_COPLANAR, resolved only in a recording */
+
+  /* Static tier for one room sprite placement, via the compiled port code --
+   * never guessed in JS. Returns {tier:int} for a fixed plane, or
+   * {dynamic:true} when the type is PORT_SPRITE_DEPTH_BG_COPLANAR: its real
+   * depth depends on a bgPriority the sprite's AI sets at runtime, which is
+   * exactly the kind of value this tool's static room data cannot know --
+   * open a recording to see it resolved for real. */
+  function staticSpriteTier(spriteName){
+    var fx=spriteFixes[spKey(spriteName,0)];
+    var code=fx?fx.code:-1; /* PORT_SPRITE_DEPTH_NONE when no override entry */
+    if(code===-2 /* PORT_SPRITE_DEPTH_BG_COPLANAR */)return {dynamic:true};
+    if(code>=0)return {tier:code}; /* an explicit PORT_TIER_* */
+    /* PORT_SPRITE_DEPTH_NONE: the one world-sprite plane, PortStereoDepth_ObjTier
+       in gameplay -- ask the real function rather than hardcoding OBJ_P1, so a
+       future change to that policy shows up here too. */
+    if(DepthEngine)
+      return {tier:DepthEngine.objTier(0,0,0,0,1,0,0,0,0,0)};
+    return null; /* engine not loaded: caller shows the "not built" notice instead */
+  }
+
+  /* Draws the static sprite overlay on the result canvas, in ROOM PIXEL
+   * space (paint()'s ctx is unscaled; CSS does the zoom) -- one marker per
+   * placement in the room's DEFAULT spriteset (build_maps.py; see its
+   * comment on why only the default one). Fixed-tier sprites get a filled
+   * dot in their tier's color; BG_COPLANAR sprites get a dashed ring instead
+   * of a color, because coloring them would be inventing a depth the port
+   * does not fix statically. */
+  function drawSpriteMarkers(ctx){
+    if(!state||state.kind!=="map"||!state.room||!state.room.sprites)return;
+    if(state.stageLayers&&state.stageLayers.obj===false)return;
+    var sprites=state.room.sprites;
+    if(!sprites.length)return;
+    ctx.save();
+    sprites.forEach(function(s){
+      var cx=s.x*16+8,cy=s.y*16+8;
+      if(!s.spriteId){
+        /* Extracted but not resolved to a PSPRITE_* name (see build_maps.py) --
+           shown as a plain grey dot rather than silently dropped. */
+        ctx.beginPath();ctx.arc(cx,cy,3,0,Math.PI*2);
+        ctx.fillStyle="rgba(160,160,160,.85)";ctx.fill();
+        ctx.strokeStyle="rgba(0,0,0,.6)";ctx.lineWidth=1;ctx.stroke();
+        return;
+      }
+      var t=staticSpriteTier(s.spriteId);
+      if(!t){
+        ctx.beginPath();ctx.arc(cx,cy,3,0,Math.PI*2);
+        ctx.fillStyle="rgba(120,120,120,.6)";ctx.fill();
+        return;
+      }
+      if(t.dynamic){
+        ctx.beginPath();ctx.arc(cx,cy,5,0,Math.PI*2);
+        ctx.setLineDash([2,2]);
+        ctx.strokeStyle=TIER_COPLANAR_COLOR;ctx.lineWidth=2;ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.beginPath();ctx.moveTo(cx,cy-2);ctx.lineTo(cx,cy+1);
+        ctx.moveTo(cx,cy+3);ctx.lineTo(cx,cy+3.2);
+        ctx.strokeStyle=TIER_COPLANAR_COLOR;ctx.lineWidth=1.4;ctx.stroke();
+      } else {
+        ctx.beginPath();ctx.arc(cx,cy,4,0,Math.PI*2);
+        ctx.fillStyle=TIER_MARKER_COLOR[t.tier]||"#fff";
+        ctx.fill();
+        ctx.strokeStyle="rgba(0,0,0,.7)";ctx.lineWidth=1;ctx.stroke();
+      }
+    });
+    ctx.restore();
+  }
+
   var samples=[],state=null,sel=null,fixes={},zoom=2,fileName="";
   /* Modo activo del shell y lo propio del modo sprites (ver el bloque
      "modos" más abajo). El catálogo y sus overrides viven aquí para que
@@ -402,7 +532,7 @@
      bloques distintos en la misma posición se pisarían. */
   var selMore={};
   var els={};
-  ["file","incfile","mapsfile","mapsbadge","railTitle","meta","shots","main","drop",
+  ["file","incfile","mapsfile","mapsbadge","wasmbadge","railTitle","meta","shots","main","drop",
    "side","tilebox","list","export",
    "copy","clear","save","zin","zout","zlab","relayout","torail","toside",
    "minbar","divrail","divside","restore","autobadge","load",
@@ -1299,6 +1429,7 @@
     if(!state)return;
     var A=applied();
     paint(state.stage,composite(A),false,marksOf());
+    drawSpriteMarkers(state.stage.getContext("2d"));
     state.cards.forEach(function(c){
       if(!c.boxBefore.hidden)paint(c.before,state.bg[c.bg].img,true,marksOf(),c.bg);
       if(!c.boxAfter.hidden)paint(c.after,A.after[c.bg],true,marksOf(),c.bg);
@@ -1370,13 +1501,17 @@
       if(state.on&&state.on[bg])available.push(bg);
     });
     if(state.obj)available.push("obj");
+    else if(state.kind==="map"&&state.room&&state.room.sprites&&state.room.sprites.length)
+      available.push("obj");
 
     available.forEach(function(key){
       var btn=document.createElement("button");
       var on=state.stageLayers[key]!==false;
       btn.className="wb laytoggle "+(on?"on":"off");
       btn.textContent=(key==="obj"?"OBJ":"BG"+key);
-      btn.title=(key==="obj"?"Sprites (OBJ)":"Capa BG"+key)+
+      btn.title=(key==="obj"?(state.kind==="map"
+                  ?"Sprites del spriteset por defecto de la sala, en su posición estática"
+                  :"Sprites (OBJ)"):"Capa BG"+key)+
                 " en el resultado (Clic: mostrar/ocultar · Ctrl+clic: aislar)";
       btn.addEventListener("pointerdown",function(e){e.stopPropagation();});
       btn.addEventListener("click",function(e){
@@ -3108,7 +3243,11 @@
     window.__selftest=r;
   }
 
-  setZoom(2);renderList();autoloadMaps();loadFixesFromServer(true);loadSprites();
+  setZoom(2);renderList();autoloadMaps();loadFixesFromServer(true);loadSprites();loadDepthEngine();
+  /* Sprite overrides, quietly: the Map-mode static overlay needs
+     spriteFixes to color markers correctly even if the user never opens
+     the SPRITES tab this session. */
+  loadSpriteFixesFromServer(true).then(function(){ if(mode==="map")redraw(); });
   if(/[?&]test\b/.test(location.search)){
     /* Tras la carga de maps.json, que es asíncrona. */
     var espera=setInterval(function(){
