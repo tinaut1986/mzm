@@ -217,6 +217,21 @@ void ParticleDraw(struct ParticleEffect* pParticle)
         }
 
         gNextOamSlot = partCount + prevSlot;
+
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+        /* The escape countdown is an OBJ particle drawn during gameplay with
+         * absolute (non-scrolling) position and OAM priority 0 -- it is HUD
+         * in everything but name. The stereo renderer's HUD test only covers
+         * HudUpdateOam's slots, so without this tag the digits land on the
+         * world OBJ plane and sink behind the play field even though 2D
+         * draws them on top. Tagging it as HUD also carries it off-screen
+         * with the rest of the HUD under the "HUD outside" visual option. */
+        if (gCurrentParticleEffectOamFramePointer == gParticleEscapeOamFrames)
+        {
+            extern void Port_OverlayText_NoteEscapeOam(int firstSlot, int endSlot);
+            Port_OverlayText_NoteEscapeOam(prevSlot, gNextOamSlot);
+        }
+#endif
     }
 }
 

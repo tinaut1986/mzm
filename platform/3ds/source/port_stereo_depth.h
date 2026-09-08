@@ -74,6 +74,21 @@ typedef struct {
      *    = 2 -- all text forward, all wall back. */
     bool flatMenu;
     uint8_t flatMenuBackdropPrio;
+
+    /* Scene-art cutscene (GM_INTRO, GM_CHOZODIA_ESCAPE, GM_TOURIAN_ESCAPE,
+     * GM_CUTSCENE). These are not gameplay rooms: each BG priority is a real
+     * parallax layer, not layers a room composites into one flat image, so
+     * the gameplay priority-0/1 merge does not apply -- keeping it just
+     * collapsed the intro's two BGs (and the escape montage's) onto one
+     * plane and killed the depth. When set:
+     *   - BgTier(ForPriority): p0 -> BG_PLAY, p1 -> BG_MID, p2/p3 -> BG_FAR
+     *     (a full spread, no merge).
+     *   - ObjTier: the caption is OBJ priority 0 and pops to BG_OVERLAY; an
+     *     actor is OBJ priority >=1 and sits on BG_PLAY, coplanar with a
+     *     priority-0 backdrop it draws over and in front of the rest.
+     * Mutually exclusive with bg0IsOverlayText and flatMenu (the renderer
+     * sets exactly one). */
+    bool cutsceneArt;
 } PortStereoDepthState;
 
 /* Depth tier indices. port_gpu_renderer.c picks the HUD and map tiers by
