@@ -183,6 +183,9 @@ def ensure_wasm():
     sources = newest(
         os.path.join(ROOT, "platform", "3ds", "source", "port_stereo_depth.c"),
         os.path.join(ROOT, "platform", "3ds", "source", "port_stereo_depth.h"),
+        os.path.join(ROOT, "platform", "3ds", "source", "port_cutscene_depth.c"),
+        os.path.join(ROOT, "platform", "3ds", "source", "port_cutscene_depth.h"),
+        os.path.join(ROOT, "platform", "3ds", "source", "port_cutscene_depth.inc"),
         os.path.join(ROOT, "platform", "3ds", "source", "port_layer_fixes.c"),
         os.path.join(ROOT, "platform", "3ds", "source", "port_layer_fixes.h"),
         os.path.join(HERE, "wasm", "depth_bridge.c"),
@@ -210,19 +213,22 @@ def ensure_wasm():
 
 FIXES = os.path.join(ROOT, "platform", "3ds", "source", "port_layer_fixes.inc")
 SPRITE_FIXES = os.path.join(ROOT, "platform", "3ds", "source", "port_sprite_depth.inc")
+CUTSCENE_FIXES = os.path.join(ROOT, "platform", "3ds", "source", "port_cutscene_depth.inc")
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
-    """Lo de siempre, más /fixes y /sprite-fixes para leer y escribir los .inc.
+    """Lo de siempre, más /fixes, /sprite-fixes y /cutscene-fixes para leer y
+    escribir los .inc.
 
-    Sólo escucha en 127.0.0.1 y sólo escribe en esas dos rutas concretas: no
-    es un servidor de archivos general con escritura.
+    Sólo escucha en 127.0.0.1 y sólo escribe en esas rutas concretas: no es un
+    servidor de archivos general con escritura.
     """
 
     # ruta -> (fichero, marca X-macro para el recuento del log)
     ENDPOINTS = {
         "/fixes": (FIXES, b"PORT_LAYER_FIX("),
         "/sprite-fixes": (SPRITE_FIXES, b"PORT_SPRITE_DEPTH("),
+        "/cutscene-fixes": (CUTSCENE_FIXES, b"PORT_CUTSCENE_DEPTH("),
     }
 
     def end_headers(self):
@@ -296,8 +302,9 @@ def main():
 
     url = "http://127.0.0.1:%d/index.html" % port
     print("banco de capas en " + url + "   (Ctrl+C para parar)")
-    print("correcciones capas   " + os.path.relpath(FIXES, ROOT))
-    print("correcciones sprites " + os.path.relpath(SPRITE_FIXES, ROOT))
+    print("correcciones capas      " + os.path.relpath(FIXES, ROOT))
+    print("correcciones sprites    " + os.path.relpath(SPRITE_FIXES, ROOT))
+    print("correcciones cinemáticas " + os.path.relpath(CUTSCENE_FIXES, ROOT))
     threading.Timer(0.4, lambda: webbrowser.open(url)).start()
     try:
         server.serve_forever()
