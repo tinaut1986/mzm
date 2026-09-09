@@ -19,6 +19,12 @@ extern u8  gCurrentArea;
 extern u8  gCurrentRoom;
 extern u16 gFrameCounter16Bit;
 
+/* Sound engine, same extern-not-header style. PlayCurrentMusicTrack() re-runs
+ * InitTrack -> port_resolve_addr for gMusicInfo.musicTrack, rebuilding the
+ * current song's resolved ROM pointers from the restored music id instead of
+ * trusting the (host) pointers the snapshot carried -- see SsDoLoad. */
+extern void PlayCurrentMusicTrack(void);
+
 /* Bounds of the decompilation's scattered .data/.bss, bracketed by
  * ewram_symbols.ld. Linker symbols: take their addresses, never their
  * "values". */
@@ -28,9 +34,44 @@ extern char __ss_bss_start[],  __ss_bss_end[];
 /* ------------------------------------------------------------------------- */
 
 #define SS_MAGIC    0x314D5A53u   /* "SZM1" */
-#define SS_VERSION  1
+#define SS_VERSION  2
 #define SS_REGIONS  10
 #define SS_PATH_FMT "sdmc:/3ds/mzm-state%d.bin"
+
+/* A snapshot is a raw dump of EWRAM/IWRAM/.data/.bss, and those regions are
+ * full of ABSOLUTE host pointers whose targets only exist at the addresses
+ * this build placed them: m4a track structs point at gTrackNVariables /
+ * SoundChannel pools, clipdata/scroll code pointers point into .text, sprite
+ * AI pointers, port_resolve_addr'd ROM pointers, ... Restoring a slot written
+ * by a build with a DIFFERENT layout relocates none of that -- every such
+ * pointer is then stale by however much things moved, and the first deref (or
+ * the first write-through, as StopMusicOrSound does) faults.
+ *
+ * The header carries a fingerprint of the running build's DECOMPILATION
+ * layout; a load whose fingerprint differs is refused rather than applied.
+ * It is deliberately layout-based, not a timestamp: a rebuild that does not
+ * move the decomp's code or its .data/.bss bracket (e.g. a pure port-side
+ * change, with __ss_data_start pinned in 3dsx.ld) keeps the same fingerprint,
+ * so slots taken before it still load. Anchors:
+ *   - a decomp .text address (shifts if decomp code grows/reorders)
+ *   - the decomp .data bracket bounds (shift if decomp globals change)
+ *   - the decomp .bss bracket bounds
+ * Residual, uncaught risk: reordering two globals strictly inside a bracket
+ * without changing its bounds or the .text anchor. Rare; a dev tool. */
+static uint32_t SsBuildFingerprint(void) {
+    const uintptr_t anchors[] = {
+        (uintptr_t)&PlayCurrentMusicTrack,
+        (uintptr_t)__ss_data_start, (uintptr_t)__ss_data_end,
+        (uintptr_t)__ss_bss_start,  (uintptr_t)__ss_bss_end,
+    };
+    uint32_t h = 2166136261u;
+    const unsigned char* p = (const unsigned char*)anchors;
+    for (size_t i = 0; i < sizeof(anchors); ++i) {
+        h ^= p[i];
+        h *= 16777619u;
+    }
+    return h;
+}
 
 typedef struct {
     const char* name;
@@ -63,13 +104,19 @@ typedef struct {
     uint32_t area;
     uint32_t room;
     uint32_t frame16;
-    uint32_t reserved[3];
+    uint32_t buildFingerprint;   /* SsBuildFingerprint() at save time */
+    uint32_t reserved[2];
 } SsHeader;
 
 /* ------------------------------------------------------------------------- */
 
 static int  sPendingSave = -1;
 static int  sPendingLoad = -1;
+
+/* Consecutive frames Port_SaveState_Available() has held true; a save/load is
+ * only serviced once this reaches SS_READY_FRAMES. ~half a second at 60fps. */
+#define SS_READY_FRAMES 30
+static int  sReadyFrames = 0;
 
 static char sMsg[48] = "";
 static int  sMsgTtl   = 0;
@@ -129,6 +176,7 @@ static void SsDoSave(int slot) {
     h.area = gCurrentArea;
     h.room = gCurrentRoom;
     h.frame16 = gFrameCounter16Bit;
+    h.buildFingerprint = SsBuildFingerprint();
 
     bool ok = fwrite(&h, sizeof(h), 1, f) == 1;
     for (int i = 0; i < n && ok; ++i)
@@ -157,6 +205,16 @@ static void SsDoLoad(int slot) {
         h.regionCount != SS_REGIONS) {
         fclose(f);
         SsSetMsg("SLOT INCOMPATIBLE");
+        return;
+    }
+
+    /* Reject a slot from any other build: its snapshot is full of absolute
+     * host pointers that only resolve against that build's layout (see
+     * SsBuildFingerprint). Restoring it anyway is the StopMusicOrSound /
+     * UpdateTrack data-abort. */
+    if (h.buildFingerprint != SsBuildFingerprint()) {
+        fclose(f);
+        SsSetMsg("SLOT DE OTRA BUILD");
         return;
     }
 
@@ -191,6 +249,15 @@ static void SsDoLoad(int slot) {
      * GPU tile renderer rebuild its caches instead of trusting stale ones. */
     Port_GpuRenderer_InvalidateAll();
 
+    /* The snapshot's m4a track structs carry pRawData/pHeader HOST pointers
+     * that InitTrack resolved from ROM at song-start (port_resolve_addr in
+     * port_gba_mem.c). They are valid for this build (the fingerprint check
+     * guaranteed the slot is ours), but a load taken the instant a room's
+     * music was still being set up can still restore a half-initialised
+     * track. Re-run the current song from its restored id so those pointers
+     * are rebuilt rather than trusted. */
+    PlayCurrentMusicTrack();
+
     char m[48];
     snprintf(m, sizeof(m), "SLOT %d CARGADO", slot + 1);
     SsSetMsg(m);
@@ -199,10 +266,20 @@ static void SsDoLoad(int slot) {
 void Port_SaveState_ServicePending(void) {
     if (sMsgTtl > 0) --sMsgTtl;
 
+    /* Debounce the "in gameplay" gate. Port_SaveState_Available() only checks
+     * GM_INGAME / SUB_GAME_MODE_PLAYING, and both are already true partway
+     * through a room load -- while doors, streaming and (the crash that
+     * prompted this) the room's music are still being set up. Require the
+     * gate to have held for a short run of frames so a save or load only
+     * fires once the room is genuinely live. */
+    if (Port_SaveState_Available()) {
+        if (sReadyFrames < SS_READY_FRAMES) ++sReadyFrames;
+    } else {
+        sReadyFrames = 0;
+    }
+
     if (sPendingSave < 0 && sPendingLoad < 0) return;
-    /* Same contract as the debug warp: hold the request until real gameplay
-     * is reached rather than acting inside a menu / cutscene / transition. */
-    if (!Port_SaveState_Available()) return;
+    if (sReadyFrames < SS_READY_FRAMES) return;
 
     if (sPendingSave >= 0) {
         int s = sPendingSave;
