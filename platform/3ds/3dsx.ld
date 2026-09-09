@@ -68,7 +68,18 @@ SECTIONS
 
 	/* =========== DATA section =========== */
 
-	. = ALIGN(0x1000);
+	/* --- MZM 3DS: pin the start of .data -----------------------------------
+	 * __ss_data_start is the head of the decomp save-state bracket, and save
+	 * states store absolute pointers into that bracket (see port_save_state.c
+	 * SsBuildFingerprint). Left at ALIGN(0x1000) it shifts by a page whenever
+	 * .text + .rodata cross a 0x1000 boundary, i.e. on almost any rebuild,
+	 * which needlessly invalidates every existing slot. Pin it instead: a
+	 * rebuild that does not touch the decomp keeps __ss_data_start (and the
+	 * fingerprint) put, so old slots still load. The ASSERT fires if .text +
+	 * .rodata ever reach the pinned base -- raise it then (that one rebuild
+	 * invalidates slots, as before). Headroom at time of writing: ~1 MiB. */
+	ASSERT(. <= 0x00500000, "3dsx.ld: .text/.rodata overflowed the pinned .data base (0x500000) -- raise it")
+	. = 0x00500000;
 
 	.data :
 	{
@@ -163,6 +174,15 @@ SECTIONS
 		KEEP (*(SORT(.dtors.*)))
 		KEEP (*(.dtors))
 	} : data
+
+	/* --- MZM 3DS: pin the start of .bss, same reasoning as the .data pin
+	 * above. __ss_bss_start otherwise moves whenever .data's size changes
+	 * (a decomp or port global added/removed). Nothing lives between the end
+	 * of the data-region sections and this address, so __bss_start__ is set
+	 * past the gap -- crt0 only zero-fills __bss_start__..__bss_end__, so the
+	 * gap costs nothing. Headroom for .data + .got + arrays growth: ~470 KiB. */
+	ASSERT(. <= 0x00580000, "3dsx.ld: data-region sections overflowed the pinned .bss base (0x580000) -- raise it")
+	. = 0x00580000;
 
 	__bss_start__ = .;
 	.bss ALIGN(4) :
