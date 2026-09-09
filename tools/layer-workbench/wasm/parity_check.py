@@ -24,16 +24,17 @@ CC = os.environ.get("TEST_CC", "cc")
 # A sample runtime-override list, applied on BOTH sides for the rows after the
 # OVERRIDES: line. SCENE is any valid PORT_CUT_SCENE_* id (8 == KRAID_RISING);
 # OTHER a different one; LAYOUT_A/B two sub-scene signatures.
-# Entry: (scene, layout, target, tier). Targets are the PORT_CUT_* encodings.
+# Entry: (scene, layout, stage, target, tier). stage 0xFF == PORT_CUT_STAGE_ANY.
 SCENE, OTHER = 8, 5
 ANY = 0xFFFF
 LAYOUT_A = (0) | (1 << 4) | (2 << 8) | (3 << 12)          # PORT_CUT_LAYOUT(0,1,2,3)
 LAYOUT_B = (2) | (1 << 4) | (0xF << 8) | (0xF << 12)      # PORT_CUT_LAYOUT(2,1,OFF,OFF)
+STAGE_ANY = 0xFF
 OVERRIDES = [
-    (SCENE, LAYOUT_A, 0x01, 0),   # PRIO(1) -> BG_FAR, only in layout A
-    (SCENE, LAYOUT_B, 0x01, 3),   # PRIO(1) -> BG_OVERLAY, only in layout B
-    (SCENE, ANY,      0x12, 1),   # BG(2)   -> BG_MID, any sub-scene
-    (SCENE, ANY,      0x21, 5),   # CAPTION -> OBJ_HUD, any sub-scene
+    (SCENE, LAYOUT_A, STAGE_ANY, 0x01, 0),   # PRIO(1) -> BG_FAR, only in layout A
+    (SCENE, LAYOUT_B, STAGE_ANY, 0x01, 3),   # PRIO(1) -> BG_OVERLAY, only in layout B
+    (SCENE, ANY,      STAGE_ANY, 0x12, 1),   # BG(2)   -> BG_MID, any sub-scene
+    (SCENE, ANY,      2,         0x21, 5),   # CAPTION -> OBJ_HUD, only on stage 2
 ]
 
 NATIVE_DUMPER = r"""
@@ -101,11 +102,11 @@ int main(void) {
     }
 
     /* Runtime override list active. The checker applies the same 5-byte
-     * entries to the wasm engine when it sees the OVERRIDES: line. */
+     * entries to the wasm engine when it sees the OVERRIDES: line (6 B). */
     printf("OVERRIDES:__ENTRIES_CSV__\n");
     {
         static const unsigned char entries[] = { __ENTRIES_BYTES__ };
-        PortCutsceneDepth_SetRuntimeOverrides(entries, (int)(sizeof(entries) / 5));
+        PortCutsceneDepth_SetRuntimeOverrides(entries, (int)(sizeof(entries) / 6));
     }
     for (int spread = 0; spread < PORT_STEREO_SPREAD_COUNT; spread++) {
         for (unsigned packed = 0; packed < 64u; packed++) {
@@ -144,8 +145,8 @@ DepthEngineModule().then(M => {
         if (line.startsWith("OVERRIDES:")) {
             const entries = line.slice(10).split(";").filter(Boolean).map(s => s.split(",").map(Number));
             const buf = [];
-            for (const [scene, layout, target, tier] of entries)
-                buf.push(scene, layout & 0xFF, (layout >> 8) & 0xFF, target, tier & 0xFF);
+            for (const [scene, layout, stage, target, tier] of entries)
+                buf.push(scene, layout & 0xFF, (layout >> 8) & 0xFF, stage & 0xFF, target, tier & 0xFF);
             M.HEAPU8.set(Uint8Array.from(buf), scratchPtr());
             setOverrides(entries.length);
             continue;
@@ -181,8 +182,8 @@ DepthEngineModule().then(M => {
 def main():
     tmp = tempfile.mkdtemp(prefix="depth_parity_")
     entries_bytes = ", ".join(
-        str(b) for (s, l, t, tier) in OVERRIDES
-        for b in (s, l & 0xFF, (l >> 8) & 0xFF, t, tier & 0xFF))
+        str(b) for (sc, l, stg, t, tier) in OVERRIDES
+        for b in (sc, l & 0xFF, (l >> 8) & 0xFF, stg & 0xFF, t, tier & 0xFF))
     entries_csv = ";".join(",".join(str(x) for x in e) for e in OVERRIDES)
     dumper_src = (NATIVE_DUMPER
                   .replace("__ENTRIES_BYTES__", entries_bytes)

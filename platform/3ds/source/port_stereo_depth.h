@@ -103,6 +103,13 @@ typedef struct {
      * a zeroed state means signature 0, which just never matches a real
      * layout-specific row -- the wildcard (PORT_CUT_ANY) rows still apply. */
     uint16_t cutsceneLayout;
+
+    /* Which montage PAGE of that cutscene: the per-mode state machine's
+     * stage index (TOURIAN_ESCAPE_DATA.stage / CUTSCENE_DATA.timeInfo.stage).
+     * Separates pages that share a layer config. Only read when cutsceneArt;
+     * a zeroed state means stage 0 -- PORT_CUT_STAGE_ANY rows still apply, a
+     * row keyed to a specific non-zero stage does not. */
+    uint8_t cutsceneStage;
 } PortStereoDepthState;
 
 /* Depth tier indices. port_gpu_renderer.c picks the HUD and map tiers by

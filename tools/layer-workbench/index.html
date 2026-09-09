@@ -484,12 +484,12 @@
         /* depth_bg_tier / _obj_tier: (p0,p1,p2,p3, inGameplay, bg0Overlay,
            samusOnTop, flatMenu, flatBackdropPrio, cutsceneArt, cutsceneScene,
            cutsceneLayout, arg) -- 13 numbers. */
-        var a13=Array(13).fill("number");
+        var a14=Array(14).fill("number");
         DepthEngine={
           M:M,
-          bgTier:M.cwrap("depth_bg_tier","number",a13),
-          bgTierForPriority:M.cwrap("depth_bg_tier_for_priority","number",a13),
-          objTier:M.cwrap("depth_obj_tier","number",a13),
+          bgTier:M.cwrap("depth_bg_tier","number",a14),
+          bgTierForPriority:M.cwrap("depth_bg_tier_for_priority","number",a14),
+          objTier:M.cwrap("depth_obj_tier","number",a14),
           tierPxFor:M.cwrap("depth_tier_px_for","number",["number","number"]),
           cutSceneFromGame:M.cwrap("depth_cut_scene_from_game","number",["number","number"]),
           cutLayerSignature:M.cwrap("depth_cut_layer_signature","number",["number","number","number","number","number"]),
@@ -612,20 +612,22 @@
     Object.keys(cutsceneFixes).forEach(function(sid){
       var byVariant=cutsceneFixes[sid];
       Object.keys(byVariant).forEach(function(vk){
-        var layout=(vk==="any")?CUT_ANY:(+vk & 0xFFFF);
+        var parts=vk.split(":");
+        var stage=(parts[0]==="*")?0xFF:(+parts[0]&0xFF);
+        var layout=(parts[1]==="*")?CUT_ANY:(+parts[1]&0xFFFF);
         var byTarget=byVariant[vk];
         Object.keys(byTarget).forEach(function(k){
           var tb=cutTargetByte(k),t=byTarget[k];
-          if(tb>=0&&t>=0&&t<TIER_NAME.length)rows.push([+sid,layout,tb,t]);
+          if(tb>=0&&t>=0&&t<TIER_NAME.length)rows.push([+sid,layout,stage,tb,t]);
         });
       });
     });
     var cap=DepthEngine.cutScratchCapacity();
     if(rows.length>cap)rows=rows.slice(0,cap);
-    var flat=new Uint8Array(rows.length*5);
+    var flat=new Uint8Array(rows.length*6);
     rows.forEach(function(r,i){
-      flat[i*5]=r[0]; flat[i*5+1]=r[1]&0xFF; flat[i*5+2]=(r[1]>>8)&0xFF;
-      flat[i*5+3]=r[2]; flat[i*5+4]=r[3];
+      flat[i*6]=r[0]; flat[i*6+1]=r[1]&0xFF; flat[i*6+2]=(r[1]>>8)&0xFF;
+      flat[i*6+3]=r[2]&0xFF; flat[i*6+4]=r[3]; flat[i*6+5]=r[4];
     });
     DepthEngine.M.HEAPU8.set(flat,DepthEngine.cutScratch());
     DepthEngine.cutSetOverrides(rows.length);
@@ -641,11 +643,28 @@
   /* Layout signature of the CURRENT recording frame (BG enable + BGCNT
      priorities), i.e. which sub-scene of the cutscene it is. */
   function cutLayoutOf(C){
-    if(!DepthEngine||!C)return 0;
-    var dispcnt=u16(C.b,C.io);
-    var p=state.prio||[0,0,0,0];
-    return DepthEngine.cutLayerSignature(dispcnt,p[0],p[1],p[2],p[3])&0xFFFF;
+    if(!C)return 0;
+    /* PortCutsceneDepth_LayerSignature, done here in JS from THIS sample's
+       IO block: 4 bits/BG = BGCNT priority if the layer is enabled in
+       DISPCNT, else 0xF. No dependency on state.prio (refreshed only by
+       loadSample) or on the WASM engine (a stale depth_engine.js without
+       depth_cut_layer_signature would silently return 0). parity_check.py
+       pins this against the C. */
+    var dispcnt=u16(C.b,C.io), sig=0;
+    for(var bg=0;bg<4;bg++){
+      var on=(dispcnt>>(8+bg))&1;
+      var nib=on?(u16(C.b,C.io+8+bg*2)&3):0xF;
+      sig|=nib<<(bg*4);
+    }
+    return sig&0xFFFF;
   }
+
+  /* Montage-page stage of the loaded sample (word 13 of the MZM6 clip
+     block, 0 on older recordings). Together with cutLayoutOf() this is the
+     sub-scene key -- several pages of the Tourian escape share a layout. */
+  function cutStageOf(C){ return (C&&C.cutsceneStage!=null)?(C.cutsceneStage|0):0; }
+  /* "stage:layout" variant key, with * for the wildcards. */
+  function cutVariantKey(C){ return cutStageOf(C)+":"+(cutLayoutOf(C)>>>0); }
   /* Human-readable form, e.g. "BG0=2 BG1=1 BG2=off BG3=off". */
   function cutLayoutLabel(sig){
     var out=[];
@@ -661,12 +680,12 @@
   function cutResolveBgTier(C,bgIndex){
     if(!DepthEngine)return null;
     var p=state.prio||[0,0,0,0];
-    return DepthEngine.bgTier(p[0],p[1],p[2],p[3], 0,0,0,0,0, 1, cutSceneOf(C), cutLayoutOf(C), bgIndex);
+    return DepthEngine.bgTier(p[0],p[1],p[2],p[3], 0,0,0,0,0, 1, cutSceneOf(C), cutLayoutOf(C), cutStageOf(C), bgIndex);
   }
   function cutResolveObjTier(C,objPriority){
     if(!DepthEngine)return null;
     var p=state.prio||[0,0,0,0];
-    return DepthEngine.objTier(p[0],p[1],p[2],p[3], 0,0,0,0,0, 1, cutSceneOf(C), cutLayoutOf(C), objPriority);
+    return DepthEngine.objTier(p[0],p[1],p[2],p[3], 0,0,0,0,0, 1, cutSceneOf(C), cutLayoutOf(C), cutStageOf(C), objPriority);
   }
 
   /* Static tier for one room sprite placement, via the compiled port code --
@@ -684,7 +703,7 @@
        in gameplay -- ask the real function rather than hardcoding OBJ_P1, so a
        future change to that policy shows up here too. */
     if(DepthEngine)
-      return {tier:DepthEngine.objTier(0,0,0,0, 1, 0,0,0,0, 0,0,0, 0)};
+      return {tier:DepthEngine.objTier(0,0,0,0, 1, 0,0,0,0, 0,0,0,0, 0)};
     return null; /* engine not loaded: caller shows the "not built" notice instead */
   }
 
@@ -1115,7 +1134,10 @@
   /* ---------- recording parsing ---------- */
   function scan(buf){
     var b=new Uint8Array(buf),offs=[],i;
-    for(i=0;i+4<=b.length;i+=4){var m=u32(b,i);if(m===0x334D5A4D||m===0x344D5A4D||m===0x354D5A4D)offs.push({off:i,magic:m});}
+    /* Step by 2, not 4: the MZM5 clip block is 230 bytes, so a sample size
+       can be 2 mod 4 and N*size offsets land off the 4-byte grid -- a
+       +=4 scan then finds only every other sample. */
+    for(i=0;i+4<=b.length;i+=2){var m=u32(b,i);if(m===0x334D5A4D||m===0x344D5A4D||m===0x354D5A4D||m===0x364D5A4D)offs.push({off:i,magic:m});}
     if(!offs.length||offs[0].off!==0)return null;
     /* A sample is at least VRAM-sized, so the next real header cannot be
        nearer than that -- otherwise a word inside VRAM that happens to read
@@ -1130,14 +1152,16 @@
   function pal(b,o){var p=[];for(var i=0;i<256;i++)p.push(rgb(u16(b,o+i*2)));return p;}
   function ctxOf(s){
     var b=s.buf,base=s.base;
-    var m4=s.magic===0x344D5A4D||s.magic===0x354D5A4D; /* has area/room/gameMode */
-    var m5=s.magic===0x354D5A4D;                       /* also has cutscene id */
+    var m4=s.magic===0x344D5A4D||s.magic===0x354D5A4D||s.magic===0x364D5A4D; /* has area/room/gameMode */
+    var m5=s.magic===0x354D5A4D||s.magic===0x364D5A4D;  /* also has cutscene id */
+    var m6=s.magic===0x364D5A4D;                        /* also has cutscene stage */
     return {b:b,io:base+O_IO,bgpal:pal(b,base+O_BGPAL),objpal:pal(b,base+O_OBJPAL),
             oam:base+O_OAM,vram:base+O_VRAM,clip:s.clip,
             area:m4?u16(b,s.clip+20):null, room:m4?u16(b,s.clip+22):null,
             originX:m4?u16(b,s.clip+16):null, originY:m4?u16(b,s.clip+18):null,
             gameMode:m4?u16(b,s.clip+12):null,          /* GBA GM_* (clip word 6) */
-            cutsceneId:m5?u16(b,s.clip+24):null};       /* Cutscene enum (word 12) */
+            cutsceneId:m5?u16(b,s.clip+24):null,        /* Cutscene enum (word 12) */
+            cutsceneStage:m6?u16(b,s.clip+26):0};        /* montage page (word 13) */
   }
   function px4(b,off,x,y,hf,vf){if(hf)x=7-x;if(vf)y=7-y;var v=b[off+y*4+(x>>1)];return (x&1)?(v>>4):(v&15);}
 
@@ -3070,7 +3094,7 @@
     var f=scan(buf);
     if(!f||!f.length){els.meta.textContent="no parece un mzm-rec.bin";return;}
     samples=f;fileName=name;lastSample=0;
-    var MAGNAME={0x334D5A4D:"MZM3",0x344D5A4D:"MZM4",0x354D5A4D:"MZM5"};
+    var MAGNAME={0x334D5A4D:"MZM3",0x344D5A4D:"MZM4",0x354D5A4D:"MZM5",0x364D5A4D:"MZM6"};
     els.meta.textContent=name+" · "+f.length+" capturas · "+(MAGNAME[f[0].magic]||"MZM?");
     setMode("rec");
   }
@@ -3439,25 +3463,32 @@
   }
 
   /* ---------- cutscene depth .inc I/O (port_cutscene_depth.inc) ---------- */
-  function cutLayoutToken(vk){
-    if(vk==="any")return "PORT_CUT_ANY";
-    var sig=+vk;
-    var parts=[];
-    for(var bg=0;bg<4;bg++){
-      var nib=(sig>>(bg*4))&0xF;
-      parts.push(nib===0xF?"PORT_CUT_OFF":String(nib));
+  /* vk is "stage:layout" ("*" for either wildcard). Returns the layout and
+     stage macro tokens for one .inc row. */
+  function cutRowTokens(vk){
+    var pr=vk.split(":"), layoutTok, stageTok;
+    if(pr[1]==="*"||pr[1]==="any"){ layoutTok="PORT_CUT_ANY"; }
+    else{
+      var sig=+pr[1], parts=[];
+      for(var bg=0;bg<4;bg++){
+        var nib=(sig>>(bg*4))&0xF;
+        parts.push(nib===0xF?"PORT_CUT_OFF":String(nib));
+      }
+      layoutTok="PORT_CUT_LAYOUT("+parts.join(",")+")";
     }
-    return "PORT_CUT_LAYOUT("+parts.join(",")+")";
+    stageTok=(pr[0]==="*")?"PORT_CUT_STAGE_ANY":("PORT_CUT_STAGE("+(+pr[0])+")");
+    return {layout:layoutTok, stage:stageTok};
   }
   function cutsceneExportText(){
     var out=[
       "/* Overrides de profundidad estereoscópica por CINEMÁTICA, para el port 3DS.",
       " * Generado por tools/layer-workbench (modo GRABACIÓN) -- recárgalo ahí para editar.",
       " *",
-      " * PORT_CUTSCENE_DEPTH(escena, layout, objetivo, tier)",
+      " * PORT_CUTSCENE_DEPTH(escena, layout, stage, objetivo, tier)",
       " *   escena:   PORT_CUT_SCENE_*   (ver port_cutscene_depth.h)",
-      " *   layout:   PORT_CUT_LAYOUT(p0,p1,p2,p3) la sub-escena (PORT_CUT_OFF si",
-      " *             la capa está apagada); PORT_CUT_ANY = toda la cinemática",
+      " *   layout:   PORT_CUT_LAYOUT(p0,p1,p2,p3) la config de capas (PORT_CUT_OFF si",
+      " *             la capa está apagada); PORT_CUT_ANY = cualquiera",
+      " *   stage:    PORT_CUT_STAGE(n) la pagina n de la cinematica; PORT_CUT_STAGE_ANY",
       " *   objetivo: PORT_CUT_PRIO(0..3) / PORT_CUT_BG(0..3) / PORT_CUT_ACTOR / PORT_CUT_CAPTION",
       " *   tier:     PORT_TIER_*         (port_stereo_depth.h)",
       " *",
@@ -3467,14 +3498,20 @@
       var byVariant=cutsceneFixes[sid];
       /* ANY first, then layouts in numeric order, for a stable diff. */
       Object.keys(byVariant).sort(function(a,b){
-        if(a==="any")return -1; if(b==="any")return 1; return (+a)-(+b);
+        /* wildcard variants first, then by stage then layout, for a stable diff */
+        var pa=a.split(":"), pb=b.split(":");
+        var sa=pa[0]==="*"?-1:+pa[0], sb=pb[0]==="*"?-1:+pb[0];
+        if(sa!==sb)return sa-sb;
+        var la=pa[1]==="*"?-1:+pa[1], lb=pb[1]==="*"?-1:+pb[1];
+        return la-lb;
       }).forEach(function(vk){
+        var tok=cutRowTokens(vk);
         var byTarget=byVariant[vk];
         Object.keys(byTarget).sort().forEach(function(k){
           var t=byTarget[k];
           if(t<0||t>=TIER_NAME.length)return;
           out.push("PORT_CUTSCENE_DEPTH(PORT_CUT_SCENE_"+cutSceneName(sid)+", "+
-                   cutLayoutToken(vk)+", "+cutTargetToken(k)+", PORT_TIER_"+TIER_NAME[t]+")");
+                   tok.layout+", "+tok.stage+", "+cutTargetToken(k)+", PORT_TIER_"+TIER_NAME[t]+")");
         });
       });
     });
@@ -3486,10 +3523,10 @@
     CUT_SCENES.forEach(function(c){nameToId[c.name]=c.id;});
     var tierToIdx={};
     TIER_NAME.forEach(function(nm,i){tierToIdx[nm]=i;});
-    var re=/PORT_CUTSCENE_DEPTH\(\s*PORT_CUT_SCENE_([A-Z_0-9]+)\s*,\s*(PORT_CUT_ANY|PORT_CUT_LAYOUT\([^)]*\))\s*,\s*(PORT_CUT_ACTOR|PORT_CUT_CAPTION|PORT_CUT_PRIO\([0-3]\)|PORT_CUT_BG\([0-3]\))\s*,\s*PORT_TIER_([A-Z_0-9]+)\s*\)/g,m,n=0;
+    var re=/PORT_CUTSCENE_DEPTH\(\s*PORT_CUT_SCENE_([A-Z_0-9]+)\s*,\s*(PORT_CUT_ANY|PORT_CUT_LAYOUT\([^)]*\))\s*,\s*(PORT_CUT_STAGE_ANY|PORT_CUT_STAGE\(\s*\d+\s*\))\s*,\s*(PORT_CUT_ACTOR|PORT_CUT_CAPTION|PORT_CUT_PRIO\([0-3]\)|PORT_CUT_BG\([0-3]\))\s*,\s*PORT_TIER_([A-Z_0-9]+)\s*\)/g,m,n=0;
     while((m=re.exec(txt))){
       var sid=nameToId[m[1]]; if(sid===undefined)continue;
-      var vk="any";
+      var layoutPart="*";
       var lm=/PORT_CUT_LAYOUT\(([^)]*)\)/.exec(m[2]);
       if(lm){
         var nibs=lm[1].split(",").map(function(s){
@@ -3498,14 +3535,17 @@
         });
         var sig=0;
         for(var bg=0;bg<4;bg++)sig|=((nibs[bg]|0)&0xF)<<(bg*4);
-        vk=String(sig>>>0);
+        layoutPart=String(sig>>>0);
       }
+      var sm=/PORT_CUT_STAGE\(\s*(\d+)\s*\)/.exec(m[3]);
+      var stagePart=sm?String(+sm[1]):"*";
+      var vk=stagePart+":"+layoutPart;
       var key;
-      var mm=/PORT_CUT_PRIO\(([0-3])\)/.exec(m[3]);
+      var mm=/PORT_CUT_PRIO\(([0-3])\)/.exec(m[4]);
       if(mm)key="prio"+mm[1];
-      else if((mm=/PORT_CUT_BG\(([0-3])\)/.exec(m[3])))key="bg"+mm[1];
-      else key=(m[3]==="PORT_CUT_ACTOR")?"actor":"caption";
-      var t=tierToIdx[m[4]]; if(t===undefined)continue;
+      else if((mm=/PORT_CUT_BG\(([0-3])\)/.exec(m[4])))key="bg"+mm[1];
+      else key=(m[4]==="PORT_CUT_ACTOR")?"actor":"caption";
+      var t=tierToIdx[m[5]]; if(t===undefined)continue;
       var byV=cutsceneFixes[sid]||(cutsceneFixes[sid]={});
       (byV[vk]||(byV[vk]={}))[key]=t;
       n++;
@@ -3549,7 +3589,7 @@
     var C=state&&state.C;
     if(!DepthEngine||!C||!isCutsceneCtx(C))return null;
     var sid=cutSceneOf(C);
-    var curSig=cutLayoutOf(C), curVk=String(curSig>>>0);
+    var curSig=cutLayoutOf(C), curStage=cutStageOf(C), curVk=cutVariantKey(C);
     var byScene=cutsceneFixes[sid]||(cutsceneFixes[sid]={});
 
     var pnl=makePanel("cutdepth","Profundidad de la cinemática <i>"+cutSceneName(sid)+"</i>");
@@ -3560,24 +3600,31 @@
        reason this dimension exists). "aplicar a toda la cinemática" is opt-in.
        Any PORT_CUT_ANY rows already saved still resolve as a base -- the
        toggle only changes where the NEXT change is written. */
-    var scopeAll=false;
-    var activeVk=function(){ return scopeAll?"any":curVk; };
+    /* scope 0 = this stage + this layout, 1 = this stage / any layout,
+       2 = any stage / any layout. */
+    var scope=0;
+    var activeVk=function(){
+      return scope>=2 ? "*:*" : scope===1 ? (curStage+":*") : curVk;
+    };
     var byTarget=function(){ return byScene[activeVk()]||(byScene[activeVk()]={}); };
 
-    var scope=document.createElement("div");scope.className="cutscope";
+    var scopeEl=document.createElement("div");scopeEl.className="cutscope";
     var lay=document.createElement("span");lay.className="cuthint";
-    lay.textContent="sub-escena: "+cutLayoutLabel(curSig);
+    lay.textContent="pagina "+curStage+" · "+cutLayoutLabel(curSig)+
+      "  (DISPCNT="+("000"+(u16(C.b,C.io)>>>0).toString(16)).slice(-4).toUpperCase()+
+      " sig="+("000"+(curSig>>>0).toString(16)).slice(-4).toUpperCase()+")";
     var sw=document.createElement("button");sw.className="cuttgl";
-    var syncScope=function(){
-      sw.textContent=scopeAll?"aplicar sólo a esta sub-escena":"aplicar a toda la cinemática";
-    };
+    var SCOPETXT=["aplicar a: esta pagina + estas capas",
+                  "aplicar a: esta pagina (cualquier capa)",
+                  "aplicar a: toda la cinematica"];
+    var syncScope=function(){ sw.textContent=SCOPETXT[scope]; };
     sw.addEventListener("pointerdown",function(e){e.stopPropagation();});
     sw.addEventListener("click",function(e){
-      e.stopPropagation();scopeAll=!scopeAll;syncScope();
+      e.stopPropagation();scope=(scope+1)%3;syncScope();
       buildMain();redraw();
     });
     syncScope();
-    scope.appendChild(lay);scope.appendChild(sw);body.appendChild(scope);
+    scopeEl.appendChild(lay);scopeEl.appendChild(sw);body.appendChild(scopeEl);
 
     var rows=[];
     [0,1,2,3].forEach(function(bg){

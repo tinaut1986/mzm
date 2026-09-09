@@ -13,18 +13,23 @@
  * tools/layer-workbench (GRABACION mode, from a real capture of the scene) and
  * written out as platform/3ds/source/port_cutscene_depth.inc, an X-macro list:
  *
- *   PORT_CUTSCENE_DEPTH(scene, layout, target, tier)
+ *   PORT_CUTSCENE_DEPTH(scene, layout, stage, target, tier)
  *
  *     scene  - a PORT_CUT_SCENE_* value (below). Identifies the cutscene.
  *     layout - which sub-scene of that cutscene the row applies to. A single
  *              GM_CUTSCENE (e.g. the Tourian-escape montage) runs several
- *              pages back to back, each with its own set of BGs and BGCNT
- *              priorities, all under ONE cutscene id. A row's `layout` is a
- *              PORT_CUT_LAYOUT(p0,p1,p2,p3) signature -- the BGCNT priority of
- *              each BG, or PORT_CUT_OFF for a disabled one -- so it only fires
- *              while that page's layer config is on screen. PORT_CUT_ANY
- *              applies to the whole cutscene. A layout-specific row wins over
- *              a PORT_CUT_ANY one.
+ *              pages back to back, all under ONE cutscene id. A row's
+ *              `layout` is a PORT_CUT_LAYOUT(p0,p1,p2,p3) signature -- the
+ *              BGCNT priority of each BG, or PORT_CUT_OFF for a disabled one
+ *              -- so it only fires while that page's layer config is on
+ *              screen. PORT_CUT_ANY applies to any layout. A layout-specific
+ *              row wins over a PORT_CUT_ANY one.
+ *     stage  - PORT_CUT_STAGE(n): the montage page index (the per-mode state
+ *              machine's stage -- TOURIAN_ESCAPE_DATA.stage,
+ *              CUTSCENE_DATA.timeInfo.stage, ...). Needed because several
+ *              pages of one cutscene share a layer config, so `layout` alone
+ *              cannot separate them. PORT_CUT_STAGE_ANY applies to any stage;
+ *              a stage-specific row wins over it.
  *     target - PORT_CUT_PRIO(0..3): a BGCNT priority
  *              PORT_CUT_BG(0..3):   a physical BG index (wins over PRIO)
  *              PORT_CUT_ACTOR:      cutscene actor sprites  (OBJ priority >= 1)
@@ -96,6 +101,10 @@ enum {
                 (((p2) & 0xF) << 8) | (((p3) & 0xF) << 12)))
 #define PORT_CUT_ANY          ((uint16_t)0xFFFFu)
 
+/* stage key: the montage-page index, or PORT_CUT_STAGE_ANY for "any page". */
+#define PORT_CUT_STAGE(n)     ((uint8_t)((n) & 0xFF))
+#define PORT_CUT_STAGE_ANY    ((uint8_t)0xFFu)
+
 /* The current frame's layout signature, from DISPCNT bits 8-11 (BG enable)
  * and the four BGCNT priorities. Same function port_gpu_renderer.c and the
  * workbench's WASM engine both use, so a row authored against a capture keys
@@ -109,8 +118,8 @@ bool PortCutsceneDepth_Present(void);
 
 /* Replace the compiled list with a caller-supplied one for the rest of the
  * process. `entries` is `count` x { uint8 scene, uint8 layoutLo, uint8 layoutHi,
- * uint8 target, int8 tier } (5 bytes, little-endian layout). Pass (NULL, 0) or
- * a negative count to revert to the compiled list.
+ * uint8 stage, uint8 target, int8 tier } (6 bytes, little-endian layout).
+ * Pass (NULL, 0) or a negative count to revert to the compiled list.
  *
  * The 3DS build never calls this. It exists for the layer workbench's WASM
  * engine, so it can resolve tiers against edits the user has not written to
@@ -124,15 +133,17 @@ void PortCutsceneDepth_SetRuntimeOverrides(const uint8_t* entries, int count);
 int PortCutsceneDepth_SceneFromGame(int gameMode, int cutsceneId);
 
 /* Depth tier for a BG layer of the given index and BGCNT priority, in `scene`
- * while `layout` is on screen. Returns `defaultTier` when nothing matches. A
- * PORT_CUT_BG entry wins over a PORT_CUT_PRIO one; a layout-specific entry
- * wins over a PORT_CUT_ANY one. */
-int PortCutsceneDepth_BgTier(int scene, uint16_t layout, int bgIndex, int priority, int defaultTier);
+ * on montage page `stage` while `layout` is on screen. Returns `defaultTier`
+ * when nothing matches. A PORT_CUT_BG entry wins over a PORT_CUT_PRIO one; a
+ * stage-specific entry wins over a stage-any one, and within the same stage a
+ * layout-specific entry wins over a PORT_CUT_ANY one. Pass PORT_CUT_STAGE_ANY
+ * as `stage` to match only the stage-agnostic rows. */
+int PortCutsceneDepth_BgTier(int scene, uint16_t layout, int stage, int bgIndex, int priority, int defaultTier);
 
 /* Same, keyed on a raw priority only (no BG index) -- for a sprite that set
  * its OAM priority to composite with a BG. PORT_CUT_BG entries are ignored. */
-int PortCutsceneDepth_TierForPriority(int scene, uint16_t layout, int priority, int defaultTier);
+int PortCutsceneDepth_TierForPriority(int scene, uint16_t layout, int stage, int priority, int defaultTier);
 
 /* Depth tier for a cutscene sprite: PORT_CUT_CAPTION when objPriority == 0,
  * PORT_CUT_ACTOR otherwise. Returns `defaultTier` when not overridden. */
-int PortCutsceneDepth_ObjTier(int scene, uint16_t layout, int objPriority, int defaultTier);
+int PortCutsceneDepth_ObjTier(int scene, uint16_t layout, int stage, int objPriority, int defaultTier);

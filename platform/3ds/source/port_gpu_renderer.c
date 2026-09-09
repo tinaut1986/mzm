@@ -16,6 +16,7 @@
 #include "port_gpu_renderer.h"
 #include "port_stereo_depth.h"
 #include "port_cutscene_depth.h"
+#include "port_affine_subtile.h"   /* shared with tools/affine_probe */
 #include "port_layer_fixes.h"
 #include "port_sprite_depth_oam.h"
 #include "port_haze_3ds.h"
@@ -290,6 +291,13 @@ typedef struct DrawItem {
                       * approximating GBA's 1st-target/2nd-target blend
                       * (see Port_GpuRenderer_RenderFrame). */
     bool affine;
+    /* Affine subtiles only: which of this subtile's four edges face another
+     * subtile of the SAME sprite (bit0 left, bit1 right, bit2 top, bit3
+     * bottom, in the sprite's texture-grid orientation). BuildDrawParams
+     * grows the quad outward only on those edges, to overlap the neighbour
+     * and hide the per-subtile rounding gap, while leaving the sprite's
+     * OUTER silhouette edges exactly where they were. */
+    uint8_t affBleedEdges;
     WindowVis winVis;
     bool isHud;
     /* A cached layer's quad samples a render target, whose texels come back
@@ -342,6 +350,25 @@ static C3D_RenderTarget *sHazeRT[2];
 static bool sHazeRtReady;
 static int sHazeCur;
 static bool sHazeBufReady[2];
+
+/* --- Affine BG2 (GBA mode 1) -- see Port_GpuRenderer_SetAffineBg ---------
+ * The Tourian-escape "Samus surrounded" sub-scene is the one frame class MZM
+ * puts in mode 1 (DISPCNT 0x1501: BG0 text + BG2 affine + OBJ). Measured
+ * (docs/3ds-gpu-affine-bg-and-obj-seams-feasibility-2026-09-09.md): a 256x256
+ * BG2, overflow-transparent, PURE SCALE (PB=PC=0), zoom only, no rotation,
+ * matrix written once per VBlank. So: CPU-decode the 256x256 8bpp affine
+ * tilemap into one texture (same Bgr555ToRgba8 + swizzle path the atlas
+ * uses), draw it as ONE scaled quad at BG2's priority, with the usual
+ * per-tier stereo eye offset. DetectAffineBg2() gates on exactly that
+ * config; anything else in mode 1+ still falls back to the CPU renderer. */
+#define AFF_BG2_DIM 256
+static bool     sAffineBgToggle = true;   /* on by default; UI cell can disable */
+static C3D_Tex  sAffineBg2Tex;
+static bool     sAffineBg2TexReady;
+static bool     sAffineBg2Active;         /* this frame is the supported case */
+static float    sAffineBg2InvScale;       /* screen px per texture px (256/PA) */
+static float    sAffineBg2RefX, sAffineBg2RefY;      /* BG2X/BG2Y, texture px */
+static uint32_t sAffineBg2CharBase, sAffineBg2ScreenBase; /* gVram byte offsets */
 static int16_t sHazeBakedRowDelta[2][160]; /* per-line shift baked with each buffer */
 static bool sHazeActive; /* recomputed per frame in Port_GpuRenderer_RenderFrame */
 static int16_t sHazeRowDelta[160];
@@ -835,11 +862,18 @@ static void ComputeDepthState(uint16_t dispcnt) {
              * GM_CUTSCENE (10); SceneFromGame ignores it for 1/7/9. */
             sDepthState.cutsceneScene = (uint8_t)PortCutsceneDepth_SceneFromGame(
                 gMainGameMode, (int)gCurrentCutscene);
+            {
+                /* Montage page index -- lives behind port_ppu_mzm.c's game
+                 * headers, same hand-declared extern style as gCurrentCutscene. */
+                extern int PortPpuMzm_CutsceneStage(void);
+                sDepthState.cutsceneStage = (uint8_t)PortPpuMzm_CutsceneStage();
+            }
             break;
         default:
             sDepthState.bg0IsOverlayText = !sDepthState.inGameplay;
             sDepthState.cutsceneArt = false;
             sDepthState.cutsceneScene = 0;
+            sDepthState.cutsceneStage = 0;
             break;
     }
     /* Two-plane flatten for depthless screens (see flatMenu): content
@@ -976,6 +1010,9 @@ bool Port_GpuRenderer_BlockDebugTintEnabled(void) { return sBlockDebugTint; }
 static bool sDepthTint = false;
 void Port_GpuRenderer_SetDepthTint(bool on) { sDepthTint = on; }
 bool Port_GpuRenderer_DepthTintEnabled(void) { return sDepthTint; }
+
+void Port_GpuRenderer_SetAffineBg(bool on) { sAffineBgToggle = on; }
+bool Port_GpuRenderer_AffineBgEnabled(void) { return sAffineBgToggle; }
 
 /* 32x32 block pass (see the Block32 cache). Opt-in, like step A was: a
  * measured-on-hardware change, and the 16x16 pass has to be on for it to do
@@ -1149,6 +1186,19 @@ bool Port_GpuRenderer_Init(void) {
     FlushAtlasRange(sAtlasTexture.data, (size_t)ATLAS_W * ATLAS_H * sizeof(u32));
     C3D_TexSetFilter(&sAtlasTexture, GPU_NEAREST, GPU_NEAREST);
 
+    /* Affine BG2 compose target -- CPU-written like the atlas (not a GPU
+     * render target), so C3D_TexInit, not VRAM. Non-fatal on failure:
+     * DetectAffineBg2 checks sAffineBg2TexReady and the scene just keeps
+     * falling back to the CPU renderer. */
+    sAffineBg2TexReady = false;
+    if (C3D_TexInit(&sAffineBg2Tex, AFF_BG2_DIM, AFF_BG2_DIM, GPU_RGBA8)) {
+        memset(sAffineBg2Tex.data, 0, (size_t)AFF_BG2_DIM * AFF_BG2_DIM * sizeof(u32));
+        FlushAtlasRange(sAffineBg2Tex.data, (size_t)AFF_BG2_DIM * AFF_BG2_DIM * sizeof(u32));
+        C3D_TexSetFilter(&sAffineBg2Tex, GPU_NEAREST, GPU_NEAREST);
+        C3D_TexSetWrap(&sAffineBg2Tex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
+        sAffineBg2TexReady = true;
+    }
+
     /* Offscreen BG3 target for the issue #29 per-scanline ripple. VRAM-backed
      * (it is a GPU render target, never CPU-written). Non-fatal on failure --
      * sHazeRtReady stays false and haze rooms just render BG3 flat. */
@@ -1202,6 +1252,7 @@ bool Port_GpuRenderer_Init(void) {
 void Port_GpuRenderer_Shutdown(void) {
     if (!sInitialized) return;
     C3D_TexDelete(&sAtlasTexture); /* also frees the linearAlloc'd backing store */
+    if (sAffineBg2TexReady) { C3D_TexDelete(&sAffineBg2Tex); sAffineBg2TexReady = false; }
     if (sHazeRtReady) {
         for (int b = 0; b < 2; ++b) {
             C3D_RenderTargetDelete(sHazeRT[b]);
@@ -1932,7 +1983,7 @@ static inline void PushItem(int slot, float x, float y, int sortKey, int depthTi
  * decomposed rotation -- consumed by the draw loop via C2D_DrawParams'
  * center+angle instead of the plain top-left placement non-affine items use. */
 static inline void PushAffineItem(int slot, float centerX, float centerY, float angle, float scaleX, float scaleY,
-                                  int sortKey, int depthTier, bool blendAlpha, WindowVis winVis) {
+                                  int sortKey, int depthTier, bool blendAlpha, WindowVis winVis, uint8_t bleedEdges) {
     int idx = AllocDrawItem(slot, sortKey);
     if (idx < 0) return;
     DrawItem* item = &sDrawItems[idx];
@@ -1944,6 +1995,7 @@ static inline void PushAffineItem(int slot, float centerX, float centerY, float 
     item->depthTier = (int8_t)depthTier;
     item->blendAlpha = blendAlpha;
     item->affine = true;
+    item->affBleedEdges = bleedEdges;
     item->winVis = winVis;
     item->isHud = false;
     item->plainEnv = false;
@@ -1959,6 +2011,94 @@ static inline bool BlockGroupNeedsPerTile(int bgIndex, int blockX, int blockY,
     return (hasLayerFix && PortLayerFix_DestFor(bgIndex, blockX, blockY) >= 0) ||
            (hasTank && PortPpuMzm_IsVisibleTankBlock(blockX, blockY)) ||
            (hasDoor && PortPpuMzm_IsDoorDepthBlock(blockX, blockY));
+}
+
+/* ---- Affine BG2 (GBA mode 1), opt-in -- see sAffineBgToggle's comment ---- */
+
+/* True iff the current frame is the exact supported case: mode 1, BG2 on,
+ * 256x256 map, no mosaic, PURE SCALE (PB=PC=0, PA>0). Fills the sAffineBg2*
+ * cache. Pure read of gIoMem; safe to call from CanRenderFrame and again
+ * from RenderFrame. */
+static bool DetectAffineBg2(void) {
+    if (!sAffineBg2TexReady) return false;
+    uint16_t dispcnt = (uint16_t)(gIoMem[0] | (gIoMem[1] << 8));
+    if ((dispcnt & 7u) != 1u) return false;              /* not mode 1 */
+    if (!(dispcnt & (1u << 10))) return false;           /* BG2 disabled */
+    uint16_t bg2cnt = (uint16_t)(gIoMem[0x0C] | (gIoMem[0x0D] << 8));
+    if (((bg2cnt >> 14) & 3u) != 1u) return false;       /* not 256x256 */
+    if ((bg2cnt >> 6) & 1u) return false;                /* BG2 mosaic */
+    int16_t pa = (int16_t)(gIoMem[0x20] | (gIoMem[0x21] << 8));
+    int16_t pb = (int16_t)(gIoMem[0x22] | (gIoMem[0x23] << 8));
+    int16_t pc = (int16_t)(gIoMem[0x24] | (gIoMem[0x25] << 8));
+    if (pb != 0 || pc != 0) return false;                /* rotation / shear */
+    if (pa <= 0) return false;
+    /* BG2X/BG2Y: 28-bit signed, 20.8 fixed. Sign-extend from bit 27. */
+    int32_t bg2x = (int32_t)((uint32_t)gIoMem[0x28] | ((uint32_t)gIoMem[0x29] << 8) |
+                             ((uint32_t)gIoMem[0x2A] << 16) | ((uint32_t)gIoMem[0x2B] << 24));
+    int32_t bg2y = (int32_t)((uint32_t)gIoMem[0x2C] | ((uint32_t)gIoMem[0x2D] << 8) |
+                             ((uint32_t)gIoMem[0x2E] << 16) | ((uint32_t)gIoMem[0x2F] << 24));
+    bg2x = (bg2x << 4) >> 4;
+    bg2y = (bg2y << 4) >> 4;
+    sAffineBg2InvScale   = 256.0f / (float)pa;
+    sAffineBg2RefX       = (float)bg2x / 256.0f;
+    sAffineBg2RefY       = (float)bg2y / 256.0f;
+    sAffineBg2CharBase   = ((bg2cnt >> 2) & 3u) * 0x4000u;
+    sAffineBg2ScreenBase = ((bg2cnt >> 8) & 0x1Fu) * 0x800u;
+    return true;
+}
+
+/* CPU-decode the 256x256 8bpp affine tilemap (32x32 tiles, 1 index byte per
+ * tile) into sAffineBg2Tex, swizzled, same colour path as the atlas. */
+static void ComposeAffineBg2(void) {
+    extern uint8_t gVram[];
+    const uint16_t* pal = (const uint16_t*)gBgPltt;      /* 256 entries (8bpp) */
+    const uint8_t* map  = gVram + sAffineBg2ScreenBase;   /* 32*32 index bytes */
+    const uint8_t* chr  = gVram + sAffineBg2CharBase;
+    u32* dst = (u32*)sAffineBg2Tex.data;
+    for (int cy = 0; cy < 32; ++cy) {
+        for (int cx = 0; cx < 32; ++cx) {
+            const uint8_t* g = chr + (uint32_t)map[cy * 32 + cx] * 64u;
+            int bx = cx * 8, by = cy * 8;
+            for (int py = 0; py < 8; ++py) {
+                for (int px = 0; px < 8; ++px) {
+                    uint8_t idx = g[py * 8 + px];
+                    int tx = bx + px, ty = by + py;
+                    u32 tile = (uint32_t)(ty / 8) * (AFF_BG2_DIM / 8) + (uint32_t)(tx / 8);
+                    dst[tile * 64u + kSwizzleLUT[(ty % 8) * 8 + (tx % 8)]] =
+                        Bgr555ToRgba8(pal[idx], idx == 0);
+                }
+            }
+        }
+    }
+    FlushAtlasRange(sAffineBg2Tex.data, (size_t)AFF_BG2_DIM * AFF_BG2_DIM * sizeof(u32));
+}
+
+/* Push the affine BG2 as one scaled quad at BG2's priority. Screen rect: the
+ * texture's (0,0) sits at screen (-refX,-refY)*invScale and it spans
+ * 256*invScale px; overflow is transparent so nothing outside that rect is
+ * drawn. Stereo comes from BG2's tier like any other BG layer. */
+static void CollectAffineBg2(void) {
+    ComposeAffineBg2();
+    static Tex3DS_SubTexture full;
+    full = (Tex3DS_SubTexture){ AFF_BG2_DIM, AFF_BG2_DIM, 0.0f, 1.0f, 1.0f, 0.0f };
+    int priority = sDepthState.priority[2];
+    int sortKey = (3 - priority) * 10 + (3 - 2);
+    int idx = AllocDrawItemSubtex(&full, sortKey);
+    if (idx < 0) return;
+    DrawItem* item = &sDrawItems[idx];
+    item->img.tex = &sAffineBg2Tex;
+    item->x = -sAffineBg2RefX * sAffineBg2InvScale;
+    item->y = -sAffineBg2RefY * sAffineBg2InvScale;
+    item->w = (float)AFF_BG2_DIM * sAffineBg2InvScale;
+    item->h = item->w;
+    item->angle = 0.0f;
+    item->depthTier = (int8_t)PortStereoDepth_BgTier(&sDepthState, 2);
+    item->blendAlpha = false;
+    item->affine = false;
+    item->affBleedEdges = 0;
+    item->winVis = WIN_VIS_ALWAYS;
+    item->isHud = false;
+    item->plainEnv = false;   /* atlas texenv: Bgr555ToRgba8 byte order + alpha */
 }
 
 /* Text-mode BG tilemap addressing, byte-identical to the formula validated
@@ -2887,8 +3027,18 @@ static void CollectSprite(int oamIndex, bool obj1D) {
             float screenCenterX = pivotX + dx;
             float screenCenterY = pivotY + dy;
             if (sObjWindowActive && !ObjWinItemVisible(objWinVis, screenCenterX, screenCenterY)) continue;
+            /* Overlap-bleed only toward edges that have a same-sprite
+             * neighbour, in texture-grid orientation (tx grows along the
+             * quad's local +x, ty along local +y, regardless of the sprite's
+             * rotation or flip). A 1x1 sprite gets none and draws exactly as
+             * before. */
+            uint8_t bleedEdges = 0;
+            if (tx > 0)            bleedEdges |= 0x1; /* left  */
+            if (tx < tilesW - 1)  bleedEdges |= 0x2; /* right */
+            if (ty > 0)            bleedEdges |= 0x4; /* top   */
+            if (ty < tilesH - 1)  bleedEdges |= 0x8; /* bottom */
             PushAffineItem(slot, screenCenterX, screenCenterY, affAngle, affScaleX, affScaleY, sortKey, depthTier, blendAlpha,
-                           rectWinVis);
+                           rectWinVis, bleedEdges);
         }
     }
 }
@@ -2949,7 +3099,12 @@ static bool WindowCoversFullScreen(uint16_t h, uint16_t v) {
 bool Port_GpuRenderer_CanRenderFrame(void) {
     uint16_t dispcnt = (uint16_t)(gIoMem[0] | (gIoMem[1] << 8));
     if (dispcnt & (1u << 7)) REJECT("forced blank"); /* forced blank */
-    if ((dispcnt & 7u) != 0u) REJECT("mode != 0"); /* not GBA mode 0 */
+    if ((dispcnt & 7u) != 0u) {
+        /* Mode 1 with a pure-scale 256x256 BG2 (the Tourian-escape "Samus
+         * surrounded" sub-scene) is handled -- see CollectAffineBg2. Every
+         * other non-zero mode still falls back to the CPU renderer. */
+        if (!(sAffineBgToggle && DetectAffineBg2())) REJECT("mode != 0");
+    }
 
     /* src/transparency.c's TransparencySetRoomEffectsTransparency() enables
      * WIN1 unconditionally for essentially every normal room, but sizes it
@@ -3104,20 +3259,43 @@ static inline C2D_DrawParams BuildDrawParams(const DrawItem* item, float screenB
     C2D_DrawParams params;
     params.depth = (item->isHud && hudOutside) ? 0.7f : 0.5f;
     if (item->affine) {
-        float w = item->w * scaleX, h = item->h * scaleY;
-        /* Snap the bounding-box origin to a whole device pixel. The rotation
-         * itself (angle + centre) is untouched, so this does NOT quantize
-         * the spin -- it just stops the two eyes from sampling the rotated
-         * sprite at different sub-pixel phases, which on a rotating turret
-         * with a 1-3px coloured core showed up as the core changing shape
-         * between eyes instead of only shifting. With an integer origin the
-         * per-eye difference is exactly the whole-pixel parallax offset. */
-        params.pos.x = floorf(screenBaseX + eyeOffset + item->x * scaleX - w * 0.5f + 0.5f);
-        params.pos.y = floorf(screenBaseY + item->y * scaleY - h * 0.5f + 0.5f);
-        params.pos.w = w;
-        params.pos.h = h;
-        params.center.x = w * 0.5f;
-        params.center.y = h * 0.5f;
+        /* An affine sprite is drawn as one quad per 8x8 subtile, each centred
+         * on its own matrix-transformed centre. Adjacent subtiles' centres
+         * are exactly one subtile-span apart, but the origin snap below
+         * rounds each one independently, so two neighbours can round apart by
+         * up to a whole device pixel -- leaving a gap. With GPU_NEAREST and
+         * an atlas slot that carries no apron, that gap shows straight
+         * through as a transparent seam, and a scaled-up affine sprite reads
+         * as a grid of detached squares (the "costuras" report).
+         *
+         * Fix: grow each subtile quad by kAffineBleed device px, but ONLY on
+         * the edges that face another subtile of the same sprite
+         * (item->affBleedEdges, set in CollectSprite). Those interior edges
+         * then overlap their neighbour by ~2*kAffineBleed, covering the
+         * <=1px rounding gap; the sprite's OUTER silhouette edges are not
+         * grown, so it keeps its exact size and outline instead of gaining a
+         * 1px smear of its own edge colour. The UV is unchanged, so a grown
+         * edge just re-stretches this subtile's own outermost texels over ~1
+         * extra px (invisible with nearest sampling) -- it never reaches into
+         * an adjacent atlas tile. A 1x1 affine sprite has no interior edges
+         * and is untouched. (The seamless answer is one quad for the whole
+         * sprite off a scratch target -- see
+         * docs/3ds-gpu-affine-bg-and-obj-seams-feasibility-2026-09-09.md.) */
+        const float kAffineBleed = 1.0f;
+        /* PortAffine_SubtileQuad does the pixel snap + the interior-edge
+         * grow; the "keep the two eyes in phase" reasoning for the snap is
+         * in that header. Screen base + eye offset fold into the centre. */
+        PortAffineQuad q = PortAffine_SubtileQuad(
+            screenBaseX + eyeOffset + item->x * scaleX,
+            screenBaseY + item->y * scaleY,
+            item->w * scaleX, item->h * scaleY,
+            item->affBleedEdges, kAffineBleed);
+        params.pos.x = q.x;
+        params.pos.y = q.y;
+        params.pos.w = q.w;
+        params.pos.h = q.h;
+        params.center.x = q.cx;
+        params.center.y = q.cy;
         params.angle = item->angle;
     } else {
         /* Snap the quad to whole device pixels, deriving the size from the
@@ -3400,6 +3578,10 @@ void Port_GpuRenderer_RenderFrame(void) {
      * layer at a time, so it is snapshotted once, up front, for all of them. */
     ComputeDepthState(dispcnt);
 
+    /* Mode-1 affine BG2 (opt-in). When active, bg==2 in the collect loop
+     * below goes to CollectAffineBg2 instead of the text-mode CollectBgLayer. */
+    sAffineBg2Active = sAffineBgToggle && DetectAffineBg2();
+
     /* Issue #29: is this frame the single-layer BG3 ripple? If so, collect
      * BG3 for the offscreen strip pass and keep it out of the normal
      * back-to-front list. Windowed / power-bomb-flash frames fall through to
@@ -3430,6 +3612,7 @@ void Port_GpuRenderer_RenderFrame(void) {
     for (int bg = 3; bg >= 0; --bg) {
         if (!(dispcnt & (1u << (8 + bg)))) continue;
         if (sHazeActive && bg == 3) continue; /* drawn via the offscreen strip pass */
+        if (sAffineBg2Active && bg == 2) { CollectAffineBg2(); continue; }
         CollectBgLayer(bg);
     }
     if (dispcnt & (1u << 12)) {

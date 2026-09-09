@@ -30,7 +30,7 @@ static PortStereoDepthState BuildState(int p0, int p1, int p2, int p3,
                                         int samusOnTopOfBackgrounds,
                                         int flatMenu, int flatMenuBackdropPrio,
                                         int cutsceneArt, int cutsceneScene,
-                                        int cutsceneLayout) {
+                                        int cutsceneLayout, int cutsceneStage) {
     PortStereoDepthState st = {0};
     st.priority[0] = (uint8_t)p0;
     st.priority[1] = (uint8_t)p1;
@@ -44,6 +44,7 @@ static PortStereoDepthState BuildState(int p0, int p1, int p2, int p3,
     st.cutsceneArt = cutsceneArt != 0;
     st.cutsceneScene = (uint8_t)cutsceneScene;
     st.cutsceneLayout = (uint16_t)cutsceneLayout;
+    st.cutsceneStage = (uint8_t)cutsceneStage;
     return st;
 }
 
@@ -51,10 +52,10 @@ EMSCRIPTEN_KEEPALIVE
 int depth_bg_tier(int p0, int p1, int p2, int p3, int inGameplay,
                    int bg0IsOverlayText, int samusOnTopOfBackgrounds,
                    int flatMenu, int flatMenuBackdropPrio,
-                   int cutsceneArt, int cutsceneScene, int cutsceneLayout, int bgIndex) {
+                   int cutsceneArt, int cutsceneScene, int cutsceneLayout, int cutsceneStage, int bgIndex) {
     PortStereoDepthState st = BuildState(p0, p1, p2, p3, inGameplay,
         bg0IsOverlayText, samusOnTopOfBackgrounds, flatMenu, flatMenuBackdropPrio,
-        cutsceneArt, cutsceneScene, cutsceneLayout);
+        cutsceneArt, cutsceneScene, cutsceneLayout, cutsceneStage);
     return PortStereoDepth_BgTier(&st, bgIndex);
 }
 
@@ -62,11 +63,11 @@ EMSCRIPTEN_KEEPALIVE
 int depth_bg_tier_for_priority(int p0, int p1, int p2, int p3, int inGameplay,
                                 int bg0IsOverlayText, int samusOnTopOfBackgrounds,
                                 int flatMenu, int flatMenuBackdropPrio,
-                                int cutsceneArt, int cutsceneScene, int cutsceneLayout,
+                                int cutsceneArt, int cutsceneScene, int cutsceneLayout, int cutsceneStage,
                                 int priority) {
     PortStereoDepthState st = BuildState(p0, p1, p2, p3, inGameplay,
         bg0IsOverlayText, samusOnTopOfBackgrounds, flatMenu, flatMenuBackdropPrio,
-        cutsceneArt, cutsceneScene, cutsceneLayout);
+        cutsceneArt, cutsceneScene, cutsceneLayout, cutsceneStage);
     return PortStereoDepth_BgTierForPriority(&st, priority);
 }
 
@@ -74,10 +75,10 @@ EMSCRIPTEN_KEEPALIVE
 int depth_obj_tier(int p0, int p1, int p2, int p3, int inGameplay,
                     int bg0IsOverlayText, int samusOnTopOfBackgrounds,
                     int flatMenu, int flatMenuBackdropPrio,
-                    int cutsceneArt, int cutsceneScene, int cutsceneLayout, int objPriority) {
+                    int cutsceneArt, int cutsceneScene, int cutsceneLayout, int cutsceneStage, int objPriority) {
     PortStereoDepthState st = BuildState(p0, p1, p2, p3, inGameplay,
         bg0IsOverlayText, samusOnTopOfBackgrounds, flatMenu, flatMenuBackdropPrio,
-        cutsceneArt, cutsceneScene, cutsceneLayout);
+        cutsceneArt, cutsceneScene, cutsceneLayout, cutsceneStage);
     return PortStereoDepth_ObjTier(&st, objPriority);
 }
 
@@ -87,8 +88,8 @@ int depth_obj_tier(int p0, int p1, int p2, int p3, int inGameplay,
  * pattern as depth_fix_scratch/depth_fix_set_room for the layer fixes. */
 
 #define MAX_CUT_OVERRIDES 256
-/* 5 bytes/entry: scene, layoutLo, layoutHi, target, tier. */
-static uint8_t sCutScratch[MAX_CUT_OVERRIDES * 5];
+/* 6 bytes/entry: scene, layoutLo, layoutHi, stage, target, tier. */
+static uint8_t sCutScratch[MAX_CUT_OVERRIDES * 6];
 
 EMSCRIPTEN_KEEPALIVE
 uint8_t* depth_cut_scratch(void) { return sCutScratch; }
