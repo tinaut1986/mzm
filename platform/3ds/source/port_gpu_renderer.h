@@ -34,6 +34,14 @@ bool Port_GpuRenderer_BlockDebugTintEnabled(void);
  * No cache reset, no cost when off. */
 void Port_GpuRenderer_SetDepthTint(bool on);
 bool Port_GpuRenderer_DepthTintEnabled(void);
+/* GBA mode 1 affine BG2 on the GPU. The only frame class MZM renders in
+ * mode 1 is the Tourian-escape "Samus surrounded" sub-scene (a 256x256,
+ * overflow-transparent, pure-scale BG2 -- no rotation). On: that scene
+ * renders through this renderer (and gets stereo depth) instead of falling
+ * back to the flat CPU scanline renderer. Any other mode != 0 frame still
+ * falls back. Default on; toggle off to A/B against the CPU version. */
+void Port_GpuRenderer_SetAffineBg(bool on);
+bool Port_GpuRenderer_AffineBgEnabled(void);
 /* One quad per tilemap-aligned 4x4 group -- tried before the 16x16 pass,
  * the rest falls through to it. Opt-in, off by default; needs the 16x16
  * pass on. See the Block32 cache in port_gpu_renderer.c. */

@@ -1,9 +1,10 @@
 # GPU tile renderer: affine BG on GPU, and affine-OBJ subtile seams
 
 Branch: `feat/3ds-gpu-affine-bg`, based on `release/v0.6.2` (`42e5008b`,
-right after the per-cutscene stereo-depth overrides merged). **Part 2 (the
-affine-OBJ seams) is implemented**; Part 1 (affine BG on GPU) is still a
-plan. See **Recommendation** at the bottom.
+right after the per-cutscene stereo-depth overrides merged). **Both parts
+are implemented** -- Part 2 (affine-OBJ seams, shipped as the interior-edge
+bleed) and Part 1 (mode-1 affine BG2 on GPU, opt-in via the AFFINE BG debug
+cell, default on). Neither is hardware-verified yet. See **Recommendation**.
 
 ## The ask
 
@@ -269,28 +270,33 @@ affine OBJ at all -- its affine element is BG2).
    scaled affine sprite stops shattering into a grid. Needs an on-device
    eye check to confirm.
 
-2. **Part 1 -- affine BG mode 1 (BG2, 256 px, no overflow).** The scene is
-   fully characterised from the `Test 2` recording (values in the table
-   above): scale + translate of one 256x256 layer, no rotation. Plan:
-   - a scratch VRAM render target + `C3D_RenderTargetCreateFromTex`, same
-     shape as `sHazeTex` / `sLayerTex` (factor the common setup while
-     adding this third user);
-   - compose BG2's 256x256 tilemap into it with the existing
-     `GetOrDecodeTileSlot` path, exactly as `CollectBgLayer` builds quads,
-     just drawn into the scratch target;
-   - one quad on the main target, sized/positioned by `BG2PA/PD` +
-     `BG2X/BG2Y` (full 20.8 precision, origin snapped per eye), slotted
-     into the draw order at BG2's `BGCNT` priority, with the per-eye
-     integer stereo offset every BG layer gets;
-   - transparent outside the 256x256 (overflow bit is clear) via
-     `GPU_CLAMP_TO_BORDER` / alpha-tested apron;
-   - gate: `mode == 1 && one affine BG == BG2 && BG2CNT size == 1 &&
-     overflow == 0 && mosaic clear`; everything else still rejects.
-   Validate against `rec_render` diffs at slider 0 and a hardware capture
-   with the 3D slider up.
+2. **Part 1 -- mode-1 affine BG2 on the GPU. IMPLEMENTED (opt-in).**
+   `port_gpu_renderer.c`:
+   - `DetectAffineBg2()` -- gate: mode 1, BG2 on, `BG2CNT` size == 256,
+     mosaic clear, `PB == PC == 0` (pure scale), `PA > 0`. Anything else in
+     mode 1+ still `REJECT`s to the CPU renderer.
+   - `ComposeAffineBg2()` -- CPU-decodes the 256x256 8bpp affine tilemap
+     (32x32 one-byte indices) into `sAffineBg2Tex` (a `C3D_TexInit` linear
+     texture, swizzled by `kSwizzleLUT`, coloured via `Bgr555ToRgba8` --
+     the same path atlas tiles take). No render target, no GX transfer.
+   - `CollectAffineBg2()` -- pushes ONE quad at BG2's priority: screen rect
+     `(-refX,-refY)*invScale` .. `+256*invScale`, `invScale = 256/PA`,
+     `ref = BG2X/BG2Y` (28-bit signed, 20.8). Overflow is transparent, so
+     the single quad covering tex [0,256]^2 is the whole layer. Depth tier
+     and per-eye offset come from `PortStereoDepth_BgTier(&sDepthState, 2)`
+     like any BG.
+   - Wired into the `for (bg = 3..0)` collect loop (`bg == 2` ->
+     `CollectAffineBg2`) and the `CanRenderFrame` gate.
+   - `Port_GpuRenderer_SetAffineBg` / `...Enabled` + an **AFFINE BG** debug
+     cell (bottom UI, cell 14). Default **on**; flip off to A/B the CPU
+     version.
+   Not yet hardware-verified. Rotation path is deliberately excluded
+   (asserts via the `PB==PC==0` gate) -- the one real scene never rotates.
 
-3. **Measure on hardware**, then stop -- there is no mode 2, no map > 256,
-   no per-scanline affine, and no other affine-BG cutscene in this game. If
-   a future recording ever shows another `mode != 0` frame, revisit then.
+3. **Measure on hardware.** Check the "Samus surrounded" sub-scene renders
+   right and gets stereo depth; check nothing else regressed (the gate is
+   narrow enough that no other frame should reach the new path). Then stop
+   -- no mode 2, no map > 256, no per-scanline affine, no other affine-BG
+   cutscene in this game.
 
 No further captures needed -- `Test 2` (samples 257-283) is the whole scene.

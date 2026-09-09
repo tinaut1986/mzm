@@ -322,6 +322,8 @@ extern void Port_GpuRenderer_SetBlockDebugTint(bool on);
 extern bool Port_GpuRenderer_BlockDebugTintEnabled(void);
 extern void Port_GpuRenderer_SetDepthTint(bool on);
 extern bool Port_GpuRenderer_DepthTintEnabled(void);
+extern void Port_GpuRenderer_SetAffineBg(bool on);
+extern bool Port_GpuRenderer_AffineBgEnabled(void);
 extern void Port_GpuRenderer_SetBlock32Pass(bool on);
 extern bool Port_GpuRenderer_Block32PassEnabled(void);
 extern void Port_GpuRenderer_SetLayerCache(bool on);
@@ -4185,7 +4187,7 @@ static void RenderOptionsView(void) {
  * exist when the GPU tile renderer is compiled in -- a RENDERER=cpu build has
  * nothing to switch to and neither pass to switch off. */
 #ifdef PORT_GPU_TILE_RENDERER
-#define DBGTOOL_COUNT     15
+#define DBGTOOL_COUNT     16
 #else
 #define DBGTOOL_COUNT     10
 #endif
@@ -4448,6 +4450,14 @@ static void RenderDebugToolsModal(int lang) {
                           dt ? onTxt : offTxt,
                           dt ? colOn : colAct);
         }
+        /* Mode-1 affine BG2 on the GPU (Tourian escape). Off = that scene
+         * falls back to the flat CPU renderer. */
+        {
+            const bool ab = Port_GpuRenderer_AffineBgEnabled();
+            DrawDebugCell(14, (lang == 6) ? "BG AFIN" : "AFFINE BG",
+                          ab ? onTxt : offTxt,
+                          ab ? colOn : colAct);
+        }
     }
 #endif
 
@@ -4639,6 +4649,12 @@ static bool HandleDebugToolsModalTouch(int x, int y) {
             Port_GpuRenderer_SetDepthTint(on);
             DebugToolsSetMsg(on ? "TINTE DE PROFUNDIDAD: ON"
                                 : "TINTE DE PROFUNDIDAD: OFF");
+            break;
+        }
+        case 14: {
+            const bool on = !Port_GpuRenderer_AffineBgEnabled();
+            Port_GpuRenderer_SetAffineBg(on);
+            DebugToolsSetMsg(on ? "BG AFIN (GPU): ON" : "BG AFIN (GPU): OFF");
             break;
         }
 #endif
