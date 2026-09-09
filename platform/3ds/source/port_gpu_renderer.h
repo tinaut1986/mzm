@@ -27,6 +27,13 @@ bool Port_GpuRenderer_BlockPassEnabled(void);
  * eye. Toggling clears the block cache. No cost when off. */
 void Port_GpuRenderer_SetBlockDebugTint(bool on);
 bool Port_GpuRenderer_BlockDebugTintEnabled(void);
+/* Debug: flat-colour every drawn BG layer and sprite by its resolved stereo
+ * tier (the same palette the layer workbench uses), so on a fast cutscene you
+ * can see at a glance which depth plane each layer landed on. Alpha is kept,
+ * so silhouettes stay. Only the main draw loop; the border HUD stays normal.
+ * No cache reset, no cost when off. */
+void Port_GpuRenderer_SetDepthTint(bool on);
+bool Port_GpuRenderer_DepthTintEnabled(void);
 /* One quad per tilemap-aligned 4x4 group -- tried before the 16x16 pass,
  * the rest falls through to it. Opt-in, off by default; needs the 16x16
  * pass on. See the Block32 cache in port_gpu_renderer.c. */

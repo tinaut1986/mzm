@@ -758,6 +758,30 @@ void Port_PPU_RenderFrame(void) {
         }
         virtuappu_mode1_set_frame_geometry(&ppu);
         virtuappu_mode1_render_frame(&ppu);
+
+        /* Depth-tint debug view is a GPU-renderer feature (planes only exist
+         * there). This frame fell back to the CPU rasterizer -- no stereo, no
+         * tier colours -- so stamp an unmistakable magenta border to say
+         * "this segment has no 3D data; a cutscene depth override changes
+         * nothing here". Cheap: the outer 3px ring of the GBA-native buffer. */
+        if (Port_GpuRenderer_DepthTintEnabled()) {
+            const uint32_t kMark = 0xFFFF00FFu; /* ABGR: opaque magenta */
+            uint32_t* bufs[2] = { sLogicTop[sLogicWriteSlot],
+                                  sTopRightBuffer ? sLogicTopRight[sLogicWriteSlot] : NULL };
+            for (int bi = 0; bi < 2; ++bi) {
+                uint32_t* buf = bufs[bi];
+                if (!buf) continue;
+                for (int y = 0; y < 160; ++y) {
+                    uint32_t* row = buf + (size_t)y * TOP_PITCH;
+                    if (y < 3 || y >= 157) {
+                        for (int x = 0; x < TOP_NATIVE_W; ++x) row[x] = kMark;
+                    } else {
+                        row[0] = row[1] = row[2] = kMark;
+                        row[TOP_NATIVE_W - 3] = row[TOP_NATIVE_W - 2] = row[TOP_NATIVE_W - 1] = kMark;
+                    }
+                }
+            }
+        }
     }
 #endif
 
@@ -1616,14 +1640,16 @@ void PortPpuMzm_ScreenOrigin(int* outX, int* outY) {
  * this block is what makes it checkable.
  *
  * Layout is fixed and appended after VRAM in each sample (recorder magic
- * 'MZM3'). The clip grid covers the visible screen plus one block of slack
- * on each axis, at the same block resolution clipdata uses.
+ * 'MZM5' -- 'MZM3' added this block, 'MZM4' added area/room, 'MZM5' added the
+ * cutscene id). The clip grid covers the visible screen plus one block of
+ * slack on each axis, at the same block resolution clipdata uses.
  * ------------------------------------------------------------------- */
 #define PORT_CLIPREC_COLS 17
 #define PORT_CLIPREC_ROWS 12
 
 void PortPpuMzm_GetClipRecordBlock(uint8_t* out) {
-    /* 24 bytes of scalars, then the grid. */
+    /* 26 bytes of scalars, then the grid. gCurrentCutscene is already declared
+     * (include/structs/cutscene.h, reached via the game headers above). */
     uint16_t* w = (uint16_t*)out;
     w[0] = gCamera.xPosition;
     w[1] = gCamera.yPosition;
@@ -1637,7 +1663,10 @@ void PortPpuMzm_GetClipRecordBlock(uint8_t* out) {
      * w[10]/w[11]: area and room. A tile correction has to be keyed to a
      * position in a ROOM, not on screen, or it moves with the camera --
      * without these a recording cannot say which room it is of, and the key
-     * has to be filled in by hand afterwards. */
+     * has to be filled in by hand afterwards.
+     * w[12]: the active cutscene id (Cutscene enum), for GM_CUTSCENE. Lets an
+     * offline tool key a per-cutscene depth override to the right scene;
+     * meaningless outside GM_CUTSCENE but always written. */
 
     int originX, originY;
     PortPpuMzm_ScreenOrigin(&originX, &originY);
@@ -1645,8 +1674,9 @@ void PortPpuMzm_GetClipRecordBlock(uint8_t* out) {
     w[9] = (uint16_t)originY;
     w[10] = (uint16_t)gCurrentArea;
     w[11] = (uint16_t)gCurrentRoom;
+    w[12] = (uint16_t)gCurrentCutscene;
 
-    uint8_t* grid = out + 24;
+    uint8_t* grid = out + 26;
     int baseBlockX = originX / PIXEL_PER_BLOCK;
     int baseBlockY = originY / PIXEL_PER_BLOCK;
 
@@ -1667,7 +1697,7 @@ void PortPpuMzm_GetClipRecordBlock(uint8_t* out) {
 }
 
 int PortPpuMzm_GetClipRecordBlockSize(void) {
-    return 24 + PORT_CLIPREC_COLS * PORT_CLIPREC_ROWS;
+    return 26 + PORT_CLIPREC_COLS * PORT_CLIPREC_ROWS;
 }
 
 /* ---------------------------------------------------------------------

@@ -101,6 +101,7 @@ SRCS_3DS := \
 	$(CURDIR)/source/port_gpu_renderer.c \
 	$(CURDIR)/source/port_save_state.c \
 	$(CURDIR)/source/port_stereo_depth.c \
+	$(CURDIR)/source/port_cutscene_depth.c \
 	$(CURDIR)/source/port_layer_fixes.c \
 	$(CURDIR)/source/port_hud_oam.c \
 	$(CURDIR)/source/port_overlay_text_oam.c \
@@ -335,6 +336,7 @@ all: $(TARGET).cia
 # reconstruye al añadirla. Explícito, entonces. La ruta es la del patrón
 # $(BUILD)/3ds/%.o (ver más abajo), no $(BUILD)/%.o.
 $(BUILD)/3ds/source/port_layer_fixes.o: $(wildcard $(CURDIR)/source/port_layer_fixes.inc)
+$(BUILD)/3ds/source/port_cutscene_depth.o: $(wildcard $(CURDIR)/source/port_cutscene_depth.inc)
 
 cia: $(TARGET).cia
 
@@ -353,8 +355,13 @@ TEST_CC ?= cc
 test:
 	@$(TEST_CC) -std=c11 -O1 -Wall -Wextra -Werror -I$(CURDIR)/source \
 		-o $(BUILD)/stereo_depth_test \
-		$(CURDIR)/tests/stereo_depth_test.c $(CURDIR)/source/port_stereo_depth.c
+		$(CURDIR)/tests/stereo_depth_test.c $(CURDIR)/source/port_stereo_depth.c \
+		$(CURDIR)/source/port_cutscene_depth.c
 	@$(BUILD)/stereo_depth_test
+	@$(TEST_CC) -std=c11 -O1 -Wall -Wextra -Werror -I$(CURDIR)/source \
+		-o $(BUILD)/cutscene_depth_test \
+		$(CURDIR)/tests/cutscene_depth_test.c $(CURDIR)/source/port_cutscene_depth.c
+	@$(BUILD)/cutscene_depth_test
 	@$(TEST_CC) -std=c11 -O1 -Wall -Wextra -Werror -I$(CURDIR)/source \
 		-o $(BUILD)/layer_fixes_test \
 		$(CURDIR)/tests/layer_fixes_test.c $(CURDIR)/source/port_layer_fixes.c

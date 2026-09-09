@@ -24,6 +24,7 @@
  */
 
 #include "port_stereo_depth.h"
+#include "port_cutscene_depth.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -669,6 +670,44 @@ static void TestCutsceneArtSpread(void) {
           "cutsceneArt overrides a stray bg0IsOverlayText");
 }
 
+/* ------------------------------------------------------------------ *
+ * Test: cutsceneScene / cutsceneLayout are inert with no override list.
+ *
+ * The per-cutscene override list is optional. With it empty (a stock build,
+ * or -- as here -- a real .inc neutralised by an empty runtime list), a
+ * populated cutsceneScene / cutsceneLayout must produce byte-identical
+ * results to zeroed ones across the whole cutsceneArt input space. This is
+ * the "stock build is unchanged" guarantee for the new fields.
+ * ------------------------------------------------------------------ */
+static void TestCutsceneSceneInertWithoutInc(void) {
+    printf("policy: cutsceneScene/Layout change nothing with no override list\n");
+    static const uint8_t none[1] = {0};
+    PortCutsceneDepth_SetRuntimeOverrides(none, 0);   /* wins over any linked .inc */
+    for (unsigned packed = 0; packed < 256u; ++packed) {
+        PortStereoDepthState base, tagged;
+        memset(&base, 0, sizeof(base));
+        memset(&tagged, 0, sizeof(tagged));
+        base.cutsceneArt = tagged.cutsceneArt = true;
+        for (int bg = 0; bg < 4; ++bg)
+            base.priority[bg] = tagged.priority[bg] = (uint8_t)((packed >> (bg * 2)) & 3u);
+        /* Every non-NONE scene id + a couple of layout signatures. */
+        for (unsigned scene = 1; scene < 32; ++scene) {
+            tagged.cutsceneScene = (uint8_t)scene;
+            tagged.cutsceneLayout = (uint16_t)(0x1234u + scene);
+            for (int bg = 0; bg < 4; ++bg)
+                CHECK(PortStereoDepth_BgTier(&tagged, bg) == PortStereoDepth_BgTier(&base, bg),
+                      "scene %u: BG%d tier drifted without an .inc", scene, bg);
+            for (int p = 0; p < 4; ++p) {
+                CHECK(PortStereoDepth_BgTierForPriority(&tagged, p) ==
+                          PortStereoDepth_BgTierForPriority(&base, p),
+                      "scene %u: prio %d tier drifted without an .inc", scene, p);
+                CHECK(PortStereoDepth_ObjTier(&tagged, p) == PortStereoDepth_ObjTier(&base, p),
+                      "scene %u: OBJ prio %d tier drifted without an .inc", scene, p);
+            }
+        }
+    }
+}
+
 int main(void) {
     TestNoContradictionExhaustive();
     TestDepthIsPriorityOnly();
@@ -679,6 +718,7 @@ int main(void) {
     TestBgTierForPriorityMatchesBgTier();
     TestNamedParticularScenes();
     TestFlatMenuTwoPlanes();
+    TestCutsceneSceneInertWithoutInc();  /* last: neutralises any linked .inc */
 
     printf("\n%d checks, %d failures\n", sChecks, sFailures);
     if (sFailures > 20) printf("(only the first 20 failures shown)\n");

@@ -15,6 +15,7 @@
  */
 #include "port_gpu_renderer.h"
 #include "port_stereo_depth.h"
+#include "port_cutscene_depth.h"
 #include "port_layer_fixes.h"
 #include "port_sprite_depth_oam.h"
 #include "port_haze_3ds.h"
@@ -104,6 +105,51 @@ static void ConfigureAtlasTextureEnv(void) {
     C3D_TexEnvFunc(env, C3D_RGB, GPU_MULTIPLY_ADD);
     C3D_TexEnvColor(env, C2D_Color32(0, 0, 255, 255));
 }
+
+/* Debug: flat-colour every layer/sprite by its stereo tier (see sDepthTint /
+ * Port_GpuRenderer_SetDepthTint). RGB comes straight from the TEV constant,
+ * which the draw loop sets per tier; alpha still comes from the source so a
+ * layer keeps its silhouette and transparent pixels are AlphaTest'd away.
+ * One variant per source: the atlas keeps opacity in the red byte (same as
+ * ConfigureAtlasTextureEnv's alpha path), a cached-layer RT has straight
+ * alpha (like ConfigurePlainTextureEnv). */
+static void ConfigureDepthTintAtlasTexEnv(void) {
+    C3D_TexEnv* env = C3D_GetTexEnv(0);
+    C3D_TexEnvInit(env);
+    C3D_TexEnvSrc(env, C3D_RGB, GPU_CONSTANT, GPU_CONSTANT, GPU_CONSTANT);
+    C3D_TexEnvFunc(env, C3D_RGB, GPU_REPLACE);
+    C3D_TexEnvSrc(env, C3D_Alpha, GPU_TEXTURE0, GPU_TEXTURE0, GPU_TEXTURE0);
+    C3D_TexEnvOpAlpha(env, GPU_TEVOP_A_SRC_R, GPU_TEVOP_A_SRC_R, GPU_TEVOP_A_SRC_R);
+    C3D_TexEnvFunc(env, C3D_Alpha, GPU_REPLACE);
+    C3D_TexEnvColor(env, C2D_Color32(255, 0, 255, 255)); /* draw loop overrides per tier */
+    C3D_TexEnvInit(C3D_GetTexEnv(1));
+    C3D_TexEnvInit(C3D_GetTexEnv(2));
+}
+static void ConfigureDepthTintPlainTexEnv(void) {
+    C3D_TexEnv* env = C3D_GetTexEnv(0);
+    C3D_TexEnvInit(env);
+    C3D_TexEnvSrc(env, C3D_RGB, GPU_CONSTANT, GPU_CONSTANT, GPU_CONSTANT);
+    C3D_TexEnvFunc(env, C3D_RGB, GPU_REPLACE);
+    C3D_TexEnvSrc(env, C3D_Alpha, GPU_TEXTURE0, GPU_TEXTURE0, GPU_TEXTURE0);
+    C3D_TexEnvFunc(env, C3D_Alpha, GPU_REPLACE);
+    C3D_TexEnvColor(env, C2D_Color32(255, 0, 255, 255));
+    C3D_TexEnvInit(C3D_GetTexEnv(1));
+    C3D_TexEnvInit(C3D_GetTexEnv(2));
+}
+
+/* Tier -> flat colour, same palette as the layer workbench's TIER_MARKER_COLOR
+ * (tools/layer-workbench/index.html) so the on-device view and the PC tool
+ * read alike. Index by PORT_TIER_* (port_stereo_depth.h). Literal ABGR8888
+ * (0xAABBGGRR) since C2D_Color32 is a function, not constant-foldable here. */
+static const u32 kDepthTintColor[PORT_TIER_COUNT] = {
+    0xffd68f5bu, /* 0 BG_FAR     #5b8fd6 */
+    0xff52ae6fu, /* 1 BG_MID     #6fae52 */
+    0xff3ba1e9u, /* 2 BG_PLAY    #e9a13b */
+    0xff4f4fd2u, /* 3 BG_OVERLAY #d24f4f */
+    0xfff2f2f2u, /* 4 OBJ_P1     #f2f2f2 */
+    0xffd66fb0u, /* 5 OBJ_HUD    #b06fd6 */
+    0xffc7c74fu, /* 6 OBJ_MAP    #4fc7c7 */
+};
 
 /* Plain pass-through texenv: output = texture0, verbatim, single stage.
  * Used by the issue #29 strip blit. sHazeTex is a GPU render target: the
@@ -757,7 +803,10 @@ static void UpdateLayerFixRoom(void) {
 static void ComputeDepthState(uint16_t dispcnt) {
     extern s16 gMainGameMode;
     extern u8 gSamusOnTopOfBackgrounds;
-    (void)dispcnt;
+    /* Cutscene enum (include/constants/cutscene.h: MAKE_ENUM(s8, Cutscene)),
+     * valid while GM_CUTSCENE renders. Declared by hand -- this file keeps out
+     * of the game struct headers, same as gMainGameMode above. */
+    extern signed char gCurrentCutscene;
     sDepthState.inGameplay = (gMainGameMode == 4);
     sDepthState.samusOnTopOfBackgrounds =
         sDepthState.inGameplay && gSamusOnTopOfBackgrounds != 0;
@@ -781,10 +830,16 @@ static void ComputeDepthState(uint16_t dispcnt) {
         case 10:
             sDepthState.bg0IsOverlayText = false;
             sDepthState.cutsceneArt = true;
+            /* Scene id for the optional per-cutscene override list
+             * (port_cutscene_depth.h). gCurrentCutscene is only meaningful for
+             * GM_CUTSCENE (10); SceneFromGame ignores it for 1/7/9. */
+            sDepthState.cutsceneScene = (uint8_t)PortCutsceneDepth_SceneFromGame(
+                gMainGameMode, (int)gCurrentCutscene);
             break;
         default:
             sDepthState.bg0IsOverlayText = !sDepthState.inGameplay;
             sDepthState.cutsceneArt = false;
+            sDepthState.cutsceneScene = 0;
             break;
     }
     /* Two-plane flatten for depthless screens (see flatMenu): content
@@ -806,6 +861,11 @@ static void ComputeDepthState(uint16_t dispcnt) {
         sDepthState.priority[bg] =
             (uint8_t)(((uint16_t)(gIoMem[0x08 + bg * 2] | (gIoMem[0x09 + bg * 2] << 8))) & 3u);
     }
+    /* Which sub-scene of a montage cutscene this frame is: BG enable + the
+     * four priorities. Only used when cutsceneArt; harmless otherwise. */
+    sDepthState.cutsceneLayout = sDepthState.cutsceneArt
+        ? PortCutsceneDepth_LayerSignature(dispcnt, sDepthState.priority)
+        : 0;
     UpdateLayerFixRoom();
     UpdateDoorDepthRoom();
 
@@ -907,6 +967,15 @@ void Port_GpuRenderer_SetBlockDebugTint(bool on) {
     sB32CacheResetPending = true;
 }
 bool Port_GpuRenderer_BlockDebugTintEnabled(void) { return sBlockDebugTint; }
+
+/* Debug aid: flat-colour every drawn layer and sprite by its resolved stereo
+ * tier (kDepthTintColor), so on a fast cutscene you can see at a glance which
+ * plane each layer landed on. Only the main draw loop honours it; the
+ * outside-border HUD pass is left readable. Costs one bool test when off, and
+ * needs no cache reset -- it swaps the texenv, it never touches atlas texels. */
+static bool sDepthTint = false;
+void Port_GpuRenderer_SetDepthTint(bool on) { sDepthTint = on; }
+bool Port_GpuRenderer_DepthTintEnabled(void) { return sDepthTint; }
 
 /* 32x32 block pass (see the Block32 cache). Opt-in, like step A was: a
  * measured-on-hardware change, and the 16x16 pass has to be on for it to do
@@ -3829,6 +3898,59 @@ void Port_GpuRenderer_RenderFrame(void) {
             C2D_Flush();
             ConfigureAtlasTextureEnv();
             plainEnvActive = false;
+        }
+
+        /* Depth-tint debug view: re-draw every item's silhouette in its stereo
+         * tier's flat colour, over the normal render. A separate pass -- not
+         * interleaved with the loop above -- so the normal path's texenv state
+         * machine is untouched. Mirrors HazeRippleIntoTarget's proven "set
+         * env, loop, reassert-after-first-draw, flush" shape. Ignores window
+         * clipping (a debug view doesn't need it).
+         *
+         * Blended ~78% over the scene rather than opaque: a layer that fills
+         * the screen (a cutscene backdrop) would otherwise hide everything, so
+         * you keep enough of the real image to tell what you are looking at
+         * while the plane colour still dominates. */
+        if (sDepthTint) {
+            C2D_Flush();
+            C3D_BlendingColor(C2D_Color32(0, 0, 0, 200)); /* Ac = 200/255 tint */
+            C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD,
+                           GPU_CONSTANT_ALPHA, GPU_ONE_MINUS_CONSTANT_ALPHA,
+                           GPU_CONSTANT_ALPHA, GPU_ONE_MINUS_CONSTANT_ALPHA);
+            blendModeActive = true; /* force the restore below */
+            bool tPlain = false, tReasserted = false;
+            int tTier = -1;
+            ConfigureDepthTintAtlasTexEnv();
+            for (int oi = 0; oi < sDrawOrderCount; ++oi) {
+                const DrawItem* item = &sDrawItems[sDrawOrder[oi]];
+                if (hudOutside && item->isHud) continue;
+                if (item->plainEnv != tPlain) {
+                    C2D_Flush();
+                    if (item->plainEnv) ConfigureDepthTintPlainTexEnv();
+                    else                ConfigureDepthTintAtlasTexEnv();
+                    tPlain = item->plainEnv; tTier = -1; tReasserted = true;
+                }
+                if (item->depthTier != tTier) {
+                    C2D_Flush();
+                    int t = item->depthTier;
+                    if (t < 0 || t >= PORT_TIER_COUNT) t = PORT_TIER_OBJ_P1;
+                    C3D_TexEnvColor(C3D_GetTexEnv(0), kDepthTintColor[t]);
+                    tTier = item->depthTier;
+                }
+                float eo = floorf(eyeSign * slider3d *
+                                  PortStereoDepth_TierPx(item->depthTier) + 0.5f);
+                C2D_DrawParams p = BuildDrawParams(item, screenBaseX, screenBaseY,
+                                                   eo, scaleX, scaleY, false);
+                C2D_DrawImage(item->img, &p, NULL);
+                if (!tReasserted) {
+                    if (item->plainEnv) ConfigureDepthTintPlainTexEnv();
+                    else                ConfigureDepthTintAtlasTexEnv();
+                    tTier = -1;
+                    tReasserted = true;
+                }
+            }
+            C2D_Flush();
+            ConfigureAtlasTextureEnv();
         }
         if (blendModeActive) {
             C2D_Flush();

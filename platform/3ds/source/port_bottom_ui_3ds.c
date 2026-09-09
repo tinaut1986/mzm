@@ -320,6 +320,8 @@ extern void Port_GpuRenderer_SetBlockPass(bool on);
 extern bool Port_GpuRenderer_BlockPassEnabled(void);
 extern void Port_GpuRenderer_SetBlockDebugTint(bool on);
 extern bool Port_GpuRenderer_BlockDebugTintEnabled(void);
+extern void Port_GpuRenderer_SetDepthTint(bool on);
+extern bool Port_GpuRenderer_DepthTintEnabled(void);
 extern void Port_GpuRenderer_SetBlock32Pass(bool on);
 extern bool Port_GpuRenderer_Block32PassEnabled(void);
 extern void Port_GpuRenderer_SetLayerCache(bool on);
@@ -4179,11 +4181,11 @@ static void RenderOptionsView(void) {
 #define DBGTOOL_GRID_Y0   42   /* clears the modal title at y=32..39 */
 #define DBGTOOL_GRID_PITCH 20
 #define DBGTOOL_CELL_H    19
-/* Cells 9..11 (RENDERER GPU/CPU, BLOQUES 16x16, CACHE CAPAS) only exist
- * when the GPU tile renderer is compiled in -- a RENDERER=cpu build has
+/* Cells 9..13 (RENDERER, BLOQUES, CAPAS/HAZE, PERFIL 3DS, PROFUNDIDAD) only
+ * exist when the GPU tile renderer is compiled in -- a RENDERER=cpu build has
  * nothing to switch to and neither pass to switch off. */
 #ifdef PORT_GPU_TILE_RENDERER
-#define DBGTOOL_COUNT     14
+#define DBGTOOL_COUNT     15
 #else
 #define DBGTOOL_COUNT     10
 #endif
@@ -4438,6 +4440,14 @@ static void RenderDebugToolsModal(int lang) {
                                  : (forced ? C2D_Color32(230, 200, 120, 255)
                                            : C2D_Color32(120, 230, 140, 255)));
         }
+        /* Flat-colour every layer/sprite by its stereo depth plane, so a
+         * wrongly-placed cutscene layer stands out at a glance. */
+        {
+            const bool dt = Port_GpuRenderer_DepthTintEnabled();
+            DrawDebugCell(13, (lang == 6) ? "PROFUNDIDAD" : "DEPTH TINT",
+                          dt ? onTxt : offTxt,
+                          dt ? colOn : colAct);
+        }
     }
 #endif
 
@@ -4622,6 +4632,13 @@ static bool HandleDebugToolsModalTouch(int x, int y) {
                 DebugToolsSetMsg(forced ? "PERFIL 3DS: OLD (forzado)"
                                         : "PERFIL 3DS: NEW");
             }
+            break;
+        }
+        case 13: {
+            const bool on = !Port_GpuRenderer_DepthTintEnabled();
+            Port_GpuRenderer_SetDepthTint(on);
+            DebugToolsSetMsg(on ? "TINTE DE PROFUNDIDAD: ON"
+                                : "TINTE DE PROFUNDIDAD: OFF");
             break;
         }
 #endif
