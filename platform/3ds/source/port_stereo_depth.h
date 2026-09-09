@@ -89,6 +89,20 @@ typedef struct {
      * Mutually exclusive with bg0IsOverlayText and flatMenu (the renderer
      * sets exactly one). */
     bool cutsceneArt;
+
+    /* Scene id for the per-cutscene override list (port_cutscene_depth.h),
+     * i.e. PortCutsceneDepth_SceneFromGame(gMainGameMode, gCurrentCutscene).
+     * Only consulted when cutsceneArt is set; 0 (PORT_CUT_SCENE_NONE) means
+     * "no scene / no lookup", so a zeroed state -- every host test that does
+     * not set it -- keeps the built-in spread unchanged. */
+    uint8_t cutsceneScene;
+
+    /* Which sub-scene of that cutscene: PortCutsceneDepth_LayerSignature() of
+     * the frame (BG enable + BGCNT priorities). Lets one override list treat
+     * the pages of a montage cutscene separately. Only read when cutsceneArt;
+     * a zeroed state means signature 0, which just never matches a real
+     * layout-specific row -- the wildcard (PORT_CUT_ANY) rows still apply. */
+    uint16_t cutsceneLayout;
 } PortStereoDepthState;
 
 /* Depth tier indices. port_gpu_renderer.c picks the HUD and map tiers by

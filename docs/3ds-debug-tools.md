@@ -172,6 +172,43 @@ Grep the log for `USER MARK` and read the surrounding lines (set the **LOG**
 mode to `GPU` or `ALL` for the `GPU_REJECT`/`GPUDIAG` lines) to see what the
 renderer was doing at that moment.
 
+## Depth-tint view (PROFUNDIDAD / DEPTH TINT)
+
+A toggle in the tools grid. When on, `port_gpu_renderer.c` adds a **separate
+pass after the normal render** that re-draws every BG layer and sprite in its
+resolved stereo-tier colour, blended ~78% over the real image (a full-screen
+backdrop layer would otherwise hide the scene) and keeping the source alpha so
+silhouettes stay (`sDepthTint` / `Port_GpuRenderer_SetDepthTint`). It is a
+separate pass, not interleaved with the main loop's texenv state machine --
+the first cut interleaved it and produced per-eye flicker. One colour per
+`PORT_TIER_*`, the same palette the layer workbench uses:
+
+| Tier | Colour |
+| --- | --- |
+| `BG_FAR` | blue `#5b8fd6` |
+| `BG_MID` | green `#6fae52` |
+| `BG_PLAY` | amber `#e9a13b` |
+| `BG_OVERLAY` | red `#d24f4f` |
+| `OBJ_P1` | white `#f2f2f2` |
+| `OBJ_HUD` | purple `#b06fd6` |
+| `OBJ_MAP` | cyan `#4fc7c7` |
+
+Exists to check, on the console, whether a cutscene's layers landed on the
+planes `port_cutscene_depth.inc` assigned them -- a fast scene doesn't give
+the eye time to judge the parallax, but a mislabelled layer's colour is
+obvious. It only recolours; it does **not** change draw order, so a
+parallax/occlusion contradiction still reads as the wrong layer being on top.
+The border HUD pass is left untinted. No cost when off.
+
+**CPU-rendered frames get a magenta border instead of tint.** Cutscenes that
+use an affine BG mode (the Tourian-escape montage, e.g.) fail
+`Port_GpuRenderer_CanRenderFrame`'s `mode != 0` check and fall back to the CPU
+scanline renderer (`port/ppu/src/mode1.c`), which has **no stereo depth at
+all** -- so `port_cutscene_depth.inc` overrides do nothing there and there is
+no tier to colour. `port_ppu_mzm.c` stamps a 3px magenta ring on those frames
+while the view is on, so a stretch of the cutscene with no 3D to tune is
+obvious rather than looking like the tint silently stopped working.
+
 ## Scene recorder (was L+R+START)
 
 Implemented in `PlatformGpu3DS_ToggleRecording` / `PlatformGpu3DS_RecordTick`
@@ -235,9 +272,9 @@ end-of-file marker -- just read records until EOF). Each record is:
 ```
 struct RecordHeader {   // 64 bytes total (was 32 with magic 'MZMR'; bumped to
                         // 'MZM2' for issue #20's perf instrumentation, then
-                        // 'MZM3' and 'MZM4' for the clip/camera block that
-                        // follows VRAM -- see the clip block below)
-    uint32_t magic;                 // 'MZM4' = 0x344D5A4D (read as little-endian bytes)
+                        // 'MZM3' / 'MZM4' / 'MZM5' for the clip/camera block
+                        // that follows VRAM -- see the clip block below)
+    uint32_t magic;                 // 'MZM5' = 0x354D5A4D (read as little-endian bytes)
     uint32_t frameCounter;          // running emulated-frame counter at capture time
     uint32_t pose;                  // gSamusData.pose (SamusPose enum, see constants/samus.h)
     uint32_t currentAnimationFrame; // gSamusData.currentAnimationFrame
@@ -279,17 +316,19 @@ uint8_t  vram[0x18000];   // gVram
 ```
 
 Record size = 64 + 0x400 + 512 + 512 + 0x400 + 0x18000 + the clip block
-(`PortPpuMzm_GetClipRecordBlockSize()`, 228 bytes as of 'MZM4') = 101,668
-bytes. If any of those extern arrays -- or the clip block -- change size,
-recompute this and update `PlatformGpu3DS_RecordTick` and this doc together.
-Rather than hardcoding it, the safe way to get the stride from a fetched
-file is to scan for the second `MZM4` magic at least `0x18000` bytes in (a
-word inside VRAM can read as the magic by chance, so the distance floor
-matters). To split a fetched `mzm-rec.bin` into per-sample dumps for
-analysis:
+(`PortPpuMzm_GetClipRecordBlockSize()`, 230 bytes as of 'MZM5' -- 26 bytes of
+scalars then a 17x12 clip grid; the scalars are camera x/y, Samus x/y,
+clipdata w/h, `gMainGameMode`, Samus pose, screen-origin x/y, area, room, and
+`gCurrentCutscene`) = 101,670 bytes. If any of those extern arrays -- or the
+clip block -- change size, recompute this and update `PlatformGpu3DS_RecordTick`
+and this doc together. Rather than hardcoding it, the safe way to get the
+stride from a fetched file is to scan for the second `MZM5` magic at least
+`0x18000` bytes in (a word inside VRAM can read as the magic by chance, so
+the distance floor matters). To split a fetched `mzm-rec.bin` into per-sample
+dumps for analysis:
 
 ```python
-REC_SIZE = 64 + 0x400 + 512 + 512 + 0x400 + 0x18000 + 228  # 'MZM4'
+REC_SIZE = 64 + 0x400 + 512 + 512 + 0x400 + 0x18000 + 230  # 'MZM5'
 with open('mzm-rec.bin', 'rb') as f:
     data = f.read()
 n = len(data) // REC_SIZE
