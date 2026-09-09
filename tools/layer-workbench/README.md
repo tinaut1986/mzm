@@ -260,6 +260,10 @@ un guardado a medias no deje al port compilando una lista truncada.
 Abriendo `index.html` a pelo nada de esto es posible —el navegador no escribe
 en disco sin diálogo— y los dos botones caen al diálogo de archivos de siempre.
 
+El modo SPRITES y el panel de cinemáticas funcionan igual contra
+`port_sprite_depth.inc` y `port_cutscene_depth.inc` (`serve.py` los sirve y
+guarda en `/sprite-fixes` y `/cutscene-fixes`).
+
 Ahí lo recoge
 `port_layer_fixes.c`, que lo compila como tabla y valida cada entrada contra el
 tilemap de la sala al entrar en ella: una corrección cuyo bloque ya no coincide
@@ -340,12 +344,13 @@ asignarlo.
 
 ## Motor de profundidad en WASM
 
-El plano estéreo que colorea el modo mapa (ver siguiente sección) no sale de
-una reimplementación en JS: sale de compilar a WebAssembly los mismos
-`port_stereo_depth.c` / `port_layer_fixes.c` que compila el port 3DS, la
-lógica que `platform/3ds/tests/stereo_depth_test.c` ya prueba en el host.
-Reimplementarla en JS podría desincronizarse en silencio; compilar el C real
-no puede.
+El plano estéreo que colorea el modo mapa (ver siguiente sección) y el que
+resuelve el panel de cinemáticas no salen de una reimplementación en JS: salen
+de compilar a WebAssembly los mismos `port_stereo_depth.c` /
+`port_cutscene_depth.c` / `port_layer_fixes.c` que compila el port 3DS, la
+lógica que `platform/3ds/tests/stereo_depth_test.c` y `cutscene_depth_test.c`
+ya prueban en el host. Reimplementarla en JS podría desincronizarse en
+silencio; compilar el C real no puede.
 
 ```bash
 tools/layer-workbench/wasm/setup_emsdk.sh   # bootstrap: Emscripten local en wasm/emsdk/ (~1 GB, una vez)
@@ -360,9 +365,11 @@ En Windows, `run_workbench.bat` detecta que falta `emcc` y ofrece correr
 `wasm/emsdk/` está en `.gitignore`.
 
 `build.sh` compila `platform/3ds/source/port_stereo_depth.c`,
-`port_layer_fixes.c` y el puente `tools/layer-workbench/wasm/depth_bridge.c`
-(que sólo aplana el `struct` de estado a parámetros escalares -- no decide
-nada) en `tools/layer-workbench/depth_engine.js`, con el `.wasm` incrustado
+`port_cutscene_depth.c`, `port_layer_fixes.c` y el puente
+`tools/layer-workbench/wasm/depth_bridge.c` (que sólo aplana el `struct` de
+estado a parámetros escalares y da al workbench un buffer para subir la lista
+de overrides de cinemática sin escribir el `.inc` -- no decide nada) en
+`tools/layer-workbench/depth_engine.js`, con el `.wasm` incrustado
 (`SINGLE_FILE=1`) para no añadir un segundo fetch. `serve.py` lo regenera
 solo si `emcc` está instalado y las fuentes son más nuevas, igual que
 `maps.json`; si no está instalado dejaste `depth_engine.js` sin generar, la
@@ -375,9 +382,9 @@ un `depth_engine.js` a medio camino en el repo: está en `.gitignore`, como
 programa nativo minúsculo que llama a las mismas funciones con el mismo
 espacio de estados que recorre `stereo_depth_test.c` (las cuatro
 prioridades BGCNT, los tres presets de separación, `samusOnTopOfBackgrounds`,
-`flatMenu`), vuelca los resultados, y los compara con lo que devuelve
-`depth_engine.js` bajo Node para exactamente los mismos estados. Hoy: 6160
-comprobaciones, 0 diferencias.
+`flatMenu`, y la rama `cutsceneArt` con y sin lista de overrides), vuelca los
+resultados, y los compara con lo que devuelve `depth_engine.js` bajo Node para
+exactamente los mismos estados. 0 diferencias.
 
 ## Sprites en el mapa
 
@@ -437,6 +444,58 @@ oculta, igual que los botones `BG0`/`BG1`/`BG2`.
   funcionando pero el botón `OBJ` no colorea nada -- no hay una tabla en JS
   de repuesto que pudiera desincronizarse del port real.
 
+## Profundidad de cinemáticas
+
+El port da a toda cinemática de escena-arte (`GM_INTRO`, `GM_CHOZODIA_ESCAPE`,
+`GM_TOURIAN_ESCAPE`, `GM_CUTSCENE`) **un** reparto de planos fijo (la rama
+`cutsceneArt` de `port_stereo_depth.c`): prioridad 0 → `BG_PLAY`, 1 → `BG_MID`,
+2/3 → `BG_FAR`, el rótulo (OBJ prio 0) → `BG_OVERLAY`, un actor (OBJ prio ≥ 1)
+→ `BG_PLAY`. `port_cutscene_depth.inc` es la lista **opcional** que lo cambia
+por cinemática.
+
+Las cinemáticas son animación por código, no datos estáticos: no hay forma de
+decodificarlas como las salas. Para verlas y ajustarlas se usa una
+**grabación** capturada en la consola:
+
+1. En la 3DS, durante la cinemática: `DEBUG → HERRAMIENTAS → GRAB. ESCENA`.
+2. Suéltala (o ábrela con el icono ↥) en modo **GRABACIÓN**. Si la build es
+   nueva (magic `MZM5`) la herramienta reconoce qué cinemática es y aparece el
+   panel **«Profundidad de la cinemática»** junto al Resultado.
+3. Cada fila —una por capa BG activa, más «Actores» y «Rótulo»— tiene un
+   desplegable `PORT_TIER_*` / «por defecto». Al cambiarlo, el Resultado se
+   re-apila según el plano elegido y cada capa muestra su plano resuelto. Las
+   filas BG conmutan entre `PORT_CUT_PRIO(n)` (por prioridad BGCNT, lo que
+   sobrevive a que la escena reasigne capas) y `PORT_CUT_BG(n)` (por índice
+   físico).
+4. `GUARDAR` escribe `platform/3ds/source/port_cutscene_depth.inc` (por
+   `serve.py`; sin servidor sólo queda en memoria).
+
+**Sub-escenas.** Una `GM_CUTSCENE` (p. ej. el montaje de la huida de Tourian)
+encadena varias páginas, cada una con su propio conjunto de BGs y prioridades,
+todas bajo el mismo id de cinemática. El panel muestra la **sub-escena** actual
+como su firma de capas (`BG0=2 BG1=1 BG2=off BG3=off`) y, por defecto, un cambio
+se guarda **sólo para esa sub-escena** (`PORT_CUT_LAYOUT(...)` en el `.inc`), así
+que subir una capa en una página no la sube en el resto. El botón «aplicar a
+toda la cinemática» escribe la fila como `PORT_CUT_ANY`; un `PORT_CUT_LAYOUT`
+concreto gana sobre `PORT_CUT_ANY`. No es por frame.
+
+La resolución de planos la hace el mismo `port_cutscene_depth.c` compilado a
+WASM (no una copia en JS); `wasm/parity_check.py` comprueba que la versión
+WASM y el binario nativo coinciden. Sin el motor WASM, el panel no sale.
+
+`gCurrentCutscene` va en la grabación desde `MZM5`; una `MZM4` sólo identifica
+las de modo entero (`GM_INTRO`/`GM_CHOZODIA_ESCAPE`/`GM_TOURIAN_ESCAPE`), no
+cuál de las `GM_CUTSCENE`.
+
+**Frames en modo BG afín (1/2) van por CPU y no tienen 3D.** Los tramos de una
+cinemática que usan rotación/escalado de fondo (el montaje de la huida de
+Tourian, p. ej.) fallan el `mode != 0` de `Port_GpuRenderer_CanRenderFrame` y se
+dibujan por el rasterizador software (`port/ppu/src/mode1.c`), que compone en 2D
+plano sin planos estéreo. Ahí `port_cutscene_depth.inc` **no hace nada** — no
+hay profundidad que ajustar. La opción de debug PROFUNDIDAD en la consola marca
+esos frames con un borde magenta. Sólo los tramos en modo 0 (una capa BG, texto
+por OAM…) son ajustables.
+
 ## Pendiente
 
 No están cosidas las salas en un mapa de área completo. `mapX`/`mapY` de
@@ -448,6 +507,6 @@ eso fija dos salas una respecto a otra exactamente.
 
 ## Nota
 
-El área y la sala sólo están en grabaciones con magic `MZM4`. Una anterior
-carga igual, pero deja esa mitad de la clave sin rellenar y la herramienta lo
-avisa en rojo.
+El área y la sala están en grabaciones con magic `MZM4` en adelante; la
+cinemática activa, sólo desde `MZM5`. Una grabación anterior carga igual, pero
+deja esa parte de la clave sin rellenar (y la herramienta lo avisa).

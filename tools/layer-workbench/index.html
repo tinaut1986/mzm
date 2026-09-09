@@ -301,6 +301,22 @@
   .okbox { color:var(--ok); }
   kbd { font-family:"JetBrains Mono",monospace; font-size:10px; border:1px solid var(--line);
         border-bottom-width:2px; border-radius:3px; padding:0 4px; color:var(--dim); }
+  /* Cutscene depth editor (GRABACIÓN) */
+  .cutdepth { padding:9px 11px; display:flex; flex-direction:column; gap:6px; }
+  .cutscope { display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+              padding-bottom:5px; border-bottom:1px solid var(--line); }
+  .cutrow { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .cutrow .cutnm { min-width:130px; font-size:11.5px; color:var(--ink); }
+  .cutrow .cutsel { font-size:11px; padding:2px 6px; background:var(--sunk); color:var(--ink);
+                    border:1px solid var(--line); border-radius:3px; }
+  .cutrow .cuttgl { font-size:9.5px; padding:1px 6px; background:var(--sunk); color:var(--dim);
+                    border:1px solid var(--line); border-radius:3px; cursor:pointer; }
+  .cutrow .cuttgl:hover { color:var(--ink); border-color:var(--dim); }
+  .cutrow .cuthint { font-size:10px; color:var(--faint); font-family:"JetBrains Mono",monospace; }
+  .cutdepth .cutsave { display:flex; align-items:center; gap:8px; margin-top:2px;
+                       color:var(--warn); font-size:10.5px; }
+  .cutdepth .cutsave button { font-size:10px; padding:2px 8px; background:var(--sunk);
+                              color:var(--ink); border:1px solid var(--dim); border-radius:3px; cursor:pointer; }
   /* Sprite inspector: hover tooltip + click-pinned card over the Map result. */
   #sptip { position:fixed; z-index:90; max-width:280px; pointer-events:none;
            background:var(--panel); color:var(--ink); border:1px solid var(--dim);
@@ -465,14 +481,29 @@
         depthEngineStatus="error";updateWasmBadge();return;
       }
       DepthEngineModule().then(function(M){
-        var argT=["number","number","number","number","number","number","number","number","number","number"];
+        /* depth_bg_tier / _obj_tier: (p0,p1,p2,p3, inGameplay, bg0Overlay,
+           samusOnTop, flatMenu, flatBackdropPrio, cutsceneArt, cutsceneScene,
+           cutsceneLayout, arg) -- 13 numbers. */
+        var a13=Array(13).fill("number");
         DepthEngine={
-          bgTier:M.cwrap("depth_bg_tier","number",argT),
-          bgTierForPriority:M.cwrap("depth_bg_tier_for_priority","number",argT),
-          objTier:M.cwrap("depth_obj_tier","number",argT),
-          tierPxFor:M.cwrap("depth_tier_px_for","number",["number","number"])
+          M:M,
+          bgTier:M.cwrap("depth_bg_tier","number",a13),
+          bgTierForPriority:M.cwrap("depth_bg_tier_for_priority","number",a13),
+          objTier:M.cwrap("depth_obj_tier","number",a13),
+          tierPxFor:M.cwrap("depth_tier_px_for","number",["number","number"]),
+          cutSceneFromGame:M.cwrap("depth_cut_scene_from_game","number",["number","number"]),
+          cutLayerSignature:M.cwrap("depth_cut_layer_signature","number",["number","number","number","number","number"]),
+          cutScratch:M.cwrap("depth_cut_scratch","number",[]),
+          cutScratchCapacity:M.cwrap("depth_cut_scratch_capacity","number",[]),
+          cutSetOverrides:M.cwrap("depth_cut_set_overrides",null,["number"]),
+          cutPresent:M.cwrap("depth_cut_present","number",[])
         };
-        depthEngineStatus="ready";updateWasmBadge();redraw();
+        pushCutsceneOverrides();
+        depthEngineStatus="ready";updateWasmBadge();
+        /* rec mode: the cutscene panel only exists once the engine can resolve
+           tiers, so rebuild if a recording is already open. */
+        if(mode==="rec"&&state)buildMain();
+        redraw();
       }).catch(function(){ depthEngineStatus="error";updateWasmBadge(); });
     };
     s.onerror=function(){ depthEngineStatus="missing";updateWasmBadge(); };
@@ -509,6 +540,134 @@
     "#4fc7c7"  /* 6 OBJ_MAP */
   ];
   var TIER_COPLANAR_COLOR="#ffb400"; /* dynamic: BG_COPLANAR, resolved only in a recording */
+  var TIER_NAME=["BG_FAR","BG_MID","BG_PLAY","BG_OVERLAY","OBJ_P1","OBJ_HUD","OBJ_MAP"];
+
+  /* ---------- cutscene depth overrides (GRABACION mode) ----------
+   * The port gives every scene-art cutscene ONE hardcoded parallax spread
+   * (port_stereo_depth.c's cutsceneArt branch). port_cutscene_depth.inc is the
+   * optional per-cutscene override list. This panel edits it against a real
+   * capture of the scene and writes it via serve.py's /cutscene-fixes, exactly
+   * like the sprite-depth panel writes port_sprite_depth.inc.
+   *
+   * PORT_CUT_SCENE_* ids -- mirror of the enum in port_cutscene_depth.h; kept
+   * here (not fetched) since it is short and stable. The mapping from a
+   * recording's (gameMode, cutsceneId) to one of these is done by the WASM
+   * engine (depth_cut_scene_from_game), so this list only needs the names. */
+  var CUT_SCENES=[
+    {id:1,  name:"INTRO",             label:"Intro (GM_INTRO)"},
+    {id:2,  name:"CHOZODIA_ESCAPE",   label:"Huida de Chozodia (GM_CHOZODIA_ESCAPE)"},
+    {id:3,  name:"TOURIAN_ESCAPE",    label:"Huida de Tourian (GM_TOURIAN_ESCAPE)"},
+    {id:4,  name:"INTRO_TEXT",              label:"Texto de intro"},
+    {id:5,  name:"MOTHERSHIP_MONOLOGUE",    label:"Monólogo de la nave nodriza"},
+    {id:6,  name:"COULD_I_SURVIVE",         label:"«¿Podría sobrevivir?»"},
+    {id:7,  name:"MOTHER_BRAIN_CLOSE_UP",   label:"Primer plano de Mother Brain"},
+    {id:8,  name:"KRAID_RISING",            label:"Kraid emergiendo"},
+    {id:9,  name:"STATUE_OPENING",          label:"Apertura de la estatua"},
+    {id:10, name:"RIDLEY_IN_SPACE",         label:"Ridley en el espacio"},
+    {id:11, name:"RIDLEY_LANDING",          label:"Aterrizaje de Ridley"},
+    {id:12, name:"RIDLEY_SPAWNING",         label:"Aparición de Ridley"},
+    {id:13, name:"ENTER_TOURIAN",           label:"Entrada a Tourian"},
+    {id:14, name:"BEFORE_RUINS_TEST",       label:"Antes de la prueba de las ruinas"},
+    {id:15, name:"GETTING_FULLY_POWERED",   label:"Traje totalmente cargado"},
+    {id:16, name:"MECHA_RIDLEY_SEES_SAMUS", label:"Mecha Ridley ve a Samus"},
+    {id:17, name:"SAMUS_IN_BLUE_SHIP",      label:"Samus en la nave azul"}
+  ];
+  function cutSceneName(id){
+    var s=CUT_SCENES.filter(function(c){return c.id===id;})[0];
+    return s?s.name:("scene "+id);
+  }
+  /* target key <-> the PORT_CUT_* byte encoding in port_cutscene_depth.h. */
+  function cutTargetByte(key){
+    if(key==="actor")return 0x20;
+    if(key==="caption")return 0x21;
+    var m=/^prio([0-3])$/.exec(key); if(m)return parseInt(m[1],10);       /* PORT_CUT_PRIO */
+    m=/^bg([0-3])$/.exec(key);       if(m)return 0x10|parseInt(m[1],10);  /* PORT_CUT_BG */
+    return -1;
+  }
+  function cutTargetFromByte(b){
+    if(b===0x20)return "actor";
+    if(b===0x21)return "caption";
+    if((b&0x30)===0x10)return "bg"+(b&3);
+    if((b&~3)===0)return "prio"+(b&3);
+    return null;
+  }
+  function cutTargetToken(key){
+    if(key==="actor")return "PORT_CUT_ACTOR";
+    if(key==="caption")return "PORT_CUT_CAPTION";
+    var m=/^prio([0-3])$/.exec(key); if(m)return "PORT_CUT_PRIO("+m[1]+")";
+    m=/^bg([0-3])$/.exec(key);       if(m)return "PORT_CUT_BG("+m[1]+")";
+    return key;
+  }
+
+  var CUT_ANY=0xFFFF;   /* PORT_CUT_ANY -- "toda la cinemática" */
+
+  /* { sceneId: { variantKey: { targetKey: tierIndex } } }, where variantKey is
+     the numeric layout signature or "any". Authoritative in the editor; the
+     WASM engine gets a flattened copy via pushCutsceneOverrides(). */
+  var cutsceneFixes={};
+
+  function pushCutsceneOverrides(){
+    if(!DepthEngine||!DepthEngine.cutSetOverrides)return;
+    var rows=[];   /* [scene, layout, targetByte, tier] */
+    Object.keys(cutsceneFixes).forEach(function(sid){
+      var byVariant=cutsceneFixes[sid];
+      Object.keys(byVariant).forEach(function(vk){
+        var layout=(vk==="any")?CUT_ANY:(+vk & 0xFFFF);
+        var byTarget=byVariant[vk];
+        Object.keys(byTarget).forEach(function(k){
+          var tb=cutTargetByte(k),t=byTarget[k];
+          if(tb>=0&&t>=0&&t<TIER_NAME.length)rows.push([+sid,layout,tb,t]);
+        });
+      });
+    });
+    var cap=DepthEngine.cutScratchCapacity();
+    if(rows.length>cap)rows=rows.slice(0,cap);
+    var flat=new Uint8Array(rows.length*5);
+    rows.forEach(function(r,i){
+      flat[i*5]=r[0]; flat[i*5+1]=r[1]&0xFF; flat[i*5+2]=(r[1]>>8)&0xFF;
+      flat[i*5+3]=r[2]; flat[i*5+4]=r[3];
+    });
+    DepthEngine.M.HEAPU8.set(flat,DepthEngine.cutScratch());
+    DepthEngine.cutSetOverrides(rows.length);
+  }
+
+  /* PORT_CUT_SCENE_* id for a loaded recording context, or 0 (not a cutscene). */
+  function cutSceneOf(C){
+    if(!DepthEngine||!C||C.gameMode==null)return 0;
+    return DepthEngine.cutSceneFromGame(C.gameMode, C.cutsceneId||0)|0;
+  }
+  function isCutsceneCtx(C){ return cutSceneOf(C)>0; }
+
+  /* Layout signature of the CURRENT recording frame (BG enable + BGCNT
+     priorities), i.e. which sub-scene of the cutscene it is. */
+  function cutLayoutOf(C){
+    if(!DepthEngine||!C)return 0;
+    var dispcnt=u16(C.b,C.io);
+    var p=state.prio||[0,0,0,0];
+    return DepthEngine.cutLayerSignature(dispcnt,p[0],p[1],p[2],p[3])&0xFFFF;
+  }
+  /* Human-readable form, e.g. "BG0=2 BG1=1 BG2=off BG3=off". */
+  function cutLayoutLabel(sig){
+    var out=[];
+    for(var bg=0;bg<4;bg++){
+      var nib=(sig>>(bg*4))&0xF;
+      out.push("BG"+bg+"="+(nib===0xF?"off":nib));
+    }
+    return out.join(" ");
+  }
+
+  /* Resolved tier for a BG / OBJ in the current cutscene recording, WITH the
+     editor's overrides applied (they were pushed to the engine). */
+  function cutResolveBgTier(C,bgIndex){
+    if(!DepthEngine)return null;
+    var p=state.prio||[0,0,0,0];
+    return DepthEngine.bgTier(p[0],p[1],p[2],p[3], 0,0,0,0,0, 1, cutSceneOf(C), cutLayoutOf(C), bgIndex);
+  }
+  function cutResolveObjTier(C,objPriority){
+    if(!DepthEngine)return null;
+    var p=state.prio||[0,0,0,0];
+    return DepthEngine.objTier(p[0],p[1],p[2],p[3], 0,0,0,0,0, 1, cutSceneOf(C), cutLayoutOf(C), objPriority);
+  }
 
   /* Static tier for one room sprite placement, via the compiled port code --
    * never guessed in JS. Returns {tier:int} for a fixed plane, or
@@ -525,7 +684,7 @@
        in gameplay -- ask the real function rather than hardcoding OBJ_P1, so a
        future change to that policy shows up here too. */
     if(DepthEngine)
-      return {tier:DepthEngine.objTier(0,0,0,0,1,0,0,0,0,0)};
+      return {tier:DepthEngine.objTier(0,0,0,0, 1, 0,0,0,0, 0,0,0, 0)};
     return null; /* engine not loaded: caller shows the "not built" notice instead */
   }
 
@@ -956,7 +1115,7 @@
   /* ---------- recording parsing ---------- */
   function scan(buf){
     var b=new Uint8Array(buf),offs=[],i;
-    for(i=0;i+4<=b.length;i+=4){var m=u32(b,i);if(m===0x334D5A4D||m===0x344D5A4D)offs.push({off:i,magic:m});}
+    for(i=0;i+4<=b.length;i+=4){var m=u32(b,i);if(m===0x334D5A4D||m===0x344D5A4D||m===0x354D5A4D)offs.push({off:i,magic:m});}
     if(!offs.length||offs[0].off!==0)return null;
     /* A sample is at least VRAM-sized, so the next real header cannot be
        nearer than that -- otherwise a word inside VRAM that happens to read
@@ -970,11 +1129,15 @@
   function rgb(c){return [(c&31)*255/31|0,((c>>5)&31)*255/31|0,((c>>10)&31)*255/31|0];}
   function pal(b,o){var p=[];for(var i=0;i<256;i++)p.push(rgb(u16(b,o+i*2)));return p;}
   function ctxOf(s){
-    var b=s.buf,base=s.base,m4=s.magic===0x344D5A4D;
+    var b=s.buf,base=s.base;
+    var m4=s.magic===0x344D5A4D||s.magic===0x354D5A4D; /* has area/room/gameMode */
+    var m5=s.magic===0x354D5A4D;                       /* also has cutscene id */
     return {b:b,io:base+O_IO,bgpal:pal(b,base+O_BGPAL),objpal:pal(b,base+O_OBJPAL),
             oam:base+O_OAM,vram:base+O_VRAM,clip:s.clip,
             area:m4?u16(b,s.clip+20):null, room:m4?u16(b,s.clip+22):null,
-            originX:m4?u16(b,s.clip+16):null, originY:m4?u16(b,s.clip+18):null};
+            originX:m4?u16(b,s.clip+16):null, originY:m4?u16(b,s.clip+18):null,
+            gameMode:m4?u16(b,s.clip+12):null,          /* GBA GM_* (clip word 6) */
+            cutsceneId:m5?u16(b,s.clip+24):null};       /* Cutscene enum (word 12) */
   }
   function px4(b,off,x,y,hf,vf){if(hf)x=7-x;if(vf)y=7-y;var v=b[off+y*4+(x>>1)];return (x&1)?(v>>4):(v&15);}
 
@@ -1108,6 +1271,31 @@
     return {layers:out,after:after,moved:moved};
   }
 
+  /* Back-to-front draw order for the four BG slots.
+     - Normal room / non-cutscene recording: by BGCNT priority (higher number
+       farther), which is what the GBA compositor does.
+     - Cutscene recording with the WASM engine: by the RESOLVED stereo tier
+       (farther plane drawn first), so moving a layer to another depth plane in
+       the panel visibly re-stacks the preview -- "el orden de verdad", the
+       same idea as Map mode. Ties keep the priority order. */
+  function stageLayerOrder(){
+    var C=state&&state.C;
+    if(state&&state.kind==="rec"&&DepthEngine&&isCutsceneCtx(C)){
+      var px={};
+      [0,1,2,3].forEach(function(bg){
+        var t=cutResolveBgTier(C,bg);
+        px[bg]=(t==null)?0:DepthEngine.tierPxFor(0,t);
+      });
+      return [0,1,2,3].sort(function(a,b){
+        if(px[a]!==px[b])return px[a]-px[b];           /* farther (smaller px) first */
+        var pa=state.prio[a],pb=state.prio[b];
+        return pa!==pb?pb-pa:b-a;
+      });
+    }
+    return [0,1,2,3].sort(function(a,b){
+      var pa=state.prio[a],pb=state.prio[b];return pa!==pb?pb-pa:b-a;});
+  }
+
   var compBuf=null;
   function composite(A){
     var n=dimW()*dimH()*4;
@@ -1120,8 +1308,7 @@
        sólo se pintaran las presentes, mandar un bloque a una capa que esta sala
        no usa lo haría desaparecer en vez de moverlo. Le pasaba a cualquier
        destino BG3, y a BG0 en las 162 salas que no lo tienen. */
-    var order=[0,1,2,3].sort(function(a,b){
-      var pa=state.prio[a],pb=state.prio[b];return pa!==pb?pb-pa:b-a;});
+    var order=stageLayerOrder();
     var bl=state.blend;
     var vis=state.stageLayers||{0:true,1:true,2:true,3:true,obj:true,4:true};
     order.forEach(function(bg){
@@ -1531,10 +1718,15 @@
     var altoArriba=Math.max(PANEL_MIN_H,Math.floor(A.h*0.52));
     if(id==="map")
       return {x:A.x+PANEL_GAP,y:A.y+PANEL_GAP,w:mapW,h:altoArriba};
+    var hayCut=ids.indexOf("cutdepth")>=0;
+    var cutW=hayCut?Math.min(340,Math.floor(A.w*0.32)):0;
     if(id==="stage"){
       var x=A.x+(hayMapa?PANEL_GAP*2+mapW:PANEL_GAP);
-      return {x:x,y:A.y+PANEL_GAP,w:Math.max(PANEL_MIN_W,A.x+A.w-x-PANEL_GAP),h:altoArriba};
+      var right=A.x+A.w-PANEL_GAP-(hayCut?cutW+PANEL_GAP:0);
+      return {x:x,y:A.y+PANEL_GAP,w:Math.max(PANEL_MIN_W,right-x),h:altoArriba};
     }
+    if(id==="cutdepth")
+      return {x:A.x+A.w-PANEL_GAP-cutW,y:A.y+PANEL_GAP,w:cutW,h:altoArriba};
     var capas=ids.filter(function(k){return k.indexOf("bg")===0;});
     var j=Math.max(0,capas.indexOf(id)),n=Math.max(1,capas.length);
     var cols=Math.min(n,3),rows=Math.ceil(n/cols);
@@ -1876,11 +2068,19 @@
         "selección · arrastra para coger un rectángulo · <kbd>May</kbd>+arrastra "+
         "para recorrer · <kbd>Ctrl</kbd> suma · <kbd>Ctrl</kbd>+rueda para el zoom"
       : (known
-      ? "Área "+C.area+" · sala "+C.room+" &nbsp;·&nbsp; <kbd>↑↓←→</kbd> mueve la selección · <kbd>Ctrl</kbd>+rueda para el zoom"
-      : "Grabación antigua sin área/sala: la clave queda incompleta. Regrábala con la build que escribe MZM4.");
+      ? "Área "+C.area+" · sala "+C.room+
+        (isCutsceneCtx(C)?" &nbsp;·&nbsp; cinemática <b>"+cutSceneName(cutSceneOf(C))+"</b>":"")+
+        " &nbsp;·&nbsp; <kbd>↑↓←→</kbd> mueve la selección · <kbd>Ctrl</kbd>+rueda para el zoom"
+      : "Grabación antigua sin área/sala: la clave queda incompleta. Regrábala con la build que escribe MZM4+.");
     sp.body.appendChild(info);
     grid.appendChild(sp.card);
     state.stage=cv;
+
+    /* --- cutscene depth editor (GRABACIÓN, scene-art cutscene only) --- */
+    if(state.kind==="rec"){
+      var cdp=buildCutsceneDepthPanel();
+      if(cdp)grid.appendChild(cdp);
+    }
 
     /* Sprite inspector hover (Map mode). Click-to-pin is handled in pickAt. */
     if(state.kind==="map"){
@@ -1901,8 +2101,10 @@
       vistaBtn.className="wb vista";
       vistaBtn.title="Antes / después / ambas";
       vistaBtn.addEventListener("pointerdown",function(e){e.stopPropagation();});
+      var cutTier=(state.kind==="rec"&&DepthEngine&&isCutsceneCtx(C))?cutResolveBgTier(C,bg):null;
       var lp=makePanel("bg"+bg,"BG"+bg+
         "<i>prio "+state.bg[bg].prio+(state.bg[bg].prio===0?" · delante":"")+
+        (cutTier!=null?" · plano "+TIER_NAME[cutTier]:"")+
         (mez?" · mezcla "+bl0.eva+"/"+bl0.evb:"")+"</i>"+
         '<em class="wstate"></em>',vistaBtn);
       lp.card.dataset.bg=String(bg);
@@ -2868,7 +3070,8 @@
     var f=scan(buf);
     if(!f||!f.length){els.meta.textContent="no parece un mzm-rec.bin";return;}
     samples=f;fileName=name;lastSample=0;
-    els.meta.textContent=name+" · "+f.length+" capturas · "+(f[0].magic===0x344D5A4D?"MZM4":"MZM3");
+    var MAGNAME={0x334D5A4D:"MZM3",0x344D5A4D:"MZM4",0x354D5A4D:"MZM5"};
+    els.meta.textContent=name+" · "+f.length+" capturas · "+(MAGNAME[f[0].magic]||"MZM?");
     setMode("rec");
   }
 
@@ -3235,6 +3438,251 @@
       badge("sprites: sin guardar","warn");
   }
 
+  /* ---------- cutscene depth .inc I/O (port_cutscene_depth.inc) ---------- */
+  function cutLayoutToken(vk){
+    if(vk==="any")return "PORT_CUT_ANY";
+    var sig=+vk;
+    var parts=[];
+    for(var bg=0;bg<4;bg++){
+      var nib=(sig>>(bg*4))&0xF;
+      parts.push(nib===0xF?"PORT_CUT_OFF":String(nib));
+    }
+    return "PORT_CUT_LAYOUT("+parts.join(",")+")";
+  }
+  function cutsceneExportText(){
+    var out=[
+      "/* Overrides de profundidad estereoscópica por CINEMÁTICA, para el port 3DS.",
+      " * Generado por tools/layer-workbench (modo GRABACIÓN) -- recárgalo ahí para editar.",
+      " *",
+      " * PORT_CUTSCENE_DEPTH(escena, layout, objetivo, tier)",
+      " *   escena:   PORT_CUT_SCENE_*   (ver port_cutscene_depth.h)",
+      " *   layout:   PORT_CUT_LAYOUT(p0,p1,p2,p3) la sub-escena (PORT_CUT_OFF si",
+      " *             la capa está apagada); PORT_CUT_ANY = toda la cinemática",
+      " *   objetivo: PORT_CUT_PRIO(0..3) / PORT_CUT_BG(0..3) / PORT_CUT_ACTOR / PORT_CUT_CAPTION",
+      " *   tier:     PORT_TIER_*         (port_stereo_depth.h)",
+      " *",
+      " * Sin este archivo, cada cinemática usa el reparto por defecto del port.",
+      " */"];
+    Object.keys(cutsceneFixes).map(Number).sort(function(a,b){return a-b;}).forEach(function(sid){
+      var byVariant=cutsceneFixes[sid];
+      /* ANY first, then layouts in numeric order, for a stable diff. */
+      Object.keys(byVariant).sort(function(a,b){
+        if(a==="any")return -1; if(b==="any")return 1; return (+a)-(+b);
+      }).forEach(function(vk){
+        var byTarget=byVariant[vk];
+        Object.keys(byTarget).sort().forEach(function(k){
+          var t=byTarget[k];
+          if(t<0||t>=TIER_NAME.length)return;
+          out.push("PORT_CUTSCENE_DEPTH(PORT_CUT_SCENE_"+cutSceneName(sid)+", "+
+                   cutLayoutToken(vk)+", "+cutTargetToken(k)+", PORT_TIER_"+TIER_NAME[t]+")");
+        });
+      });
+    });
+    return out.join("\n")+"\n";
+  }
+  function cutsceneImportText(txt){
+    cutsceneFixes={};
+    var nameToId={};
+    CUT_SCENES.forEach(function(c){nameToId[c.name]=c.id;});
+    var tierToIdx={};
+    TIER_NAME.forEach(function(nm,i){tierToIdx[nm]=i;});
+    var re=/PORT_CUTSCENE_DEPTH\(\s*PORT_CUT_SCENE_([A-Z_0-9]+)\s*,\s*(PORT_CUT_ANY|PORT_CUT_LAYOUT\([^)]*\))\s*,\s*(PORT_CUT_ACTOR|PORT_CUT_CAPTION|PORT_CUT_PRIO\([0-3]\)|PORT_CUT_BG\([0-3]\))\s*,\s*PORT_TIER_([A-Z_0-9]+)\s*\)/g,m,n=0;
+    while((m=re.exec(txt))){
+      var sid=nameToId[m[1]]; if(sid===undefined)continue;
+      var vk="any";
+      var lm=/PORT_CUT_LAYOUT\(([^)]*)\)/.exec(m[2]);
+      if(lm){
+        var nibs=lm[1].split(",").map(function(s){
+          s=s.trim();
+          return /OFF/.test(s)?0xF:(parseInt(s,10)&0xF);
+        });
+        var sig=0;
+        for(var bg=0;bg<4;bg++)sig|=((nibs[bg]|0)&0xF)<<(bg*4);
+        vk=String(sig>>>0);
+      }
+      var key;
+      var mm=/PORT_CUT_PRIO\(([0-3])\)/.exec(m[3]);
+      if(mm)key="prio"+mm[1];
+      else if((mm=/PORT_CUT_BG\(([0-3])\)/.exec(m[3])))key="bg"+mm[1];
+      else key=(m[3]==="PORT_CUT_ACTOR")?"actor":"caption";
+      var t=tierToIdx[m[4]]; if(t===undefined)continue;
+      var byV=cutsceneFixes[sid]||(cutsceneFixes[sid]={});
+      (byV[vk]||(byV[vk]={}))[key]=t;
+      n++;
+    }
+    return n;
+  }
+  var serverCutsceneFixes=false,lastCutsceneSaved=null;
+  function loadCutsceneFixesFromServer(quiet){
+    if(location.protocol==="file:")return Promise.resolve();
+    return fetch("cutscene-fixes",{cache:"no-store"}).then(function(r){
+      serverCutsceneFixes=true;
+      if(r.status===404)return null;
+      if(!r.ok)throw 0;
+      return r.text();
+    }).then(function(t){
+      cutsceneFixes={};
+      if(t)cutsceneImportText(t);
+      lastCutsceneSaved=cutsceneExportText();
+      pushCutsceneOverrides();
+      if(!quiet&&mode==="rec")redraw();
+    }).catch(function(){ serverCutsceneFixes=false; });
+  }
+  function saveCutsceneFixesToServer(){
+    var body=cutsceneExportText();
+    return fetch("cutscene-fixes",{method:"PUT",body:body,headers:{"Content-Type":"text/plain"}})
+      .then(function(r){ if(!r.ok)throw 0; lastCutsceneSaved=body; badge("cinemáticas: guardado"); })
+      .catch(function(){ badge("cinemáticas: error al guardar","warn"); });
+  }
+  function cutsceneDirty(){
+    return serverCutsceneFixes&&lastCutsceneSaved!==null&&
+           cutsceneExportText()!==lastCutsceneSaved;
+  }
+  function markCutsceneDirty(){
+    if(cutsceneDirty())badge("cinemáticas: sin guardar","warn");
+  }
+
+  /* The per-layer depth editor for a loaded cutscene recording. Returns a
+     panel card, or null when the recording is not a scene-art cutscene / the
+     WASM engine is missing. */
+  function buildCutsceneDepthPanel(){
+    var C=state&&state.C;
+    if(!DepthEngine||!C||!isCutsceneCtx(C))return null;
+    var sid=cutSceneOf(C);
+    var curSig=cutLayoutOf(C), curVk=String(curSig>>>0);
+    var byScene=cutsceneFixes[sid]||(cutsceneFixes[sid]={});
+
+    var pnl=makePanel("cutdepth","Profundidad de la cinemática <i>"+cutSceneName(sid)+"</i>");
+    var body=pnl.body;
+    body.classList.add("cutdepth");
+
+    /* Scope: a new edit targets THIS sub-scene's layout by default (the whole
+       reason this dimension exists). "aplicar a toda la cinemática" is opt-in.
+       Any PORT_CUT_ANY rows already saved still resolve as a base -- the
+       toggle only changes where the NEXT change is written. */
+    var scopeAll=false;
+    var activeVk=function(){ return scopeAll?"any":curVk; };
+    var byTarget=function(){ return byScene[activeVk()]||(byScene[activeVk()]={}); };
+
+    var scope=document.createElement("div");scope.className="cutscope";
+    var lay=document.createElement("span");lay.className="cuthint";
+    lay.textContent="sub-escena: "+cutLayoutLabel(curSig);
+    var sw=document.createElement("button");sw.className="cuttgl";
+    var syncScope=function(){
+      sw.textContent=scopeAll?"aplicar sólo a esta sub-escena":"aplicar a toda la cinemática";
+    };
+    sw.addEventListener("pointerdown",function(e){e.stopPropagation();});
+    sw.addEventListener("click",function(e){
+      e.stopPropagation();scopeAll=!scopeAll;syncScope();
+      buildMain();redraw();
+    });
+    syncScope();
+    scope.appendChild(lay);scope.appendChild(sw);body.appendChild(scope);
+
+    var rows=[];
+    [0,1,2,3].forEach(function(bg){
+      if(!state.on[bg])return;
+      rows.push({kind:"bg",bg:bg,prio:state.prio[bg],
+                 label:"BG"+bg+" (prio "+state.prio[bg]+")"});
+    });
+    rows.push({kind:"actor",label:"Actores (OBJ prio ≥ 1)"});
+    rows.push({kind:"caption",label:"Rótulo (OBJ prio 0)"});
+
+    rows.forEach(function(r){
+      var line=document.createElement("div");line.className="cutrow";
+      var nm=document.createElement("span");nm.className="cutnm";nm.textContent=r.label;
+      line.appendChild(nm);
+
+      var keyFor=function(){
+        if(r.kind==="actor")return "actor";
+        if(r.kind==="caption")return "caption";
+        return line.dataset.byIndex==="1" ? ("bg"+r.bg) : ("prio"+r.prio);
+      };
+
+      if(r.kind==="bg"){
+        var tgl=document.createElement("button");tgl.className="cuttgl";
+        var sync=function(){
+          var byIx=line.dataset.byIndex==="1";
+          tgl.textContent=byIx?"por índice BG"+r.bg:"por prioridad "+r.prio;
+          tgl.title="Cambia entre PORT_CUT_PRIO("+r.prio+") y PORT_CUT_BG("+r.bg+")";
+        };
+        var bt0=byTarget();
+        if(bt0["bg"+r.bg]!==undefined&&bt0["prio"+r.prio]===undefined)
+          line.dataset.byIndex="1";
+        tgl.addEventListener("pointerdown",function(e){e.stopPropagation();});
+        tgl.addEventListener("click",function(e){
+          e.stopPropagation();
+          line.dataset.byIndex=(line.dataset.byIndex==="1")?"0":"1";
+          sync();refreshSel();
+        });
+        sync();
+        line.appendChild(tgl);
+      }
+
+      var sel=document.createElement("select");sel.className="cutsel";
+      var refreshSel=function(){
+        sel.innerHTML="";
+        var def=document.createElement("option");def.value="-1";def.textContent="— por defecto —";
+        sel.appendChild(def);
+        TIER_NAME.forEach(function(nm,i){
+          var op=document.createElement("option");op.value=String(i);op.textContent=nm;
+          sel.appendChild(op);
+        });
+        var cur=byTarget()[keyFor()];
+        sel.value=(cur===undefined)?"-1":String(cur);
+        var res;
+        if(r.kind==="bg")res=cutResolveBgTier(C,r.bg);
+        else res=cutResolveObjTier(C,r.kind==="caption"?0:1);
+        hint.textContent=(res==null)?"":("ahora: "+TIER_NAME[res]);
+      };
+      sel.addEventListener("pointerdown",function(e){e.stopPropagation();});
+      sel.addEventListener("change",function(){
+        var v=parseInt(sel.value,10),k=keyFor();
+        var bt=byTarget();
+        if(r.kind==="bg"){ delete bt["prio"+r.prio]; delete bt["bg"+r.bg]; }
+        if(v>=0)bt[k]=v; else delete bt[k];
+        if(!Object.keys(bt).length)delete byScene[activeVk()];
+        if(!Object.keys(byScene).length)delete cutsceneFixes[sid];
+        pushCutsceneOverrides();
+        markCutsceneDirty();
+        buildMain();   /* rebuild so every row's "ahora:" re-resolves */
+        redraw();      /* re-composite (stageLayerOrder picks up the change) */
+      });
+      line.appendChild(sel);
+
+      var hint=document.createElement("span");hint.className="cuthint";
+      line.appendChild(hint);
+
+      refreshSel();
+      body.appendChild(line);
+    });
+
+    if(serverCutsceneFixes&&cutsceneDirty()){
+      var sr=document.createElement("div");sr.className="cutsave";
+      var w=document.createElement("span");w.textContent="sin guardar en port_cutscene_depth.inc";
+      var g=document.createElement("button");g.textContent="GUARDAR";
+      g.addEventListener("pointerdown",function(e){e.stopPropagation();});
+      g.addEventListener("click",function(e){
+        e.stopPropagation();
+        saveCutsceneFixesToServer().then(function(){ buildMain(); });
+      });
+      sr.appendChild(w);sr.appendChild(g);body.appendChild(sr);
+    } else if(!serverCutsceneFixes){
+      var h=document.createElement("div");h.className="cuthint";
+      h.textContent="abre con serve.py para escribir el .inc; aquí sólo queda en memoria";
+      body.appendChild(h);
+    }
+
+    var foot=document.createElement("p");foot.className="hint pfoot";
+    foot.innerHTML="Cada fila fija a qué plano 3D va esa capa. «por defecto» deja "+
+      "el reparto del port. Un cambio se guarda para la <b>sub-escena</b> actual "+
+      "(su combinación de capas + prioridades) salvo que pulses «toda la "+
+      "cinemática». No es por frame. El resultado de arriba se re-apila según lo elegido.";
+    body.appendChild(foot);
+
+    return pnl.card;
+  }
+
   function updateFixButtons(){
     if(mode!=="sprites")return;   // map/rec: renderList/renderSide ya lo hacen
     var has=Object.keys(spriteFixes).length;
@@ -3598,6 +4046,9 @@
      spriteFixes to color markers correctly even if the user never opens
      the SPRITES tab this session. */
   loadSpriteFixesFromServer(true).then(function(){ if(mode==="map")redraw(); });
+  /* Cutscene depth overrides, quietly: a recording of a cutscene resolves its
+     layer tiers through these even before the panel is touched. */
+  loadCutsceneFixesFromServer(true);
   if(/[?&]test\b/.test(location.search)){
     /* Tras la carga de maps.json, que es asíncrona. */
     var espera=setInterval(function(){

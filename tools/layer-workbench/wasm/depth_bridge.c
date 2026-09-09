@@ -17,15 +17,21 @@
 #include <stddef.h>
 
 #include "port_stereo_depth.h"
+#include "port_cutscene_depth.h"
 #include "port_layer_fixes.h"
 
 /* ---- port_stereo_depth.h ------------------------------------------- */
 
+/* cutsceneArt / cutsceneScene / cutsceneLayout were added after the first cut
+ * of this bridge; zero-initialise so every field the port reads has a defined
+ * value (the old code left cutsceneArt indeterminate). */
 static PortStereoDepthState BuildState(int p0, int p1, int p2, int p3,
                                         int inGameplay, int bg0IsOverlayText,
                                         int samusOnTopOfBackgrounds,
-                                        int flatMenu, int flatMenuBackdropPrio) {
-    PortStereoDepthState st;
+                                        int flatMenu, int flatMenuBackdropPrio,
+                                        int cutsceneArt, int cutsceneScene,
+                                        int cutsceneLayout) {
+    PortStereoDepthState st = {0};
     st.priority[0] = (uint8_t)p0;
     st.priority[1] = (uint8_t)p1;
     st.priority[2] = (uint8_t)p2;
@@ -35,35 +41,79 @@ static PortStereoDepthState BuildState(int p0, int p1, int p2, int p3,
     st.samusOnTopOfBackgrounds = samusOnTopOfBackgrounds != 0;
     st.flatMenu = flatMenu != 0;
     st.flatMenuBackdropPrio = (uint8_t)flatMenuBackdropPrio;
+    st.cutsceneArt = cutsceneArt != 0;
+    st.cutsceneScene = (uint8_t)cutsceneScene;
+    st.cutsceneLayout = (uint16_t)cutsceneLayout;
     return st;
 }
 
 EMSCRIPTEN_KEEPALIVE
 int depth_bg_tier(int p0, int p1, int p2, int p3, int inGameplay,
                    int bg0IsOverlayText, int samusOnTopOfBackgrounds,
-                   int flatMenu, int flatMenuBackdropPrio, int bgIndex) {
+                   int flatMenu, int flatMenuBackdropPrio,
+                   int cutsceneArt, int cutsceneScene, int cutsceneLayout, int bgIndex) {
     PortStereoDepthState st = BuildState(p0, p1, p2, p3, inGameplay,
-        bg0IsOverlayText, samusOnTopOfBackgrounds, flatMenu, flatMenuBackdropPrio);
+        bg0IsOverlayText, samusOnTopOfBackgrounds, flatMenu, flatMenuBackdropPrio,
+        cutsceneArt, cutsceneScene, cutsceneLayout);
     return PortStereoDepth_BgTier(&st, bgIndex);
 }
 
 EMSCRIPTEN_KEEPALIVE
 int depth_bg_tier_for_priority(int p0, int p1, int p2, int p3, int inGameplay,
                                 int bg0IsOverlayText, int samusOnTopOfBackgrounds,
-                                int flatMenu, int flatMenuBackdropPrio, int priority) {
+                                int flatMenu, int flatMenuBackdropPrio,
+                                int cutsceneArt, int cutsceneScene, int cutsceneLayout,
+                                int priority) {
     PortStereoDepthState st = BuildState(p0, p1, p2, p3, inGameplay,
-        bg0IsOverlayText, samusOnTopOfBackgrounds, flatMenu, flatMenuBackdropPrio);
+        bg0IsOverlayText, samusOnTopOfBackgrounds, flatMenu, flatMenuBackdropPrio,
+        cutsceneArt, cutsceneScene, cutsceneLayout);
     return PortStereoDepth_BgTierForPriority(&st, priority);
 }
 
 EMSCRIPTEN_KEEPALIVE
 int depth_obj_tier(int p0, int p1, int p2, int p3, int inGameplay,
                     int bg0IsOverlayText, int samusOnTopOfBackgrounds,
-                    int flatMenu, int flatMenuBackdropPrio, int objPriority) {
+                    int flatMenu, int flatMenuBackdropPrio,
+                    int cutsceneArt, int cutsceneScene, int cutsceneLayout, int objPriority) {
     PortStereoDepthState st = BuildState(p0, p1, p2, p3, inGameplay,
-        bg0IsOverlayText, samusOnTopOfBackgrounds, flatMenu, flatMenuBackdropPrio);
+        bg0IsOverlayText, samusOnTopOfBackgrounds, flatMenu, flatMenuBackdropPrio,
+        cutsceneArt, cutsceneScene, cutsceneLayout);
     return PortStereoDepth_ObjTier(&st, objPriority);
 }
+
+/* ---- port_cutscene_depth.h ----------------------------------------
+ * The workbench previews unsaved edits by uploading its override list here
+ * and letting the REAL PortCutsceneDepth_* lookup resolve against it -- same
+ * pattern as depth_fix_scratch/depth_fix_set_room for the layer fixes. */
+
+#define MAX_CUT_OVERRIDES 256
+/* 5 bytes/entry: scene, layoutLo, layoutHi, target, tier. */
+static uint8_t sCutScratch[MAX_CUT_OVERRIDES * 5];
+
+EMSCRIPTEN_KEEPALIVE
+uint8_t* depth_cut_scratch(void) { return sCutScratch; }
+
+EMSCRIPTEN_KEEPALIVE
+int depth_cut_scratch_capacity(void) { return MAX_CUT_OVERRIDES; }
+
+EMSCRIPTEN_KEEPALIVE
+void depth_cut_set_overrides(int count) {
+    PortCutsceneDepth_SetRuntimeOverrides(sCutScratch, count);
+}
+
+EMSCRIPTEN_KEEPALIVE
+int depth_cut_scene_from_game(int gameMode, int cutsceneId) {
+    return PortCutsceneDepth_SceneFromGame(gameMode, cutsceneId);
+}
+
+EMSCRIPTEN_KEEPALIVE
+int depth_cut_layer_signature(int dispcnt, int p0, int p1, int p2, int p3) {
+    uint8_t prio[4] = { (uint8_t)p0, (uint8_t)p1, (uint8_t)p2, (uint8_t)p3 };
+    return PortCutsceneDepth_LayerSignature((unsigned)dispcnt, prio);
+}
+
+EMSCRIPTEN_KEEPALIVE
+int depth_cut_present(void) { return PortCutsceneDepth_Present() ? 1 : 0; }
 
 EMSCRIPTEN_KEEPALIVE
 float depth_tier_px_for(int spread, int tier) {
