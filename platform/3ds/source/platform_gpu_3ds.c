@@ -1391,11 +1391,13 @@ void PlatformGpu3DS_RecordTick(void) {
     if (stats.processingTime < 0.0f) procX100 = 0;
 
     uint32_t header[2 + 6 + 8]; /* magic, frame counter, 6 Samus words, perf */
-    /* 'MZM4': the clip/camera block after VRAM now also carries the area
-     * and room number, which a tile correction has to be keyed to. Magic
-     * bumped, as with 'MZM3' before it, so an older parser fails loudly
-     * instead of walking off the end of every sample. */
-    header[0] = 0x344D5A4Du;
+    /* 'MZM5': the clip/camera block after VRAM now also carries the active
+     * cutscene id (word 12), so an offline tool can tell WHICH cutscene a
+     * capture is of and key a per-cutscene depth override to it. The grid
+     * that follows moved 2 bytes; magic bumped, as with 'MZM4'/'MZM3'
+     * before it, so an older parser fails loudly instead of misreading it.
+     * ('MZM4' added area/room to the same block.) */
+    header[0] = 0x354D5A4Du;
     header[1] = sRecFrameCounter;
     PortPpuMzm_GetSamusRecordState(&header[2]);
     header[8]  = frameUs;
