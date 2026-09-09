@@ -88,16 +88,19 @@ static void TestNoIncIsInert(void) {
     for (int scene = 0; scene < PORT_CUT_SCENE_COUNT; ++scene) {
         for (size_t li = 0; li < sizeof(layouts) / sizeof(layouts[0]); ++li) {
             uint16_t L = layouts[li];
-            for (int p = 0; p < 4; ++p) {
-                CHECK(PortCutsceneDepth_TierForPriority(scene, L, p, PORT_TIER_BG_MID) == PORT_TIER_BG_MID,
-                      "TierForPriority scene %d layout %u prio %d", scene, L, p);
-                CHECK(PortCutsceneDepth_BgTier(scene, L, p, p, PORT_TIER_BG_FAR) == PORT_TIER_BG_FAR,
-                      "BgTier scene %d layout %u bg/prio %d", scene, L, p);
+            for (int st = 0; st < 3; ++st) {
+                int S = (st == 2) ? PORT_CUT_STAGE_ANY : st;
+                for (int p = 0; p < 4; ++p) {
+                    CHECK(PortCutsceneDepth_TierForPriority(scene, L, S, p, PORT_TIER_BG_MID) == PORT_TIER_BG_MID,
+                          "TierForPriority scene %d layout %u stage %d prio %d", scene, L, S, p);
+                    CHECK(PortCutsceneDepth_BgTier(scene, L, S, p, p, PORT_TIER_BG_FAR) == PORT_TIER_BG_FAR,
+                          "BgTier scene %d layout %u stage %d bg/prio %d", scene, L, S, p);
+                }
+                CHECK(PortCutsceneDepth_ObjTier(scene, L, S, 0, PORT_TIER_BG_OVERLAY) == PORT_TIER_BG_OVERLAY,
+                      "ObjTier caption scene %d layout %u stage %d", scene, L, S);
+                CHECK(PortCutsceneDepth_ObjTier(scene, L, S, 1, PORT_TIER_BG_PLAY) == PORT_TIER_BG_PLAY,
+                      "ObjTier actor scene %d layout %u stage %d", scene, L, S);
             }
-            CHECK(PortCutsceneDepth_ObjTier(scene, L, 0, PORT_TIER_BG_OVERLAY) == PORT_TIER_BG_OVERLAY,
-                  "ObjTier caption scene %d layout %u", scene, L);
-            CHECK(PortCutsceneDepth_ObjTier(scene, L, 1, PORT_TIER_BG_PLAY) == PORT_TIER_BG_PLAY,
-                  "ObjTier actor scene %d layout %u", scene, L);
         }
     }
 }

@@ -19,6 +19,10 @@
 #include "constants/block.h"
 #include "constants/game_state.h"
 #include "structs/game_state.h"
+#include "constants/cutscene.h"       /* CUTSCENE_DATA */
+#include "structs/cutscene.h"
+#include "structs/tourian_escape.h"   /* TOURIAN_ESCAPE_DATA */
+#include "data/shortcut_pointers.h"   /* sNonGameplayRamPointer */
 #include "structs/connection.h"
 #include "structs/minimap.h"
 #include "structs/room.h"
@@ -1640,15 +1644,39 @@ void PortPpuMzm_ScreenOrigin(int* outX, int* outY) {
  * this block is what makes it checkable.
  *
  * Layout is fixed and appended after VRAM in each sample (recorder magic
- * 'MZM5' -- 'MZM3' added this block, 'MZM4' added area/room, 'MZM5' added the
- * cutscene id). The clip grid covers the visible screen plus one block of
- * slack on each axis, at the same block resolution clipdata uses.
+ * 'MZM6' -- 'MZM3' added this block, 'MZM4' added area/room, 'MZM5' added the
+ * cutscene id, 'MZM6' added the cutscene STAGE). The clip grid covers the
+ * visible screen plus one block of slack on each axis, at the same block
+ * resolution clipdata uses.
  * ------------------------------------------------------------------- */
 #define PORT_CLIPREC_COLS 17
 #define PORT_CLIPREC_ROWS 12
 
+/* The sample stride is a fixed part plus this block. Every parser locates
+ * sample N by scanning for the header magic, so N*stride must never drift
+ * off the alignment the scanner steps on -- keep the block a multiple of 4.
+ * (It was 230 under 'MZM5' and off-grid, which made 2-byte scanning
+ * necessary; 'MZM6' brought it back to 232.) */
+_Static_assert((28 + PORT_CLIPREC_COLS * PORT_CLIPREC_ROWS) % 4 == 0,
+               "clip record block must stay 4-byte aligned");
+
+/* Which page of a montage cutscene is on screen. A single GM_CUTSCENE or
+ * GM_TOURIAN_ESCAPE runs many pages back to back, and several of them use
+ * the SAME layer config (e.g. the Tourian escape's flight pages are all
+ * "BG0 + OBJ, priority 0"), so the DISPCNT/BGCNT layout signature cannot
+ * tell them apart -- an override keyed to the layout alone hits every page.
+ * The per-mode state machine's stage index does distinguish them. */
+int PortPpuMzm_CutsceneStage(void) {
+    if (sNonGameplayRamPointer == NULL) return 0;
+    switch (gMainGameMode) {
+        case GM_TOURIAN_ESCAPE: return (int)TOURIAN_ESCAPE_DATA.stage;
+        case GM_CUTSCENE:       return (int)CUTSCENE_DATA.timeInfo.stage;
+        default:                return 0;
+    }
+}
+
 void PortPpuMzm_GetClipRecordBlock(uint8_t* out) {
-    /* 26 bytes of scalars, then the grid. gCurrentCutscene is already declared
+    /* 28 bytes of scalars, then the grid. gCurrentCutscene is already declared
      * (include/structs/cutscene.h, reached via the game headers above). */
     uint16_t* w = (uint16_t*)out;
     w[0] = gCamera.xPosition;
@@ -1666,7 +1694,10 @@ void PortPpuMzm_GetClipRecordBlock(uint8_t* out) {
      * has to be filled in by hand afterwards.
      * w[12]: the active cutscene id (Cutscene enum), for GM_CUTSCENE. Lets an
      * offline tool key a per-cutscene depth override to the right scene;
-     * meaningless outside GM_CUTSCENE but always written. */
+     * meaningless outside GM_CUTSCENE but always written.
+     * w[13]: the montage-page stage index (see PortPpuMzm_CutsceneStage),
+     * so an override can target ONE page of a cutscene whose pages share a
+     * layer config. 0 outside a staged cutscene. */
 
     int originX, originY;
     PortPpuMzm_ScreenOrigin(&originX, &originY);
@@ -1675,8 +1706,9 @@ void PortPpuMzm_GetClipRecordBlock(uint8_t* out) {
     w[10] = (uint16_t)gCurrentArea;
     w[11] = (uint16_t)gCurrentRoom;
     w[12] = (uint16_t)gCurrentCutscene;
+    w[13] = (uint16_t)PortPpuMzm_CutsceneStage();
 
-    uint8_t* grid = out + 26;
+    uint8_t* grid = out + 28;
     int baseBlockX = originX / PIXEL_PER_BLOCK;
     int baseBlockY = originY / PIXEL_PER_BLOCK;
 
@@ -1697,7 +1729,7 @@ void PortPpuMzm_GetClipRecordBlock(uint8_t* out) {
 }
 
 int PortPpuMzm_GetClipRecordBlockSize(void) {
-    return 26 + PORT_CLIPREC_COLS * PORT_CLIPREC_ROWS;
+    return 28 + PORT_CLIPREC_COLS * PORT_CLIPREC_ROWS;
 }
 
 /* ---------------------------------------------------------------------

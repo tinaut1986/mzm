@@ -146,7 +146,7 @@ int PortStereoDepth_BgTier(const PortStereoDepthState* st, int bgIndex) {
         /* Per-cutscene override: a PORT_CUT_BG entry for this layer index, or
          * a PORT_CUT_PRIO entry for its priority, else the spread above. */
         tier = PortCutsceneDepth_BgTier(st->cutsceneScene, st->cutsceneLayout,
-                                        bgIndex, st->priority[bgIndex], tier);
+                                        st->cutsceneStage, bgIndex, st->priority[bgIndex], tier);
     }
     return tier;
 }
@@ -185,7 +185,7 @@ int PortStereoDepth_BgTierForPriority(const PortStereoDepthState* st, int priori
             default: def = PORT_TIER_BG_FAR;  break; /* -4.0f */
         }
         return PortCutsceneDepth_TierForPriority(st->cutsceneScene,
-                                                 st->cutsceneLayout, priority & 3, def);
+                                                 st->cutsceneLayout, st->cutsceneStage, priority & 3, def);
     }
     switch (priority & 3) {
         case 0:  return PORT_TIER_BG_PLAY; /* -0.3f */
@@ -221,7 +221,7 @@ int PortStereoDepth_ObjTier(const PortStereoDepthState* st, int objPriority) {
          * per-cutscene PORT_CUT_CAPTION / PORT_CUT_ACTOR override replaces it. */
         int def = (objPriority == 0) ? PORT_TIER_BG_OVERLAY : PORT_TIER_BG_PLAY;
         return PortCutsceneDepth_ObjTier(st->cutsceneScene, st->cutsceneLayout,
-                                         objPriority, def);
+                                         st->cutsceneStage, objPriority, def);
     }
     (void)objPriority;
     if (!st->inGameplay)

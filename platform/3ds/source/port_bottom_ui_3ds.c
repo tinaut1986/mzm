@@ -5306,17 +5306,26 @@ void Port_BottomUI_Render(void) {
      * disappear against busy background art. */
     extern bool PlatformGpu3DS_IsRecording(void);
     extern bool PlatformGpu3DS_IsPerfRecording(void);
+    extern uint32_t PlatformGpu3DS_LastRecTickUs(void);
     const bool blink = (sFrameCounter & 0x20) != 0;
     /* 10x10 colored square + 5x7 bitmap text (7px tall). Text vertically
      * centered in the square: offset = (10-7)/2 = 1px. Panel wraps the
      * content with 3px border + 2px fill padding on all sides. */
     if (blink && (PlatformGpu3DS_IsRecording() || PlatformGpu3DS_IsPerfRecording())) {
-        C2D_DrawRectSolid(5.0f, 5.0f, 0.90f, 46.0f, 28.0f, C2D_Color32(40, 70, 120, 255));
-        C2D_DrawRectSolid(6.0f, 6.0f, 0.91f, 44.0f, 26.0f, C2D_Color32(14, 20, 32, 240));
+        C2D_DrawRectSolid(5.0f, 5.0f, 0.90f, 62.0f, 40.0f, C2D_Color32(40, 70, 120, 255));
+        C2D_DrawRectSolid(6.0f, 6.0f, 0.91f, 60.0f, 38.0f, C2D_Color32(14, 20, 32, 240));
     }
     if (PlatformGpu3DS_IsRecording() && blink) {
         C2D_DrawRectSolid(8.0f, 8.0f, 0.95f, 10.0f, 10.0f, C2D_Color32(230, 30, 30, 255));
         DrawText(24.0f, 9.0f, 0.95f, "REC", C2D_Color32(230, 30, 30, 255));
+        /* Cost of the recorder's own per-sample work. Reading this ~= a
+         * whole frame budget means the crawl IS the recorder. */
+        extern bool PlatformGpu3DS_RecordingToRam(void);
+        char dt[28];
+        snprintf(dt, sizeof(dt), "%s %lu us",
+                 PlatformGpu3DS_RecordingToRam() ? "RAM" : "SD",
+                 (unsigned long)PlatformGpu3DS_LastRecTickUs());
+        DrawText(9.0f, 32.0f, 0.95f, dt, C2D_Color32(210, 210, 210, 255));
     }
     if (PlatformGpu3DS_IsPerfRecording() && blink) {
         C2D_DrawRectSolid(8.0f, 20.0f, 0.95f, 10.0f, 10.0f, C2D_Color32(30, 120, 230, 255));

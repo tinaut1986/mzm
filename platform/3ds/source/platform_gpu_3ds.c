@@ -912,7 +912,10 @@ static u64 sRecLastFrameTicks;
 extern u64 Platform3DS_SystemTick(void);
 extern u64 Platform3DS_TicksPerSecond(void);
 static const unsigned kRecordMaxSamples = 450; /* streaming-mode cap (~30s at 15Hz) */
-static const unsigned kRecordScreenshotEverySamples = 4; /* ~1 screenshot/sec */
+/* Streaming mode only. Each shot is a GPU quiesce (2 VBlank waits) + a
+ * ~280KB SD write -- at every 4 samples that alone can halve the frame rate
+ * on a slow card. One per ~2 s at 15Hz is plenty to eyeball a capture. */
+static const unsigned kRecordScreenshotEverySamples = 30;
 /* Upper bound of one sample: header + IO + BgPltt + ObjPltt + OAM + VRAM +
  * the clip block (<=256). RAM slot stride in RING mode. */
 static const size_t kRecordSampleMaxBytes =
@@ -1268,6 +1271,22 @@ void PlatformGpu3DS_ToggleRecording(void) {
             char path[256];
             if (!Port_DebugFiles_NextPath("mzm-rec", ".bin", PORT_KEEP_RECORDINGS, path, sizeof(path)))
                 __builtin_snprintf(path, sizeof(path), "sdmc:/3ds/mzm-rec-01.bin");
+            /* A RAM capture writes no -shot-*.rgb. If this slot number was
+             * last used by a STREAMING capture, its screenshots are still on
+             * the card and read as if they belong to this .bin (they don't --
+             * different scene, different time). Drop them. */
+            {
+                size_t plen = 0; while (path[plen]) ++plen;
+                if (plen > 4) {
+                    char shot[272];
+                    int miss = 0;
+                    for (unsigned u = 0; u < kRecordMaxSamples && miss < 32; ++u) {
+                        __builtin_snprintf(shot, sizeof(shot), "%.*s-shot-%04u.rgb",
+                                           (int)(plen - 4), path, u);
+                        miss = (remove(shot) == 0) ? 0 : (miss + 1);
+                    }
+                }
+            }
             FILE* f = fopen(path, "wb");
             if (f) {
                 unsigned first = (sRecCount < sRecSlots) ? 0u : sRecHead;
@@ -1330,6 +1349,16 @@ void PlatformGpu3DS_ToggleRecording(void) {
     sRecording = true;
 }
 
+/* Wall-clock cost of the last PlatformGpu3DS_RecordTick that actually wrote a
+ * sample, microseconds. Shown next to the on-screen REC dot so a "recording
+ * drags the game" report can be pinned to this path or ruled out. */
+static uint32_t sLastRecTickUs;
+uint32_t PlatformGpu3DS_LastRecTickUs(void) { return sLastRecTickUs; }
+/* true = writing to the RAM ring; false = streaming to SD (either the
+ * chosen preset, or a preset that asked for RAM but whose linearAlloc
+ * failed and silently fell back). Lets the on-screen dot show which. */
+bool PlatformGpu3DS_RecordingToRam(void) { return sRecording && sRecBuf != NULL; }
+
 void PlatformGpu3DS_RecordTick(void) {
     if (!sRecording) return;
 
@@ -1338,6 +1367,7 @@ void PlatformGpu3DS_RecordTick(void) {
     sRecLastTick = now;
 
     if (sRecFrameCounter++ % kRecPresets[sRecPreset].everyN != 0) return;
+    const u64 tickStart = now;
 
     if (sRecBuf) {
         /* Ring buffer: start a fresh slot, overwriting the oldest. Never
@@ -1391,13 +1421,13 @@ void PlatformGpu3DS_RecordTick(void) {
     if (stats.processingTime < 0.0f) procX100 = 0;
 
     uint32_t header[2 + 6 + 8]; /* magic, frame counter, 6 Samus words, perf */
-    /* 'MZM5': the clip/camera block after VRAM now also carries the active
-     * cutscene id (word 12), so an offline tool can tell WHICH cutscene a
-     * capture is of and key a per-cutscene depth override to it. The grid
-     * that follows moved 2 bytes; magic bumped, as with 'MZM4'/'MZM3'
-     * before it, so an older parser fails loudly instead of misreading it.
-     * ('MZM4' added area/room to the same block.) */
-    header[0] = 0x354D5A4Du;
+    /* 'MZM6': the clip/camera block after VRAM now also carries the montage
+     * cutscene STAGE (word 13) -- several pages of one cutscene share a
+     * layer config, so the layout signature alone cannot key an override to
+     * one page. The grid moved another 2 bytes; magic bumped, as with
+     * 'MZM5'/'MZM4'/'MZM3' before it, so an older parser fails loudly.
+     * ('MZM5' added the cutscene id, 'MZM4' area/room.) */
+    header[0] = 0x364D5A4Du;
     header[1] = sRecFrameCounter;
     PortPpuMzm_GetSamusRecordState(&header[2]);
     header[8]  = frameUs;
@@ -1467,6 +1497,12 @@ void PlatformGpu3DS_RecordTick(void) {
         snprintf(suffix, sizeof(suffix), "-shot-%04u.rgb", sRecSampleCount - 1);
         if (Port_DebugFiles_SetPath("mzm-rec", sRecStreamIndex, suffix, path, sizeof(path)))
             DumpOneTarget(sTopTarget, path);
+    }
+
+    {
+        const u64 ticks = Platform3DS_SystemTick() - tickStart;
+        const u64 tps = Platform3DS_TicksPerSecond();
+        sLastRecTickUs = (uint32_t)((ticks * 1000000ull) / (tps ? tps : 1));
     }
 }
 

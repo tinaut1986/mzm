@@ -50,10 +50,14 @@
  * the format section of docs/3ds-debug-tools.md. */
 /* This renderer works from IO/VRAM/OAM/palettes only -- it never reads the
  * clip/camera block -- so every magic that has ever shipped renders fine here.
- * 'MZM5' only extended that block (cutscene id); accept it and 'MZM4'. */
+ * 'MZM5'/'MZM6' only extended that block (cutscene id, then stage); accept
+ * every magic from 'MZM4' on. */
 #define REC_MAGIC_MZM4 0x344D5A4Du
 #define REC_MAGIC_MZM5 0x354D5A4Du
-static int RecMagicOk(uint32_t m) { return m == REC_MAGIC_MZM4 || m == REC_MAGIC_MZM5; }
+#define REC_MAGIC_MZM6 0x364D5A4Du
+static int RecMagicOk(uint32_t m) {
+    return m == REC_MAGIC_MZM4 || m == REC_MAGIC_MZM5 || m == REC_MAGIC_MZM6;
+}
 #define REC_HEADER_BYTES 64u
 #define REC_IO_BYTES 0x400u
 #define REC_PLTT_BYTES 512u
@@ -71,10 +75,13 @@ static uint32_t Read32(const uint8_t* p) {
 /* The stride is REC_FIXED_BYTES plus a clip/camera block whose size can
  * change between builds, so derive it from the file instead of hardcoding
  * it: find the second header magic, skipping anything nearer than one
- * sample's fixed part (a word inside VRAM can read as a magic by chance). */
+ * sample's fixed part (a word inside VRAM can read as a magic by chance).
+ * Step by 2, not 4: the clip block is not always a multiple of 4 (it was
+ * 230 bytes under 'MZM5'), so N*sampleSize file offsets can be 2 mod 4 and
+ * a 4-byte scan would find only every other sample. */
 static size_t DetectStride(const uint8_t* data, size_t size) {
     if (size < REC_FIXED_BYTES || !RecMagicOk(Read32(data))) return 0;
-    for (size_t off = REC_FIXED_BYTES; off + 4u <= size; off += 4u) {
+    for (size_t off = REC_FIXED_BYTES; off + 4u <= size; off += 2u) {
         if (RecMagicOk(Read32(data + off))) return off;
     }
     return size; /* single-sample file */

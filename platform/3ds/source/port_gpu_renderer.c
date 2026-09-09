@@ -862,11 +862,18 @@ static void ComputeDepthState(uint16_t dispcnt) {
              * GM_CUTSCENE (10); SceneFromGame ignores it for 1/7/9. */
             sDepthState.cutsceneScene = (uint8_t)PortCutsceneDepth_SceneFromGame(
                 gMainGameMode, (int)gCurrentCutscene);
+            {
+                /* Montage page index -- lives behind port_ppu_mzm.c's game
+                 * headers, same hand-declared extern style as gCurrentCutscene. */
+                extern int PortPpuMzm_CutsceneStage(void);
+                sDepthState.cutsceneStage = (uint8_t)PortPpuMzm_CutsceneStage();
+            }
             break;
         default:
             sDepthState.bg0IsOverlayText = !sDepthState.inGameplay;
             sDepthState.cutsceneArt = false;
             sDepthState.cutsceneScene = 0;
+            sDepthState.cutsceneStage = 0;
             break;
     }
     /* Two-plane flatten for depthless screens (see flatMenu): content

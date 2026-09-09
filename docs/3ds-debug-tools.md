@@ -272,9 +272,9 @@ end-of-file marker -- just read records until EOF). Each record is:
 ```
 struct RecordHeader {   // 64 bytes total (was 32 with magic 'MZMR'; bumped to
                         // 'MZM2' for issue #20's perf instrumentation, then
-                        // 'MZM3' / 'MZM4' / 'MZM5' for the clip/camera block
+                        // 'MZM3'..'MZM6' for the clip/camera block
                         // that follows VRAM -- see the clip block below)
-    uint32_t magic;                 // 'MZM5' = 0x354D5A4D (read as little-endian bytes)
+    uint32_t magic;                 // 'MZM6' = 0x364D5A4D (read as little-endian bytes)
     uint32_t frameCounter;          // running emulated-frame counter at capture time
     uint32_t pose;                  // gSamusData.pose (SamusPose enum, see constants/samus.h)
     uint32_t currentAnimationFrame; // gSamusData.currentAnimationFrame
@@ -316,19 +316,22 @@ uint8_t  vram[0x18000];   // gVram
 ```
 
 Record size = 64 + 0x400 + 512 + 512 + 0x400 + 0x18000 + the clip block
-(`PortPpuMzm_GetClipRecordBlockSize()`, 230 bytes as of 'MZM5' -- 26 bytes of
-scalars then a 17x12 clip grid; the scalars are camera x/y, Samus x/y,
-clipdata w/h, `gMainGameMode`, Samus pose, screen-origin x/y, area, room, and
-`gCurrentCutscene`) = 101,670 bytes. If any of those extern arrays -- or the
-clip block -- change size, recompute this and update `PlatformGpu3DS_RecordTick`
-and this doc together. Rather than hardcoding it, the safe way to get the
-stride from a fetched file is to scan for the second `MZM5` magic at least
-`0x18000` bytes in (a word inside VRAM can read as the magic by chance, so
-the distance floor matters). To split a fetched `mzm-rec.bin` into per-sample
-dumps for analysis:
+(`PortPpuMzm_GetClipRecordBlockSize()`, **232 bytes** as of 'MZM6' -- 28 bytes
+of scalars then a 17x12 clip grid; the scalars are camera x/y, Samus x/y,
+clipdata w/h, `gMainGameMode`, Samus pose, screen-origin x/y, area, room,
+`gCurrentCutscene`, and the montage-cutscene stage) = 101,672 bytes. The
+block is kept a multiple of 4 (a `_Static_assert` enforces it) so that
+`N * recordSize` file offsets stay on a 4-byte grid -- 'MZM5' was 230 bytes
+and off-grid, which made a byte-scanner necessary. If any of those extern
+arrays -- or the clip block -- change size, recompute this and update
+`PlatformGpu3DS_RecordTick` and this doc together. Rather than hardcoding it,
+the safe way to get the stride from a fetched file is to scan (stepping by 2)
+for the second header magic at least `0x18000` bytes in (a word inside VRAM
+can read as a magic by chance, so the distance floor matters). To split a
+fetched `mzm-rec.bin` into per-sample dumps for analysis:
 
 ```python
-REC_SIZE = 64 + 0x400 + 512 + 512 + 0x400 + 0x18000 + 230  # 'MZM5'
+REC_SIZE = 64 + 0x400 + 512 + 512 + 0x400 + 0x18000 + 232  # 'MZM6'
 with open('mzm-rec.bin', 'rb') as f:
     data = f.read()
 n = len(data) // REC_SIZE
