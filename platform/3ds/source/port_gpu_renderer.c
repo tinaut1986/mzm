@@ -16,6 +16,7 @@
 #include "port_gpu_renderer.h"
 #include "port_stereo_depth.h"
 #include "port_cutscene_depth.h"
+#include "port_affine_subtile.h"   /* shared with tools/affine_probe */
 #include "port_layer_fixes.h"
 #include "port_sprite_depth_oam.h"
 #include "port_haze_3ds.h"
@@ -290,6 +291,13 @@ typedef struct DrawItem {
                       * approximating GBA's 1st-target/2nd-target blend
                       * (see Port_GpuRenderer_RenderFrame). */
     bool affine;
+    /* Affine subtiles only: which of this subtile's four edges face another
+     * subtile of the SAME sprite (bit0 left, bit1 right, bit2 top, bit3
+     * bottom, in the sprite's texture-grid orientation). BuildDrawParams
+     * grows the quad outward only on those edges, to overlap the neighbour
+     * and hide the per-subtile rounding gap, while leaving the sprite's
+     * OUTER silhouette edges exactly where they were. */
+    uint8_t affBleedEdges;
     WindowVis winVis;
     bool isHud;
     /* A cached layer's quad samples a render target, whose texels come back
@@ -1932,7 +1940,7 @@ static inline void PushItem(int slot, float x, float y, int sortKey, int depthTi
  * decomposed rotation -- consumed by the draw loop via C2D_DrawParams'
  * center+angle instead of the plain top-left placement non-affine items use. */
 static inline void PushAffineItem(int slot, float centerX, float centerY, float angle, float scaleX, float scaleY,
-                                  int sortKey, int depthTier, bool blendAlpha, WindowVis winVis) {
+                                  int sortKey, int depthTier, bool blendAlpha, WindowVis winVis, uint8_t bleedEdges) {
     int idx = AllocDrawItem(slot, sortKey);
     if (idx < 0) return;
     DrawItem* item = &sDrawItems[idx];
@@ -1944,6 +1952,7 @@ static inline void PushAffineItem(int slot, float centerX, float centerY, float 
     item->depthTier = (int8_t)depthTier;
     item->blendAlpha = blendAlpha;
     item->affine = true;
+    item->affBleedEdges = bleedEdges;
     item->winVis = winVis;
     item->isHud = false;
     item->plainEnv = false;
@@ -2887,8 +2896,18 @@ static void CollectSprite(int oamIndex, bool obj1D) {
             float screenCenterX = pivotX + dx;
             float screenCenterY = pivotY + dy;
             if (sObjWindowActive && !ObjWinItemVisible(objWinVis, screenCenterX, screenCenterY)) continue;
+            /* Overlap-bleed only toward edges that have a same-sprite
+             * neighbour, in texture-grid orientation (tx grows along the
+             * quad's local +x, ty along local +y, regardless of the sprite's
+             * rotation or flip). A 1x1 sprite gets none and draws exactly as
+             * before. */
+            uint8_t bleedEdges = 0;
+            if (tx > 0)            bleedEdges |= 0x1; /* left  */
+            if (tx < tilesW - 1)  bleedEdges |= 0x2; /* right */
+            if (ty > 0)            bleedEdges |= 0x4; /* top   */
+            if (ty < tilesH - 1)  bleedEdges |= 0x8; /* bottom */
             PushAffineItem(slot, screenCenterX, screenCenterY, affAngle, affScaleX, affScaleY, sortKey, depthTier, blendAlpha,
-                           rectWinVis);
+                           rectWinVis, bleedEdges);
         }
     }
 }
@@ -3104,20 +3123,43 @@ static inline C2D_DrawParams BuildDrawParams(const DrawItem* item, float screenB
     C2D_DrawParams params;
     params.depth = (item->isHud && hudOutside) ? 0.7f : 0.5f;
     if (item->affine) {
-        float w = item->w * scaleX, h = item->h * scaleY;
-        /* Snap the bounding-box origin to a whole device pixel. The rotation
-         * itself (angle + centre) is untouched, so this does NOT quantize
-         * the spin -- it just stops the two eyes from sampling the rotated
-         * sprite at different sub-pixel phases, which on a rotating turret
-         * with a 1-3px coloured core showed up as the core changing shape
-         * between eyes instead of only shifting. With an integer origin the
-         * per-eye difference is exactly the whole-pixel parallax offset. */
-        params.pos.x = floorf(screenBaseX + eyeOffset + item->x * scaleX - w * 0.5f + 0.5f);
-        params.pos.y = floorf(screenBaseY + item->y * scaleY - h * 0.5f + 0.5f);
-        params.pos.w = w;
-        params.pos.h = h;
-        params.center.x = w * 0.5f;
-        params.center.y = h * 0.5f;
+        /* An affine sprite is drawn as one quad per 8x8 subtile, each centred
+         * on its own matrix-transformed centre. Adjacent subtiles' centres
+         * are exactly one subtile-span apart, but the origin snap below
+         * rounds each one independently, so two neighbours can round apart by
+         * up to a whole device pixel -- leaving a gap. With GPU_NEAREST and
+         * an atlas slot that carries no apron, that gap shows straight
+         * through as a transparent seam, and a scaled-up affine sprite reads
+         * as a grid of detached squares (the "costuras" report).
+         *
+         * Fix: grow each subtile quad by kAffineBleed device px, but ONLY on
+         * the edges that face another subtile of the same sprite
+         * (item->affBleedEdges, set in CollectSprite). Those interior edges
+         * then overlap their neighbour by ~2*kAffineBleed, covering the
+         * <=1px rounding gap; the sprite's OUTER silhouette edges are not
+         * grown, so it keeps its exact size and outline instead of gaining a
+         * 1px smear of its own edge colour. The UV is unchanged, so a grown
+         * edge just re-stretches this subtile's own outermost texels over ~1
+         * extra px (invisible with nearest sampling) -- it never reaches into
+         * an adjacent atlas tile. A 1x1 affine sprite has no interior edges
+         * and is untouched. (The seamless answer is one quad for the whole
+         * sprite off a scratch target -- see
+         * docs/3ds-gpu-affine-bg-and-obj-seams-feasibility-2026-09-09.md.) */
+        const float kAffineBleed = 1.0f;
+        /* PortAffine_SubtileQuad does the pixel snap + the interior-edge
+         * grow; the "keep the two eyes in phase" reasoning for the snap is
+         * in that header. Screen base + eye offset fold into the centre. */
+        PortAffineQuad q = PortAffine_SubtileQuad(
+            screenBaseX + eyeOffset + item->x * scaleX,
+            screenBaseY + item->y * scaleY,
+            item->w * scaleX, item->h * scaleY,
+            item->affBleedEdges, kAffineBleed);
+        params.pos.x = q.x;
+        params.pos.y = q.y;
+        params.pos.w = q.w;
+        params.pos.h = q.h;
+        params.center.x = q.cx;
+        params.center.y = q.cy;
         params.angle = item->angle;
     } else {
         /* Snap the quad to whole device pixels, deriving the size from the
