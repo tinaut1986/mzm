@@ -178,8 +178,22 @@ def clear_screen():
         sys.stdout.flush()
 
 
-def interactive_select(title, options, default_index=0, subtitle=None):
-    """Muestra un menú interactivo navegable con flechas."""
+HOTKEY_LABELS = {"r": "reintentar"}
+
+
+def hotkeys_help(letter):
+    """Human wording for a hotkey in the menu help line."""
+    return HOTKEY_LABELS.get(letter.lower(), "la acción")
+
+
+def interactive_select(title, options, default_index=0, subtitle=None,
+                       hotkeys=None):
+    """Muestra un menú interactivo navegable con flechas.
+
+    `hotkeys` maps a single letter to a sentinel string returned as-is when
+    that key is pressed, so a caller can offer an action (retrying a scan,
+    say) without spending a list entry on it. Matching is case-insensitive;
+    the keys are listed in the help line under the menu."""
     current = default_index
     num_options = len(options)
 
@@ -207,9 +221,15 @@ def interactive_select(title, options, default_index=0, subtitle=None):
                     if desc:
                         print(f"        {DIM}{desc}{RESET}")
 
-            print(f"\n{DIM}(Usa las flechas ↑ / ↓ o W/S para moverte, Enter para elegir, Q para salir){RESET}")
+            help_line = "Usa las flechas ↑ / ↓ o W/S para moverte, Enter para elegir"
+            for letter in (hotkeys or {}):
+                help_line += f", {letter.upper()} para {hotkeys_help(letter)}"
+            help_line += ", Q para salir"
+            print(f"\n{DIM}({help_line}){RESET}")
 
             key = term.get_key()
+            if hotkeys and len(key) == 1 and key.lower() in hotkeys:
+                return hotkeys[key.lower()]
             if key == "UP":
                 current = (current - 1) % num_options
             elif key == "DOWN":
@@ -564,47 +584,59 @@ def prompt_ftp_host_manual(default_ip, default_port):
         print(f"{RED}Error: Debes introducir una dirección IP válida.{RESET}")
 
 
+# Sentinel returned by interactive_select when the retry hotkey is pressed.
+# A string can never collide with the integer indices it otherwise returns.
+RETRY = "RETRY"
+
+
 def detect_ftp_host_interactive(default_port):
-    """Scan the LAN for FTP servers and let the user pick one; fall back to
-    manual entry when nothing is found or the user asks for it."""
+    """Scan the LAN for FTP servers and let the user pick one. The scan can be
+    repeated from either outcome -- the console is often still booting ftpd
+    when the first sweep runs -- and manual entry is always available."""
     last_ip = load_last_ip()
 
-    clear_screen()
-    print(f"{BOLD}{CYAN}=================================================={RESET}")
-    print(f"{BOLD}{WHITE} Metroid Zero Mission 3DS - Asistente de Build{RESET}")
-    print(f"{BOLD}{CYAN}=================================================={RESET}\n")
-    print(f"{BOLD}Buscando Nintendo 3DS con FTP en la red local...{RESET}")
-    print(f"{DIM}(puerto {default_port}; suele tardar uno o dos segundos){RESET}")
+    while True:
+        clear_screen()
+        print(f"{BOLD}{CYAN}=================================================={RESET}")
+        print(f"{BOLD}{WHITE} Metroid Zero Mission 3DS - Asistente de Build{RESET}")
+        print(f"{BOLD}{CYAN}=================================================={RESET}\n")
+        print(f"{BOLD}Buscando Nintendo 3DS con FTP en la red local...{RESET}")
+        print(f"{DIM}(puerto {default_port}; suele tardar uno o dos segundos){RESET}")
 
-    hosts = scan_ftp_hosts(port=default_port)
+        hosts = scan_ftp_hosts(port=default_port)
 
-    if not hosts:
-        print(f"\n{YELLOW}No se encontró ninguna 3DS con FTP activo.{RESET}")
-        print(f"{DIM}Comprueba que FBI o ftpd está abierto y en la misma Wi-Fi.{RESET}")
-        try:
-            input(f"{DIM}Pulsa Enter para introducir la IP manualmente...{RESET}")
-        except (KeyboardInterrupt, EOFError):
-            sys.exit(0)
-        return prompt_ftp_host_manual(last_ip, default_port)
+        if not hosts:
+            idx = interactive_select(
+                "No se encontró ninguna 3DS con FTP activo.",
+                [("Introducir la IP manualmente", "")],
+                subtitle="Comprueba que FBI o ftpd está abierto y en la misma Wi-Fi.",
+                hotkeys={"r": RETRY},
+            )
+            if idx == RETRY:
+                continue
+            return prompt_ftp_host_manual(last_ip, default_port)
 
-    options = [
-        (h, "Última IP utilizada" if h == last_ip else "")
-        for h in hosts
-    ]
-    options.append(("Introducir otra IP manualmente", ""))
-    default_index = hosts.index(last_ip) if last_ip in hosts else 0
+        options = [
+            (h, "Última IP utilizada" if h == last_ip else "")
+            for h in hosts
+        ]
+        options.append(("Introducir otra IP manualmente", ""))
+        default_index = hosts.index(last_ip) if last_ip in hosts else 0
 
-    idx = interactive_select(
-        "Se encontraron estas 3DS con FTP. ¿A cuál quieres enviar el CIA?",
-        options,
-        default_index=default_index,
-    )
-    if idx == len(hosts):
-        return prompt_ftp_host_manual(last_ip, default_port)
+        idx = interactive_select(
+            "Se encontraron estas 3DS con FTP. ¿A cuál quieres enviar el CIA?",
+            options,
+            default_index=default_index,
+            hotkeys={"r": RETRY},
+        )
+        if idx == RETRY:
+            continue
+        if idx == len(hosts):
+            return prompt_ftp_host_manual(last_ip, default_port)
 
-    host = hosts[idx]
-    save_last_ip(host)
-    return host, default_port
+        host = hosts[idx]
+        save_last_ip(host)
+        return host, default_port
 
 
 def main():
