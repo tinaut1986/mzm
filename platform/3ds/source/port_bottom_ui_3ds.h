@@ -13,6 +13,7 @@ typedef enum {
     BOTTOM_TAB_STATUS,
     BOTTOM_TAB_DEBUG,
     BOTTOM_TAB_OPTIONS,
+    BOTTOM_TAB_STATE,
     BOTTOM_TAB_COUNT
 } PortBottomTab;
 

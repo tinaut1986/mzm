@@ -21,6 +21,32 @@ void Port_GpuRenderer_Shutdown(void);
  * falls back to the per-tile loop, for measuring the change on hardware. */
 void Port_GpuRenderer_SetBlockPass(bool on);
 bool Port_GpuRenderer_BlockPassEnabled(void);
+/* Debug: outline every 16x16 group the block pass composes, drawn into its
+ * atlas cell so each block-drawn screen region gets a magenta border and
+ * per-tile regions do not. Lets a misaligned or stale block be spotted by
+ * eye. Toggling clears the block cache. No cost when off. */
+void Port_GpuRenderer_SetBlockDebugTint(bool on);
+bool Port_GpuRenderer_BlockDebugTintEnabled(void);
+/* Debug: flat-colour every drawn BG layer and sprite by its resolved stereo
+ * tier (the same palette the layer workbench uses), so on a fast cutscene you
+ * can see at a glance which depth plane each layer landed on. Alpha is kept,
+ * so silhouettes stay. Only the main draw loop; the border HUD stays normal.
+ * No cache reset, no cost when off. */
+void Port_GpuRenderer_SetDepthTint(bool on);
+bool Port_GpuRenderer_DepthTintEnabled(void);
+/* GBA mode 1 affine BG2 on the GPU. The only frame class MZM renders in
+ * mode 1 is the Tourian-escape "Samus surrounded" sub-scene (a 256x256,
+ * overflow-transparent, pure-scale BG2 -- no rotation). On: that scene
+ * renders through this renderer (and gets stereo depth) instead of falling
+ * back to the flat CPU scanline renderer. Any other mode != 0 frame still
+ * falls back. Default on; toggle off to A/B against the CPU version. */
+void Port_GpuRenderer_SetAffineBg(bool on);
+bool Port_GpuRenderer_AffineBgEnabled(void);
+/* One quad per tilemap-aligned 4x4 group -- tried before the 16x16 pass,
+ * the rest falls through to it. Opt-in, off by default; needs the 16x16
+ * pass on. See the Block32 cache in port_gpu_renderer.c. */
+void Port_GpuRenderer_SetBlock32Pass(bool on);
+bool Port_GpuRenderer_Block32PassEnabled(void);
 /* Step B: compose each eligible scrolling BG layer into its own render
  * target once per frame and draw it as ONE quad per eye. See the definition
  * -- off by default, because whether it pays depends on the room. */
@@ -34,6 +60,10 @@ int Port_GpuRenderer_HazeMode(void);
 bool Port_GpuRenderer_HazeRippleActive(void);
 bool Port_GpuRenderer_IsActive(void);
 void Port_GpuRenderer_SetActive(bool active);
+/* Drop every tile/block/layer cache and re-decode from VRAM over the next
+ * couple dozen frames. Called after a save-state load (port_save_state.c)
+ * replaces VRAM/palettes/tilemaps wholesale. */
+void Port_GpuRenderer_InvalidateAll(void);
 /* Item counts from the most recently rendered GPU frame, for the debug
  * overlay -- see the definition in port_gpu_renderer.c. Any output pointer
  * may be NULL. */

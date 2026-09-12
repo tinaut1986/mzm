@@ -74,6 +74,42 @@ typedef struct {
      *    = 2 -- all text forward, all wall back. */
     bool flatMenu;
     uint8_t flatMenuBackdropPrio;
+
+    /* Scene-art cutscene (GM_INTRO, GM_CHOZODIA_ESCAPE, GM_TOURIAN_ESCAPE,
+     * GM_CUTSCENE). These are not gameplay rooms: each BG priority is a real
+     * parallax layer, not layers a room composites into one flat image, so
+     * the gameplay priority-0/1 merge does not apply -- keeping it just
+     * collapsed the intro's two BGs (and the escape montage's) onto one
+     * plane and killed the depth. When set:
+     *   - BgTier(ForPriority): p0 -> BG_PLAY, p1 -> BG_MID, p2/p3 -> BG_FAR
+     *     (a full spread, no merge).
+     *   - ObjTier: the caption is OBJ priority 0 and pops to BG_OVERLAY; an
+     *     actor is OBJ priority >=1 and sits on BG_PLAY, coplanar with a
+     *     priority-0 backdrop it draws over and in front of the rest.
+     * Mutually exclusive with bg0IsOverlayText and flatMenu (the renderer
+     * sets exactly one). */
+    bool cutsceneArt;
+
+    /* Scene id for the per-cutscene override list (port_cutscene_depth.h),
+     * i.e. PortCutsceneDepth_SceneFromGame(gMainGameMode, gCurrentCutscene).
+     * Only consulted when cutsceneArt is set; 0 (PORT_CUT_SCENE_NONE) means
+     * "no scene / no lookup", so a zeroed state -- every host test that does
+     * not set it -- keeps the built-in spread unchanged. */
+    uint8_t cutsceneScene;
+
+    /* Which sub-scene of that cutscene: PortCutsceneDepth_LayerSignature() of
+     * the frame (BG enable + BGCNT priorities). Lets one override list treat
+     * the pages of a montage cutscene separately. Only read when cutsceneArt;
+     * a zeroed state means signature 0, which just never matches a real
+     * layout-specific row -- the wildcard (PORT_CUT_ANY) rows still apply. */
+    uint16_t cutsceneLayout;
+
+    /* Which montage PAGE of that cutscene: the per-mode state machine's
+     * stage index (TOURIAN_ESCAPE_DATA.stage / CUTSCENE_DATA.timeInfo.stage).
+     * Separates pages that share a layer config. Only read when cutsceneArt;
+     * a zeroed state means stage 0 -- PORT_CUT_STAGE_ANY rows still apply, a
+     * row keyed to a specific non-zero stage does not. */
+    uint8_t cutsceneStage;
 } PortStereoDepthState;
 
 /* Depth tier indices. port_gpu_renderer.c picks the HUD and map tiers by

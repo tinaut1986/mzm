@@ -30,12 +30,24 @@ En Windows el ejecutable se llama `python` a secas; en Debian y Ubuntu, sólo
 Genera `maps.json` si hace falta, lo sirve y abre el navegador.
 
 También puedes abrir `index.html` a pelo, pero entonces el navegador no deja
-leer `maps.json` desde disco (mismo origen) y hay que soltarlo a mano con el
-botón `MAPAS` cada vez. Se acepta tanto `maps.json` como `maps.json.gz`, que
-pesa una quinta parte.
+leer `maps.json` desde disco (mismo origen) y hay que soltarlo a mano cada
+vez. Se acepta tanto `maps.json` como `maps.json.gz`, que pesa una quinta
+parte.
 
-Para una grabación, suelta un `mzm-rec.bin` (DEBUG → HERRAMIENTAS → GRAB.
-ESCENA en la consola; queda en `sdmc:/3ds/`).
+Cada vista tiene un icono **↥** junto al título de la lista de la izquierda
+que abre el diálogo de archivos para el tipo que le toca: `maps.json` en
+MAPA, `mzm-rec.bin` / `.rgb` en GRABACIÓN, `sprites.json` en SPRITES. Ese
+título y el selector de la vista (desplegable de área, filtro de sprites) se
+quedan fijos aunque se haga scroll por la lista. Arrastrar y soltar sigue
+valiendo desde cualquier vista —se decide por el nombre del archivo—.
+
+Para una grabación, suelta (o abre con el icono ↥) un `mzm-rec-NN.bin`
+(DEBUG → HERRAMIENTAS → GRAB. ESCENA en la consola; queda en `sdmc:/3ds/`).
+En la misma selección puedes incluir sus `mzm-rec-NN-shot-NNNN.rgb`: se
+emparejan con el frame `NNNN` de la grabación (punto verde en la lista de
+capturas; al elegir un frame se muestra el `.rgb` más reciente ≤ ese frame).
+El emparejado busca `shot-NNNN.rgb` al final del nombre, así que da igual el
+índice de grabación que lleve delante.
 
 - **El mapa de área**: el mismo de la pantalla de pausa, dibujado de los datos
   del juego (`sMinimapDataPointers`, 32×32 celdas). Pulsa una celda y abre esa
@@ -117,8 +129,11 @@ No salen:
   del tileset (`pBackgroundGraphics`), no con sus bloques: hacen falta otro
   decodificador y otro juego de gráficos. BG3 es además siempre la capa del
   fondo, con prioridad 3 fija.
-- **Los sprites**, que no están en los datos de mapa en absoluto: se generan al
-  jugar desde los spritesets de la sala. Sólo se ven en una grabación.
+- **Los sprites como capa de dibujo**: no tienen gráficos posicionados aquí --
+  la pose y el gráfico real de cada uno los fija su IA en tiempo de juego, y
+  eso sólo se ve en una grabación. Lo que el modo mapa SÍ marca, con el botón
+  `OBJ`, es la posición y el plano de profundidad de los sprites del
+  spriteset por defecto de la sala -- ver "Sprites en el mapa" más abajo.
 
 Las dos siguen valiendo como destino de una corrección aunque no se dibujen.
 
@@ -245,6 +260,10 @@ un guardado a medias no deje al port compilando una lista truncada.
 Abriendo `index.html` a pelo nada de esto es posible —el navegador no escribe
 en disco sin diálogo— y los dos botones caen al diálogo de archivos de siempre.
 
+El modo SPRITES y el panel de cinemáticas funcionan igual contra
+`port_sprite_depth.inc` y `port_cutscene_depth.inc` (`serve.py` los sirve y
+guarda en `/sprite-fixes` y `/cutscene-fixes`).
+
 Ahí lo recoge
 `port_layer_fixes.c`, que lo compila como tabla y valida cada entrada contra el
 tilemap de la sala al entrar en ella: una corrección cuyo bloque ya no coincide
@@ -323,6 +342,160 @@ asignarlo.
   que hubiera a mano se pierden. El *por qué* de cada caso va en
   `port_sprite_depth_oam.c` y en `docs/`.
 
+## Motor de profundidad en WASM
+
+El plano estéreo que colorea el modo mapa (ver siguiente sección) y el que
+resuelve el panel de cinemáticas no salen de una reimplementación en JS: salen
+de compilar a WebAssembly los mismos `port_stereo_depth.c` /
+`port_cutscene_depth.c` / `port_layer_fixes.c` que compila el port 3DS, la
+lógica que `platform/3ds/tests/stereo_depth_test.c` y `cutscene_depth_test.c`
+ya prueban en el host. Reimplementarla en JS podría desincronizarse en
+silencio; compilar el C real no puede.
+
+```bash
+tools/layer-workbench/wasm/setup_emsdk.sh   # bootstrap: Emscripten local en wasm/emsdk/ (~1 GB, una vez)
+tools/layer-workbench/wasm/build.sh         # necesita emcc (el de setup_emsdk o uno del sistema)
+python3 tools/layer-workbench/wasm/parity_check.py   # compara wasm vs. el binario nativo del test
+```
+
+En Windows, `run_workbench.bat` detecta que falta `emcc` y ofrece correr
+`wasm\setup_emsdk.bat` (mismo bootstrap) antes de arrancar. Una vez que
+`wasm/emsdk/` existe, `serve.py` lo mete solo en el `PATH` (ver
+`use_local_emsdk()`), sin tener que hacer `emsdk_env` a mano. El árbol
+`wasm/emsdk/` está en `.gitignore`.
+
+`build.sh` compila `platform/3ds/source/port_stereo_depth.c`,
+`port_cutscene_depth.c`, `port_layer_fixes.c` y el puente
+`tools/layer-workbench/wasm/depth_bridge.c` (que sólo aplana el `struct` de
+estado a parámetros escalares y da al workbench un buffer para subir la lista
+de overrides de cinemática sin escribir el `.inc` -- no decide nada) en
+`tools/layer-workbench/depth_engine.js`, con el `.wasm` incrustado
+(`SINGLE_FILE=1`) para no añadir un segundo fetch. `serve.py` lo regenera
+solo si `emcc` está instalado y las fuentes son más nuevas, igual que
+`maps.json`; si no está instalado dejaste `depth_engine.js` sin generar, la
+insignia **motor wasm** de la barra lo avisa en rojo, y el modo mapa sigue
+funcionando (sin colorear los sprites por plano -- ver más abajo). No se deja
+un `depth_engine.js` a medio camino en el repo: está en `.gitignore`, como
+`thumbs/`.
+
+`parity_check.py` es la comprobación de que no hay desincronía: compila un
+programa nativo minúsculo que llama a las mismas funciones con el mismo
+espacio de estados que recorre `stereo_depth_test.c` (las cuatro
+prioridades BGCNT, los tres presets de separación, `samusOnTopOfBackgrounds`,
+`flatMenu`, y la rama `cutsceneArt` con y sin lista de overrides), vuelca los
+resultados, y los compara con lo que devuelve `depth_engine.js` bajo Node para
+exactamente los mismos estados. 0 diferencias.
+
+## Sprites en el mapa
+
+El modo mapa dibuja, encima del resultado, un marcador por cada sprite del
+**spriteset por defecto** de la sala (el que corre antes de que se dispare
+cualquier evento) -- el hueco que dejaba documentado más abajo, en
+"Pendiente". El botón `OBJ` de la cabecera del resultado los muestra u
+oculta, igual que los botones `BG0`/`BG1`/`BG2`.
+
+- **Qué es cada marcador.** Pasa el ratón por encima de un punto y sale un
+  globo con el tipo `PSPRITE_*`, el plano que resuelve el motor wasm
+  (`OBJ_P1 · plano por defecto`, un `PORT_TIER_*` fijo, o
+  `dinámico · BG_COPLANAR` para los del anillo discontinuo), si tiene
+  override en `port_sprite_depth.inc` y cuál, y la posición en bloques.
+  Al hacer **clic** en el marcador el globo se fija y trae la **misma vista
+  de la pestaña SPRITES**: la animación montada de los `OAM_ENTRY` del `.c`,
+  con conmutador a la hoja de tiles, más un botón `COPIAR`. Se cierra con
+  `CERRAR` o pulsando fuera. Los puntos grises son entradas que
+  `build_maps.py` extrajo pero no pudo resolver a un nombre.
+- **Cambiar el plano desde aquí.** El globo fijado lleva el desplegable
+  `PLANO FORZADO` -- el mismo `spriteFixes` que edita la pestaña SPRITES y
+  que se escribe en `port_sprite_depth.inc`. Al cambiarlo se recolorea el
+  marcador al instante; si hay servidor (`serve.py`), aparece `GUARDAR` para
+  escribir el `.inc` (sin servidor solo queda en memoria). El cambio es por
+  **tipo** de sprite, no por esta instancia: afecta a todos los del mismo
+  `PSPRITE_*`.
+
+- **De dónde sale la posición.** `build_maps.py` lee el `.c` de datos de la
+  sala (`src/data/rooms/<área>/<área>_<n>.c`, el array
+  `sX_SpritesetN[]` que `RoomEntry.pDefaultSpriteData` señala), en bloques --
+  el mismo espacio de coordenadas que las capas BG. Cada entrada
+  `(y, x, SPRITESET_IDX(idx))` se resuelve contra la tabla
+  `sSpritesetN` de `src/data/spriteset.c` (`N` = `RoomEntry.defaultSpriteset`)
+  para dar el nombre `PSPRITE_*`, exactamente como lo hace
+  `SpriteInitPrimary` (`src/sprite.c`) en tiempo de ejecución.
+- **Qué NO sale.** Los spritesets `firstSpriteset`/`secondSpriteset`, que
+  sustituyen al por defecto cuando se cumple un evento de la sala -- son
+  datos igual de estáticos, pero decidir cuál está activo depende del
+  progreso de la partida, y mostrar el que no toca sería peor que no
+  mostrar ninguno; queda como ampliación futura documentada, no adivinada.
+  Los sprites SECUNDARIOS (los que genera la IA de un primario,
+  `SpriteSpawnSecondary`) tampoco: no tienen posición estática en absoluto,
+  la calcula la IA en tiempo de ejecución.
+- **De dónde sale el color.** El plano depende de si el tipo tiene un
+  override en `port_sprite_depth.inc` (el mismo `spriteFixes` que edita el
+  modo SPRITES, ya cargado aquí):
+  - **Sin override**, o `PORT_SPRITE_DEPTH_NONE`: el único plano de sprite de
+    mundo, `PortStereoDepth_ObjTier` en partida -- se pregunta al motor wasm,
+    no se da por hecho `OBJ_P1` a mano.
+  - **Un `PORT_TIER_*` explícito**: ese plano fijo, coloreado igual.
+  - **`PORT_SPRITE_DEPTH_BG_COPLANAR`**: el plano depende del `bgPriority`
+    que fija la IA del sprite en tiempo de ejecución -- no es estático. Sale
+    marcado con un anillo discontinuo en vez de un color, para no inventar
+    un plano que la sala no fija por sí sola. Para ver el valor real, ábrelo
+    en una **grabación**.
+- Sin el motor wasm compilado (ver sección anterior), el modo mapa sigue
+  funcionando pero el botón `OBJ` no colorea nada -- no hay una tabla en JS
+  de repuesto que pudiera desincronizarse del port real.
+
+## Profundidad de cinemáticas
+
+El port da a toda cinemática de escena-arte (`GM_INTRO`, `GM_CHOZODIA_ESCAPE`,
+`GM_TOURIAN_ESCAPE`, `GM_CUTSCENE`) **un** reparto de planos fijo (la rama
+`cutsceneArt` de `port_stereo_depth.c`): prioridad 0 → `BG_PLAY`, 1 → `BG_MID`,
+2/3 → `BG_FAR`, el rótulo (OBJ prio 0) → `BG_OVERLAY`, un actor (OBJ prio ≥ 1)
+→ `BG_PLAY`. `port_cutscene_depth.inc` es la lista **opcional** que lo cambia
+por cinemática.
+
+Las cinemáticas son animación por código, no datos estáticos: no hay forma de
+decodificarlas como las salas. Para verlas y ajustarlas se usa una
+**grabación** capturada en la consola:
+
+1. En la 3DS, durante la cinemática: `DEBUG → HERRAMIENTAS → GRAB. ESCENA`.
+2. Suéltala (o ábrela con el icono ↥) en modo **GRABACIÓN**. Si la build es
+   nueva (magic `MZM5`) la herramienta reconoce qué cinemática es y aparece el
+   panel **«Profundidad de la cinemática»** junto al Resultado.
+3. Cada fila —una por capa BG activa, más «Actores» y «Rótulo»— tiene un
+   desplegable `PORT_TIER_*` / «por defecto». Al cambiarlo, el Resultado se
+   re-apila según el plano elegido y cada capa muestra su plano resuelto. Las
+   filas BG conmutan entre `PORT_CUT_PRIO(n)` (por prioridad BGCNT, lo que
+   sobrevive a que la escena reasigne capas) y `PORT_CUT_BG(n)` (por índice
+   físico).
+4. `GUARDAR` escribe `platform/3ds/source/port_cutscene_depth.inc` (por
+   `serve.py`; sin servidor sólo queda en memoria).
+
+**Sub-escenas.** Una `GM_CUTSCENE` (p. ej. el montaje de la huida de Tourian)
+encadena varias páginas, cada una con su propio conjunto de BGs y prioridades,
+todas bajo el mismo id de cinemática. El panel muestra la **sub-escena** actual
+como su firma de capas (`BG0=2 BG1=1 BG2=off BG3=off`) y, por defecto, un cambio
+se guarda **sólo para esa sub-escena** (`PORT_CUT_LAYOUT(...)` en el `.inc`), así
+que subir una capa en una página no la sube en el resto. El botón «aplicar a
+toda la cinemática» escribe la fila como `PORT_CUT_ANY`; un `PORT_CUT_LAYOUT`
+concreto gana sobre `PORT_CUT_ANY`. No es por frame.
+
+La resolución de planos la hace el mismo `port_cutscene_depth.c` compilado a
+WASM (no una copia en JS); `wasm/parity_check.py` comprueba que la versión
+WASM y el binario nativo coinciden. Sin el motor WASM, el panel no sale.
+
+`gCurrentCutscene` va en la grabación desde `MZM5`; una `MZM4` sólo identifica
+las de modo entero (`GM_INTRO`/`GM_CHOZODIA_ESCAPE`/`GM_TOURIAN_ESCAPE`), no
+cuál de las `GM_CUTSCENE`.
+
+**Frames en modo BG afín (1/2) van por CPU y no tienen 3D.** Los tramos de una
+cinemática que usan rotación/escalado de fondo (el montaje de la huida de
+Tourian, p. ej.) fallan el `mode != 0` de `Port_GpuRenderer_CanRenderFrame` y se
+dibujan por el rasterizador software (`port/ppu/src/mode1.c`), que compone en 2D
+plano sin planos estéreo. Ahí `port_cutscene_depth.inc` **no hace nada** — no
+hay profundidad que ajustar. La opción de debug PROFUNDIDAD en la consola marca
+esos frames con un borde magenta. Sólo los tramos en modo 0 (una capa BG, texto
+por OAM…) son ajustables.
+
 ## Pendiente
 
 No están cosidas las salas en un mapa de área completo. `mapX`/`mapY` de
@@ -334,6 +507,6 @@ eso fija dos salas una respecto a otra exactamente.
 
 ## Nota
 
-El área y la sala sólo están en grabaciones con magic `MZM4`. Una anterior
-carga igual, pero deja esa mitad de la clave sin rellenar y la herramienta lo
-avisa en rojo.
+El área y la sala están en grabaciones con magic `MZM4` en adelante; la
+cinemática activa, sólo desde `MZM5`. Una grabación anterior carga igual, pero
+deja esa parte de la clave sin rellenar (y la herramienta lo avisa).

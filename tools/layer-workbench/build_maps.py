@@ -128,6 +128,8 @@ def parse_rooms():
                 "transparency": fields.get("transparency", "0"),
                 "visualEffect": fields.get("visualEffect", ""),
                 "music": fields.get("musicTrack", ""),
+                "pDefaultSpriteData": fields.get("pDefaultSpriteData", ""),
+                "defaultSpriteset": fields.get("defaultSpriteset", "0"),
             })
         out[area] = sorted(rooms, key=lambda r: r["id"])
     return out
@@ -374,6 +376,124 @@ def load_tileset(n):
     return {"blocks": blocks, "pal": colors, "gfx": gfx}
 
 
+# ------------------------------------------------- static sprite placement
+#
+# Room sprite data (src/data/rooms/<area>/<area>_<n>.c, sX_SpritesetN[]) is a
+# flat list of (yBlock, xBlock, spritesetSlot) triples, terminated by
+# ROOM_SPRITE_DATA_TERMINATOR -- SpriteLoadRoomSprites (src/sprite.c) reads
+# it in exactly that field order. spritesetSlot is SPRITESET_IDX(idx) (=
+# 16 + idx + 1, include/constants/sprite.h:475); SpriteInitPrimary decodes it
+# back to `idx` and looks up sSpritesetSpritesId[idx], which SpriteLoadSpriteset
+# fills from sSpritesetPointers[<room's spriteset>][idx] (src/data/spriteset.c)
+# -- so resolving a placement to a PSPRITE_* id needs the room's *spriteset
+# table*, not just its coordinates.
+#
+# This only extracts the DEFAULT spriteset (RoomEntry.pDefaultSpriteData /
+# .defaultSpriteset), the one active before any room event flag. A room can
+# also carry a firstSpriteset/secondSpriteset that swap in once an event
+# fires (a door unlocked, a boss dead) -- those are equally "static" data,
+# just event-conditioned, and are left as a follow-up rather than guessed at
+# here: showing the wrong one would be worse than not showing it.
+#
+# Genuinely NOT extracted, because it is not in this data at all: secondary
+# sprites spawned by a primary's AI (SpriteSpawnSecondary) have no static
+# position -- the primary's AI computes it at runtime.
+ROOM_SPRITE_DATA_SIZE = 3
+SPRITESET_ARRAY_RE = re.compile(
+    r"const u8 (s\w+)\[ENEMY_ROOM_DATA_ARRAY_SIZE\((\d+)\)\]\s*=\s*\{(.*?)\};", re.S)
+SPRITESET_TRIPLE_RE = re.compile(
+    r"(\d+)\s*,\s*(\d+)\s*,\s*SPRITESET_IDX\((\d+)\)")
+
+SPRITESET_TABLE_RE = re.compile(
+    r"const u8 (sSpriteset\d+)\[\d+\]\s*=\s*\{(.*?)\};", re.S)
+SPRITESET_PAIR_RE = re.compile(r"(PSPRITE_\w+)\s*,\s*\d+")
+
+
+def find_room_c_file(area, room_id):
+    """The per-room .c under src/data/rooms/<area>/ -- named after the area
+    and room index, same as the *_bg1.gfx.inc it also includes."""
+    d = os.path.join(ROOT, "src", "data", "rooms", area)
+    for suffix in ("_%d.c" % room_id,):
+        p = os.path.join(d, area + suffix)
+        if os.path.exists(p):
+            return p
+    return None
+
+
+_spriteset_tables_cache = None
+
+
+def load_spriteset_tables():
+    """sSpritesetN[] -> ordered list of PSPRITE_* names (src/data/spriteset.c).
+    Slot `idx` in the room data is the idx-th pair in this list."""
+    global _spriteset_tables_cache
+    if _spriteset_tables_cache is not None:
+        return _spriteset_tables_cache
+    text = open(os.path.join(ROOT, "src", "data", "spriteset.c"),
+                encoding="utf-8", errors="replace").read()
+    tables = {}
+    for m in SPRITESET_TABLE_RE.finditer(text):
+        name = m.group(1)
+        pairs = [p.group(1) for p in SPRITESET_PAIR_RE.finditer(m.group(2))]
+        tables[name] = pairs
+    _spriteset_tables_cache = tables
+    return tables
+
+
+def parse_default_spriteset(room_id, entry_fields, room_c_text):
+    """(x, y, spriteId) triples for a room's DEFAULT spriteset, or [] if it
+    genuinely has none (pDefaultSpriteData is sEnemyRoomData_Empty)."""
+    sym = entry_fields.get("pDefaultSpriteData", "")
+    default_idx = entry_fields.get("defaultSpriteset", "0")
+    try:
+        default_idx = int(default_idx)
+    except ValueError:
+        default_idx = 0
+
+    if not sym or "Empty" in sym or room_c_text is None:
+        return []
+
+    m = re.search(re.escape(sym) + r"\[ENEMY_ROOM_DATA_ARRAY_SIZE\(\d+\)\]\s*=\s*\{(.*?)\};",
+                  room_c_text, re.S)
+    if not m:
+        return []
+
+    tables = load_spriteset_tables()
+    table = tables.get("sSpriteset%d" % default_idx)
+
+    out = []
+    for tm in SPRITESET_TRIPLE_RE.finditer(m.group(1)):
+        # SpriteLoadRoomSprites: field order in the array is (Y, X, slot).
+        y_block, x_block, idx = int(tm.group(1)), int(tm.group(2)), int(tm.group(3))
+        sprite_name = table[idx] if table and idx < len(table) else None
+        out.append({"x": x_block, "y": y_block, "spriteId": sprite_name})
+    return out
+
+
+def load_sprite_depth_overrides():
+    """spriteId -> override code, from platform/3ds/source/port_sprite_depth.inc
+    (PORT_SPRITE_DEPTH(spriteId, isSecondary, code)). Absent file or absent
+    entry both mean "no override" -- the default world-sprite plane."""
+    path = os.path.join(ROOT, "platform", "3ds", "source", "port_sprite_depth.inc")
+    if not os.path.isfile(path):
+        return {}
+    text = open(path, encoding="utf-8", errors="replace").read()
+    out = {}
+    for m in re.finditer(r"PORT_SPRITE_DEPTH\(\s*(\w+)\s*,\s*(\d+)\s*,\s*([\w+\-]+)\s*\)", text):
+        spriteId, is_secondary, code = m.group(1), m.group(2), m.group(3)
+        if is_secondary == "0":
+            out[spriteId] = code
+    return out
+
+
+def sprite_placements_for_room(area, room_id, entry_fields):
+    room_c = find_room_c_file(area, room_id)
+    room_c_text = None
+    if room_c:
+        room_c_text = open(room_c, encoding="utf-8", errors="replace").read()
+    return parse_default_spriteset(room_id, entry_fields, room_c_text)
+
+
 def main():
     rooms_by_area = parse_rooms()
     tilesets_needed = set()
@@ -409,15 +529,22 @@ def main():
                 if (wc, hc) == (w, h):
                     clip = mc
             tilesets_needed.add(r["tileset"])
+            sprites = sprite_placements_for_room(area, r["id"], r)
             entries.append({"id": r["id"], "tileset": r["tileset"],
                             "mapX": r["mapX"], "mapY": r["mapY"],
                             "w": w, "h": h, "bg0": bg0, "bg1": bg1, "bg2": bg2,
                             "clip": clip, "prio": bg_priorities(r["transparency"]),
                             "blend": blend_setup(r["transparency"],
-                                                 r["visualEffect"], r["bg0Prop"])})
+                                                 r["visualEffect"], r["bg0Prop"]),
+                            "sprites": sprites})
         bundle["areas"][area] = entries
-        print("%-9s %3d salas  (%d con BG0)"
-              % (area, len(entries), sum(1 for e in entries if e["bg0"])))
+        placed = sum(len(e["sprites"]) for e in entries)
+        resolved = sum(1 for e in entries for s in e["sprites"] if s["spriteId"])
+        print("%-9s %3d salas  (%d con BG0, %d sprites por defecto, %d resueltos)"
+              % (area, len(entries), sum(1 for e in entries if e["bg0"]),
+                 placed, resolved))
+
+    bundle["spriteDepthOverrides"] = load_sprite_depth_overrides()
 
     for n in sorted(tilesets_needed):
         try:

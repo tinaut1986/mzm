@@ -1,4 +1,5 @@
 #include "port_stereo_depth.h"
+#include "port_cutscene_depth.h"
 
 /* Stereo depth mapping (docs/future-roadmap-and-architecture.md's table).
  * Values are px of parallax shift at full slider; the render loop flips the
@@ -138,8 +139,16 @@ int PortStereoDepth_BgTier(const PortStereoDepthState* st, int bgIndex) {
      *    puts the blue-ship artwork on BG0 (priority 0) while the
      *    "mission accomplished" caption is OBJ sprites, so lifting BG0 here
      *    floated the ship in front of its own caption. */
-    if (bgIndex == 0 && st->bg0IsOverlayText) return PORT_TIER_BG_OVERLAY;
-    return PortStereoDepth_BgTierForPriority(st, st->priority[bgIndex]);
+    if (bgIndex == 0 && st->bg0IsOverlayText && !st->cutsceneArt)
+        return PORT_TIER_BG_OVERLAY;
+    int tier = PortStereoDepth_BgTierForPriority(st, st->priority[bgIndex]);
+    if (st->cutsceneArt) {
+        /* Per-cutscene override: a PORT_CUT_BG entry for this layer index, or
+         * a PORT_CUT_PRIO entry for its priority, else the spread above. */
+        tier = PortCutsceneDepth_BgTier(st->cutsceneScene, st->cutsceneLayout,
+                                        st->cutsceneStage, bgIndex, st->priority[bgIndex], tier);
+    }
+    return tier;
 }
 
 int PortStereoDepth_BgTierForPriority(const PortStereoDepthState* st, int priority) {
@@ -162,6 +171,22 @@ int PortStereoDepth_BgTierForPriority(const PortStereoDepthState* st, int priori
      *
      * Other deliberate exceptions go in the curated list (port_layer_fixes.h),
      * not here. */
+    if (st->cutsceneArt) {
+        /* Scene-art cutscene: no 0/1 merge. Each priority is a parallax
+         * layer, spread across the three back-of-screen planes. See the
+         * cutsceneArt field comment in port_stereo_depth.h. A per-cutscene
+         * PORT_CUT_PRIO override (port_cutscene_depth.h) replaces the spread
+         * result for that priority; PORT_CUT_BG overrides are index-keyed and
+         * applied by PortStereoDepth_BgTier, not here. */
+        int def;
+        switch (priority & 3) {
+            case 0:  def = PORT_TIER_BG_PLAY; break; /* -0.3f */
+            case 1:  def = PORT_TIER_BG_MID;  break; /* -2.0f */
+            default: def = PORT_TIER_BG_FAR;  break; /* -4.0f */
+        }
+        return PortCutsceneDepth_TierForPriority(st->cutsceneScene,
+                                                 st->cutsceneLayout, st->cutsceneStage, priority & 3, def);
+    }
     switch (priority & 3) {
         case 0:  return PORT_TIER_BG_PLAY; /* -0.3f */
         case 1:  return st->samusOnTopOfBackgrounds ? PORT_TIER_BG_MID   /* -2.0f */
@@ -187,8 +212,18 @@ int PortStereoDepth_BgTierForPriority(const PortStereoDepthState* st, int priori
  * instead: coplanar with a priority-0/1 backdrop (occlusion then orders
  * them, matching the GBA), still behind a priority-0 BG0 overlay. */
 int PortStereoDepth_ObjTier(const PortStereoDepthState* st, int objPriority) {
-    (void)objPriority;
     if (st->flatMenu) return PORT_TIER_BG_PLAY; /* forward with the menu content */
+    if (st->cutsceneArt) {
+        /* Caption (OBJ priority 0) pops forward over all the scene art; an
+         * actor (OBJ priority >=1) rides the play plane -- coplanar with a
+         * priority-0 backdrop it draws over, in front of the deeper ones.
+         * See the cutsceneArt field comment in port_stereo_depth.h. A
+         * per-cutscene PORT_CUT_CAPTION / PORT_CUT_ACTOR override replaces it. */
+        int def = (objPriority == 0) ? PORT_TIER_BG_OVERLAY : PORT_TIER_BG_PLAY;
+        return PortCutsceneDepth_ObjTier(st->cutsceneScene, st->cutsceneLayout,
+                                         st->cutsceneStage, objPriority, def);
+    }
+    (void)objPriority;
     if (!st->inGameplay)
         return PORT_TIER_BG_PLAY; /* -0.3f: coplanar with the cutscene backdrop */
     return PORT_TIER_OBJ_P1; /* -0.8f */

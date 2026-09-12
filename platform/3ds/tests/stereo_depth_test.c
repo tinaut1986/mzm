@@ -24,6 +24,7 @@
  */
 
 #include "port_stereo_depth.h"
+#include "port_cutscene_depth.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -456,6 +457,7 @@ struct NamedScene {
     bool inGameplay;
     bool samusOnTop;
     bool bg0IsOverlayText;
+    bool cutsceneArt;
     uint8_t prio[4];   /* BGCNT priority per BG; 0xFF = BG disabled */
     int objPriority;    /* OAM priority of the scene's caption / actor */
     const char* note;
@@ -463,22 +465,28 @@ struct NamedScene {
 
 static const struct NamedScene kNamedScenes[] = {
     { "chozodia-escape/mission-accomplished",
-      false, false, false, { 0, 1, 2, 0xFF }, 0,
+      false, false, false, true, { 0, 1, 2, 0xFF }, 0,
       "blue-ship art on BG0 p0; caption is OBJ p0; BG0 is NOT dialog text" },
     { "in-game-story-cutscene (GM_CUTSCENE)",
-      false, false, false, { 0, 1, 2, 3 }, 0,
+      false, false, false, true, { 0, 1, 2, 3 }, 0,
       "full-screen BG art, actor is OBJ p0 painted over all of it" },
     { "ridley-landing/mothership",
-      false, false, false, { 0, 1, 2, 3 }, 1,
+      false, false, false, true, { 0, 1, 2, 3 }, 1,
       "sky far, mountains on p1 behind the ship OBJ, ground overlay on BG0 p0" },
+    { "intro/portrait-and-story-text (GM_INTRO)",
+      false, false, false, true, { 0, 1, 0xFF, 0xFF }, 0,
+      "only BG0 p0 + BG1 p1 exist; story text is OBJ p0 painted over both" },
+    { "tourian-escape/rooms-exploding-montage (GM_TOURIAN_ESCAPE)",
+      false, false, false, true, { 0, 1, 2, 0xFF }, 1,
+      "scene art on BG0/BG1/BG2; explosion + ship sprites are OBJ" },
     { "crateria-room-8/chozo-statue-backdrop",
-      true, false, false, { 1, 0, 2, 3 }, 1,
+      true, false, false, false, { 1, 0, 2, 3 }, 1,
       "gameplay: statue backdrop on BG0 p1, platforms on BG1 p0, Samus OBJ p1" },
     { "chozodia-sala-3/samusOnTopOfBackgrounds",
-      true, true, false, { 2, 0, 1, 3 }, 2,
+      true, true, false, false, { 2, 0, 1, 3 }, 2,
       "flag set: BG1 p0 foreground, BG2 p1 scenery Samus stands in front of" },
     { "menu-dialog/pause-map",
-      false, false, true, { 0, 1, 2, 3 }, 0xFF,
+      false, false, true, false, { 0, 1, 2, 3 }, 0xFF,
       "BG0 genuinely carries the text overlay -> keeps the pop-forward tier" },
 };
 
@@ -495,6 +503,7 @@ static void TestNamedParticularScenes(void) {
         st.inGameplay = sc->inGameplay;
         st.samusOnTopOfBackgrounds = sc->samusOnTop;
         st.bg0IsOverlayText = sc->bg0IsOverlayText;
+        st.cutsceneArt = sc->cutsceneArt;
         for (int bg = 0; bg < 4; ++bg) {
             /* A disabled BG is never queried below; give it a defined value. */
             st.priority[bg] = (sc->prio[bg] == 0xFF) ? 0 : sc->prio[bg];
@@ -609,15 +618,107 @@ static void TestFlatMenuTwoPlanes(void) {
     }
 }
 
+/* ------------------------------------------------------------------ *
+ * Test: cutsceneArt gives the scene-art cutscenes a real per-priority
+ * spread instead of the gameplay 0/1 merge.
+ *
+ * The merge exists because a gameplay room composites several layers into
+ * one flat image; a cutscene does not -- each BG priority is a distinct
+ * parallax layer. Keeping the merge collapsed the intro's BG0+BG1 (and the
+ * escape montage's) onto one plane, so the whole scene read flat. With
+ * cutsceneArt: p0 -> BG_PLAY, p1 -> BG_MID, p2/p3 -> BG_FAR, every pair
+ * strictly ordered; caption OBJ (p0) at BG_OVERLAY, actor OBJ (p>=1) at
+ * BG_PLAY, neither behind a backdrop it draws over.
+ * ------------------------------------------------------------------ */
+static void TestCutsceneArtSpread(void) {
+    printf("policy: cutsceneArt spreads BG priorities, no 0/1 merge\n");
+
+    PortStereoDepthState st;
+    memset(&st, 0, sizeof(st));
+    st.cutsceneArt = true;
+
+    CHECK(PortStereoDepth_BgTierForPriority(&st, 0) == PORT_TIER_BG_PLAY, "p0 -> BG_PLAY");
+    CHECK(PortStereoDepth_BgTierForPriority(&st, 1) == PORT_TIER_BG_MID, "p1 -> BG_MID");
+    CHECK(PortStereoDepth_BgTierForPriority(&st, 2) == PORT_TIER_BG_FAR, "p2 -> BG_FAR");
+    CHECK(PortStereoDepth_BgTierForPriority(&st, 3) == PORT_TIER_BG_FAR, "p3 -> BG_FAR");
+
+    /* p0 and p1 must NOT be coplanar here (the whole point). */
+    st.priority[0] = 0; st.priority[1] = 1;
+    CHECK(PortStereoDepth_BgTier(&st, 0) != PortStereoDepth_BgTier(&st, 1),
+          "cutsceneArt: priorities 0 and 1 get different planes");
+
+    /* Caption pops forward, actor on the play plane, ordered against a full
+     * priority stack, in every preset. */
+    for (int spread = 0; spread < PORT_STEREO_SPREAD_COUNT; ++spread) {
+        float capPx = PortStereoDepth_TierPxFor(spread, PortStereoDepth_ObjTier(&st, 0));
+        float actPx = PortStereoDepth_TierPxFor(spread, PortStereoDepth_ObjTier(&st, 1));
+        float p0 = PortStereoDepth_TierPxFor(spread, PORT_TIER_BG_PLAY);
+        float p1 = PortStereoDepth_TierPxFor(spread, PORT_TIER_BG_MID);
+        float p2 = PortStereoDepth_TierPxFor(spread, PORT_TIER_BG_FAR);
+        CHECK(p0 > p1 && p1 > p2, "[%s] BG planes strictly ordered p0>p1>p2",
+              PortStereoDepth_SpreadName(spread));
+        CHECK(capPx >= p0, "[%s] caption not behind the nearest backdrop",
+              PortStereoDepth_SpreadName(spread));
+        CHECK(actPx >= p1 && actPx <= p0 + 0.001f,
+              "[%s] actor rides the play plane (behind caption, at/ahead of p0 backdrop)",
+              PortStereoDepth_SpreadName(spread));
+    }
+
+    /* cutsceneArt wins even if bg0IsOverlayText somehow comes in set. */
+    st.bg0IsOverlayText = true;
+    CHECK(PortStereoDepth_BgTier(&st, 0) == PORT_TIER_BG_PLAY,
+          "cutsceneArt overrides a stray bg0IsOverlayText");
+}
+
+/* ------------------------------------------------------------------ *
+ * Test: cutsceneScene / cutsceneLayout are inert with no override list.
+ *
+ * The per-cutscene override list is optional. With it empty (a stock build,
+ * or -- as here -- a real .inc neutralised by an empty runtime list), a
+ * populated cutsceneScene / cutsceneLayout must produce byte-identical
+ * results to zeroed ones across the whole cutsceneArt input space. This is
+ * the "stock build is unchanged" guarantee for the new fields.
+ * ------------------------------------------------------------------ */
+static void TestCutsceneSceneInertWithoutInc(void) {
+    printf("policy: cutsceneScene/Layout change nothing with no override list\n");
+    static const uint8_t none[1] = {0};
+    PortCutsceneDepth_SetRuntimeOverrides(none, 0);   /* wins over any linked .inc */
+    for (unsigned packed = 0; packed < 256u; ++packed) {
+        PortStereoDepthState base, tagged;
+        memset(&base, 0, sizeof(base));
+        memset(&tagged, 0, sizeof(tagged));
+        base.cutsceneArt = tagged.cutsceneArt = true;
+        for (int bg = 0; bg < 4; ++bg)
+            base.priority[bg] = tagged.priority[bg] = (uint8_t)((packed >> (bg * 2)) & 3u);
+        /* Every non-NONE scene id + a couple of layout signatures. */
+        for (unsigned scene = 1; scene < 32; ++scene) {
+            tagged.cutsceneScene = (uint8_t)scene;
+            tagged.cutsceneLayout = (uint16_t)(0x1234u + scene);
+            for (int bg = 0; bg < 4; ++bg)
+                CHECK(PortStereoDepth_BgTier(&tagged, bg) == PortStereoDepth_BgTier(&base, bg),
+                      "scene %u: BG%d tier drifted without an .inc", scene, bg);
+            for (int p = 0; p < 4; ++p) {
+                CHECK(PortStereoDepth_BgTierForPriority(&tagged, p) ==
+                          PortStereoDepth_BgTierForPriority(&base, p),
+                      "scene %u: prio %d tier drifted without an .inc", scene, p);
+                CHECK(PortStereoDepth_ObjTier(&tagged, p) == PortStereoDepth_ObjTier(&base, p),
+                      "scene %u: OBJ prio %d tier drifted without an .inc", scene, p);
+            }
+        }
+    }
+}
+
 int main(void) {
     TestNoContradictionExhaustive();
     TestDepthIsPriorityOnly();
     TestDepthIsPerLayer();
     TestCutsceneSpriteNotBehindBackdrop();
+    TestCutsceneArtSpread();
     TestSamusOnTopSplitsMerge();
     TestBgTierForPriorityMatchesBgTier();
     TestNamedParticularScenes();
     TestFlatMenuTwoPlanes();
+    TestCutsceneSceneInertWithoutInc();  /* last: neutralises any linked .inc */
 
     printf("\n%d checks, %d failures\n", sChecks, sFailures);
     if (sFailures > 20) printf("(only the first 20 failures shown)\n");

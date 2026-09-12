@@ -72,10 +72,21 @@
   .side { flex:0 0 auto; width:310px; }
   .main { flex:1 1 auto; min-width:0; }
 
-  .rail { border-right:1px solid var(--line); background:var(--panel); overflow:auto;
-          max-height:calc(100vh - 52px); position:relative; z-index:60; }
+  .rail { border-right:1px solid var(--line); background:var(--panel); overflow:hidden;
+          max-height:calc(100vh - 52px); position:relative; z-index:60;
+          display:flex; flex-direction:column; }
+  /* Header + per-mode selector stay put; only the list below scrolls. */
+  .railtop { flex:0 0 auto; background:var(--panel); border-bottom:1px solid var(--line); }
+  #shots { flex:1 1 auto; overflow-y:auto; overflow-x:hidden; }
+  #railctl { padding:8px 11px; }
+  #railctl:empty { display:none; }
   .rail h3,.side h3 { font-size:10.5px; letter-spacing:.13em; text-transform:uppercase; color:var(--faint);
     margin:0; padding:13px 13px 7px; font-family:"JetBrains Mono",monospace; font-weight:500; }
+  .railhd { display:flex; align-items:center; justify-content:space-between; gap:6px; padding-right:7px; }
+  #railadd { display:flex; align-items:center; justify-content:center; padding:4px; margin:6px 0 0;
+             color:var(--dim); background:var(--sunk); border:1px solid var(--line);
+             border-radius:3px; cursor:pointer; }
+  #railadd:hover { color:var(--ink); border-color:var(--dim); }
   .shot { display:flex; align-items:center; gap:9px; padding:5px 11px; cursor:pointer; border:0;
           border-left:3px solid transparent; background:transparent; width:100%; text-align:left; color:var(--dim); }
   .shot:hover { background:var(--sunk); }
@@ -88,7 +99,7 @@
   .shot.room { justify-content:space-between; padding:4px 11px; }
   .shot.room .dim { font-size:10px; color:var(--faint); }
   .shot.room .dim i { font-style:normal; color:var(--warn); }
-  .areasel { width:calc(100% - 22px); margin:0 11px 8px; padding:4px 6px;
+  .areasel { width:100%; box-sizing:border-box; margin:0; padding:4px 6px;
              font-family:"JetBrains Mono",monospace; font-size:11.5px;
              background:var(--sunk); color:var(--ink); border:1px solid var(--line);
              border-radius:3px; }
@@ -239,7 +250,7 @@
   .grp.modes button[aria-pressed="true"] { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
 
   /* modo sprites */
-  #spfilter { width:100%; box-sizing:border-box; margin:7px 11px; width:calc(100% - 22px);
+  #spfilter { width:100%; box-sizing:border-box; margin:0;
     font-size:11px; padding:3px 6px; background:var(--sunk); color:var(--ink);
     border:1px solid var(--line); border-radius:3px; font-family:"JetBrains Mono",monospace; }
   .shot.sprite { justify-content:space-between; padding:4px 11px; font-family:"JetBrains Mono",monospace;
@@ -290,6 +301,53 @@
   .okbox { color:var(--ok); }
   kbd { font-family:"JetBrains Mono",monospace; font-size:10px; border:1px solid var(--line);
         border-bottom-width:2px; border-radius:3px; padding:0 4px; color:var(--dim); }
+  /* Cutscene depth editor (GRABACIÓN) */
+  .cutdepth { padding:9px 11px; display:flex; flex-direction:column; gap:6px; }
+  .cutscope { display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+              padding-bottom:5px; border-bottom:1px solid var(--line); }
+  .cutrow { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .cutrow .cutnm { min-width:130px; font-size:11.5px; color:var(--ink); }
+  .cutrow .cutsel { font-size:11px; padding:2px 6px; background:var(--sunk); color:var(--ink);
+                    border:1px solid var(--line); border-radius:3px; }
+  .cutrow .cuttgl { font-size:9.5px; padding:1px 6px; background:var(--sunk); color:var(--dim);
+                    border:1px solid var(--line); border-radius:3px; cursor:pointer; }
+  .cutrow .cuttgl:hover { color:var(--ink); border-color:var(--dim); }
+  .cutrow .cuthint { font-size:10px; color:var(--faint); font-family:"JetBrains Mono",monospace; }
+  .cutdepth .cutsave { display:flex; align-items:center; gap:8px; margin-top:2px;
+                       color:var(--warn); font-size:10.5px; }
+  .cutdepth .cutsave button { font-size:10px; padding:2px 8px; background:var(--sunk);
+                              color:var(--ink); border:1px solid var(--dim); border-radius:3px; cursor:pointer; }
+  /* Sprite inspector: hover tooltip + click-pinned card over the Map result. */
+  #sptip { position:fixed; z-index:90; max-width:280px; pointer-events:none;
+           background:var(--panel); color:var(--ink); border:1px solid var(--dim);
+           border-radius:6px; box-shadow:0 6px 22px rgba(0,0,0,.35);
+           font-size:11.5px; line-height:1.5; padding:8px 10px; }
+  #sptip.pinned { pointer-events:auto; max-width:320px; max-height:82vh; overflow:auto; }
+  #sptip .spprev { margin:7px 0 2px; gap:9px; }
+  #sptip .spprev .frame { min-width:80px; min-height:80px; padding:6px; }
+  #sptip .spprev .cap { max-width:150px; font-size:10px; }
+  #sptip .nm { font-weight:700; font-size:12px; word-break:break-all; display:block; margin-bottom:3px; }
+  #sptip dl { margin:0; display:grid; grid-template-columns:auto 1fr; gap:1px 8px; }
+  #sptip dt { color:var(--dim); }
+  #sptip dd { margin:0; }
+  #sptip .swatch { display:inline-block; width:9px; height:9px; border-radius:50%;
+                   border:1px solid rgba(0,0,0,.5); vertical-align:-1px; margin-right:4px; }
+  #sptip img { image-rendering:pixelated; background:var(--sunk); border:1px solid var(--line);
+               margin-top:6px; display:block; max-width:100%; }
+  #sptip .tipbtns { margin-top:7px; display:flex; gap:6px; }
+  #sptip .tipbtns button { font-size:10px; padding:2px 7px; background:var(--sunk);
+                           color:var(--dim); border:1px solid var(--line); border-radius:3px; cursor:pointer; }
+  #sptip .tipbtns button:hover { color:var(--ink); border-color:var(--dim); }
+  #sptip .tiphint { color:var(--faint); margin-top:5px; }
+  #sptip .tipdepth { margin-top:8px; border-top:1px solid var(--line); padding-top:7px; }
+  #sptip .tipdepth label { display:block; color:var(--dim); font-size:10px;
+                           text-transform:uppercase; letter-spacing:.04em; margin-bottom:3px; }
+  #sptip .tipdepth select { width:100%; font-size:11px; padding:3px 6px; background:var(--sunk);
+                            color:var(--ink); border:1px solid var(--line); border-radius:3px; }
+  #sptip .tipsave { margin-top:6px; display:flex; gap:7px; align-items:center;
+                    color:var(--warn); font-size:10.5px; }
+  #sptip .tipsave button { font-size:10px; padding:2px 8px; background:var(--sunk);
+                           color:var(--ink); border:1px solid var(--dim); border-radius:3px; cursor:pointer; }
   @media (prefers-reduced-motion: reduce){ *{transition:none!important} }
 </style>
 </head>
@@ -304,10 +362,9 @@
     <button id="mSprites" aria-pressed="false">SPRITES</button>
   </div>
 
-  <div class="grp" role="group" aria-label="Datos">
-    <label class="filebtn ui" tabindex="0">MAPAS<input type="file" id="mapsfile" accept=".json,.gz"></label>
-    <label class="filebtn ui" tabindex="0">GRABACIÓN<input type="file" id="file" accept=".bin,.rgb" multiple></label>
-  </div>
+  <input type="file" id="mapsfile" accept=".json,.gz" hidden>
+  <input type="file" id="file" accept=".bin,.rgb" multiple hidden>
+  <input type="file" id="spritesfile" accept=".json" hidden>
 
   <div class="grp" role="group" aria-label="Vista">
     <button id="zout" title="Alejar">−</button><b id="zlab">2×</b><button id="zin" title="Acercar">+</button>
@@ -325,13 +382,29 @@
 
   <div class="status">
     <span class="meta" id="mapsbadge">sin maps.json</span>
+    <span class="meta" id="wasmbadge" title="depth_engine.wasm: the real port_stereo_depth.c compiled to WebAssembly. Colors the static sprite markers in Map mode.">motor wasm: cargando…</span>
     <span class="meta" id="meta">sin archivo</span>
     <span class="meta okbox" id="autobadge" hidden></span>
   </div>
 </div>
 
 <div class="layout">
-  <nav class="rail"><h3 id="railTitle">Salas</h3><div id="shots"></div></nav>
+  <nav class="rail">
+    <div class="railtop">
+      <div class="railhd">
+        <h3 id="railTitle">Salas</h3>
+        <button id="railadd" title="Abrir un archivo" aria-label="Abrir un archivo">
+          <svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true" focusable="false">
+            <path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M10 3v9m0-9L6.5 6.5M10 3l3.5 3.5M4 13v2.5A1.5 1.5 0 0 0 5.5 17h9a1.5 1.5 0 0 0 1.5-1.5V13"/>
+          </svg>
+        </button>
+      </div>
+      <div id="railctl"></div>
+    </div>
+    <div id="shots"></div>
+  </nav>
   <div class="divider left" id="divrail" title="Arrastra para cambiar el ancho">
     <button class="tab" id="torail" title="Esconder o mostrar la lista">‹</button>
   </div>
@@ -372,7 +445,7 @@
   </div>
   <div id="rs-scroll"><canvas id="rs-canvas"></canvas></div>
   <p class="rs-hint">Suelta un <code>.rgb</code> del 3DS (<code>mzm-dump-*.rgb</code> o varios
-     <code>mzm-rec-shot-NNNN.rgb</code> para emparejar con la grabación). Es el
+     <code>...shot-NNNN.rgb</code> para emparejar con la grabación). Es el
      fotograma tal cual sale de la GPU a la pantalla.</p>
 </div>
 
@@ -390,6 +463,532 @@
   var DEST=[{v:4,name:"Sprites",note:"delante de todo"},{v:0,name:"BG0",note:""},
             {v:1,name:"BG1",note:""},{v:2,name:"BG2",note:""},{v:3,name:"BG3",note:"el más al fondo"}];
 
+  /* ---------- WASM depth engine ----------
+   * The REAL port_stereo_depth.c / port_layer_fixes.c, compiled to
+   * WebAssembly by tools/layer-workbench/wasm/build.sh (see its header for
+   * why: a JS reimplementation could silently drift from the port's actual
+   * decision logic, which is the one thing this tool exists to avoid).
+   * Loaded lazily and optionally -- depth_engine.js is a generated build
+   * artifact (serve.py builds it on demand if emcc is available; it is not
+   * checked in, see tools/layer-workbench/.gitignore), so the workbench must
+   * keep working, with a visible "not built" notice, when it is absent. */
+  var DepthEngine=null,depthEngineStatus="loading";
+  function loadDepthEngine(){
+    var s=document.createElement("script");
+    s.src="depth_engine.js";
+    s.onload=function(){
+      if(typeof DepthEngineModule!=="function"){
+        depthEngineStatus="error";updateWasmBadge();return;
+      }
+      DepthEngineModule().then(function(M){
+        /* depth_bg_tier / _obj_tier: (p0,p1,p2,p3, inGameplay, bg0Overlay,
+           samusOnTop, flatMenu, flatBackdropPrio, cutsceneArt, cutsceneScene,
+           cutsceneLayout, arg) -- 13 numbers. */
+        var a14=Array(14).fill("number");
+        DepthEngine={
+          M:M,
+          bgTier:M.cwrap("depth_bg_tier","number",a14),
+          bgTierForPriority:M.cwrap("depth_bg_tier_for_priority","number",a14),
+          objTier:M.cwrap("depth_obj_tier","number",a14),
+          tierPxFor:M.cwrap("depth_tier_px_for","number",["number","number"]),
+          cutSceneFromGame:M.cwrap("depth_cut_scene_from_game","number",["number","number"]),
+          cutLayerSignature:M.cwrap("depth_cut_layer_signature","number",["number","number","number","number","number"]),
+          cutScratch:M.cwrap("depth_cut_scratch","number",[]),
+          cutScratchCapacity:M.cwrap("depth_cut_scratch_capacity","number",[]),
+          cutSetOverrides:M.cwrap("depth_cut_set_overrides",null,["number"]),
+          cutPresent:M.cwrap("depth_cut_present","number",[])
+        };
+        pushCutsceneOverrides();
+        depthEngineStatus="ready";updateWasmBadge();
+        /* rec mode: the cutscene panel only exists once the engine can resolve
+           tiers, so rebuild if a recording is already open. */
+        if(mode==="rec"&&state)buildMain();
+        redraw();
+      }).catch(function(){ depthEngineStatus="error";updateWasmBadge(); });
+    };
+    s.onerror=function(){ depthEngineStatus="missing";updateWasmBadge(); };
+    document.head.appendChild(s);
+  }
+  function updateWasmBadge(){
+    if(!els.wasmbadge)return;
+    if(depthEngineStatus==="ready"){
+      els.wasmbadge.textContent="motor wasm: activo";
+      els.wasmbadge.className="meta okbox";
+    } else if(depthEngineStatus==="missing"){
+      els.wasmbadge.textContent="motor wasm: no compilado";
+      els.wasmbadge.title="tools/layer-workbench/depth_engine.js no está. "+
+        "Corre tools/layer-workbench/wasm/build.sh (necesita emcc) o abre esto con serve.py, "+
+        "que lo genera solo. Sin él, los marcadores de sprite en modo MAPA no salen -- "+
+        "no hay una versión en JS de repuesto, para no arriesgarse a que se desincronice "+
+        "del port_stereo_depth.c real.";
+      els.wasmbadge.className="meta warnbox";
+    } else {
+      els.wasmbadge.textContent="motor wasm: error";
+      els.wasmbadge.className="meta warnbox";
+    }
+  }
+
+  /* Depth tiers, by index (PORT_TIER_* in port_stereo_depth.h) -- one marker
+   * color each, for the Map-mode static sprite overlay below. */
+  var TIER_MARKER_COLOR=[
+    "#5b8fd6", /* 0 BG_FAR */
+    "#6fae52", /* 1 BG_MID */
+    "#e9a13b", /* 2 BG_PLAY */
+    "#d24f4f", /* 3 BG_OVERLAY */
+    "#f2f2f2", /* 4 OBJ_P1 -- the default plane, most room sprites */
+    "#b06fd6", /* 5 OBJ_HUD */
+    "#4fc7c7"  /* 6 OBJ_MAP */
+  ];
+  var TIER_COPLANAR_COLOR="#ffb400"; /* dynamic: BG_COPLANAR, resolved only in a recording */
+  var TIER_NAME=["BG_FAR","BG_MID","BG_PLAY","BG_OVERLAY","OBJ_P1","OBJ_HUD","OBJ_MAP"];
+
+  /* ---------- cutscene depth overrides (GRABACION mode) ----------
+   * The port gives every scene-art cutscene ONE hardcoded parallax spread
+   * (port_stereo_depth.c's cutsceneArt branch). port_cutscene_depth.inc is the
+   * optional per-cutscene override list. This panel edits it against a real
+   * capture of the scene and writes it via serve.py's /cutscene-fixes, exactly
+   * like the sprite-depth panel writes port_sprite_depth.inc.
+   *
+   * PORT_CUT_SCENE_* ids -- mirror of the enum in port_cutscene_depth.h; kept
+   * here (not fetched) since it is short and stable. The mapping from a
+   * recording's (gameMode, cutsceneId) to one of these is done by the WASM
+   * engine (depth_cut_scene_from_game), so this list only needs the names. */
+  var CUT_SCENES=[
+    {id:1,  name:"INTRO",             label:"Intro (GM_INTRO)"},
+    {id:2,  name:"CHOZODIA_ESCAPE",   label:"Huida de Chozodia (GM_CHOZODIA_ESCAPE)"},
+    {id:3,  name:"TOURIAN_ESCAPE",    label:"Huida de Tourian (GM_TOURIAN_ESCAPE)"},
+    {id:4,  name:"INTRO_TEXT",              label:"Texto de intro"},
+    {id:5,  name:"MOTHERSHIP_MONOLOGUE",    label:"Monólogo de la nave nodriza"},
+    {id:6,  name:"COULD_I_SURVIVE",         label:"«¿Podría sobrevivir?»"},
+    {id:7,  name:"MOTHER_BRAIN_CLOSE_UP",   label:"Primer plano de Mother Brain"},
+    {id:8,  name:"KRAID_RISING",            label:"Kraid emergiendo"},
+    {id:9,  name:"STATUE_OPENING",          label:"Apertura de la estatua"},
+    {id:10, name:"RIDLEY_IN_SPACE",         label:"Ridley en el espacio"},
+    {id:11, name:"RIDLEY_LANDING",          label:"Aterrizaje de Ridley"},
+    {id:12, name:"RIDLEY_SPAWNING",         label:"Aparición de Ridley"},
+    {id:13, name:"ENTER_TOURIAN",           label:"Entrada a Tourian"},
+    {id:14, name:"BEFORE_RUINS_TEST",       label:"Antes de la prueba de las ruinas"},
+    {id:15, name:"GETTING_FULLY_POWERED",   label:"Traje totalmente cargado"},
+    {id:16, name:"MECHA_RIDLEY_SEES_SAMUS", label:"Mecha Ridley ve a Samus"},
+    {id:17, name:"SAMUS_IN_BLUE_SHIP",      label:"Samus en la nave azul"}
+  ];
+  function cutSceneName(id){
+    var s=CUT_SCENES.filter(function(c){return c.id===id;})[0];
+    return s?s.name:("scene "+id);
+  }
+  /* target key <-> the PORT_CUT_* byte encoding in port_cutscene_depth.h. */
+  function cutTargetByte(key){
+    if(key==="actor")return 0x20;
+    if(key==="caption")return 0x21;
+    var m=/^prio([0-3])$/.exec(key); if(m)return parseInt(m[1],10);       /* PORT_CUT_PRIO */
+    m=/^bg([0-3])$/.exec(key);       if(m)return 0x10|parseInt(m[1],10);  /* PORT_CUT_BG */
+    return -1;
+  }
+  function cutTargetFromByte(b){
+    if(b===0x20)return "actor";
+    if(b===0x21)return "caption";
+    if((b&0x30)===0x10)return "bg"+(b&3);
+    if((b&~3)===0)return "prio"+(b&3);
+    return null;
+  }
+  function cutTargetToken(key){
+    if(key==="actor")return "PORT_CUT_ACTOR";
+    if(key==="caption")return "PORT_CUT_CAPTION";
+    var m=/^prio([0-3])$/.exec(key); if(m)return "PORT_CUT_PRIO("+m[1]+")";
+    m=/^bg([0-3])$/.exec(key);       if(m)return "PORT_CUT_BG("+m[1]+")";
+    return key;
+  }
+
+  var CUT_ANY=0xFFFF;   /* PORT_CUT_ANY -- "toda la cinemática" */
+
+  /* { sceneId: { variantKey: { targetKey: tierIndex } } }, where variantKey is
+     the numeric layout signature or "any". Authoritative in the editor; the
+     WASM engine gets a flattened copy via pushCutsceneOverrides(). */
+  var cutsceneFixes={};
+
+  function pushCutsceneOverrides(){
+    if(!DepthEngine||!DepthEngine.cutSetOverrides)return;
+    var rows=[];   /* [scene, layout, targetByte, tier] */
+    Object.keys(cutsceneFixes).forEach(function(sid){
+      var byVariant=cutsceneFixes[sid];
+      Object.keys(byVariant).forEach(function(vk){
+        var parts=vk.split(":");
+        var stage=(parts[0]==="*")?0xFF:(+parts[0]&0xFF);
+        var layout=(parts[1]==="*")?CUT_ANY:(+parts[1]&0xFFFF);
+        var byTarget=byVariant[vk];
+        Object.keys(byTarget).forEach(function(k){
+          var tb=cutTargetByte(k),t=byTarget[k];
+          if(tb>=0&&t>=0&&t<TIER_NAME.length)rows.push([+sid,layout,stage,tb,t]);
+        });
+      });
+    });
+    var cap=DepthEngine.cutScratchCapacity();
+    if(rows.length>cap)rows=rows.slice(0,cap);
+    var flat=new Uint8Array(rows.length*6);
+    rows.forEach(function(r,i){
+      flat[i*6]=r[0]; flat[i*6+1]=r[1]&0xFF; flat[i*6+2]=(r[1]>>8)&0xFF;
+      flat[i*6+3]=r[2]&0xFF; flat[i*6+4]=r[3]; flat[i*6+5]=r[4];
+    });
+    DepthEngine.M.HEAPU8.set(flat,DepthEngine.cutScratch());
+    DepthEngine.cutSetOverrides(rows.length);
+  }
+
+  /* PORT_CUT_SCENE_* id for a loaded recording context, or 0 (not a cutscene). */
+  function cutSceneOf(C){
+    if(!DepthEngine||!C||C.gameMode==null)return 0;
+    return DepthEngine.cutSceneFromGame(C.gameMode, C.cutsceneId||0)|0;
+  }
+  function isCutsceneCtx(C){ return cutSceneOf(C)>0; }
+
+  /* Layout signature of the CURRENT recording frame (BG enable + BGCNT
+     priorities), i.e. which sub-scene of the cutscene it is. */
+  function cutLayoutOf(C){
+    if(!C)return 0;
+    /* PortCutsceneDepth_LayerSignature, done here in JS from THIS sample's
+       IO block: 4 bits/BG = BGCNT priority if the layer is enabled in
+       DISPCNT, else 0xF. No dependency on state.prio (refreshed only by
+       loadSample) or on the WASM engine (a stale depth_engine.js without
+       depth_cut_layer_signature would silently return 0). parity_check.py
+       pins this against the C. */
+    var dispcnt=u16(C.b,C.io), sig=0;
+    for(var bg=0;bg<4;bg++){
+      var on=(dispcnt>>(8+bg))&1;
+      var nib=on?(u16(C.b,C.io+8+bg*2)&3):0xF;
+      sig|=nib<<(bg*4);
+    }
+    return sig&0xFFFF;
+  }
+
+  /* Montage-page stage of the loaded sample (word 13 of the MZM6 clip
+     block, 0 on older recordings). Together with cutLayoutOf() this is the
+     sub-scene key -- several pages of the Tourian escape share a layout. */
+  function cutStageOf(C){ return (C&&C.cutsceneStage!=null)?(C.cutsceneStage|0):0; }
+  /* "stage:layout" variant key, with * for the wildcards. */
+  function cutVariantKey(C){ return cutStageOf(C)+":"+(cutLayoutOf(C)>>>0); }
+  /* Human-readable form, e.g. "BG0=2 BG1=1 BG2=off BG3=off". */
+  function cutLayoutLabel(sig){
+    var out=[];
+    for(var bg=0;bg<4;bg++){
+      var nib=(sig>>(bg*4))&0xF;
+      out.push("BG"+bg+"="+(nib===0xF?"off":nib));
+    }
+    return out.join(" ");
+  }
+
+  /* Resolved tier for a BG / OBJ in the current cutscene recording, WITH the
+     editor's overrides applied (they were pushed to the engine). */
+  function cutResolveBgTier(C,bgIndex){
+    if(!DepthEngine)return null;
+    var p=state.prio||[0,0,0,0];
+    return DepthEngine.bgTier(p[0],p[1],p[2],p[3], 0,0,0,0,0, 1, cutSceneOf(C), cutLayoutOf(C), cutStageOf(C), bgIndex);
+  }
+  function cutResolveObjTier(C,objPriority){
+    if(!DepthEngine)return null;
+    var p=state.prio||[0,0,0,0];
+    return DepthEngine.objTier(p[0],p[1],p[2],p[3], 0,0,0,0,0, 1, cutSceneOf(C), cutLayoutOf(C), cutStageOf(C), objPriority);
+  }
+
+  /* Static tier for one room sprite placement, via the compiled port code --
+   * never guessed in JS. Returns {tier:int} for a fixed plane, or
+   * {dynamic:true} when the type is PORT_SPRITE_DEPTH_BG_COPLANAR: its real
+   * depth depends on a bgPriority the sprite's AI sets at runtime, which is
+   * exactly the kind of value this tool's static room data cannot know --
+   * open a recording to see it resolved for real. */
+  function staticSpriteTier(spriteName){
+    var fx=spriteFixes[spKey(spriteName,0)];
+    var code=fx?fx.code:-1; /* PORT_SPRITE_DEPTH_NONE when no override entry */
+    if(code===-2 /* PORT_SPRITE_DEPTH_BG_COPLANAR */)return {dynamic:true};
+    if(code>=0)return {tier:code}; /* an explicit PORT_TIER_* */
+    /* PORT_SPRITE_DEPTH_NONE: the one world-sprite plane, PortStereoDepth_ObjTier
+       in gameplay -- ask the real function rather than hardcoding OBJ_P1, so a
+       future change to that policy shows up here too. */
+    if(DepthEngine)
+      return {tier:DepthEngine.objTier(0,0,0,0, 1, 0,0,0,0, 0,0,0,0, 0)};
+    return null; /* engine not loaded: caller shows the "not built" notice instead */
+  }
+
+  /* Draws the static sprite overlay on the result canvas, in ROOM PIXEL
+   * space (paint()'s ctx is unscaled; CSS does the zoom) -- one marker per
+   * placement in the room's DEFAULT spriteset (build_maps.py; see its
+   * comment on why only the default one). Fixed-tier sprites get a filled
+   * dot in their tier's color; BG_COPLANAR sprites get a dashed ring instead
+   * of a color, because coloring them would be inventing a depth the port
+   * does not fix statically. */
+  function drawSpriteMarkers(ctx){
+    if(!state||state.kind!=="map"||!state.room||!state.room.sprites)return;
+    if(state.stageLayers&&state.stageLayers.obj===false)return;
+    var sprites=state.room.sprites;
+    if(!sprites.length)return;
+    ctx.save();
+    sprites.forEach(function(s){
+      var cx=s.x*16+8,cy=s.y*16+8;
+      if(!s.spriteId){
+        /* Extracted but not resolved to a PSPRITE_* name (see build_maps.py) --
+           shown as a plain grey dot rather than silently dropped. */
+        ctx.beginPath();ctx.arc(cx,cy,3,0,Math.PI*2);
+        ctx.fillStyle="rgba(160,160,160,.85)";ctx.fill();
+        ctx.strokeStyle="rgba(0,0,0,.6)";ctx.lineWidth=1;ctx.stroke();
+        return;
+      }
+      var t=staticSpriteTier(s.spriteId);
+      if(!t){
+        ctx.beginPath();ctx.arc(cx,cy,3,0,Math.PI*2);
+        ctx.fillStyle="rgba(120,120,120,.6)";ctx.fill();
+        return;
+      }
+      if(t.dynamic){
+        ctx.beginPath();ctx.arc(cx,cy,5,0,Math.PI*2);
+        ctx.setLineDash([2,2]);
+        ctx.strokeStyle=TIER_COPLANAR_COLOR;ctx.lineWidth=2;ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.beginPath();ctx.moveTo(cx,cy-2);ctx.lineTo(cx,cy+1);
+        ctx.moveTo(cx,cy+3);ctx.lineTo(cx,cy+3.2);
+        ctx.strokeStyle=TIER_COPLANAR_COLOR;ctx.lineWidth=1.4;ctx.stroke();
+      } else {
+        ctx.beginPath();ctx.arc(cx,cy,4,0,Math.PI*2);
+        ctx.fillStyle=TIER_MARKER_COLOR[t.tier]||"#fff";
+        ctx.fill();
+        ctx.strokeStyle="rgba(0,0,0,.7)";ctx.lineWidth=1;ctx.stroke();
+      }
+    });
+    ctx.restore();
+  }
+
+  /* ---------- sprite inspector (Map mode) ----------
+     The markers above are just dots; this tells you WHICH sprite each one is
+     and its depth characteristics. Hover shows a tooltip; clicking a marker
+     pins it (with a thumbnail, once sprites.json is loaded, and a COPIAR
+     button). Everything shown here is static room data + the same wasm engine
+     answer the marker color uses -- nothing guessed. */
+  var spTipEl=null,spTipPinned=null,spSpritesTried=false;
+
+  function ensureSpTipEl(){
+    if(spTipEl)return spTipEl;
+    spTipEl=document.createElement("div");
+    spTipEl.id="sptip";spTipEl.hidden=true;
+    document.body.appendChild(spTipEl);
+    return spTipEl;
+  }
+
+  /* Marker whose dot is under the pointer, or null. Same client->room-pixel
+     mapping as pickAt(); radius is half a block. */
+  function spriteMarkerAt(ev){
+    if(!state||state.kind!=="map"||!state.room||!state.room.sprites)return null;
+    if(state.stageLayers&&state.stageLayers.obj===false)return null;
+    var cv=state.stage;if(!cv)return null;
+    var r=cv.getBoundingClientRect();
+    if(!r.width||!r.height)return null;
+    var rx=(ev.clientX-r.left)/r.width*dimW();
+    var ry=(ev.clientY-r.top)/r.height*dimH();
+    var best=null,bd=64; /* (8 px)^2 */
+    state.room.sprites.forEach(function(s){
+      var dx=rx-(s.x*16+8),dy=ry-(s.y*16+8),d=dx*dx+dy*dy;
+      if(d<bd){bd=d;best=s;}
+    });
+    return best;
+  }
+
+  function spTierText(s){
+    if(!s.spriteId)return {txt:"sin resolver a un PSPRITE_*",color:null};
+    var t=staticSpriteTier(s.spriteId);
+    if(!t)return {txt:"motor wasm no cargado",color:null};
+    if(t.dynamic)return {txt:"dinámico · BG_COPLANAR (lo fija la IA; míralo en una grabación)",
+                         color:TIER_COPLANAR_COLOR};
+    var names=["BG_FAR","BG_MID","BG_PLAY","BG_OVERLAY","OBJ_P1","OBJ_HUD","OBJ_MAP"];
+    return {txt:(names[t.tier]||("tier "+t.tier))+
+            (t.tier===4?" · plano por defecto":""),color:TIER_MARKER_COLOR[t.tier]};
+  }
+
+  function spOverrideText(s){
+    if(!s.spriteId)return "—";
+    var fx=spriteFixes[spKey(s.spriteId,0)];
+    if(!fx)return "ninguno (PORT_SPRITE_DEPTH_NONE)";
+    return (typeof spCodeToken==="function"?spCodeToken(fx.code):String(fx.code));
+  }
+
+  /* The SPRITES-tab catalog entry for a PSPRITE_* name (has .thumb), or null.
+     Same data buildSpritePreview() consumes there. */
+  function spEntryFor(name){
+    if(!sprites||!sprites.primary)return null;
+    return sprites.primary.filter(function(p){return p.name===name;})[0]||null;
+  }
+
+  function spTipHtml(s,pinned){
+    var tier=spTierText(s);
+    var sw=tier.color?'<span class="swatch" style="background:'+tier.color+'"></span>':"";
+    var h='<span class="nm">'+(s.spriteId||"(sprite sin nombre)")+'</span><dl>'+
+      '<dt>plano</dt><dd>'+sw+tier.txt+'</dd>'+
+      '<dt>override</dt><dd>'+spOverrideText(s)+'</dd>'+
+      '<dt>bloque</dt><dd>'+s.x+', '+s.y+'</dd>'+
+      '<dt>spriteset</dt><dd>por defecto de la sala</dd></dl>';
+    var e=s.spriteId?spEntryFor(s.spriteId):null;
+    if(pinned){
+      /* Full SPRITES-tab preview (animation from the OAM strip, tile-sheet
+         toggle) goes in this slot after innerHTML is set -- see renderPinnedTip. */
+      if(e&&e.thumb)h+='<div class="spprevslot"></div>';
+      else if(s.spriteId&&!sprites)h+='<div class="tiphint">cargando miniatura…</div>';
+      else if(s.spriteId)h+='<div class="tiphint">sin miniatura para este tipo (la IA la compone por partes)</div>';
+      h+='<div class="tipbtns"><button data-act="copy">COPIAR</button>'+
+         '<button data-act="close">CERRAR</button></div>';
+    } else {
+      /* Hover tip is pointer-events:none, so no animated canvas -- a still
+         sheet image is enough to recognise the sprite. */
+      if(e&&e.thumb&&e.thumb.sheet)h+='<img src="'+e.thumb.sheet+'" alt="">';
+      else if(s.spriteId&&!sprites&&!spSpritesTried)h+='<div class="tiphint">cargando miniatura…</div>';
+      else if(s.spriteId&&sprites)h+='<div class="tiphint">sin miniatura para este tipo</div>';
+      h+='<div class="tiphint">clic para fijar</div>';
+    }
+    return h;
+  }
+
+  function spTipReport(s){
+    var tier=spTierText(s);
+    return [s.spriteId||"(sprite sin nombre)",
+            "plano: "+tier.txt,
+            "override: "+spOverrideText(s),
+            "bloque: "+s.x+", "+s.y,
+            "spriteset por defecto de la sala"].join("\n");
+  }
+
+  var spTipAnchor={x:0,y:0};
+  function placeSpTip(ev){
+    var el=spTipEl;if(!el||el.hidden)return;
+    if(ev)spTipAnchor={x:ev.clientX,y:ev.clientY};
+    var a=spTipAnchor,pad=14,w=el.offsetWidth,h=el.offsetHeight;
+    var x=a.x+pad,y=a.y+pad;
+    if(x+w>innerWidth-6)x=a.x-pad-w;
+    if(y+h>innerHeight-6)y=Math.max(6,innerHeight-6-h);
+    el.style.left=Math.max(6,x)+"px";el.style.top=Math.max(6,y)+"px";
+  }
+
+  function showSpTipHover(s,ev){
+    if(spTipPinned)return;
+    var el=ensureSpTipEl();
+    el.className="";el.innerHTML=spTipHtml(s,false);el.hidden=false;
+    placeSpTip(ev);
+    maybeLoadSpritesForTip(s);
+  }
+
+  function hideSpTip(force){
+    if(spTipPinned&&!force)return;
+    if(typeof stopSpritePreview==="function")stopSpritePreview();
+    if(spTipEl)spTipEl.hidden=true;
+  }
+
+  /* (Re)builds the pinned tip body: buttons + the reused SPRITES-tab preview. */
+  function renderPinnedTip(s){
+    var el=spTipEl;if(!el)return;
+    if(typeof stopSpritePreview==="function")stopSpritePreview();
+    el.innerHTML=spTipHtml(s,true);
+    var slot=el.querySelector(".spprevslot");
+    if(slot&&typeof buildSpritePreview==="function"){
+      var e=spEntryFor(s.spriteId);
+      var prev=e?buildSpritePreview(e):null;
+      if(prev)slot.replaceWith(prev); else slot.remove();
+    }
+    var btnRow=el.querySelector(".tipbtns");
+    var depthUi=buildDepthEditor(s);
+    if(depthUi&&btnRow)el.insertBefore(depthUi,btnRow);
+    el.querySelectorAll(".tipbtns button").forEach(function(b){
+      b.addEventListener("click",function(ev){
+        ev.stopPropagation();
+        if(b.dataset.act==="close"){ unpinSpTip();return; }
+        navigator.clipboard.writeText(spTipReport(s)).then(function(){
+          b.textContent="COPIADO";setTimeout(function(){b.textContent="COPIAR";},1200);
+        }).catch(function(){});
+      });
+    });
+  }
+
+  /* The same forced-plane dropdown as the SPRITES tab, editing the same
+     spriteFixes / port_sprite_depth.inc. Returns a DOM node, or null when the
+     catalog is not loaded / the marker is unresolved. */
+  function buildDepthEditor(s){
+    if(!s.spriteId||!sprites||!sprites.tiers)return null;
+    var key=spKey(s.spriteId,0);
+    var cur=spriteFixes[key],curCode=cur?cur.code:-1;
+
+    var wrap=document.createElement("div");wrap.className="tipdepth";
+    var lab=document.createElement("label");lab.textContent="plano forzado";
+    var sel=document.createElement("select");
+    var opts=[{v:-1,t:"— sin override (plano único de sprites) —"}];
+    sprites.specialCodes.forEach(function(c){
+      if(c.value===-1)return;
+      opts.push({v:c.value,t:c.name.replace("PORT_SPRITE_DEPTH_","")+
+        (c.value===-2?" · coplanar con el BG de su prioridad OAM":"")});
+    });
+    sprites.tiers.forEach(function(c){ opts.push({v:c.value,t:(SP_TIERLABEL[c.name]||c.name)}); });
+    opts.forEach(function(o){
+      var op=document.createElement("option");op.value=String(o.v);op.textContent=o.t;
+      if(o.v===curCode)op.selected=true;sel.appendChild(op);
+    });
+    sel.addEventListener("pointerdown",function(e){ e.stopPropagation(); });
+    sel.addEventListener("change",function(){
+      var v=parseInt(sel.value,10);
+      if(v===-1)delete spriteFixes[key];
+      else spriteFixes[key]={name:s.spriteId,sec:0,
+                             id:(spEntryFor(s.spriteId)||{}).id||0,code:v};
+      markSpriteDirty();
+      if(mode==="sprites"){ fillSpriteRail();renderSpriteList(); }
+      if(state&&state.kind==="map")redraw();   /* recolour the marker */
+      renderPinnedTip(s);placeSpTip();          /* refresh plano line + save row */
+    });
+    wrap.appendChild(lab);wrap.appendChild(sel);
+
+    /* Persisting: same server .inc as the SPRITES tab's SAVE. */
+    if(serverSpriteFixes&&lastSpriteSaved!==null&&
+       typeof spriteExportText==="function"&&spriteExportText()!==lastSpriteSaved){
+      var sr=document.createElement("div");sr.className="tipsave";
+      var w=document.createElement("span");w.textContent="sin guardar en port_sprite_depth.inc";
+      var g=document.createElement("button");g.textContent="GUARDAR";
+      g.addEventListener("click",function(e){
+        e.stopPropagation();
+        saveSpriteFixesToServer().then(function(){ renderPinnedTip(s);placeSpTip(); });
+      });
+      sr.appendChild(w);sr.appendChild(g);wrap.appendChild(sr);
+    } else if(!serverSpriteFixes){
+      var h=document.createElement("div");h.className="tiphint";
+      h.textContent="abre con serve.py para escribir el .inc; aquí solo queda en memoria";
+      wrap.appendChild(h);
+    }
+    return wrap;
+  }
+
+  function pinSpTip(s,ev){
+    var el=ensureSpTipEl();
+    spTipPinned=s;
+    el.className="pinned";el.hidden=false;
+    renderPinnedTip(s);
+    placeSpTip(ev);
+    maybeLoadSpritesForTip(s);
+  }
+
+  function unpinSpTip(){
+    spTipPinned=null;
+    if(typeof stopSpritePreview==="function")stopSpritePreview();
+    if(spTipEl)spTipEl.hidden=true;
+  }
+
+  function maybeLoadSpritesForTip(s){
+    if(!s.spriteId||sprites||spSpritesTried)return;
+    if(typeof loadSprites!=="function")return;
+    spSpritesTried=true;
+    loadSprites().then(function(){
+      var el=spTipEl;if(!el||el.hidden)return;
+      /* Redraw whichever tip is still up so the preview appears. */
+      if(spTipPinned){ renderPinnedTip(spTipPinned);placeSpTip(); }
+      else el.innerHTML=spTipHtml(s,false);
+    });
+  }
+
+  /* Dismiss a pinned tip when clicking anywhere that is not a marker. */
+  document.addEventListener("pointerdown",function(ev){
+    if(!spTipPinned)return;
+    if(spTipEl&&spTipEl.contains(ev.target))return;
+    if(spriteMarkerAt(ev))return; /* pickAt will re-pin the new one */
+    unpinSpTip();
+  },true);
+
   var samples=[],state=null,sel=null,fixes={},zoom=2,fileName="";
   /* Modo activo del shell y lo propio del modo sprites (ver el bloque
      "modos" más abajo). El catálogo y sus overrides viven aquí para que
@@ -402,11 +1001,11 @@
      bloques distintos en la misma posición se pisarían. */
   var selMore={};
   var els={};
-  ["file","incfile","mapsfile","mapsbadge","railTitle","meta","shots","main","drop",
+  ["file","incfile","mapsfile","mapsbadge","wasmbadge","railTitle","meta","shots","main","drop",
    "side","tilebox","list","export",
    "copy","clear","save","zin","zout","zlab","relayout","torail","toside",
    "minbar","divrail","divside","restore","autobadge","load",
-   "mMap","mRec","mSprites",
+   "mMap","mRec","mSprites","railadd","spritesfile","railctl",
    "realscreen","rs-canvas","rs-info","rs-close","rs-min","rs-title","rs-scroll",
    "rs-zin","rs-zout","rs-zlab"].forEach(function(id){els[id]=document.getElementById(id);});
 
@@ -441,7 +1040,7 @@
     ctx.putImageData(out,0,0);
     var kind = SH>=400 ? "arriba 400x240" : SH>=300 ? "abajo 320x240" : SH+" px alto";
     els["rs-info"].textContent = name+"  ("+kind+")";
-    if(!/rec-shot-0*\d+\.rgb$/i.test(name)){
+    if(!/shot-0*\d+\.rgb$/i.test(name)){
       els["rs-title"].textContent="PANTALLA REAL (post-GPU)";
       els["rs-title"].style.color="";
     }
@@ -475,10 +1074,12 @@
     this.title=min?"Restaurar":"Minimizar";
   });
 
-  /* Pair mzm-rec-shot-NNNN.rgb frames with the loaded recording: NNNN is the
+  /* Pair ...shot-NNNN.rgb frames with the loaded recording: NNNN is the
      0-indexed sample number the 3DS embedded when it wrote the shot (they are
      only taken every few samples, so a scrub lands on the newest shot <= the
-     current sample). Non-indexed dumps (mzm-dump-*.rgb) show straight away. */
+     current sample). The name may carry a recording index too
+     (mzm-rec-01-shot-0000.rgb), so match on "shot-NNNN.rgb" alone. Non-indexed
+     dumps (mzm-dump-*.rgb) have no "shot-NNNN" and show straight away. */
   var rsShots={};
   /* Green dot on every rail thumbnail that has a matching .rgb, so the
      pairing is visible at a glance. */
@@ -489,7 +1090,7 @@
     });
   }
   function rsAddShot(buf,name){
-    var m=/rec-shot-0*(\d+)\.rgb$/i.exec(name);
+    var m=/shot-0*(\d+)\.rgb$/i.exec(name);
     if(!m){ showRealScreen(buf,name); return; }
     rsShots[+m[1]]={buf:buf,name:name};
     var keys=Object.keys(rsShots).map(Number).sort(function(a,b){return a-b;});
@@ -533,7 +1134,10 @@
   /* ---------- recording parsing ---------- */
   function scan(buf){
     var b=new Uint8Array(buf),offs=[],i;
-    for(i=0;i+4<=b.length;i+=4){var m=u32(b,i);if(m===0x334D5A4D||m===0x344D5A4D)offs.push({off:i,magic:m});}
+    /* Step by 2, not 4: the MZM5 clip block is 230 bytes, so a sample size
+       can be 2 mod 4 and N*size offsets land off the 4-byte grid -- a
+       +=4 scan then finds only every other sample. */
+    for(i=0;i+4<=b.length;i+=2){var m=u32(b,i);if(m===0x334D5A4D||m===0x344D5A4D||m===0x354D5A4D||m===0x364D5A4D)offs.push({off:i,magic:m});}
     if(!offs.length||offs[0].off!==0)return null;
     /* A sample is at least VRAM-sized, so the next real header cannot be
        nearer than that -- otherwise a word inside VRAM that happens to read
@@ -547,11 +1151,17 @@
   function rgb(c){return [(c&31)*255/31|0,((c>>5)&31)*255/31|0,((c>>10)&31)*255/31|0];}
   function pal(b,o){var p=[];for(var i=0;i<256;i++)p.push(rgb(u16(b,o+i*2)));return p;}
   function ctxOf(s){
-    var b=s.buf,base=s.base,m4=s.magic===0x344D5A4D;
+    var b=s.buf,base=s.base;
+    var m4=s.magic===0x344D5A4D||s.magic===0x354D5A4D||s.magic===0x364D5A4D; /* has area/room/gameMode */
+    var m5=s.magic===0x354D5A4D||s.magic===0x364D5A4D;  /* also has cutscene id */
+    var m6=s.magic===0x364D5A4D;                        /* also has cutscene stage */
     return {b:b,io:base+O_IO,bgpal:pal(b,base+O_BGPAL),objpal:pal(b,base+O_OBJPAL),
             oam:base+O_OAM,vram:base+O_VRAM,clip:s.clip,
             area:m4?u16(b,s.clip+20):null, room:m4?u16(b,s.clip+22):null,
-            originX:m4?u16(b,s.clip+16):null, originY:m4?u16(b,s.clip+18):null};
+            originX:m4?u16(b,s.clip+16):null, originY:m4?u16(b,s.clip+18):null,
+            gameMode:m4?u16(b,s.clip+12):null,          /* GBA GM_* (clip word 6) */
+            cutsceneId:m5?u16(b,s.clip+24):null,        /* Cutscene enum (word 12) */
+            cutsceneStage:m6?u16(b,s.clip+26):0};        /* montage page (word 13) */
   }
   function px4(b,off,x,y,hf,vf){if(hf)x=7-x;if(vf)y=7-y;var v=b[off+y*4+(x>>1)];return (x&1)?(v>>4):(v&15);}
 
@@ -685,6 +1295,31 @@
     return {layers:out,after:after,moved:moved};
   }
 
+  /* Back-to-front draw order for the four BG slots.
+     - Normal room / non-cutscene recording: by BGCNT priority (higher number
+       farther), which is what the GBA compositor does.
+     - Cutscene recording with the WASM engine: by the RESOLVED stereo tier
+       (farther plane drawn first), so moving a layer to another depth plane in
+       the panel visibly re-stacks the preview -- "el orden de verdad", the
+       same idea as Map mode. Ties keep the priority order. */
+  function stageLayerOrder(){
+    var C=state&&state.C;
+    if(state&&state.kind==="rec"&&DepthEngine&&isCutsceneCtx(C)){
+      var px={};
+      [0,1,2,3].forEach(function(bg){
+        var t=cutResolveBgTier(C,bg);
+        px[bg]=(t==null)?0:DepthEngine.tierPxFor(0,t);
+      });
+      return [0,1,2,3].sort(function(a,b){
+        if(px[a]!==px[b])return px[a]-px[b];           /* farther (smaller px) first */
+        var pa=state.prio[a],pb=state.prio[b];
+        return pa!==pb?pb-pa:b-a;
+      });
+    }
+    return [0,1,2,3].sort(function(a,b){
+      var pa=state.prio[a],pb=state.prio[b];return pa!==pb?pb-pa:b-a;});
+  }
+
   var compBuf=null;
   function composite(A){
     var n=dimW()*dimH()*4;
@@ -697,8 +1332,7 @@
        sólo se pintaran las presentes, mandar un bloque a una capa que esta sala
        no usa lo haría desaparecer en vez de moverlo. Le pasaba a cualquier
        destino BG3, y a BG0 en las 162 salas que no lo tienen. */
-    var order=[0,1,2,3].sort(function(a,b){
-      var pa=state.prio[a],pb=state.prio[b];return pa!==pb?pb-pa:b-a;});
+    var order=stageLayerOrder();
     var bl=state.blend;
     var vis=state.stageLayers||{0:true,1:true,2:true,3:true,obj:true,4:true};
     order.forEach(function(bg){
@@ -1108,10 +1742,15 @@
     var altoArriba=Math.max(PANEL_MIN_H,Math.floor(A.h*0.52));
     if(id==="map")
       return {x:A.x+PANEL_GAP,y:A.y+PANEL_GAP,w:mapW,h:altoArriba};
+    var hayCut=ids.indexOf("cutdepth")>=0;
+    var cutW=hayCut?Math.min(340,Math.floor(A.w*0.32)):0;
     if(id==="stage"){
       var x=A.x+(hayMapa?PANEL_GAP*2+mapW:PANEL_GAP);
-      return {x:x,y:A.y+PANEL_GAP,w:Math.max(PANEL_MIN_W,A.x+A.w-x-PANEL_GAP),h:altoArriba};
+      var right=A.x+A.w-PANEL_GAP-(hayCut?cutW+PANEL_GAP:0);
+      return {x:x,y:A.y+PANEL_GAP,w:Math.max(PANEL_MIN_W,right-x),h:altoArriba};
     }
+    if(id==="cutdepth")
+      return {x:A.x+A.w-PANEL_GAP-cutW,y:A.y+PANEL_GAP,w:cutW,h:altoArriba};
     var capas=ids.filter(function(k){return k.indexOf("bg")===0;});
     var j=Math.max(0,capas.indexOf(id)),n=Math.max(1,capas.length);
     var cols=Math.min(n,3),rows=Math.ceil(n/cols);
@@ -1299,6 +1938,7 @@
     if(!state)return;
     var A=applied();
     paint(state.stage,composite(A),false,marksOf());
+    drawSpriteMarkers(state.stage.getContext("2d"));
     state.cards.forEach(function(c){
       if(!c.boxBefore.hidden)paint(c.before,state.bg[c.bg].img,true,marksOf(),c.bg);
       if(!c.boxAfter.hidden)paint(c.after,A.after[c.bg],true,marksOf(),c.bg);
@@ -1370,13 +2010,17 @@
       if(state.on&&state.on[bg])available.push(bg);
     });
     if(state.obj)available.push("obj");
+    else if(state.kind==="map"&&state.room&&state.room.sprites&&state.room.sprites.length)
+      available.push("obj");
 
     available.forEach(function(key){
       var btn=document.createElement("button");
       var on=state.stageLayers[key]!==false;
       btn.className="wb laytoggle "+(on?"on":"off");
       btn.textContent=(key==="obj"?"OBJ":"BG"+key);
-      btn.title=(key==="obj"?"Sprites (OBJ)":"Capa BG"+key)+
+      btn.title=(key==="obj"?(state.kind==="map"
+                  ?"Sprites del spriteset por defecto de la sala, en su posición estática"
+                  :"Sprites (OBJ)"):"Capa BG"+key)+
                 " en el resultado (Clic: mostrar/ocultar · Ctrl+clic: aislar)";
       btn.addEventListener("pointerdown",function(e){e.stopPropagation();});
       btn.addEventListener("click",function(e){
@@ -1448,11 +2092,30 @@
         "selección · arrastra para coger un rectángulo · <kbd>May</kbd>+arrastra "+
         "para recorrer · <kbd>Ctrl</kbd> suma · <kbd>Ctrl</kbd>+rueda para el zoom"
       : (known
-      ? "Área "+C.area+" · sala "+C.room+" &nbsp;·&nbsp; <kbd>↑↓←→</kbd> mueve la selección · <kbd>Ctrl</kbd>+rueda para el zoom"
-      : "Grabación antigua sin área/sala: la clave queda incompleta. Regrábala con la build que escribe MZM4.");
+      ? "Área "+C.area+" · sala "+C.room+
+        (isCutsceneCtx(C)?" &nbsp;·&nbsp; cinemática <b>"+cutSceneName(cutSceneOf(C))+"</b>":"")+
+        " &nbsp;·&nbsp; <kbd>↑↓←→</kbd> mueve la selección · <kbd>Ctrl</kbd>+rueda para el zoom"
+      : "Grabación antigua sin área/sala: la clave queda incompleta. Regrábala con la build que escribe MZM4+.");
     sp.body.appendChild(info);
     grid.appendChild(sp.card);
     state.stage=cv;
+
+    /* --- cutscene depth editor (GRABACIÓN, scene-art cutscene only) --- */
+    if(state.kind==="rec"){
+      var cdp=buildCutsceneDepthPanel();
+      if(cdp)grid.appendChild(cdp);
+    }
+
+    /* Sprite inspector hover (Map mode). Click-to-pin is handled in pickAt. */
+    if(state.kind==="map"){
+      cv.addEventListener("mousemove",function(ev){
+        var s=spriteMarkerAt(ev);
+        cv.style.cursor=s?"help":"";
+        if(s)showSpTipHover(s,ev);
+        else hideSpTip(false);
+      });
+      cv.addEventListener("mouseleave",function(){ hideSpTip(false); });
+    }
 
     /* --- una por capa --- */
     [0,1,2,3].forEach(function(bg){
@@ -1462,8 +2125,10 @@
       vistaBtn.className="wb vista";
       vistaBtn.title="Antes / después / ambas";
       vistaBtn.addEventListener("pointerdown",function(e){e.stopPropagation();});
+      var cutTier=(state.kind==="rec"&&DepthEngine&&isCutsceneCtx(C))?cutResolveBgTier(C,bg):null;
       var lp=makePanel("bg"+bg,"BG"+bg+
         "<i>prio "+state.bg[bg].prio+(state.bg[bg].prio===0?" · delante":"")+
+        (cutTier!=null?" · plano "+TIER_NAME[cutTier]:"")+
         (mez?" · mezcla "+bl0.eva+"/"+bl0.evb:"")+"</i>"+
         '<em class="wstate"></em>',vistaBtn);
       lp.card.dataset.bg=String(bg);
@@ -1500,6 +2165,12 @@
   }
 
   function pickAt(ev,cv,bg,add){
+    /* A click that lands on a Map-mode sprite marker inspects the sprite
+       instead of selecting a background block. */
+    if(state&&state.kind==="map"){
+      var mk=spriteMarkerAt(ev);
+      if(mk){ pinSpTip(mk,ev);return; }
+    }
     var r=cv.getBoundingClientRect();
     /* Un lienzo escondido mide 0 y la regla de tres daría NaN, que acabaría en
        una selección en la posición NaN,NaN. */
@@ -1948,6 +2619,7 @@
   }
 
   function loadRoom(area,idx){
+    unpinSpTip();
     var room=maps.areas[area][idx];
     var ts=maps.tilesets[String(room.tileset)];
     if(!ts){els.meta.textContent="sala "+room.id+": falta el tileset "+room.tileset;return;}
@@ -1992,7 +2664,7 @@
 
   function buildMapRail(){
     els.railTitle.textContent="Salas";
-    els.shots.innerHTML="";
+    els.railctl.innerHTML="";els.shots.innerHTML="";
     var sel2=document.createElement("select");sel2.className="areasel";
     Object.keys(maps.areas).forEach(function(a){
       var o=document.createElement("option");o.value=a;
@@ -2004,7 +2676,7 @@
          área elegida, no el de la anterior. */
       if(maps.areas[sel2.value].length)loadRoom(sel2.value,0);
     });
-    els.shots.appendChild(sel2);
+    els.railctl.appendChild(sel2);
     var list=document.createElement("div");list.id="roomlist";els.shots.appendChild(list);
     sel2.value=curArea||Object.keys(maps.areas)[0];
     buildRoomList(sel2.value);
@@ -2394,7 +3066,7 @@
 
   function buildRail(){
     els.railTitle.textContent="Capturas";
-    els.shots.innerHTML="";
+    els.railctl.innerHTML="";els.shots.innerHTML="";
     samples.forEach(function(s,i){
       var b=document.createElement("button");b.className="shot";
       var cv=document.createElement("canvas");
@@ -2422,7 +3094,8 @@
     var f=scan(buf);
     if(!f||!f.length){els.meta.textContent="no parece un mzm-rec.bin";return;}
     samples=f;fileName=name;lastSample=0;
-    els.meta.textContent=name+" · "+f.length+" capturas · "+(f[0].magic===0x344D5A4D?"MZM4":"MZM3");
+    var MAGNAME={0x334D5A4D:"MZM3",0x344D5A4D:"MZM4",0x354D5A4D:"MZM5",0x364D5A4D:"MZM6"};
+    els.meta.textContent=name+" · "+f.length+" capturas · "+(MAGNAME[f[0].magic]||"MZM?");
     setMode("rec");
   }
 
@@ -2443,6 +3116,11 @@
     els.mMap.setAttribute("aria-pressed",String(m==="map"));
     els.mRec.setAttribute("aria-pressed",String(m==="rec"));
     els.mSprites.setAttribute("aria-pressed",String(m==="sprites"));
+    els.railadd.title = m==="map" ? "Abrir un maps.json"
+                      : m==="rec" ? "Abrir un mzm-rec.bin y/o sus mzm-rec-shot-NNNN.rgb"
+                      : "Abrir un sprites.json";
+    els.railadd.setAttribute("aria-label",els.railadd.title);
+    els.railctl.innerHTML="";   /* per-mode selector slot; the builders refill it */
     /* La pantalla real (.rgb) sólo acompaña a la grabación. */
     els.realscreen.hidden = !(m==="rec" && rsHasContent);
     if(m==="map")      enterMap();
@@ -2456,7 +3134,7 @@
       els.railTitle.textContent="Salas";els.shots.innerHTML="";
       mainHint('<div class="ui" style="font-size:15px;font-weight:700;color:var(--ink)">Sin maps.json</div>'+
         '<p>Genera <code>maps.json</code> con <code>python3 tools/layer-workbench/build_maps.py</code> '+
-        'y súbelo con <b>MAPAS</b>, o suéltalo aquí.</p>');
+        'y ábrelo con el icono <b>↥</b> de arriba de la lista, o suéltalo aquí.</p>');
       autoloadMaps();
       return;
     }
@@ -2469,7 +3147,9 @@
       els.railTitle.textContent="Capturas";els.shots.innerHTML="";
       mainHint('<div class="ui" style="font-size:15px;font-weight:700;color:var(--ink)">Sin grabación</div>'+
         '<p>En la consola: <b>DEBUG → HERRAMIENTAS → GRAB. ESCENA</b>. Queda en '+
-        '<code>sdmc:/3ds/mzm-rec.bin</code>. Súbelo con <b>GRABACIÓN</b> o suéltalo aquí.</p>');
+        '<code>sdmc:/3ds/mzm-rec-NN.bin</code>. Ábrelo con el icono <b>↥</b> de arriba '+
+        'de la lista o suéltalo aquí; puedes añadir también sus '+
+        '<code>mzm-rec-NN-shot-NNNN.rgb</code> en la misma selección.</p>');
       return;
     }
     buildRail();
@@ -2537,11 +3217,11 @@
   }
 
   function buildSpriteRail(){
-    els.shots.innerHTML="";
+    els.railctl.innerHTML="";els.shots.innerHTML="";
     var q=document.createElement("input");
     q.id="spfilter";q.placeholder="filtrar…  p.ej. STATUE";q.value=spFilter;
     q.addEventListener("input",function(){ spFilter=q.value; fillSpriteRail(); });
-    els.shots.appendChild(q);
+    els.railctl.appendChild(q);
     var list=document.createElement("div");list.id="splist";els.shots.appendChild(list);
     fillSpriteRail();
   }
@@ -2782,6 +3462,274 @@
       badge("sprites: sin guardar","warn");
   }
 
+  /* ---------- cutscene depth .inc I/O (port_cutscene_depth.inc) ---------- */
+  /* vk is "stage:layout" ("*" for either wildcard). Returns the layout and
+     stage macro tokens for one .inc row. */
+  function cutRowTokens(vk){
+    var pr=vk.split(":"), layoutTok, stageTok;
+    if(pr[1]==="*"||pr[1]==="any"){ layoutTok="PORT_CUT_ANY"; }
+    else{
+      var sig=+pr[1], parts=[];
+      for(var bg=0;bg<4;bg++){
+        var nib=(sig>>(bg*4))&0xF;
+        parts.push(nib===0xF?"PORT_CUT_OFF":String(nib));
+      }
+      layoutTok="PORT_CUT_LAYOUT("+parts.join(",")+")";
+    }
+    stageTok=(pr[0]==="*")?"PORT_CUT_STAGE_ANY":("PORT_CUT_STAGE("+(+pr[0])+")");
+    return {layout:layoutTok, stage:stageTok};
+  }
+  function cutsceneExportText(){
+    var out=[
+      "/* Overrides de profundidad estereoscópica por CINEMÁTICA, para el port 3DS.",
+      " * Generado por tools/layer-workbench (modo GRABACIÓN) -- recárgalo ahí para editar.",
+      " *",
+      " * PORT_CUTSCENE_DEPTH(escena, layout, stage, objetivo, tier)",
+      " *   escena:   PORT_CUT_SCENE_*   (ver port_cutscene_depth.h)",
+      " *   layout:   PORT_CUT_LAYOUT(p0,p1,p2,p3) la config de capas (PORT_CUT_OFF si",
+      " *             la capa está apagada); PORT_CUT_ANY = cualquiera",
+      " *   stage:    PORT_CUT_STAGE(n) la pagina n de la cinematica; PORT_CUT_STAGE_ANY",
+      " *   objetivo: PORT_CUT_PRIO(0..3) / PORT_CUT_BG(0..3) / PORT_CUT_ACTOR / PORT_CUT_CAPTION",
+      " *   tier:     PORT_TIER_*         (port_stereo_depth.h)",
+      " *",
+      " * Sin este archivo, cada cinemática usa el reparto por defecto del port.",
+      " */"];
+    Object.keys(cutsceneFixes).map(Number).sort(function(a,b){return a-b;}).forEach(function(sid){
+      var byVariant=cutsceneFixes[sid];
+      /* ANY first, then layouts in numeric order, for a stable diff. */
+      Object.keys(byVariant).sort(function(a,b){
+        /* wildcard variants first, then by stage then layout, for a stable diff */
+        var pa=a.split(":"), pb=b.split(":");
+        var sa=pa[0]==="*"?-1:+pa[0], sb=pb[0]==="*"?-1:+pb[0];
+        if(sa!==sb)return sa-sb;
+        var la=pa[1]==="*"?-1:+pa[1], lb=pb[1]==="*"?-1:+pb[1];
+        return la-lb;
+      }).forEach(function(vk){
+        var tok=cutRowTokens(vk);
+        var byTarget=byVariant[vk];
+        Object.keys(byTarget).sort().forEach(function(k){
+          var t=byTarget[k];
+          if(t<0||t>=TIER_NAME.length)return;
+          out.push("PORT_CUTSCENE_DEPTH(PORT_CUT_SCENE_"+cutSceneName(sid)+", "+
+                   tok.layout+", "+tok.stage+", "+cutTargetToken(k)+", PORT_TIER_"+TIER_NAME[t]+")");
+        });
+      });
+    });
+    return out.join("\n")+"\n";
+  }
+  function cutsceneImportText(txt){
+    cutsceneFixes={};
+    var nameToId={};
+    CUT_SCENES.forEach(function(c){nameToId[c.name]=c.id;});
+    var tierToIdx={};
+    TIER_NAME.forEach(function(nm,i){tierToIdx[nm]=i;});
+    var re=/PORT_CUTSCENE_DEPTH\(\s*PORT_CUT_SCENE_([A-Z_0-9]+)\s*,\s*(PORT_CUT_ANY|PORT_CUT_LAYOUT\([^)]*\))\s*,\s*(PORT_CUT_STAGE_ANY|PORT_CUT_STAGE\(\s*\d+\s*\))\s*,\s*(PORT_CUT_ACTOR|PORT_CUT_CAPTION|PORT_CUT_PRIO\([0-3]\)|PORT_CUT_BG\([0-3]\))\s*,\s*PORT_TIER_([A-Z_0-9]+)\s*\)/g,m,n=0;
+    while((m=re.exec(txt))){
+      var sid=nameToId[m[1]]; if(sid===undefined)continue;
+      var layoutPart="*";
+      var lm=/PORT_CUT_LAYOUT\(([^)]*)\)/.exec(m[2]);
+      if(lm){
+        var nibs=lm[1].split(",").map(function(s){
+          s=s.trim();
+          return /OFF/.test(s)?0xF:(parseInt(s,10)&0xF);
+        });
+        var sig=0;
+        for(var bg=0;bg<4;bg++)sig|=((nibs[bg]|0)&0xF)<<(bg*4);
+        layoutPart=String(sig>>>0);
+      }
+      var sm=/PORT_CUT_STAGE\(\s*(\d+)\s*\)/.exec(m[3]);
+      var stagePart=sm?String(+sm[1]):"*";
+      var vk=stagePart+":"+layoutPart;
+      var key;
+      var mm=/PORT_CUT_PRIO\(([0-3])\)/.exec(m[4]);
+      if(mm)key="prio"+mm[1];
+      else if((mm=/PORT_CUT_BG\(([0-3])\)/.exec(m[4])))key="bg"+mm[1];
+      else key=(m[4]==="PORT_CUT_ACTOR")?"actor":"caption";
+      var t=tierToIdx[m[5]]; if(t===undefined)continue;
+      var byV=cutsceneFixes[sid]||(cutsceneFixes[sid]={});
+      (byV[vk]||(byV[vk]={}))[key]=t;
+      n++;
+    }
+    return n;
+  }
+  var serverCutsceneFixes=false,lastCutsceneSaved=null;
+  function loadCutsceneFixesFromServer(quiet){
+    if(location.protocol==="file:")return Promise.resolve();
+    return fetch("cutscene-fixes",{cache:"no-store"}).then(function(r){
+      serverCutsceneFixes=true;
+      if(r.status===404)return null;
+      if(!r.ok)throw 0;
+      return r.text();
+    }).then(function(t){
+      cutsceneFixes={};
+      if(t)cutsceneImportText(t);
+      lastCutsceneSaved=cutsceneExportText();
+      pushCutsceneOverrides();
+      if(!quiet&&mode==="rec")redraw();
+    }).catch(function(){ serverCutsceneFixes=false; });
+  }
+  function saveCutsceneFixesToServer(){
+    var body=cutsceneExportText();
+    return fetch("cutscene-fixes",{method:"PUT",body:body,headers:{"Content-Type":"text/plain"}})
+      .then(function(r){ if(!r.ok)throw 0; lastCutsceneSaved=body; badge("cinemáticas: guardado"); })
+      .catch(function(){ badge("cinemáticas: error al guardar","warn"); });
+  }
+  function cutsceneDirty(){
+    return serverCutsceneFixes&&lastCutsceneSaved!==null&&
+           cutsceneExportText()!==lastCutsceneSaved;
+  }
+  function markCutsceneDirty(){
+    if(cutsceneDirty())badge("cinemáticas: sin guardar","warn");
+  }
+
+  /* The per-layer depth editor for a loaded cutscene recording. Returns a
+     panel card, or null when the recording is not a scene-art cutscene / the
+     WASM engine is missing. */
+  function buildCutsceneDepthPanel(){
+    var C=state&&state.C;
+    if(!DepthEngine||!C||!isCutsceneCtx(C))return null;
+    var sid=cutSceneOf(C);
+    var curSig=cutLayoutOf(C), curStage=cutStageOf(C), curVk=cutVariantKey(C);
+    var byScene=cutsceneFixes[sid]||(cutsceneFixes[sid]={});
+
+    var pnl=makePanel("cutdepth","Profundidad de la cinemática <i>"+cutSceneName(sid)+"</i>");
+    var body=pnl.body;
+    body.classList.add("cutdepth");
+
+    /* Scope: a new edit targets THIS sub-scene's layout by default (the whole
+       reason this dimension exists). "aplicar a toda la cinemática" is opt-in.
+       Any PORT_CUT_ANY rows already saved still resolve as a base -- the
+       toggle only changes where the NEXT change is written. */
+    /* scope 0 = this stage + this layout, 1 = this stage / any layout,
+       2 = any stage / any layout. */
+    var scope=0;
+    var activeVk=function(){
+      return scope>=2 ? "*:*" : scope===1 ? (curStage+":*") : curVk;
+    };
+    var byTarget=function(){ return byScene[activeVk()]||(byScene[activeVk()]={}); };
+
+    var scopeEl=document.createElement("div");scopeEl.className="cutscope";
+    var lay=document.createElement("span");lay.className="cuthint";
+    lay.textContent="pagina "+curStage+" · "+cutLayoutLabel(curSig)+
+      "  (DISPCNT="+("000"+(u16(C.b,C.io)>>>0).toString(16)).slice(-4).toUpperCase()+
+      " sig="+("000"+(curSig>>>0).toString(16)).slice(-4).toUpperCase()+")";
+    var sw=document.createElement("button");sw.className="cuttgl";
+    var SCOPETXT=["aplicar a: esta pagina + estas capas",
+                  "aplicar a: esta pagina (cualquier capa)",
+                  "aplicar a: toda la cinematica"];
+    var syncScope=function(){ sw.textContent=SCOPETXT[scope]; };
+    sw.addEventListener("pointerdown",function(e){e.stopPropagation();});
+    sw.addEventListener("click",function(e){
+      e.stopPropagation();scope=(scope+1)%3;syncScope();
+      buildMain();redraw();
+    });
+    syncScope();
+    scopeEl.appendChild(lay);scopeEl.appendChild(sw);body.appendChild(scopeEl);
+
+    var rows=[];
+    [0,1,2,3].forEach(function(bg){
+      if(!state.on[bg])return;
+      rows.push({kind:"bg",bg:bg,prio:state.prio[bg],
+                 label:"BG"+bg+" (prio "+state.prio[bg]+")"});
+    });
+    rows.push({kind:"actor",label:"Actores (OBJ prio ≥ 1)"});
+    rows.push({kind:"caption",label:"Rótulo (OBJ prio 0)"});
+
+    rows.forEach(function(r){
+      var line=document.createElement("div");line.className="cutrow";
+      var nm=document.createElement("span");nm.className="cutnm";nm.textContent=r.label;
+      line.appendChild(nm);
+
+      var keyFor=function(){
+        if(r.kind==="actor")return "actor";
+        if(r.kind==="caption")return "caption";
+        return line.dataset.byIndex==="1" ? ("bg"+r.bg) : ("prio"+r.prio);
+      };
+
+      if(r.kind==="bg"){
+        var tgl=document.createElement("button");tgl.className="cuttgl";
+        var sync=function(){
+          var byIx=line.dataset.byIndex==="1";
+          tgl.textContent=byIx?"por índice BG"+r.bg:"por prioridad "+r.prio;
+          tgl.title="Cambia entre PORT_CUT_PRIO("+r.prio+") y PORT_CUT_BG("+r.bg+")";
+        };
+        var bt0=byTarget();
+        if(bt0["bg"+r.bg]!==undefined&&bt0["prio"+r.prio]===undefined)
+          line.dataset.byIndex="1";
+        tgl.addEventListener("pointerdown",function(e){e.stopPropagation();});
+        tgl.addEventListener("click",function(e){
+          e.stopPropagation();
+          line.dataset.byIndex=(line.dataset.byIndex==="1")?"0":"1";
+          sync();refreshSel();
+        });
+        sync();
+        line.appendChild(tgl);
+      }
+
+      var sel=document.createElement("select");sel.className="cutsel";
+      var refreshSel=function(){
+        sel.innerHTML="";
+        var def=document.createElement("option");def.value="-1";def.textContent="— por defecto —";
+        sel.appendChild(def);
+        TIER_NAME.forEach(function(nm,i){
+          var op=document.createElement("option");op.value=String(i);op.textContent=nm;
+          sel.appendChild(op);
+        });
+        var cur=byTarget()[keyFor()];
+        sel.value=(cur===undefined)?"-1":String(cur);
+        var res;
+        if(r.kind==="bg")res=cutResolveBgTier(C,r.bg);
+        else res=cutResolveObjTier(C,r.kind==="caption"?0:1);
+        hint.textContent=(res==null)?"":("ahora: "+TIER_NAME[res]);
+      };
+      sel.addEventListener("pointerdown",function(e){e.stopPropagation();});
+      sel.addEventListener("change",function(){
+        var v=parseInt(sel.value,10),k=keyFor();
+        var bt=byTarget();
+        if(r.kind==="bg"){ delete bt["prio"+r.prio]; delete bt["bg"+r.bg]; }
+        if(v>=0)bt[k]=v; else delete bt[k];
+        if(!Object.keys(bt).length)delete byScene[activeVk()];
+        if(!Object.keys(byScene).length)delete cutsceneFixes[sid];
+        pushCutsceneOverrides();
+        markCutsceneDirty();
+        buildMain();   /* rebuild so every row's "ahora:" re-resolves */
+        redraw();      /* re-composite (stageLayerOrder picks up the change) */
+      });
+      line.appendChild(sel);
+
+      var hint=document.createElement("span");hint.className="cuthint";
+      line.appendChild(hint);
+
+      refreshSel();
+      body.appendChild(line);
+    });
+
+    if(serverCutsceneFixes&&cutsceneDirty()){
+      var sr=document.createElement("div");sr.className="cutsave";
+      var w=document.createElement("span");w.textContent="sin guardar en port_cutscene_depth.inc";
+      var g=document.createElement("button");g.textContent="GUARDAR";
+      g.addEventListener("pointerdown",function(e){e.stopPropagation();});
+      g.addEventListener("click",function(e){
+        e.stopPropagation();
+        saveCutsceneFixesToServer().then(function(){ buildMain(); });
+      });
+      sr.appendChild(w);sr.appendChild(g);body.appendChild(sr);
+    } else if(!serverCutsceneFixes){
+      var h=document.createElement("div");h.className="cuthint";
+      h.textContent="abre con serve.py para escribir el .inc; aquí sólo queda en memoria";
+      body.appendChild(h);
+    }
+
+    var foot=document.createElement("p");foot.className="hint pfoot";
+    foot.innerHTML="Cada fila fija a qué plano 3D va esa capa. «por defecto» deja "+
+      "el reparto del port. Un cambio se guarda para la <b>sub-escena</b> actual "+
+      "(su combinación de capas + prioridades) salvo que pulses «toda la "+
+      "cinemática». No es por frame. El resultado de arriba se re-apila según lo elegido.";
+    body.appendChild(foot);
+
+    return pnl.card;
+  }
+
   function updateFixButtons(){
     if(mode!=="sprites")return;   // map/rec: renderList/renderSide ya lo hacen
     var has=Object.keys(spriteFixes).length;
@@ -2795,15 +3743,45 @@
   els.mSprites.addEventListener("click",function(){setMode("sprites");});
 
   /* ---------- wiring ---------- */
+  /* GRABACIÓN accepts a mix in one pick (or a whole dump folder): the recording
+     .bin plus any number of ...shot-NNNN.rgb frames. Route each by name --
+     before, a mixed selection loaded only the first file and dropped the rest.
+     The recording is the mzm-rec*.bin; other .bin (mzm-state*.bin) are ignored. */
+  function handleRecFiles(fl){
+    var rec=null;
+    [].forEach.call(fl,function(f){
+      if(/\.rgb$/i.test(f.name)){ f.arrayBuffer().then(function(b){rsAddShot(b,f.name);}); return; }
+      if(!/\.bin$/i.test(f.name)) return;
+      if(/rec.*\.bin$/i.test(f.name)){ if(!rec||!/rec/i.test(rec.name)) rec=f; }
+      else if(!rec) rec=f;   /* fall back to any .bin if none looks like a recording */
+    });
+    if(rec) rec.arrayBuffer().then(function(b){ingest(b,rec.name);});
+  }
   els.file.addEventListener("change",function(e){
-    var fl=e.target.files;if(!fl||!fl.length)return;
-    if([].every.call(fl,function(f){return /\.rgb$/i.test(f.name);})){
-      [].forEach.call(fl,function(f){f.arrayBuffer().then(function(b){rsAddShot(b,f.name);});});
-      return;
-    }
-    fl[0].arrayBuffer().then(function(b){ingest(b,fl[0].name);});});
+    if(e.target.files&&e.target.files.length)handleRecFiles(e.target.files);
+    e.target.value="";
+  });
   els.mapsfile.addEventListener("change",function(e){
-    var f=e.target.files[0];if(!f)return;f.arrayBuffer().then(function(b){ingestMaps(b,f.name);});});
+    var f=e.target.files[0];if(!f)return;
+    f.arrayBuffer().then(function(b){ingestMaps(b,f.name);});
+    e.target.value="";
+  });
+  els.spritesfile.addEventListener("change",function(e){
+    var f=e.target.files[0];if(!f)return;
+    f.arrayBuffer().then(function(b){
+      try{ sprites=JSON.parse(new TextDecoder().decode(b)); }catch(err){ badge("sprites.json ilegible","warn");return; }
+      spSpritesTried=true;
+      if(mode==="sprites")enterSprites();
+      badge("sprites.json cargado");
+    });
+    e.target.value="";
+  });
+  /* Per-tab "+ archivo": opens the picker for the current tab's file type. */
+  els.railadd.addEventListener("click",function(){
+    if(mode==="map")        els.mapsfile.click();
+    else if(mode==="rec")   els.file.click();
+    else                    els.spritesfile.click();
+  });
   els.incfile.addEventListener("change",function(e){
     var f=e.target.files[0];if(!f)return;
     f.text().then(function(t){
@@ -2837,8 +3815,10 @@
      es el que la herramienta que lo generó le puso. */
   document.addEventListener("drop",function(e){
     var fl=e.dataTransfer&&e.dataTransfer.files;if(!fl||!fl.length)return;
-    if([].every.call(fl,function(f){return /\.rgb$/i.test(f.name);})){
-      [].forEach.call(fl,function(f){f.arrayBuffer().then(function(b){rsAddShot(b,f.name);});});
+    if([].some.call(fl,function(f){return /\.rgb$/i.test(f.name);})){
+      /* Any .rgb in the drop -> treat the whole drop as recording data
+         (rec .bin + shots), same split as the GRABACIÓN picker. */
+      handleRecFiles(fl);
       return;
     }
     var f=fl[0];
@@ -3108,7 +4088,14 @@
     window.__selftest=r;
   }
 
-  setZoom(2);renderList();autoloadMaps();loadFixesFromServer(true);loadSprites();
+  setZoom(2);renderList();autoloadMaps();loadFixesFromServer(true);loadSprites();loadDepthEngine();
+  /* Sprite overrides, quietly: the Map-mode static overlay needs
+     spriteFixes to color markers correctly even if the user never opens
+     the SPRITES tab this session. */
+  loadSpriteFixesFromServer(true).then(function(){ if(mode==="map")redraw(); });
+  /* Cutscene depth overrides, quietly: a recording of a cutscene resolves its
+     layer tiers through these even before the panel is touched. */
+  loadCutsceneFixesFromServer(true);
   if(/[?&]test\b/.test(location.search)){
     /* Tras la carga de maps.json, que es asíncrona. */
     var espera=setInterval(function(){

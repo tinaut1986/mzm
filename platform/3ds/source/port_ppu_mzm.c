@@ -19,6 +19,10 @@
 #include "constants/block.h"
 #include "constants/game_state.h"
 #include "structs/game_state.h"
+#include "constants/cutscene.h"       /* CUTSCENE_DATA */
+#include "structs/cutscene.h"
+#include "structs/tourian_escape.h"   /* TOURIAN_ESCAPE_DATA */
+#include "data/shortcut_pointers.h"   /* sNonGameplayRamPointer */
 #include "structs/connection.h"
 #include "structs/minimap.h"
 #include "structs/room.h"
@@ -141,6 +145,13 @@ static int sGbaFxGrade = 0;
 static int sGbaFxGrid = 0;
 static int sGbaFxVignette = 0;
 
+/* Frame pacing on the GPU path. 0 = ADAPTIVE: run at whatever rate the scene
+ * allows, skipping the render (never the logic) to keep game speed correct
+ * when a frame overruns -- fluid, variable 30..60. 1 = LOCKED 30: render
+ * every other logic tick for a steady 30 Hz picture at correct game speed.
+ * See Port_Bios_Halt / Port_Bios_ShouldSkipRender. */
+static int sFramePacing = 0;
+
 /* Button Actions:
  * 0 = NINGUNA (NONE)
  * 1 = AUTODISPARO (RAPID FIRE)
@@ -206,6 +217,7 @@ void Port_Config_Save(void) {
     fprintf(file, "gba_fx_grade=%d\n", sGbaFxGrade);
     fprintf(file, "gba_fx_grid=%d\n", sGbaFxGrid);
     fprintf(file, "gba_fx_vignette=%d\n", sGbaFxVignette);
+    fprintf(file, "frame_pacing=%d\n", sFramePacing);
     fprintf(file, "btn_map_a=%d\n", sBtnRemap[0]);
     fprintf(file, "btn_map_b=%d\n", sBtnRemap[1]);
     fprintf(file, "btn_map_x=%d\n", sBtnRemap[2]);
@@ -302,6 +314,8 @@ void Port_Config_Load(void) {
             if (val >= 0 && val < 4) sGbaFxGrid = val;
         } else if (strcmp(key, "gba_fx_vignette") == 0) {
             if (val >= 0 && val < 4) sGbaFxVignette = val;
+        } else if (strcmp(key, "frame_pacing") == 0) {
+            if (val >= 0 && val < 2) sFramePacing = val;
         } else if (strcmp(key, "btn_map_a") == 0) {
             if (val >= 0 && val < BTN_ACTION_COUNT) sBtnRemap[0] = val;
         } else if (strcmp(key, "btn_map_b") == 0) {
@@ -373,6 +387,10 @@ void Port_Config_SetGbaFxGrid(int level) { if (level >= 0 && level < 4) { sGbaFx
 
 int Port_Config_GetGbaFxVignette(void) { return sGbaFxVignette; }
 void Port_Config_SetGbaFxVignette(int level) { if (level >= 0 && level < 4) { sGbaFxVignette = level; Port_Config_Save(); } }
+
+/* 0 = ADAPTIVE (default), 1 = LOCKED 30. */
+int Port_Config_GetFramePacing(void) { return sFramePacing; }
+void Port_Config_SetFramePacing(int mode) { if (mode >= 0 && mode < 2) { sFramePacing = mode; Port_Config_Save(); } }
 
 int Port_Config_GetBtnRemap(int btn) {
     if (btn >= 0 && btn < 10) return sBtnRemap[btn];
@@ -515,6 +533,16 @@ int Port_Samus_GetPoseClass(void) {
         default:
             return 0; /* normal (standing, walking, jumping, shooting, ...) */
     }
+}
+
+/* Whether Samus can actually become a morph ball right now. The Quick Morph
+ * assist synthesises Down pulses until the pose class reaches MORPHED; if
+ * that can never happen it just bobs her crouch for the whole safety window.
+ * Suitless Samus has no morph-ball graphics and the pose machine refuses the
+ * transition (see the suitType guard in SamusCrouching), so the assist must
+ * not start a morph sequence for her. */
+int Port_Samus_CanMorph(void) {
+    return gEquipment.suitType != SUIT_SUITLESS;
 }
 
 /* Per-area, per-tank-type collected counts for the bottom-screen collectibles
@@ -734,6 +762,30 @@ void Port_PPU_RenderFrame(void) {
         }
         virtuappu_mode1_set_frame_geometry(&ppu);
         virtuappu_mode1_render_frame(&ppu);
+
+        /* Depth-tint debug view is a GPU-renderer feature (planes only exist
+         * there). This frame fell back to the CPU rasterizer -- no stereo, no
+         * tier colours -- so stamp an unmistakable magenta border to say
+         * "this segment has no 3D data; a cutscene depth override changes
+         * nothing here". Cheap: the outer 3px ring of the GBA-native buffer. */
+        if (Port_GpuRenderer_DepthTintEnabled()) {
+            const uint32_t kMark = 0xFFFF00FFu; /* ABGR: opaque magenta */
+            uint32_t* bufs[2] = { sLogicTop[sLogicWriteSlot],
+                                  sTopRightBuffer ? sLogicTopRight[sLogicWriteSlot] : NULL };
+            for (int bi = 0; bi < 2; ++bi) {
+                uint32_t* buf = bufs[bi];
+                if (!buf) continue;
+                for (int y = 0; y < 160; ++y) {
+                    uint32_t* row = buf + (size_t)y * TOP_PITCH;
+                    if (y < 3 || y >= 157) {
+                        for (int x = 0; x < TOP_NATIVE_W; ++x) row[x] = kMark;
+                    } else {
+                        row[0] = row[1] = row[2] = kMark;
+                        row[TOP_NATIVE_W - 3] = row[TOP_NATIVE_W - 2] = row[TOP_NATIVE_W - 1] = kMark;
+                    }
+                }
+            }
+        }
     }
 #endif
 
@@ -1592,14 +1644,40 @@ void PortPpuMzm_ScreenOrigin(int* outX, int* outY) {
  * this block is what makes it checkable.
  *
  * Layout is fixed and appended after VRAM in each sample (recorder magic
- * 'MZM3'). The clip grid covers the visible screen plus one block of slack
- * on each axis, at the same block resolution clipdata uses.
+ * 'MZM6' -- 'MZM3' added this block, 'MZM4' added area/room, 'MZM5' added the
+ * cutscene id, 'MZM6' added the cutscene STAGE). The clip grid covers the
+ * visible screen plus one block of slack on each axis, at the same block
+ * resolution clipdata uses.
  * ------------------------------------------------------------------- */
 #define PORT_CLIPREC_COLS 17
 #define PORT_CLIPREC_ROWS 12
 
+/* The sample stride is a fixed part plus this block. Every parser locates
+ * sample N by scanning for the header magic, so N*stride must never drift
+ * off the alignment the scanner steps on -- keep the block a multiple of 4.
+ * (It was 230 under 'MZM5' and off-grid, which made 2-byte scanning
+ * necessary; 'MZM6' brought it back to 232.) */
+_Static_assert((28 + PORT_CLIPREC_COLS * PORT_CLIPREC_ROWS) % 4 == 0,
+               "clip record block must stay 4-byte aligned");
+
+/* Which page of a montage cutscene is on screen. A single GM_CUTSCENE or
+ * GM_TOURIAN_ESCAPE runs many pages back to back, and several of them use
+ * the SAME layer config (e.g. the Tourian escape's flight pages are all
+ * "BG0 + OBJ, priority 0"), so the DISPCNT/BGCNT layout signature cannot
+ * tell them apart -- an override keyed to the layout alone hits every page.
+ * The per-mode state machine's stage index does distinguish them. */
+int PortPpuMzm_CutsceneStage(void) {
+    if (sNonGameplayRamPointer == NULL) return 0;
+    switch (gMainGameMode) {
+        case GM_TOURIAN_ESCAPE: return (int)TOURIAN_ESCAPE_DATA.stage;
+        case GM_CUTSCENE:       return (int)CUTSCENE_DATA.timeInfo.stage;
+        default:                return 0;
+    }
+}
+
 void PortPpuMzm_GetClipRecordBlock(uint8_t* out) {
-    /* 24 bytes of scalars, then the grid. */
+    /* 28 bytes of scalars, then the grid. gCurrentCutscene is already declared
+     * (include/structs/cutscene.h, reached via the game headers above). */
     uint16_t* w = (uint16_t*)out;
     w[0] = gCamera.xPosition;
     w[1] = gCamera.yPosition;
@@ -1613,7 +1691,13 @@ void PortPpuMzm_GetClipRecordBlock(uint8_t* out) {
      * w[10]/w[11]: area and room. A tile correction has to be keyed to a
      * position in a ROOM, not on screen, or it moves with the camera --
      * without these a recording cannot say which room it is of, and the key
-     * has to be filled in by hand afterwards. */
+     * has to be filled in by hand afterwards.
+     * w[12]: the active cutscene id (Cutscene enum), for GM_CUTSCENE. Lets an
+     * offline tool key a per-cutscene depth override to the right scene;
+     * meaningless outside GM_CUTSCENE but always written.
+     * w[13]: the montage-page stage index (see PortPpuMzm_CutsceneStage),
+     * so an override can target ONE page of a cutscene whose pages share a
+     * layer config. 0 outside a staged cutscene. */
 
     int originX, originY;
     PortPpuMzm_ScreenOrigin(&originX, &originY);
@@ -1621,8 +1705,10 @@ void PortPpuMzm_GetClipRecordBlock(uint8_t* out) {
     w[9] = (uint16_t)originY;
     w[10] = (uint16_t)gCurrentArea;
     w[11] = (uint16_t)gCurrentRoom;
+    w[12] = (uint16_t)gCurrentCutscene;
+    w[13] = (uint16_t)PortPpuMzm_CutsceneStage();
 
-    uint8_t* grid = out + 24;
+    uint8_t* grid = out + 28;
     int baseBlockX = originX / PIXEL_PER_BLOCK;
     int baseBlockY = originY / PIXEL_PER_BLOCK;
 
@@ -1643,7 +1729,7 @@ void PortPpuMzm_GetClipRecordBlock(uint8_t* out) {
 }
 
 int PortPpuMzm_GetClipRecordBlockSize(void) {
-    return 24 + PORT_CLIPREC_COLS * PORT_CLIPREC_ROWS;
+    return 28 + PORT_CLIPREC_COLS * PORT_CLIPREC_ROWS;
 }
 
 /* ---------------------------------------------------------------------
@@ -1731,10 +1817,13 @@ bool PortPpuMzm_IsVisibleTankBlock(int blockX, int blockY) {
  *
  *   - the door's own column span (xStart..xEnd) from sAreaDoorsPointers,
  *     widened one block each side -- the outboard one is wall (BG1,
- *     already on the play plane, a no-op), the inboard one is the animated
- *     hatch "capsule",
- *   - a couple of rows above and below for the lintel/sill (and whatever
- *     sits directly under the capsule).
+ *     already on the play plane, a no-op), the inboard one is the trim
+ *     next to the hatch,
+ *   - ONLY the PORT_DOOR_DEPTH_MARGIN_Y rows above yStart and below yEnd,
+ *     the lintel/sill ledge. The door's own rows (yStart..yEnd) are the
+ *     animated hatch capsule and are left on their own plane -- pulling
+ *     them forward made the backdrop revealed as the capsule opens draw on
+ *     top of the scene.
  *
  * An earlier version grew each row along the BG2 run to avoid cutting a
  * ledge mid-run. It reached too far and dragged actual background forward,
@@ -1801,6 +1890,14 @@ void PortPpuMzm_SetDoorDepthRoom(int area, int room) {
         if (y0 < 0) y0 = 0;
 
         for (int y = y0; y <= y1; ++y) {
+            /* Only the lintel/sill trim -- the MARGIN_Y rows above yStart and
+             * below yEnd. The door's own rows (yStart..yEnd) are the animated
+             * hatch capsule; pulling those forward makes the background
+             * revealed as the capsule opens draw ON TOP of the scene even
+             * though it is drawn behind. The capsule's presence is still what
+             * puts the trim rows in the footprint -- but the capsule tiles
+             * themselves stay on their own plane. */
+            if (y >= (int)d->yStart && y <= (int)d->yEnd) continue;
             if (sDoorSpanCount >= PORT_DOOR_DEPTH_SPANS) return;
             sDoorSpanY[sDoorSpanCount]  = (uint16_t)y;
             sDoorSpanX0[sDoorSpanCount] = (uint16_t)dx0;

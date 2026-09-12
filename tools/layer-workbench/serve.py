@@ -69,6 +69,9 @@ def ensure_maps():
     link_worktree_assets()
     maps = os.path.join(HERE, "maps.json")
     sources = newest(os.path.join(ROOT, "src", "data", "rooms_data.c"),
+                     os.path.join(ROOT, "src", "data", "rooms"),
+                     os.path.join(ROOT, "src", "data", "spriteset.c"),
+                     os.path.join(ROOT, "platform", "3ds", "source", "port_sprite_depth.inc"),
                      os.path.join(ROOT, "data", "rooms"),
                      os.path.join(ROOT, "data", "tilesets"),
                      os.path.join(HERE, "build_maps.py"))
@@ -115,21 +118,117 @@ def ensure_sprite_thumbs(rebuilt):
         print("  (fallo, sigo sin miniaturas: %s)" % e)
 
 
+def use_local_emsdk():
+    """If a repo-local Emscripten was bootstrapped under wasm/emsdk/ (by
+    wasm/setup_emsdk.bat / setup_emsdk.sh), make its emcc usable from this
+    process without the caller having to source emsdk_env first. A system emcc
+    already on PATH wins and this is a no-op."""
+    import glob
+    import shutil
+    if shutil.which("emcc") is not None:
+        return
+    root = os.path.join(HERE, "wasm", "emsdk")
+    em = os.path.join(root, "upstream", "emscripten")
+    if not os.path.isdir(em):
+        return
+    parts = [root, em]
+    for node_bin in glob.glob(os.path.join(root, "node", "*", "bin")):
+        parts.append(node_bin)
+    for py_dir in glob.glob(os.path.join(root, "python", "*")):
+        parts.append(py_dir)
+    os.environ["PATH"] = os.pathsep.join(parts) + os.pathsep + os.environ.get("PATH", "")
+    cfg = os.path.join(root, ".emscripten")
+    if os.path.isfile(cfg):
+        os.environ.setdefault("EM_CONFIG", cfg)
+
+
+def find_bash():
+    """A POSIX bash that can see Windows drive paths (Git for Windows / MSYS2).
+    Plain "bash" on PATH is often WSL's, which only sees /mnt/c and fails build.sh
+    with a bogus "No such file or directory". Returns an argv[0] string."""
+    import shutil
+    if os.name != "nt":
+        return "bash"
+    candidates = [
+        os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"),
+                     "Git", "bin", "bash.exe"),
+        os.path.join(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"),
+                     "Git", "bin", "bash.exe"),
+        r"C:\devkitPro\msys2\usr\bin\bash.exe",
+    ]
+    git = shutil.which("git")
+    if git:
+        # <git>\cmd\git.exe or <git>\mingw64\bin\git.exe -> <git>\bin\bash.exe
+        base = os.path.dirname(os.path.dirname(git))
+        if os.path.basename(base).lower() in ("mingw64", "mingw32"):
+            base = os.path.dirname(base)
+        candidates.insert(0, os.path.join(base, "bin", "bash.exe"))
+    for c in candidates:
+        if os.path.isfile(c):
+            return c
+    return "bash"
+
+
+def ensure_wasm():
+    """depth_engine.js: the port's own port_stereo_depth.c / port_layer_fixes.c
+    compiled to WebAssembly (see wasm/build.sh). Rebuilt when those sources,
+    the bridge, or the build script are newer -- same "regenerate if stale"
+    convention as maps.json. If emcc is not installed, the workbench still
+    runs: the Map mode's sprite depth coloring just falls back to a visible
+    "WASM ENGINE NOT BUILT" notice instead of silently using a JS
+    reimplementation that could drift from the real logic."""
+    import shutil
+    use_local_emsdk()
+    engine = os.path.join(HERE, "depth_engine.js")
+    sources = newest(
+        os.path.join(ROOT, "platform", "3ds", "source", "port_stereo_depth.c"),
+        os.path.join(ROOT, "platform", "3ds", "source", "port_stereo_depth.h"),
+        os.path.join(ROOT, "platform", "3ds", "source", "port_cutscene_depth.c"),
+        os.path.join(ROOT, "platform", "3ds", "source", "port_cutscene_depth.h"),
+        os.path.join(ROOT, "platform", "3ds", "source", "port_cutscene_depth.inc"),
+        os.path.join(ROOT, "platform", "3ds", "source", "port_layer_fixes.c"),
+        os.path.join(ROOT, "platform", "3ds", "source", "port_layer_fixes.h"),
+        os.path.join(HERE, "wasm", "depth_bridge.c"),
+        os.path.join(HERE, "wasm", "build.sh"),
+    )
+    if os.path.isfile(engine) and os.path.getmtime(engine) >= sources:
+        return
+    if shutil.which("emcc") is None:
+        if not os.path.isfile(engine):
+            print("aviso: emcc no está instalado -- depth_engine.js no se genera.")
+            print("  bootstrap local:  tools\\layer-workbench\\wasm\\setup_emsdk.bat")
+            print("                    tools/layer-workbench/wasm/setup_emsdk.sh")
+            print("  o instala Emscripten a mano y corre wasm/build.sh")
+            print("  (https://emscripten.org/docs/getting_started/downloads.html)")
+        return
+    print("generando depth_engine.js (wasm)...")
+    # Forward slashes: bash (Git Bash on Windows) treats backslashes in an argv
+    # path as escapes and would collapse "D:\Users\..." to "DUsers...".
+    build_sh = os.path.join(HERE, "wasm", "build.sh").replace("\\", "/")
+    try:
+        subprocess.run([find_bash(), build_sh], check=True)
+    except subprocess.CalledProcessError as e:
+        print("  (fallo compilando el motor wasm, sigo sin él: %s)" % e)
+
+
 FIXES = os.path.join(ROOT, "platform", "3ds", "source", "port_layer_fixes.inc")
 SPRITE_FIXES = os.path.join(ROOT, "platform", "3ds", "source", "port_sprite_depth.inc")
+CUTSCENE_FIXES = os.path.join(ROOT, "platform", "3ds", "source", "port_cutscene_depth.inc")
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
-    """Lo de siempre, más /fixes y /sprite-fixes para leer y escribir los .inc.
+    """Lo de siempre, más /fixes, /sprite-fixes y /cutscene-fixes para leer y
+    escribir los .inc.
 
-    Sólo escucha en 127.0.0.1 y sólo escribe en esas dos rutas concretas: no
-    es un servidor de archivos general con escritura.
+    Sólo escucha en 127.0.0.1 y sólo escribe en esas rutas concretas: no es un
+    servidor de archivos general con escritura.
     """
 
     # ruta -> (fichero, marca X-macro para el recuento del log)
     ENDPOINTS = {
         "/fixes": (FIXES, b"PORT_LAYER_FIX("),
         "/sprite-fixes": (SPRITE_FIXES, b"PORT_SPRITE_DEPTH("),
+        "/cutscene-fixes": (CUTSCENE_FIXES, b"PORT_CUTSCENE_DEPTH("),
     }
 
     def end_headers(self):
@@ -186,6 +285,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 def main():
     ensure_maps()
     ensure_sprites()
+    ensure_wasm()
     os.chdir(HERE)
     # Sólo desde esta máquina: sirve el repo y escribe en él, no hay por qué
     # exponerlo. Si el puerto está pillado -- otra copia abierta -- se prueba el
@@ -202,8 +302,9 @@ def main():
 
     url = "http://127.0.0.1:%d/index.html" % port
     print("banco de capas en " + url + "   (Ctrl+C para parar)")
-    print("correcciones capas   " + os.path.relpath(FIXES, ROOT))
-    print("correcciones sprites " + os.path.relpath(SPRITE_FIXES, ROOT))
+    print("correcciones capas      " + os.path.relpath(FIXES, ROOT))
+    print("correcciones sprites    " + os.path.relpath(SPRITE_FIXES, ROOT))
+    print("correcciones cinemáticas " + os.path.relpath(CUTSCENE_FIXES, ROOT))
     threading.Timer(0.4, lambda: webbrowser.open(url)).start()
     try:
         server.serve_forever()
