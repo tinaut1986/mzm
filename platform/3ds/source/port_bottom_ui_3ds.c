@@ -374,7 +374,6 @@ extern void PortPpuMzm_DebugRefillAmmo(void);
 extern void PortPpuMzm_DebugGetAmmoText(char* out, int outSize);
 
 static void RenderStateView(void);
-static void HandleStateTouch(int x, int y, bool isNewTap);
 
 static void RenderDebugToolsModal(int lang);
 static bool HandleDebugToolsModalTouch(int x, int y);
@@ -1158,6 +1157,8 @@ static void DrawStatusDebugButtons(void) {
     }
 }
 #endif /* PORT_DEBUG_TOOLS_ACTIVE */
+
+static void HandleStateTouch(int x, int y, bool isNewTap);
 
 void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
     /* Any stylus contact can move something (pan, button, modal); redraw the
