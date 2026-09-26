@@ -375,6 +375,25 @@ def extract_errors(output_text):
     return error_lines
 
 
+PORTLIB_PACKAGES = "3ds-curl 3ds-mbedtls 3ds-zlib"
+PORTLIB_FILES = ("libcurl.a", "libmbedtls.a", "libmbedx509.a", "libmbedcrypto.a", "libz.a")
+
+
+def missing_portlibs():
+    """Names of the 3DS portlib archives (used by the self-updater) not installed."""
+    default = "/opt/devkitpro" if os.name != "nt" else r"C:\devkitPro"
+    libdir = os.path.join(os.environ.get("DEVKITPRO", default), "portlibs", "3ds", "lib")
+    return [f for f in PORTLIB_FILES if not os.path.isfile(os.path.join(libdir, f))]
+
+
+def print_portlibs_hint(missing):
+    installer = "pacman" if os.name == "nt" else "dkp-pacman"
+    where = " (en la shell MSYS2 de devkitPro)" if os.name == "nt" else " (puede requerir sudo)"
+    print(f"\n{BOLD}{YELLOW}Faltan librerias de la 3DS:{RESET} {', '.join(missing)}")
+    print(f"  El actualizador automatico las necesita. Instalalas con:{where}")
+    print(f"    {BOLD}{installer} -S {PORTLIB_PACKAGES}{RESET}\n")
+
+
 def run_build(mode, send_ftp=False, ftp_host="", ftp_port=5000, clean=True, dry_run=False, jobs=None, verbose=False):
     """Ejecuta la compilación según los parámetros indicados."""
     if jobs is None:
@@ -412,6 +431,12 @@ def run_build(mode, send_ftp=False, ftp_host="", ftp_port=5000, clean=True, dry_
     extra_path = os.pathsep.join([p for p in tool_paths if os.path.isdir(p)])
     if extra_path:
         env["PATH"] = extra_path + os.pathsep + env.get("PATH", "")
+
+    missing = missing_portlibs()
+    if missing:
+        print_portlibs_hint(missing)
+        if not dry_run:
+            return 1
 
     if send_ftp:
         env["FTP_HOST"] = ftp_host

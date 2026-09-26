@@ -123,6 +123,19 @@ void Platform3DS_Shutdown(void) {
     sRunning = false;
 }
 
+/* Asks the game to exit through the same path as closing it from the HOME
+ * menu (Port_Bios_Halt polls Platform3DS_QuitRequested); used to relaunch
+ * into a freshly installed build. */
+static volatile bool sQuitRequested = false;
+
+void Platform3DS_RequestQuit(void) {
+    sQuitRequested = true;
+}
+
+bool Platform3DS_QuitRequested(void) {
+    return sQuitRequested;
+}
+
 bool Platform3DS_IsRunning(void) {
     sRunning = sRunning && aptMainLoop();
     return sRunning;

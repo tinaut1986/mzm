@@ -10,6 +10,7 @@
 #include "port_debug_tools.h"
 #include "port_debug_log.h"
 #include "port_save_state.h"
+#include "port_updater_3ds.h"
 
 /* GBA & MZM minimap and state globals */
 extern uint16_t gDecompressedMinimapVisitedTiles[32 * 32];
@@ -210,12 +211,34 @@ typedef struct { float x, w; PortBottomTab tab; int icon; } BottomTabSlot;
 #define BOTTOM_TAB_SLOT_MAX 6
 static int BottomTabLayout(BottomTabSlot slots[BOTTOM_TAB_SLOT_MAX]);
 
+/* Update prompt geometry, shared by the renderer and the touch handler. The
+ * OK button of the error prompt reuses the YES slot. */
+#define UPD_BTN_Y0 138
+#define UPD_BTN_Y1 166
+#define UPD_YES_X0 44
+#define UPD_YES_X1 148
+#define UPD_NO_X0 172
+#define UPD_NO_X1 276
+
 /* Called once per frame (even on frames the UI is not redrawn) so time-based
  * state keeps advancing: the blink counter and the RA session pump. */
 void Port_BottomUI_FrameTick(void) {
     extern void Port_RA_Update(void); /* port_retroachievements_3ds.h, included below */
     ++sFrameCounter;
     Port_RA_Update();
+
+    /* The prompt is raised by the updater's worker thread: redraw when it (or
+     * the install progress it shows) changes instead of waiting for a tap. */
+    {
+        static int sLastPrompt = 0, sLastProgress = -1;
+        int pr = (int)Port_Updater_GetPrompt();
+        int pg = Port_Updater_GetProgress();
+        if (pr != sLastPrompt || (pr == (int)UPDATER_PROMPT_PROGRESS && pg != sLastProgress)) {
+            sLastPrompt = pr;
+            sLastProgress = pg;
+            sBottomUiDirty = true;
+        }
+    }
 
     /* Refresh battery ~every 2s; it moves far slower than the UI redraws.
      * ptm:u may not be up yet the first time Port_BottomUI_Init ran (service
@@ -280,6 +303,7 @@ static bool sShowAchPacksModal = false;
 static bool sAchFromPacks = false;
 static bool sShowRASettingsModal = false;
 static bool sShowDisplayModal = false;
+static bool sShowUpdateModal = false;
 
 #ifdef PORT_DEBUG_TOOLS_ACTIVE
 /* DEBUG tab -> [HERRAMIENTAS] modal. Touchable equivalent of the L+R+<btn>
@@ -1170,6 +1194,18 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
      * unchanged. */
     if (isNewTap) Port_BottomUI_NoteTap(x, y);
 
+    /* The update prompt is modal over every tab: it swallows all touches. */
+    if (Port_Updater_GetPrompt() != UPDATER_PROMPT_NONE) {
+        if (isNewTap) {
+            const bool isError = (Port_Updater_GetPrompt() == UPDATER_PROMPT_ERROR);
+            const bool yes = (y >= UPD_BTN_Y0 && y <= UPD_BTN_Y1) &&
+                             (isError ? (x >= 116 && x <= 204) : (x >= UPD_YES_X0 && x <= UPD_YES_X1));
+            const bool no = (x >= UPD_NO_X0 && x <= UPD_NO_X1 && y >= UPD_BTN_Y0 && y <= UPD_BTN_Y1);
+            if (yes || no) Port_Updater_AnswerPrompt(yes);
+        }
+        return;
+    }
+
     /* Top navigation bar: icon tabs, left-aligned (Y: 2 to 24). */
     if (y >= 2 && y <= 24) {
         if (isNewTap) {
@@ -1661,6 +1697,32 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
             return;
         }
 
+        if (sShowUpdateModal) {
+            if (isNewTap) {
+                UpdaterState us = Port_Updater_GetState();
+                if (x >= 100 && x <= 220 && y >= 204 && y <= 230) {
+                    sShowUpdateModal = false;
+                } else if (x >= 10 && x <= 308) {
+                    if (y >= 56 && y <= 80) {
+                        Port_Updater_SetAuto(!Port_Updater_GetAuto());
+                        Port_Config_Save();
+                    } else if (y >= 84 && y <= 108) {
+                        Port_Updater_SetBeta(!Port_Updater_GetBeta());
+                        Port_Config_Save();
+                    } else if (y >= 140 && y <= 172) {
+                        if (us == UPDATER_AVAILABLE) {
+                            Port_Updater_Install();
+                        } else if (us == UPDATER_INSTALLED) {
+                            Port_Updater_Restart();
+                        } else if (us != UPDATER_CHECKING && us != UPDATER_DOWNLOADING) {
+                            Port_Updater_CheckNow();
+                        }
+                    }
+                }
+            }
+            return;
+        }
+
         if (sShowRASettingsModal) {
             if (isNewTap) {
                 if (x >= 100 && x <= 220 && y >= 204 && y <= 230) {
@@ -1799,9 +1861,11 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
                 sShowRemapModal = true;
                 sRemapScrollY = 0.0f;
                 sRemapSelectButtonIdx = -1;
-            } else if (x >= 16 && x <= 304 && y >= 164 && y <= 192) {
+            } else if (x >= 16 && x <= 156 && y >= 164 && y <= 192) {
                 sConfirmIsRestart = true;
                 sShowConfirmModal = true;
+            } else if (x >= 164 && x <= 304 && y >= 164 && y <= 192) {
+                sShowUpdateModal = true;
             }
         }
     }
@@ -3295,6 +3359,125 @@ static void RenderRASettingsModal(int lang) {
                C2D_Color32(255, 255, 255, 255), BTN_BLUE_BODY, BTN_BLUE_BORDER);
 }
 
+/* Self-update modal: auto-update + channel toggles, a status line and one
+ * context-sensitive action button (check / install / restart). */
+static void RenderUpdateModal(int lang) {
+    const bool es = (lang == 6);
+    const UpdaterState us = Port_Updater_GetState();
+    const uint32_t rowBody = C2D_Color32(16, 24, 40, 255);
+    const uint32_t rowBorder = C2D_Color32(50, 80, 130, 255);
+    const uint32_t white = C2D_Color32(255, 255, 255, 255);
+    const uint32_t green = C2D_Color32(80, 255, 120, 255);
+    const uint32_t red = C2D_Color32(255, 100, 100, 255);
+    char line[64];
+
+    C2D_DrawRectSolid(10.0f, 26.0f, 0.85f, 300.0f, 206.0f, C2D_Color32(10, 14, 24, 250));
+    C2D_DrawRectSolid(10.0f, 26.0f, 0.84f, 300.0f, 206.0f, C2D_Color32(40, 70, 120, 255));
+    DrawText(20.0f, 32.0f, 1.0f, es ? "ACTUALIZACIONES" : "UPDATES", C2D_Color32(255, 215, 0, 255));
+    DrawText(170.0f, 32.0f, 1.0f, MZM_PORT_VERSION, C2D_Color32(140, 160, 190, 255));
+
+    DrawButtonBox(16.0f, 56.0f, 288.0f, 24.0f, rowBody, rowBorder);
+    DrawText(24.0f, 65.0f, 1.0f, es ? "AUTOACTUALIZAR:" : "AUTO UPDATE:", white);
+    bool autoUp = Port_Updater_GetAuto();
+    DrawText(170.0f, 65.0f, 1.0f, autoUp ? (es ? "ACTIVADO" : "ENABLED") : (es ? "DESACTIVADO" : "DISABLED"),
+             autoUp ? green : red);
+
+    DrawButtonBox(16.0f, 84.0f, 288.0f, 24.0f, rowBody, rowBorder);
+    DrawText(24.0f, 93.0f, 1.0f, es ? "CANAL:" : "CHANNEL:", white);
+    DrawText(170.0f, 93.0f, 1.0f,
+             Port_Updater_GetBeta() ? (es ? "RELEASES + BETAS" : "RELEASES + BETAS") : (es ? "SOLO RELEASES" : "RELEASES ONLY"),
+             C2D_Color32(120, 200, 255, 255));
+
+    /* Status (not tappable) */
+    DrawButtonBox(16.0f, 112.0f, 288.0f, 24.0f, rowBody, rowBorder);
+    uint32_t statusCol = C2D_Color32(140, 160, 190, 255);
+    switch (us) {
+        case UPDATER_CHECKING:    snprintf(line, sizeof(line), "%s", es ? "BUSCANDO..." : "CHECKING..."); statusCol = C2D_Color32(255, 220, 80, 255); break;
+        case UPDATER_UP_TO_DATE:  snprintf(line, sizeof(line), "%s", es ? "YA ESTAS AL DIA" : "UP TO DATE"); statusCol = green; break;
+        case UPDATER_AVAILABLE:   snprintf(line, sizeof(line), "%s %s", es ? "NUEVA:" : "NEW:", Port_Updater_GetRemoteTag()); statusCol = C2D_Color32(255, 220, 80, 255); break;
+        case UPDATER_DOWNLOADING: snprintf(line, sizeof(line), "%s %d%%", es ? "INSTALANDO" : "INSTALLING", Port_Updater_GetProgress()); statusCol = C2D_Color32(255, 220, 80, 255); break;
+        case UPDATER_INSTALLED:   snprintf(line, sizeof(line), "%s %s", es ? "INSTALADA" : "INSTALLED", Port_Updater_GetRemoteTag()); statusCol = green; break;
+        case UPDATER_ERROR:       snprintf(line, sizeof(line), "%s", Port_Updater_GetMessage()); statusCol = red; break;
+        default:                  snprintf(line, sizeof(line), "%s", es ? "SIN COMPROBAR" : "NOT CHECKED"); break;
+    }
+    DrawText(24.0f, 121.0f, 1.0f, line, statusCol);
+    if (us == UPDATER_DOWNLOADING) {
+        C2D_DrawRectSolid(16.0f, 132.0f, 0.9f, 288.0f * (float)Port_Updater_GetProgress() / 100.0f, 4.0f, green);
+    }
+
+    /* Action button */
+    const char* actionLabel;
+    uint32_t actionBody = BTN_BLUE_BODY, actionBorder = BTN_BLUE_BORDER;
+    switch (us) {
+        case UPDATER_AVAILABLE:   actionLabel = es ? "INSTALAR AHORA" : "INSTALL NOW"; break;
+        case UPDATER_INSTALLED:   actionLabel = es ? "REINICIAR AHORA" : "RESTART NOW"; break;
+        case UPDATER_CHECKING:
+        case UPDATER_DOWNLOADING: actionLabel = "..."; actionBody = C2D_Color32(30, 34, 44, 255); actionBorder = C2D_Color32(70, 76, 90, 255); break;
+        default:                  actionLabel = es ? "BUSCAR ACTUALIZACION" : "CHECK NOW"; break;
+    }
+    DrawButton(16.0f, 142.0f, 288.0f, 28.0f, actionLabel, white, actionBody, actionBorder);
+
+    DrawButton(116.0f, 206.0f, 88.0f, 22.0f, es ? "CERRAR" : "CLOSE", white, BTN_BLUE_BODY, BTN_BLUE_BORDER);
+}
+
+/* Modal prompt for the self-updater, drawn over whichever tab is active. */
+static void RenderUpdatePrompt(int lang) {
+    const UpdaterPrompt pr = Port_Updater_GetPrompt();
+    const bool es = (lang == 6);
+    const uint32_t white = C2D_Color32(255, 255, 255, 255);
+    const uint32_t gold = C2D_Color32(255, 215, 0, 255);
+    const char* title = "";
+    const char* question = "";
+    char line[64];
+
+    if (pr == UPDATER_PROMPT_NONE) return;
+
+    C2D_DrawRectSolid(0.0f, 0.0f, 0.97f, 320.0f, 240.0f, C2D_Color32(0, 0, 0, 170));
+    C2D_DrawRectSolid(20.0f, 58.0f, 0.98f, 280.0f, 122.0f, C2D_Color32(40, 70, 120, 255));
+    C2D_DrawRectSolid(22.0f, 60.0f, 0.99f, 276.0f, 118.0f, C2D_Color32(10, 14, 24, 255));
+
+    switch (pr) {
+        case UPDATER_PROMPT_ASK_INSTALL:
+            title = es ? "ACTUALIZACION DISPONIBLE" : "UPDATE AVAILABLE";
+            question = es ? "INSTALAR AHORA?" : "INSTALL NOW?";
+            snprintf(line, sizeof(line), "%s -> %s", MZM_PORT_VERSION, Port_Updater_GetRemoteTag());
+            break;
+        case UPDATER_PROMPT_PROGRESS:
+            title = es ? "ACTUALIZANDO" : "UPDATING";
+            snprintf(line, sizeof(line), "%d%%", Port_Updater_GetProgress());
+            break;
+        case UPDATER_PROMPT_ASK_RESTART:
+            title = es ? "ACTUALIZACION INSTALADA" : "UPDATE INSTALLED";
+            question = es ? "REINICIAR AHORA?" : "RESTART NOW?";
+            snprintf(line, sizeof(line), "%s", Port_Updater_GetRemoteTag());
+            break;
+        default:
+            title = es ? "ERROR DE ACTUALIZACION" : "UPDATE FAILED";
+            snprintf(line, sizeof(line), "%s", Port_Updater_GetMessage());
+            break;
+    }
+    DrawTextCentered(160.0f, 70.0f, 1.0f, title, gold);
+    DrawTextCentered(160.0f, 94.0f, 1.0f, line, C2D_Color32(150, 200, 255, 255));
+    if (question[0]) DrawTextCentered(160.0f, 114.0f, 1.0f, question, white);
+    if (pr == UPDATER_PROMPT_ERROR && Port_Updater_KeptCia()) {
+        DrawTextCentered(160.0f, 112.0f, 1.0f, es ? "CIA EN SD: mzm-update.cia" : "CIA KEPT: sdmc:/mzm-update.cia",
+                         C2D_Color32(255, 220, 80, 255));
+    }
+
+    if (pr == UPDATER_PROMPT_PROGRESS) {
+        C2D_DrawRectSolid(40.0f, 132.0f, 0.99f, 240.0f, 8.0f, C2D_Color32(30, 40, 60, 255));
+        C2D_DrawRectSolid(40.0f, 132.0f, 1.0f, 240.0f * (float)Port_Updater_GetProgress() / 100.0f, 8.0f,
+                          C2D_Color32(80, 255, 120, 255));
+    } else if (pr == UPDATER_PROMPT_ERROR) {
+        DrawButton(116.0f, (float)UPD_BTN_Y0, 88.0f, 28.0f, es ? "ACEPTAR" : "OK", white, BTN_BLUE_BODY, BTN_BLUE_BORDER);
+    } else {
+        DrawButton((float)UPD_YES_X0, (float)UPD_BTN_Y0, (float)(UPD_YES_X1 - UPD_YES_X0), 28.0f,
+                   es ? "SI" : "YES", white, C2D_Color32(16, 60, 32, 255), C2D_Color32(55, 150, 95, 255));
+        DrawButton((float)UPD_NO_X0, (float)UPD_BTN_Y0, (float)(UPD_NO_X1 - UPD_NO_X0), 28.0f,
+                   "NO", white, C2D_Color32(64, 22, 22, 255), C2D_Color32(180, 60, 60, 255));
+    }
+}
+
 /* Action picker popup for remapping */
 static void RenderRemapSelectModal(int lang) {
     if (sRemapSelectButtonIdx < 0 || sRemapSelectButtonIdx >= 10) return;
@@ -4154,8 +4337,12 @@ static void RenderOptionsView(void) {
         "RESTART GAME", "RESTART GAME", "RESTART GAME",
         "SPIEL NEUSTARTEN", "RECOMMENCER PARTIE", "RIAVVIA PARTITA", "REINICIAR PARTIDA"
     };
-    DrawButton(16.0f, 164.0f, 288.0f, 28.0f, restartBtnTitles[lang],
+    DrawButton(16.0f, 164.0f, 140.0f, 28.0f, restartBtnTitles[lang],
                C2D_Color32(255, 150, 150, 255), C2D_Color32(64, 22, 22, 255), C2D_Color32(180, 60, 60, 255));
+
+    /* Updates button, right half of the restart row */
+    DrawButton(164.0f, 164.0f, 140.0f, 28.0f, (lang == 6) ? "ACTUALIZAR" : "UPDATES",
+               C2D_Color32(150, 230, 255, 255), C2D_Color32(16, 44, 64, 255), C2D_Color32(60, 130, 180, 255));
 
     /* Footer */
     DrawTextCentered(160.0f, 212.0f, 1.0f, "METROID ZERO MISSION 3DS " MZM_PORT_VERSION, C2D_Color32(90, 115, 145, 255));
@@ -4163,6 +4350,7 @@ static void RenderOptionsView(void) {
     /* Render active modal on top */
     if (sShowDisplayModal) RenderDisplayModal(lang);
     else if (sShowRASettingsModal) RenderRASettingsModal(lang);
+    else if (sShowUpdateModal) RenderUpdateModal(lang);
     else if (sShowAchPacksModal) RenderAchPacksModal(lang);
     else if (sShowAchievementsModal) {
         RenderAchievementsModal(lang);
@@ -5299,6 +5487,7 @@ void Port_BottomUI_Render(void) {
     /* RA session pump runs every frame in Port_BottomUI_FrameTick; here we
      * only draw the toast (if one is active) onto this frame's target. */
     Port_RA_RenderToastOverlay();
+    RenderUpdatePrompt(GetLang());
 
     /* L+R+START scene recorder indicator (platform_gpu_3ds.c) -- drawn last,
      * on top of whichever tab is active, so it's never hidden by one. Blinks

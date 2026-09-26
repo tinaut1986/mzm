@@ -244,6 +244,12 @@ void Port_Config_Save(void) {
     fprintf(file, "ra_hardcore=%u\n", Port_RA_IsHardcore() ? 1u : 0u);
     fprintf(file, "ra_sound=%u\n", Port_RA_GetNotificationSound() ? 1u : 0u);
     fprintf(file, "ra_notify_top=%u\n", Port_RA_GetNotifyOnTopScreen() ? 1u : 0u);
+    extern bool Port_Updater_GetAuto(void);
+    extern bool Port_Updater_GetBeta(void);
+    extern const char* Port_Updater_GetUrlOverride(void);
+    fprintf(file, "update_auto=%u\n", Port_Updater_GetAuto() ? 1u : 0u);
+    fprintf(file, "update_beta=%u\n", Port_Updater_GetBeta() ? 1u : 0u);
+    if (Port_Updater_GetUrlOverride()[0]) fprintf(file, "update_url=%s\n", Port_Updater_GetUrlOverride());
     fprintf(file, "ra_username=%s\n", Port_RA_GetUsername());
     fprintf(file, "ra_token=%s\n", Port_RA_GetToken());
     fclose(file);
@@ -252,11 +258,19 @@ void Port_Config_Save(void) {
 void Port_Config_Load(void) {
     FILE* file = fopen(sConfigPath, "rb");
     if (!file) return;
-    char line[128];
+    char line[256];
     while (fgets(line, sizeof(line), file) != NULL) {
         char key[64];
         int val = 0;
         if (line[0] == '#') continue;
+        {
+            char url[200];
+            if (sscanf(line, " update_url=%199[^\r\n]", url) == 1) {
+                extern void Port_Updater_SetUrlOverride(const char*);
+                Port_Updater_SetUrlOverride(url);
+                continue;
+            }
+        }
         if (sscanf(line, " ra_username=%63[^\r\n]", key) == 1) {
             extern void Port_RA_SetUsername(const char*);
             Port_RA_SetUsername(key);
@@ -279,6 +293,12 @@ void Port_Config_Load(void) {
         } else if (strcmp(key, "ra_sound") == 0) {
             extern void Port_RA_SetNotificationSound(bool);
             Port_RA_SetNotificationSound(val != 0);
+        } else if (strcmp(key, "update_auto") == 0) {
+            extern void Port_Updater_SetAuto(bool);
+            Port_Updater_SetAuto(val != 0);
+        } else if (strcmp(key, "update_beta") == 0) {
+            extern void Port_Updater_SetBeta(bool);
+            Port_Updater_SetBeta(val != 0);
         } else if (strcmp(key, "ra_notify_top") == 0) {
             extern void Port_RA_SetNotifyOnTopScreen(bool);
             Port_RA_SetNotifyOnTopScreen(val != 0);
