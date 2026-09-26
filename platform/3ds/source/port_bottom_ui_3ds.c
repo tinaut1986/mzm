@@ -458,6 +458,7 @@ extern void Port_Config_SetFramePacing(int mode);
 
 /* RetroAchievements Helpers */
 #include "port_retroachievements_3ds.h"
+#include "port_paths.h"
 
 /* Tapping a card in the list opens a read-only detail popup over it. The
  * chosen achievement is snapshotted rather than referenced, so a background
@@ -4772,7 +4773,7 @@ static bool HandleDebugToolsModalTouch(int x, int y) {
             DebugToolsSetMsg(PlatformGpu3DS_IsPerfRecording() ? "PERF ON" : "PERF OFF");
             break;
         case 4:
-            Port_GpuRenderer_DumpAtlas("sdmc:/3ds/mzm-live-atlas.ppm", "sdmc:/3ds/mzm-live-atlas-keys.csv");
+            Port_GpuRenderer_DumpAtlas(PORT_DEBUG_DIR "/mzm-live-atlas.ppm", PORT_DEBUG_DIR "/mzm-live-atlas-keys.csv");
             DebugToolsSetMsg("ATLAS -> sdmc:/3ds/");
             break;
         case 5:

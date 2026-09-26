@@ -2,6 +2,7 @@
 
 #include "port_debug_log.h"
 #include "port_rom.h"
+#include "port_paths.h"
 
 /* Metroid Zero Mission 3DS - Main Entrypoint */
 
@@ -14,14 +15,13 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#define APP_DIR "sdmc:/3ds/Metroid Zero Mission 3DS"
+#define APP_DIR PORT_APP_DIR
 #define ROM_PATH_SIZE 512
 
 extern void agbmain(void);
 
 static int PrepareStorage(void) {
-    mkdir("sdmc:/3ds", 0777);
-    if (mkdir(APP_DIR, 0777) != 0 && errno != EEXIST) return 0;
+    if (!Port_Paths_Ensure()) return 0;
     return chdir(APP_DIR) == 0;
 }
 
@@ -102,7 +102,8 @@ static int FindRom(char* out, size_t outSize) {
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
-    remove("sdmc:/3ds/mzm-debug.log");
+    Port_Paths_Ensure();
+    remove(PORT_DEBUG_DIR "/mzm-debug.log");
     Port_DebugLog("main: start");
     if (!Platform3DS_Init()) return 1;
     Port_DebugLog("main: Platform3DS_Init done");

@@ -30,7 +30,7 @@ typedef enum {
 } UpdaterPrompt;
 
 UpdaterPrompt Port_Updater_GetPrompt(void);
-/* True when a failed install left the downloaded CIA at sdmc:/mzm-update.cia
+/* True when a failed install left the downloaded CIA at <game folder>/update/mzm-update.cia
  * so it can be installed by hand (FBI). */
 bool Port_Updater_KeptCia(void);
 /* YES/NO (or OK) on the current prompt. */

@@ -8,6 +8,7 @@
 
 #include "port_updater_3ds.h"
 #include "port_updater_parse.h"
+#include "port_paths.h"
 
 #ifndef MZM_PORT_VERSION
 #define MZM_PORT_VERSION "v0.0.0"
@@ -15,7 +16,7 @@
 
 #define UPDATER_DEFAULT_URL "https://api.github.com/repos/tinaut1986/mzm/releases?per_page=8"
 #define UPDATER_URL_MAX 200
-#define UPDATER_CIA_PATH "sdmc:/mzm-update.cia"
+#define UPDATER_CIA_PATH PORT_UPDATE_DIR "/mzm-update.cia"
 #define UPDATER_JSON_MAX (192 * 1024)
 #define UPDATER_CHUNK (64 * 1024)
 #define UPDATER_MAX_REDIRECTS 5

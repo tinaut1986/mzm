@@ -8,7 +8,7 @@
  * dump from Luma3DS -- but a genuine infinite loop (no fault, just spinning)
  * produces no dump at all, and there's no way to see on-screen console
  * output after a hang without another deploy/observe cycle. This appends a
- * line to sdmc:/3ds/mzm-debug.log, so whatever the LAST line written is
+ * line to <game folder>/debug/mzm-debug.log, so whatever the LAST line written is
  * tells us exactly where execution got stuck.
  *
  * NOTHING IS WRITTEN unless logging has been switched on at runtime from

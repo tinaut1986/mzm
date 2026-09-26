@@ -126,6 +126,7 @@ static void UpdateFpsWindow(void) {
 }
 
 #include "port_bottom_ui_3ds.h"
+#include "port_paths.h"
 #include <stdio.h>
 
 static int sFpsPosition = 1; /* 0 = OFF, 1 = BOTTOM-LEFT, 2 = BOTTOM-RIGHT, 3 = TOP-LEFT, 4 = TOP-RIGHT */
@@ -979,7 +980,7 @@ void PortPpuMzm_DumpSamusState(void) {
     extern unsigned PlatformGpu3DS_DumpSetIndex(void);
     const unsigned set = PlatformGpu3DS_DumpSetIndex();
     char dumpPath[256];
-    snprintf(dumpPath, sizeof(dumpPath), "sdmc:/3ds/mzm-dump-%02u-samus.txt", set);
+    snprintf(dumpPath, sizeof(dumpPath), PORT_DEBUG_DIR "/mzm-dump-%02u-samus.txt", set);
     FILE* f = fopen(dumpPath, "w");
     if (!f)
         return;
@@ -999,14 +1000,14 @@ void PortPpuMzm_DumpSamusState(void) {
 
     fclose(f);
 
-    snprintf(dumpPath, sizeof(dumpPath), "sdmc:/3ds/mzm-dump-%02u-samusdata.bin", set);
+    snprintf(dumpPath, sizeof(dumpPath), PORT_DEBUG_DIR "/mzm-dump-%02u-samusdata.bin", set);
     FILE* fb = fopen(dumpPath, "wb");
     if (fb) {
         fwrite(&gSamusData, 1, sizeof(gSamusData), fb);
         fclose(fb);
     }
 
-    snprintf(dumpPath, sizeof(dumpPath), "sdmc:/3ds/mzm-dump-%02u-samusphysics.bin", set);
+    snprintf(dumpPath, sizeof(dumpPath), PORT_DEBUG_DIR "/mzm-dump-%02u-samusphysics.bin", set);
     fb = fopen(dumpPath, "wb");
     if (fb) {
         fwrite(&gSamusPhysics, 1, sizeof(gSamusPhysics), fb);
@@ -1088,7 +1089,7 @@ void PortPpuMzm_GetSamusRecordState(uint32_t* out) {
  * that only shows up in one specific room, where re-walking there after
  * every new CIA install is the actual cost.
  * ------------------------------------------------------------------- */
-#define PORT_WARP_POINT_PATH "sdmc:/3ds/mzm-warp-point.txt"
+#define PORT_WARP_POINT_PATH PORT_STATES_DIR "/mzm-warp-point.txt"
 
 /* Populated by RoomInitDoors (src/room.c). Same extern src/menus/boot_debug.c
  * uses for the original game's own room/door debug menu. */

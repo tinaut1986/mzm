@@ -10,6 +10,7 @@
 #include "port_gpu_renderer.h"   /* Port_GpuRenderer_InvalidateAll */
 #include "port_save_state.h"
 #include "constants/game_state.h" /* GM_INGAME, SUB_GAME_MODE_PLAYING */
+#include "port_paths.h"
 
 /* Decomp globals used only for the "am I in gameplay" gate and the slot
  * label -- extern'd rather than pulling in the big struct headers. */
@@ -36,7 +37,7 @@ extern char __ss_bss_start[],  __ss_bss_end[];
 #define SS_MAGIC    0x314D5A53u   /* "SZM1" */
 #define SS_VERSION  2
 #define SS_REGIONS  10
-#define SS_PATH_FMT "sdmc:/3ds/mzm-state%d.bin"
+#define SS_PATH_FMT PORT_STATES_DIR "/mzm-state%d.bin"
 
 /* A snapshot is a raw dump of EWRAM/IWRAM/.data/.bss, and those regions are
  * full of ABSOLUTE host pointers whose targets only exist at the addresses

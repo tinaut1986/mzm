@@ -401,7 +401,7 @@ void Port_Bios_Halt(void) {
      * durationUs a true frame-to-frame interval. */
     /* Temporarily sleep-paced instead of gspWaitForEvent(0, true): the
      * latter never unblocks on real hardware here (confirmed via
-     * sdmc:/3ds/mzm-debug.log bisection -- neither the GSP-event-thread
+     * <game folder>/debug/mzm-debug.log bisection -- neither the GSP-event-thread
      * priority collision theory (fixed, no change) nor missing
      * aptMainLoop() pumping (added above, no change) explained it). Since
      * nothing is actually presented to the GPU yet (port_ppu_3ds.c isn't

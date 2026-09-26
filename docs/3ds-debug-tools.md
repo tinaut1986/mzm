@@ -61,8 +61,7 @@ unambiguously one press. That matters beyond convenience: before this, a
 set could silently end up a mix of two presses, which happened during the
 issue #17 investigation and briefly looked like corrupted source data.
 
-All dumped files land in `sdmc:/3ds/` (i.e. the SD card's `3ds` folder, next
-to the `Metroid Zero Mission 3DS` save folder), fetchable over FTP if the
+All dumped files land in `debug/` inside the game folder (`sdmc:/3ds/Metroid Zero Mission 3DS/debug/`), fetchable over FTP if the
 console is running an FTP server (see `make ftp` / `FTP_HOST`/`FTP_PORT` in
 `platform/3ds/README.md`).
 
@@ -219,7 +218,7 @@ fast-changing scene breaks (e.g. issue #17's death animation, where the
 first few frames -- a green palette flash -- turned out to be *correct*,
 and the actual corruption happens some number of frames later).
 
-- **First touch**: opens `sdmc:/3ds/mzm-rec.bin` (truncating any previous
+- **First touch**: opens `debug/mzm-rec-NN.bin` (truncating any previous
   recording) and starts sampling.
 - **While active**: every 4 frames (~15 samples/sec at 60 FPS,
   `kRecordEveryNFrames` in `platform_gpu_3ds.c`), appends one fixed-size
@@ -245,7 +244,7 @@ and tiles; ask for the exact script if starting a fresh session on this).
 **Companion screenshots, every `kRecordScreenshotEverySamples`-th sample
 (default 4, i.e. ~4/sec):** a real left-eye screenshot (same mechanism as
 `PlatformGpu3DS_DumpScreens`' single shot) is written to its own file,
-`sdmc:/3ds/mzm-rec-NN-shot-MMMM.rgb` (headerless raw RGB8, 240x400 portrait,
+`debug/mzm-rec-NN-shot-MMMM.rgb` (headerless raw RGB8, 240x400 portrait,
 same rotate-90 handling as the screen dump `.rgb` files), where `NNNN` is the
 0-indexed sample number -- i.e. it lines up with the Nth record when
 splitting `mzm-rec.bin` per the snippet below. This is the only way to tell
@@ -623,7 +622,7 @@ geometry.
 | `AREA  < name >` | Steps the target area. Resets the door index if the current one is out of range for the new area. |
 | `PUERTA < n / max >` | Steps the target door. The next row shows which room that door leads into, so a room can be found by stepping doors without knowing any door ids up front. |
 | `IR A ESA PUERTA` | Warps to the selected (area, door). |
-| `GUARDAR PUNTO AQUI` | Records the door Samus last came through (`gCurrentArea` + `gLastDoorUsed`), i.e. "bring me back to this room". Persisted to `sdmc:/3ds/mzm-warp-point.txt`, so it survives a reflash. |
+| `GUARDAR PUNTO AQUI` | Records the door Samus last came through (`gCurrentArea` + `gLastDoorUsed`), i.e. "bring me back to this room". Persisted to `states/mzm-warp-point.txt`, so it survives a reflash. |
 | `IR AL PUNTO GUARDADO` | Warps to that saved point. |
 
 The two lines under the rows show the saved point and where Samus is right

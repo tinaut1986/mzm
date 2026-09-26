@@ -88,7 +88,7 @@ const char* PlatformGpu3DS_RecordLastFile(void);
 /* Perf-only frame-time recorder (L+R+A, issue #20): samples every emulated
  * frame's duration + OAM census into a RAM buffer with no SD I/O while
  * running (unlike the full recorder above, which slows the game down);
- * flushing to sdmc:/3ds/mzm-perf.bin happens on stop. Same tick contract as
+ * flushing to <game folder>/debug/mzm-perf-NN.bin happens on stop. Same tick contract as
  * RecordTick: once per emulated GBA frame from Port_Bios_Halt. */
 void PlatformGpu3DS_TogglePerfRecording(void);
 void PlatformGpu3DS_PerfRecordTick(void);

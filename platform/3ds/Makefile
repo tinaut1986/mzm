@@ -254,7 +254,7 @@ endif
 # PORT_PPU_PERF_LOG) for the logs, each its own EXTRA_CFLAGS. Now a
 # DEBUG_TOOLS=1 build compiles every stream in and you pick which one(s)
 # write from the menu: LOG mode OFF / ALL / GPU / AUDIO / PERF (nothing hits
-# sdmc:/3ds/mzm-debug.log while it is OFF -- port_debug_log.h). So a debug
+# <game folder>/debug/mzm-debug.log while it is OFF -- port_debug_log.h). So a debug
 # build that is never asked to log costs nothing, and the flag split stopped
 # earning its keep.
 # The clean matters: changing flags alone does not invalidate existing
