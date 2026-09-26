@@ -50,6 +50,9 @@ This target builds the native dual-screen Nintendo 3DS port of **Metroid: Zero M
 ### Prerequisites
 
 - [devkitPro](https://devkitpro.org/) with `devkitARM`, `libctru`, `citro2d`, and `citro3d` installed.
+- The 3DS portlibs used by the self-updater: `dkp-pacman -S 3ds-curl 3ds-mbedtls 3ds-zlib`
+  (on Windows run `pacman -S 3ds-curl 3ds-mbedtls 3ds-zlib` in the *devkitPro MSYS2* shell).
+  The build stops with this same hint if they are missing.
 - `makerom` and `bannertool` (optional, required for `.cia` generation).
 
 ### Compilation

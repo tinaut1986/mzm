@@ -108,6 +108,8 @@ SRCS_3DS := \
 	$(CURDIR)/source/port_sprite_depth_oam.c \
 	$(CURDIR)/source/port_mzm_audio_3ds.c \
 	$(CURDIR)/source/port_retroachievements_3ds.c \
+	$(CURDIR)/source/port_updater_3ds.c \
+	$(CURDIR)/source/port_updater_parse.c \
 	$(CURDIR)/source/port_ra_iwram_map.c \
 	$(CURDIR)/source/port_ra_badges_data.c \
 	$(CURDIR)/source/port_ra_unlock_sound_data.c \
@@ -304,7 +306,7 @@ INCLUDES := \
 # vendored copy in this directory (3dsx.ld), which adds the save-state section
 # brackets. ewram_symbols.ld stays a pure symbol-assignment augmenter.
 LDFLAGS  := -specs=3dsx.specs -B$(CURDIR) -g $(ARCH) -Wl,-Map,$(BUILD)/mzm-3ds.map -Wl,--gc-sections -T $(CURDIR)/ewram_symbols.ld
-LIBS     := -L$(CTRULIB)/lib -L$(PORTLIBS)/lib -lcitro2d -lcitro3d -lctru -lm
+LIBS     := -L$(CTRULIB)/lib -L$(PORTLIBS)/lib -lcitro2d -lcitro3d -lcurl -lmbedtls -lmbedx509 -lmbedcrypto -lz -lctru -lm
 
 
 # The committed tools/bin/{makerom,bannertool} are Linux x86-64 ELF binaries,
@@ -329,7 +331,16 @@ endif
 # a bare `make` built one object and stopped, and CI's `cp mzm-3ds.cia` failed.
 .DEFAULT_GOAL := all
 
-all: $(TARGET).cia
+# The self-updater needs libcurl + mbedtls (the console's own TLS cannot talk
+# to GitHub). Fail early with the fix instead of a wall of linker errors.
+.PHONY: check-portlibs
+check-portlibs:
+	@test -f $(PORTLIBS)/lib/libcurl.a -a -f $(PORTLIBS)/lib/libmbedtls.a || { \
+		echo "error: missing 3DS portlibs (libcurl/mbedtls). Install them with:"; \
+		echo "  dkp-pacman -S 3ds-curl 3ds-mbedtls 3ds-zlib     (Windows: pacman -S ... in the devkitPro MSYS2 shell)"; \
+		exit 1; }
+
+all: check-portlibs $(TARGET).cia
 
 # La lista de correcciones es un include opcional, y cuando port_layer_fixes.c
 # se compiló por primera vez todavía no existía: su .d no la menciona y make no
@@ -368,6 +379,10 @@ test:
 	@$(BUILD)/layer_fixes_test
 	@$(TEST_CC) -std=c11 -O1 -Wall -Wextra -Werror -I$(CURDIR)/source 		-o $(BUILD)/oam_census_test 		$(CURDIR)/tests/oam_census_test.c $(CURDIR)/source/port_oam_census.c
 	@$(BUILD)/oam_census_test
+	@$(TEST_CC) -std=c11 -O1 -Wall -Wextra -Werror -I$(CURDIR)/source \
+		-o $(BUILD)/updater_parse_test \
+		$(CURDIR)/tests/updater_parse_test.c $(CURDIR)/source/port_updater_parse.c
+	@$(BUILD)/updater_parse_test
 
 # Reference renderer for the GPU-renderer regression harness: renders the
 # PPU states in a fetched mzm-rec-NN.bin through the port's own CPU PPU and

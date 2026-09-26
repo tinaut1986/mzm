@@ -177,6 +177,8 @@ int main(int argc, char** argv) {
     Port_Config_Load();
     extern void Port_RA_Init(void);
     Port_RA_Init();
+    extern void Port_Updater_Init(void);
+    Port_Updater_Init();
     extern void Port_LoadSram(void);
     Port_LoadSram();
 

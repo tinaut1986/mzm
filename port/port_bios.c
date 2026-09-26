@@ -387,7 +387,8 @@ void Port_Bios_Halt(void) {
 #ifdef PORT_VERBOSE_FRAME_LOG
     Port_DebugLog("Port_Bios_Halt: before aptMainLoop");
 #endif
-    if (!aptMainLoop()) {
+    extern bool Platform3DS_QuitRequested(void);
+    if (!aptMainLoop() || Platform3DS_QuitRequested()) {
         Port_DebugLog("Port_Bios_Halt: aptMainLoop returned false, exiting");
         gfxExit();
         exit(0);
