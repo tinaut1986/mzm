@@ -5326,9 +5326,34 @@ static uint32_t sStateArmFrame  = 0;
 #define STATE_ROW_Y0    42.0f
 #define STATE_ROW_PITCH 29.0f
 #define STATE_ROW_H     25.0f
-#define STATE_BTN_SAVE_X 190.0f
-#define STATE_BTN_LOAD_X 252.0f
-#define STATE_BTN_W      58.0f
+#define STATE_BTN_SAVE_X 252.0f
+#define STATE_BTN_LOAD_X 282.0f
+#define STATE_BTN_W      26.0f
+#define STATE_TEXT_RIGHT 246.0f   /* right edge of the slot's text area */
+
+/* 12x12 floppy disk centred on (cx, cy): body, metal shutter at the top,
+ * label at the bottom. `bg` is the button colour, used for the notch. */
+static void DrawFloppyIcon(float cx, float cy, uint32_t ink, uint32_t bg) {
+    const float x = floorf(cx) - 6.0f, y = floorf(cy) - 6.0f;
+    C2D_DrawRectSolid(x, y, 0.95f, 12.0f, 12.0f, ink);
+    C2D_DrawRectSolid(x + 3.0f, y, 0.96f, 6.0f, 4.0f, bg);          /* shutter slot */
+    C2D_DrawRectSolid(x + 6.0f, y + 1.0f, 0.97f, 2.0f, 2.0f, ink);  /* shutter pin */
+    C2D_DrawRectSolid(x + 2.0f, y + 7.0f, 0.96f, 8.0f, 5.0f, bg);   /* label */
+    C2D_DrawRectSolid(x + 3.0f, y + 8.0f, 0.97f, 6.0f, 1.0f, ink);
+    C2D_DrawRectSolid(x + 3.0f, y + 10.0f, 0.97f, 6.0f, 1.0f, ink);
+}
+
+/* 14x11 open folder centred on (cx, cy): back tab plus a slanted front. */
+static void DrawFolderIcon(float cx, float cy, uint32_t ink, uint32_t bg) {
+    const float x = floorf(cx) - 7.0f, y = floorf(cy) - 5.0f;
+    C2D_DrawRectSolid(x, y, 0.95f, 6.0f, 2.0f, ink);                 /* tab */
+    C2D_DrawRectSolid(x, y + 2.0f, 0.95f, 12.0f, 9.0f, ink);         /* back */
+    C2D_DrawRectSolid(x + 1.0f, y + 4.0f, 0.96f, 10.0f, 6.0f, bg);   /* inside */
+    C2D_DrawTriangle(x + 2.0f, y + 10.0f, ink, x + 4.0f, y + 5.0f, ink,
+                     x + 4.0f, y + 10.0f, ink, 0.97f);
+    C2D_DrawRectSolid(x + 4.0f, y + 5.0f, 0.97f, 10.0f, 6.0f, ink);  /* front flap */
+    C2D_DrawRectSolid(x + 5.0f, y + 6.0f, 0.98f, 8.0f, 4.0f, bg);
+}
 
 static bool StateArmed(int slot, int action) {
     return sStateArmSlot == slot && sStateArmAction == action &&
@@ -5357,33 +5382,81 @@ static void RenderStateView(void) {
         snprintf(num, sizeof(num), "%d", s + 1);
         DrawTextCentered(20.0f, y + 9.0f, 1.0f, num, C2D_Color32(255, 255, 255, 255));
 
-        char label[40];
-        Port_SaveState_SlotLabel(s, label, sizeof(label));
-        DrawText(34.0f, y + 9.0f, 1.0f,
-                 used ? label : (es ? "- vacio -" : "- empty -"),
-                 used ? C2D_Color32(170, 210, 245, 255)
-                      : C2D_Color32(110, 125, 150, 255));
+        PortSaveStateInfo info;
+        if (used && Port_SaveState_GetInfo(s, &info)) {
+            char head[40];
+            snprintf(head, sizeof(head), es ? "%s  SALA %u" : "%s  ROOM %u",
+                     Port_SaveState_AreaName(info.area), (unsigned)info.room);
+            DrawText(34.0f, y + 4.0f, 1.0f, head, C2D_Color32(170, 210, 245, 255));
 
-        /* SAVE */
+            if (info.savedAt != 0) {
+                time_t t = (time_t)info.savedAt;   /* the console clock is local time */
+                struct tm* tm = gmtime(&t);
+                if (tm) {
+                    char when[40];
+                    snprintf(when, sizeof(when), "%04d-%02d-%02d %02d:%02d",
+                             tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday,
+                             tm->tm_hour, tm->tm_min);
+                    DrawText(STATE_TEXT_RIGHT - (float)Utf8CharCount(when) * 6.0f,
+                             y + 4.0f, 1.0f, when, C2D_Color32(120, 140, 170, 255));
+                }
+            }
+
+            if (info.hasStats) {
+                /* E = energy, M = missiles, S = super missiles, P = power
+                 * bombs. Ammo the save had not found yet (max 0) is left out. */
+                char seg[20];
+                float x = 34.0f;
+                snprintf(seg, sizeof(seg), "E%u/%u", (unsigned)info.energy, (unsigned)info.maxEnergy);
+                DrawText(x, y + 14.0f, 1.0f, seg, C2D_Color32(255, 215, 90, 255));
+                x += ((float)Utf8CharCount(seg) + 1.0f) * 6.0f;
+                if (info.maxMissiles > 0) {
+                    snprintf(seg, sizeof(seg), "M%u/%u", (unsigned)info.missiles, (unsigned)info.maxMissiles);
+                    DrawText(x, y + 14.0f, 1.0f, seg, C2D_Color32(255, 130, 110, 255));
+                    x += ((float)Utf8CharCount(seg) + 1.0f) * 6.0f;
+                }
+                if (info.maxSuperMissiles > 0) {
+                    snprintf(seg, sizeof(seg), "S%u/%u", (unsigned)info.superMissiles, (unsigned)info.maxSuperMissiles);
+                    DrawText(x, y + 14.0f, 1.0f, seg, C2D_Color32(120, 220, 130, 255));
+                    x += ((float)Utf8CharCount(seg) + 1.0f) * 6.0f;
+                }
+                if (info.maxPowerBombs > 0) {
+                    snprintf(seg, sizeof(seg), "P%u/%u", (unsigned)info.powerBombs, (unsigned)info.maxPowerBombs);
+                    DrawText(x, y + 14.0f, 1.0f, seg, C2D_Color32(255, 170, 70, 255));
+                }
+            } else {
+                DrawText(34.0f, y + 14.0f, 1.0f, es ? "sin datos (guardado antiguo)" : "no stats (older save)",
+                         C2D_Color32(110, 125, 150, 255));
+            }
+        } else {
+            DrawText(34.0f, y + 9.0f, 1.0f, es ? "- vacio -" : "- empty -",
+                     C2D_Color32(110, 125, 150, 255));
+        }
+
+        /* SAVE: floppy disk icon (text only while waiting for the 2nd tap) */
         bool saveArmed = StateArmed(s, 1);
         uint32_t saveBody = !avail ? C2D_Color32(30, 34, 40, 255)
                           : saveArmed ? C2D_Color32(120, 90, 20, 255)
                                       : C2D_Color32(24, 60, 34, 255);
+        const uint32_t saveInk = avail ? C2D_Color32(200, 240, 205, 255)
+                                       : C2D_Color32(90, 100, 115, 255);
         DrawButton(STATE_BTN_SAVE_X, y + 1.0f, STATE_BTN_W, STATE_ROW_H - 2.0f,
-                   saveArmed ? (es ? "OK?" : "OK?") : (es ? "GUARDAR" : "SAVE"),
-                   avail ? C2D_Color32(200, 240, 205, 255) : C2D_Color32(90, 100, 115, 255),
-                   saveBody, C2D_Color32(70, 150, 90, 255));
+                   saveArmed ? "OK?" : NULL, saveInk, saveBody, C2D_Color32(70, 150, 90, 255));
+        if (!saveArmed)
+            DrawFloppyIcon(STATE_BTN_SAVE_X + STATE_BTN_W * 0.5f, y + STATE_ROW_H * 0.5f, saveInk, saveBody);
 
-        /* LOAD */
+        /* LOAD: open folder icon */
         bool canLoad = used && avail;
         bool loadArmed = StateArmed(s, 2);
         uint32_t loadBody = !canLoad ? C2D_Color32(30, 34, 40, 255)
                           : loadArmed ? C2D_Color32(120, 90, 20, 255)
                                       : C2D_Color32(24, 46, 70, 255);
+        const uint32_t loadInk = canLoad ? C2D_Color32(200, 225, 245, 255)
+                                         : C2D_Color32(90, 100, 115, 255);
         DrawButton(STATE_BTN_LOAD_X, y + 1.0f, STATE_BTN_W, STATE_ROW_H - 2.0f,
-                   loadArmed ? (es ? "OK?" : "OK?") : (es ? "CARGAR" : "LOAD"),
-                   canLoad ? C2D_Color32(200, 225, 245, 255) : C2D_Color32(90, 100, 115, 255),
-                   loadBody, C2D_Color32(80, 140, 200, 255));
+                   loadArmed ? "OK?" : NULL, loadInk, loadBody, C2D_Color32(80, 140, 200, 255));
+        if (!loadArmed)
+            DrawFolderIcon(STATE_BTN_LOAD_X + STATE_BTN_W * 0.5f, y + STATE_ROW_H * 0.5f, loadInk, loadBody);
     }
 
     const char* msg = Port_SaveState_LastMessage();
