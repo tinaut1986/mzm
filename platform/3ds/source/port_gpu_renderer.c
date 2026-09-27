@@ -348,7 +348,14 @@ static int sLastObjItemCount;
  * EFFECT_WATER / LAVA / WEAK_ACID / STRONG_ACID / LAVA_HEAT_HAZE room);
  * PortHaze_Bg3RowScroll() returns false for anything else and BG3 then
  * renders normally (flat) as before. */
-enum { HAZE_RT_DIM = 256, HAZE_MARGIN = 8, HAZE_MAX_TILES = 21 * 34 };
+/* 512 wide so the WIDE view fits: 400 px plus HAZE_MARGIN on each side.
+ * 256 rows hold its 240. A plain frame just uses the top-left 256x160. */
+enum {
+    HAZE_RT_W = 512, HAZE_RT_H = 256, HAZE_MARGIN = 8,
+    /* WIDE Pixel Perfect reaches 54 tile columns by 32 rows (see
+     * CollectHazeBg3); the plain frame needs 34 by 21. */
+    HAZE_MAX_TILES = 56 * 33,
+};
 /* Double-buffered: frame N renders BG3 into sHaze*[N&1^...] and the eye
  * passes SAMPLE the other buffer -- the one rendered last frame, so a full
  * C3D_FrameEnd/FrameBegin has flushed it and both eyes see identical,
@@ -380,9 +387,17 @@ static bool     sAffineBg2Active;         /* this frame is the supported case */
 static float    sAffineBg2InvScale;       /* screen px per texture px (256/PA) */
 static float    sAffineBg2RefX, sAffineBg2RefY;      /* BG2X/BG2Y, texture px */
 static uint32_t sAffineBg2CharBase, sAffineBg2ScreenBase; /* gVram byte offsets */
-static int16_t sHazeBakedRowDelta[2][160]; /* per-line shift baked with each buffer */
+static int16_t sHazeBakedRowDelta[2][HAZE_RT_H]; /* per-line shift baked with each buffer */
+/* Geometry each buffer was baked with: rows used, and the WIDE margins the
+ * bake extends past the GBA frame (0 on a plain frame). The ripple and the
+ * blit read these, not the current frame's, because they draw the buffer
+ * baked LAST frame. */
+static int sHazeBakedRows[2];
+static int sHazeBakedMarginX[2], sHazeBakedMarginY[2];
 static bool sHazeActive; /* recomputed per frame in Port_GpuRenderer_RenderFrame */
-static int16_t sHazeRowDelta[160];
+static int16_t sHazeRowDelta[HAZE_RT_H];
+static int sHazeRows = 160;
+static int sHazeMarginX, sHazeMarginY;
 static int16_t sHazeBakeHofs;
 static Tex3DS_SubTexture sHazeStripSubtex; /* mutated per strip by HazeBlitStrips */
 typedef struct { C2D_Image img; float x, y; } HazeTile;
@@ -1219,7 +1234,7 @@ bool Port_GpuRenderer_Init(void) {
      * sHazeRtReady stays false and haze rooms just render BG3 flat. */
     sHazeRtReady = true;
     for (int b = 0; b < 2; ++b) {
-        if (!C3D_TexInitVRAM(&sHazeTex[b], HAZE_RT_DIM, HAZE_RT_DIM, GPU_RGBA8)) { sHazeRtReady = false; break; }
+        if (!C3D_TexInitVRAM(&sHazeTex[b], HAZE_RT_W, HAZE_RT_H, GPU_RGBA8)) { sHazeRtReady = false; break; }
         C3D_TexSetFilter(&sHazeTex[b], GPU_NEAREST, GPU_NEAREST);
         C3D_TexSetWrap(&sHazeTex[b], GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
         sHazeRT[b] = C3D_RenderTargetCreateFromTex(&sHazeTex[b], GPU_TEXFACE_2D, 0, -1);
@@ -1229,7 +1244,7 @@ bool Port_GpuRenderer_Init(void) {
     /* Mode 3's rippled target -- see sHazeRippleTex. Optional: without it
      * that mode simply behaves like HAZE_FULL. */
     sHazeRippleReady = false;
-    if (C3D_TexInitVRAM(&sHazeRippleTex, HAZE_RT_DIM, HAZE_RT_DIM, GPU_RGBA8)) {
+    if (C3D_TexInitVRAM(&sHazeRippleTex, HAZE_RT_W, HAZE_RT_H, GPU_RGBA8)) {
         C3D_TexSetFilter(&sHazeRippleTex, GPU_NEAREST, GPU_NEAREST);
         C3D_TexSetWrap(&sHazeRippleTex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
         sHazeRippleRT = C3D_RenderTargetCreateFromTex(&sHazeRippleTex, GPU_TEXFACE_2D, 0, -1);
@@ -1252,6 +1267,14 @@ bool Port_GpuRenderer_Init(void) {
     }
 
     InitSlotSubtexTable();
+
+    {
+        char msg[96];
+        snprintf(msg, sizeof(msg), "GPU renderer init: haze=%d ripple=%d layers=%d%d%d%d vramFree=%luKB",
+                 (int)sHazeRtReady, (int)sHazeRippleReady, (int)sLayerRtReady[0], (int)sLayerRtReady[1],
+                 (int)sLayerRtReady[2], (int)sLayerRtReady[3], (unsigned long)(vramSpaceFree() / 1024u));
+        Port_DebugLog_Note(msg);
+    }
 
     for (int i = 0; i < HASH_BUCKETS; ++i) sHashBucketHead[i] = -1;
     sCacheCount = 0;
@@ -2757,6 +2780,34 @@ static void CollectHazeBg3(void) {
     int mapHeightTiles = (sizeFlag & 2u) ? 64 : 32;
     int blocksPerRow = mapWidthTiles / 32;
 
+    /* WIDE: bake past the GBA frame too, the same range CollectBgLayer(3)
+     * would walk -- BG3 slides by its own share of the view's slide, so its
+     * extent on each side is the margin minus / plus that share. The bake
+     * texture's (0,0) is layer pixel (-eL, -eT), HAZE_MARGIN further left. */
+    const int lsX = WideLayerShift(bgIndex, sWideView.shiftX, false);
+    const int lsY = WideLayerShift(bgIndex, sWideView.shiftY, true);
+    const int eL = sWideMarginX - lsX, eR = sWideMarginX + lsX;
+    const int eT = sWideMarginY - lsY, eB = sWideMarginY + lsY;
+    sHazeMarginX = sWideMarginX;
+    sHazeMarginY = sWideMarginY;
+    sHazeRows = 160 + eT + eB;
+    if (sWideOn) {
+        /* The game's table only has the 160 frame lines; compute every row
+         * from the wave itself, so the surface lands on the right row even
+         * out in the margins. Keeps the table's rows if that is not
+         * available yet (first frame of the effect): only the margins then
+         * sit still. */
+        int16_t tableDelta[160];
+        memcpy(tableDelta, sHazeRowDelta, sizeof(tableDelta));
+        if (!PortHaze_Bg3WaveRows(sHazeRowDelta, sHazeRows, -eT, sWideView.shiftY - lsY,
+                                  &sHazeBakeHofs)) {
+            for (int r = 0; r < sHazeRows; ++r) {
+                const int line = r - eT;
+                sHazeRowDelta[r] = (line >= 0 && line < 160) ? tableDelta[line] : 0;
+            }
+        }
+    }
+
     int scrollX = (int)(sHazeBakeHofs & 0x1FF);
     int scrollY = (int)((uint16_t)(gIoMem[0x1E] | (gIoMem[0x1F] << 8)) & 0x1FFu);
 
@@ -2767,11 +2818,13 @@ static void CollectHazeBg3(void) {
     int fineX = scrollX % 8;
     int fineY = scrollY % 8;
 
-    for (int ty = 0; ty <= 20; ++ty) {
+    const int txMin = -1 - (eL + 7) / 8, txMax = 31 + (eR + 7) / 8;
+    const int tyMin = -(eT + 7) / 8, tyMax = 20 + (eB + 7) / 8;
+    for (int ty = tyMin; ty <= tyMax; ++ty) {
         int tileRow = (startTileY + ty) & (mapHeightTiles - 1);
         int screenBlockY = tileRow / 32;
         int localRow = tileRow % 32;
-        for (int tx = -1; tx <= 31; ++tx) {
+        for (int tx = txMin; tx <= txMax; ++tx) {
             int tileCol = (startTileX + tx) & (mapWidthTiles - 1);
             int screenBlockX = tileCol / 32;
             int localCol = tileCol % 32;
@@ -2785,7 +2838,8 @@ static void CollectHazeBg3(void) {
             int palBank = (entry >> 12) & 0x0Fu;
             float drawX = (float)(tx * 8 - fineX);
             float drawY = (float)(ty * 8 - fineY);
-            if (drawY <= -8.0f || drawY >= 160.0f || drawX <= -16.0f || drawX >= 248.0f) continue;
+            if (drawY <= (float)(-eT - 8) || drawY >= (float)(160 + eB) ||
+                drawX <= (float)(-eL - 16) || drawX >= (float)(248 + eR)) continue;
 
             uint32_t byteOffset = charBase + (uint32_t)tileId * bytesPerTile;
             if (!TileHasOpaquePixel(byteOffset, bpp8)) continue;
@@ -2795,8 +2849,8 @@ static void CollectHazeBg3(void) {
             if (slot < 0 || sHazeTileCount >= HAZE_MAX_TILES) continue;
             sHazeTiles[sHazeTileCount].img.tex = &sAtlasTexture;
             sHazeTiles[sHazeTileCount].img.subtex = &sSlotSubtexTable[slot];
-            sHazeTiles[sHazeTileCount].x = drawX;
-            sHazeTiles[sHazeTileCount].y = drawY;
+            sHazeTiles[sHazeTileCount].x = drawX + (float)eL;
+            sHazeTiles[sHazeTileCount].y = drawY + (float)eT;
             ++sHazeTileCount;
         }
     }
@@ -2811,7 +2865,11 @@ static void CollectHazeBg3(void) {
 /* Mode 3: the same 160 strips, but into a 256x256 target at 1:1 instead of
  * onto the screen at display scale, once per frame instead of once per eye.
  * The eyes then each draw HazeBlitRippled's single quad. */
-static void HazeRippleIntoTarget(int buf, const int16_t* rowDelta) {
+static void HazeRippleIntoTarget(int buf) {
+    const int16_t* rowDelta = sHazeBakedRowDelta[buf];
+    const int rows = sHazeBakedRows[buf];
+    const float width = 240.0f + 2.0f * (float)sHazeBakedMarginX[buf];
+
     C2D_SceneBegin(sHazeRippleRT);
     C3D_RenderTargetClear(sHazeRippleRT, C3D_CLEAR_COLOR, 0, 0);
     C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_ALL);
@@ -2821,18 +2879,18 @@ static void HazeRippleIntoTarget(int buf, const int16_t* rowDelta) {
 
     C2D_Image img = { &sHazeTex[buf], &sHazeStripSubtex };
     bool reasserted = false;
-    for (int y = 0; y < 160; ++y) {
+    for (int y = 0; y < rows; ++y) {
         int delta = (int)rowDelta[y];
         if (delta < -HAZE_MARGIN) delta = -HAZE_MARGIN;
         else if (delta > HAZE_MARGIN) delta = HAZE_MARGIN;
 
-        sHazeStripSubtex.width = 240;
+        sHazeStripSubtex.width = (u16)width;
         sHazeStripSubtex.height = 1;
-        sHazeStripSubtex.left = (float)(HAZE_MARGIN + delta) / (float)HAZE_RT_DIM;
-        sHazeStripSubtex.right = (float)(HAZE_MARGIN + delta + 240) / (float)HAZE_RT_DIM;
-        sHazeStripSubtex.top = 1.0f - (float)y / (float)HAZE_RT_DIM;
-        sHazeStripSubtex.bottom = 1.0f - (float)(y + 1) / (float)HAZE_RT_DIM;
-        C2D_DrawParams p = { { 0.0f, (float)y, 240.0f, 1.0f }, { 0.0f, 0.0f }, 0.0f, 0.0f };
+        sHazeStripSubtex.left = (float)(HAZE_MARGIN + delta) / (float)HAZE_RT_W;
+        sHazeStripSubtex.right = ((float)(HAZE_MARGIN + delta) + width) / (float)HAZE_RT_W;
+        sHazeStripSubtex.top = 1.0f - (float)y / (float)HAZE_RT_H;
+        sHazeStripSubtex.bottom = 1.0f - (float)(y + 1) / (float)HAZE_RT_H;
+        C2D_DrawParams p = { { 0.0f, (float)y, width, 1.0f }, { 0.0f, 0.0f }, 0.0f, 0.0f };
         C2D_DrawImage(img, &p, NULL);
         if (!reasserted) { ConfigurePlainTextureEnv(); reasserted = true; }
     }
@@ -2840,29 +2898,39 @@ static void HazeRippleIntoTarget(int buf, const int16_t* rowDelta) {
 }
 
 /* Mode 3's per-eye half: one quad. Same shifted-full-span UV convention as
- * everything else that samples a target (see ATLAS_UV_TIE_SHIFT). */
-static void HazeBlitRippled(float baseX, float baseY, float scaleX, float scaleY) {
+ * everything else that samples a target (see ATLAS_UV_TIE_SHIFT). baseX/Y is
+ * the GBA frame's top-left; a WIDE bake reaches its margin past it. */
+static void HazeBlitRippled(int buf, float baseX, float baseY, float scaleX, float scaleY) {
     C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
     ConfigurePlainTextureEnv();
-    const float inv = 1.0f / (float)HAZE_RT_DIM;
+    const float width = 240.0f + 2.0f * (float)sHazeBakedMarginX[buf];
+    const float height = (float)sHazeBakedRows[buf];
     const float sh = ATLAS_UV_TIE_SHIFT;
     sHazeRippleSubtex = (Tex3DS_SubTexture){
-        .width = 240, .height = 160,
-        .left = sh * inv,
-        .top = 1.0f - sh * inv,
-        .right = (240.0f + sh) * inv,
-        .bottom = 1.0f - (160.0f + sh) * inv,
+        .width = (u16)width, .height = (u16)height,
+        .left = sh / (float)HAZE_RT_W,
+        .top = 1.0f - sh / (float)HAZE_RT_H,
+        .right = (width + sh) / (float)HAZE_RT_W,
+        .bottom = 1.0f - (height + sh) / (float)HAZE_RT_H,
     };
     C2D_Image img = { &sHazeRippleTex, &sHazeRippleSubtex };
-    C2D_DrawParams p = { { baseX, baseY, 240.0f * scaleX, 160.0f * scaleY }, { 0.0f, 0.0f }, 0.5f, 0.0f };
+    C2D_DrawParams p = { { baseX - (float)sHazeBakedMarginX[buf] * scaleX,
+                           baseY - (float)sHazeBakedMarginY[buf] * scaleY,
+                           width * scaleX, height * scaleY },
+                         { 0.0f, 0.0f }, 0.5f, 0.0f };
     C2D_DrawImage(img, &p, NULL);
     ConfigurePlainTextureEnv(); /* citro2d re-inits on a scene's first draw */
     C2D_Flush();
     ConfigureAtlasTextureEnv(); /* restore for the BG0-2 / OBJ pass that follows */
 }
 
-static void HazeBlitStrips(int buf, float baseX, float baseY, float scaleX, float scaleY,
-                           const int16_t *rowDelta) {
+static void HazeBlitStrips(int buf, float baseX, float baseY, float scaleX, float scaleY) {
+    const int16_t* rowDelta = sHazeBakedRowDelta[buf];
+    const int rows = sHazeBakedRows[buf];
+    const float width = 240.0f + 2.0f * (float)sHazeBakedMarginX[buf];
+    baseX -= (float)sHazeBakedMarginX[buf] * scaleX;
+    baseY -= (float)sHazeBakedMarginY[buf] * scaleY;
+
     C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
     ConfigurePlainTextureEnv();
 
@@ -2872,26 +2940,25 @@ static void HazeBlitStrips(int buf, float baseX, float baseY, float scaleX, floa
      * read as blocky "squares" instead of a wave -- a tall quad over a
      * multi-row V span sampled wrong with NEAREST; per-line is what looked
      * right in testing.) */
-    for (int y = 0; y < 160; ++y) {
+    for (int y = 0; y < rows; ++y) {
         int delta = (int)rowDelta[y];
         if (delta < -HAZE_MARGIN) delta = -HAZE_MARGIN;
         else if (delta > HAZE_MARGIN) delta = HAZE_MARGIN;
 
-        float uL = (float)(HAZE_MARGIN + delta) / (float)HAZE_RT_DIM;
-        float uR = (float)(HAZE_MARGIN + delta + 240) / (float)HAZE_RT_DIM;
-        float vT = (float)y / (float)HAZE_RT_DIM;
-        float vB = (float)(y + 1) / (float)HAZE_RT_DIM;
+        float uL = (float)(HAZE_MARGIN + delta) / (float)HAZE_RT_W;
+        float uR = ((float)(HAZE_MARGIN + delta) + width) / (float)HAZE_RT_W;
+        float vT = (float)y / (float)HAZE_RT_H;
+        float vB = (float)(y + 1) / (float)HAZE_RT_H;
         /* Non-rotated subtex; PICA texture origin is bottom-left, so the top
-         * edge is the larger V. If BG3 comes out vertically mirrored on
-         * hardware, swap the 1.0f-vT / 1.0f-vB pair. */
-        sHazeStripSubtex.width = 240;
+         * edge is the larger V. */
+        sHazeStripSubtex.width = (u16)width;
         sHazeStripSubtex.height = 1;
         sHazeStripSubtex.left = uL;
         sHazeStripSubtex.right = uR;
         sHazeStripSubtex.top = 1.0f - vT;
         sHazeStripSubtex.bottom = 1.0f - vB;
         C2D_DrawParams p = {
-            { baseX, baseY + (float)y * scaleY, 240.0f * scaleX, scaleY + 0.5f },
+            { baseX, baseY + (float)y * scaleY, width * scaleX, scaleY + 0.5f },
             { 0.0f, 0.0f }, 0.5f, 0.0f
         };
         C2D_DrawImage(img, &p, NULL);
@@ -3856,9 +3923,9 @@ void Port_GpuRenderer_RenderFrame(void) {
                   PortHaze_Bg3RowScroll(sHazeRowDelta, &sHazeBakeHofs);
     /* WIDE view (port_wide_view.h). Left off for the frames this renderer
      * cannot yet widen: window-clipped ones (the scissor rect is in GBA
-     * coordinates), the BG3 haze pass (its offscreen target is 240 wide) and
-     * the affine BG2 scene. Those draw as the plain frame. */
-    sWideOn = PortWide_GameActive() && !sWindowActive && !sHazeActive && !sAffineBg2Active;
+     * coordinates) and the affine BG2 scene. Those draw as the plain frame.
+     * The BG3 haze pass widens with it (CollectHazeBg3). */
+    sWideOn = PortWide_GameActive() && !sWindowActive && !sAffineBg2Active;
     sWideMarginX = sWideOn ? PortWide_MarginX() : 0;
     sWideMarginY = sWideOn ? PortWide_MarginY() : 0;
     PortWide_SetFrameDrawn(sWideOn);
@@ -4156,6 +4223,9 @@ void Port_GpuRenderer_RenderFrame(void) {
         }
         C2D_Flush();
         memcpy(sHazeBakedRowDelta[sHazeBack], sHazeRowDelta, sizeof(sHazeBakedRowDelta[sHazeBack]));
+        sHazeBakedRows[sHazeBack] = sHazeRows;
+        sHazeBakedMarginX[sHazeBack] = sHazeMarginX;
+        sHazeBakedMarginY[sHazeBack] = sHazeMarginY;
         sHazeBufReady[sHazeBack] = true;
     }
 
@@ -4166,7 +4236,7 @@ void Port_GpuRenderer_RenderFrame(void) {
     const bool hazeRippleRT = sHazeActive && sHazeMode == HAZE_RIPPLE_RT &&
                               sHazeRippleReady && sHazeBufReady[sHazeCur];
     if (hazeRippleRT) {
-        HazeRippleIntoTarget(sHazeCur, sHazeBakedRowDelta[sHazeCur]);
+        HazeRippleIntoTarget(sHazeCur);
         /* Written and sampled inside one frame -- see sHazeRippleTex. */
         C3D_FrameSplit(0);
     }
@@ -4274,10 +4344,9 @@ void Port_GpuRenderer_RenderFrame(void) {
             float eyeOffBg3 = floorf(eyeSign * slider3d *
                                      PortStereoDepth_TierPx(PortStereoDepth_BgTier(&sDepthState, 3)) + 0.5f);
             if (hazeRippleRT) {
-                HazeBlitRippled(screenBaseX + eyeOffBg3, screenBaseY, scaleX, scaleY);
+                HazeBlitRippled(sHazeCur, screenBaseX + eyeOffBg3, screenBaseY, scaleX, scaleY);
             } else {
-                HazeBlitStrips(sHazeCur, screenBaseX + eyeOffBg3, screenBaseY, scaleX, scaleY,
-                               sHazeBakedRowDelta[sHazeCur]);
+                HazeBlitStrips(sHazeCur, screenBaseX + eyeOffBg3, screenBaseY, scaleX, scaleY);
             }
         }
 

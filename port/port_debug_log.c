@@ -108,6 +108,19 @@ void Port_DebugLogBuffered(const char* msg) {
     sBufLog[sBufLogLen++] = '\n';
 }
 
+/* Startup facts (where the logic stack landed, what VRAM the renderer got)
+ * happen long before anyone can turn logging on from the menu. They are
+ * kept here and written at the top of every session's file instead. */
+enum { NOTE_COUNT = 8, NOTE_LEN = 128 };
+static char sNotes[NOTE_COUNT][NOTE_LEN];
+static unsigned sNoteCount;
+
+void Port_DebugLog_Note(const char* msg) {
+    if (sNoteCount >= NOTE_COUNT) return;
+    snprintf(sNotes[sNoteCount++], NOTE_LEN, "%s", msg);
+    Port_DebugLog(msg); /* also now, in case a session is already open */
+}
+
 void Port_DebugLog_SetMode(PortDebugLogMode mode) {
     if (mode < 0 || mode >= PORT_LOG_MODE_COUNT) return;
     if (mode == sLogMode) return;
@@ -124,7 +137,10 @@ void Port_DebugLog_SetMode(PortDebugLogMode mode) {
         Port_DebugFiles_NextPath(PORT_DEBUG_LOG_NAME, PORT_DEBUG_LOG_EXT,
                                  PORT_DEBUG_LOG_KEEP, sLogPath, sizeof(sLogPath));
         FILE* f = fopen(LogPath(), "wb"); /* truncate the slot being reused */
-        if (f) fclose(f);
+        if (f) {
+            for (unsigned i = 0; i < sNoteCount; ++i) fprintf(f, "STARTUP %s\n", sNotes[i]);
+            fclose(f);
+        }
     }
     sLogMode = mode;
 }

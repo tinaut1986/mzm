@@ -46,14 +46,14 @@ static void Platform3DS_LogicThreadTrampoline(void* arg) {
      * covers this frame's own locals. */
     sLogicStackTop = (uintptr_t)__builtin_frame_address(0) + 256u;
     {
-        extern void Port_DebugLog(const char* msg);
+        extern void Port_DebugLog_Note(const char* msg);
         extern uint32_t Port_RomSize(void);
         char msg[96];
         const uintptr_t romEnd = 0x08000000u + Port_RomSize();
         snprintf(msg, sizeof(msg), "logic stack top=%08lx romEnd=%08lx (%s)",
                  (unsigned long)sLogicStackTop, (unsigned long)romEnd,
                  sLogicStackTop < romEnd ? "INSIDE ROM RANGE" : "clear");
-        Port_DebugLog(msg);
+        Port_DebugLog_Note(msg);
     }
     Port_AudioStateLock_Acquire();
     sLogicThreadEntry();

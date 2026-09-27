@@ -391,8 +391,13 @@ bool PlatformGpu3DS_Init(bool old3dsProfile) {
      * zeroed + flushed there). A second linearMemAlign used to sit here and
      * overwrite the pointer: 512KB of linear heap leaked for the life of the
      * process, and the buffer actually in use was the uninitialised one. */
-    if (!C3D_TexInitVRAM(&sTopTexture, TOP_TEXTURE_WIDTH, TOP_TEXTURE_HEIGHT, GPU_RGBA8)) goto fail;
-    if (!C3D_TexInitVRAM(&sTopRightTexture, TOP_TEXTURE_WIDTH, TOP_TEXTURE_HEIGHT, GPU_RGBA8)) goto fail_top_texture;
+    /* The CPU renderer's frame textures live in linear memory, not VRAM: that
+     * renderer is only the fallback for the few frames the GPU one cannot
+     * draw, so sampling from FCRAM costs nothing that matters, while the 1MB
+     * they would take is what the GPU renderer's WIDE haze targets need
+     * (port_gpu_renderer.c). The display transfer writes either just fine. */
+    if (!C3D_TexInit(&sTopTexture, TOP_TEXTURE_WIDTH, TOP_TEXTURE_HEIGHT, GPU_RGBA8)) goto fail;
+    if (!C3D_TexInit(&sTopRightTexture, TOP_TEXTURE_WIDTH, TOP_TEXTURE_HEIGHT, GPU_RGBA8)) goto fail_top_texture;
     if (!C3D_TexInitVRAM(&sBottomTexture, 512, 256, GPU_RGBA8)) goto fail_top_right_texture;
     C3D_TexSetFilter(&sTopTexture, GPU_NEAREST, GPU_NEAREST);
     C3D_TexSetFilter(&sTopRightTexture, GPU_NEAREST, GPU_NEAREST);

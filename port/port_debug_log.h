@@ -72,6 +72,9 @@ typedef enum {
 } PortDebugLogMode;
 
 void Port_DebugLog_SetMode(PortDebugLogMode mode);
+/* Keep a startup line and repeat it at the top of every logging session's
+ * file (logging can only be turned on long after startup). */
+void Port_DebugLog_Note(const char* msg);
 PortDebugLogMode Port_DebugLog_GetMode(void);
 void Port_DebugLog_CycleMode(void);
 /* Path of the file the current logging session is writing to, or "" while
