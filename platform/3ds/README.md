@@ -106,7 +106,7 @@ You can customize the build using Makefile variables and `EXTRA_CFLAGS`:
 | `RENDERER=gpu` *(default)* | Offloads Mode 0 tile and sprite rendering to the 3DS PICA200 GPU (`source/port_gpu_renderer.c`), falling back to CPU scanlines only when needed. |
 | `RENDERER=cpu` | Forces pure CPU scanline rendering (`port/ppu/src/mode1.c`) unconditionally for all frames. Useful for baseline testing and comparison. |
 | `FORCE_OLD3DS=1` | Runs on New 3DS hardware using Old 3DS clock rates, disabling L2 cache and Core 1 worker threads to benchmark Old 3DS / 2DS performance. |
-| `DEBUG_TOOLS=1` | **The** debug build. Compiles in the bottom screen's DEBUG -> HERRAMIENTAS menu and every tool behind it (instant-kill, scene recorder, live atlas dump, one-shot screen/state dump, room warp, equipment -- see `docs/3ds-debug-tools.md`) *and* the verbose per-frame `PORT_GPU_RENDERER_DIAG_LOG` / `PORT_AUDIO_DIAG_LOG` tracing. Source-level gate, not just runtime-disabled: a plain build has no code path to trigger any of them, not even by accident. Nothing is written to `sdmc:/3ds/mzm-debug.log` until the menu's LOG A SD toggle is switched on, which is why the old "simple vs tracing" build split is gone. |
+| `DEBUG_TOOLS=1` | **The** debug build. Compiles in the bottom screen's DEBUG -> HERRAMIENTAS menu and every tool behind it (instant-kill, scene recorder, live atlas dump, one-shot screen/state dump, room warp, equipment -- see `docs/3ds-debug-tools.md`) *and* the verbose per-frame `PORT_GPU_RENDERER_DIAG_LOG` / `PORT_AUDIO_DIAG_LOG` tracing. Source-level gate, not just runtime-disabled: a plain build has no code path to trigger any of them, not even by accident. Nothing is written to `debug/mzm-debug.log` (in the game folder) until the menu's LOG A SD toggle is switched on, which is why the old "simple vs tracing" build split is gone. |
 
 #### Deployment & Utility Targets:
 - **FTP Upload**: Deploy directly to a console running FBI or an FTP server:
@@ -129,7 +129,7 @@ You can customize the build using Makefile variables and `EXTRA_CFLAGS`:
   ```
 - **Real Hardware Diagnostics** (full details, file formats, and guide in [`docs/3ds-debug-tools.md`](../../docs/3ds-debug-tools.md)):
   When built with `DEBUG_TOOLS=1`, accessible from the bottom-screen **DEBUG** tab -> **HERRAMIENTAS / DEBUG TOOLS** menu:
-  - **DUMP SCREEN**: One-shot dump of framebuffers, GBA VRAM/OAM/palettes/IO registers, and Samus's pose/animation state to `sdmc:/3ds/`.
-  - **LOG MARK**: Writes a timestamped marker in `sdmc:/3ds/mzm-debug.log`.
-  - **SCENE RECORDER**: Toggles sampling emulated GBA state every few frames to `sdmc:/3ds/mzm-rec.bin` (with blinking "REC" indicator) until toggled off.
+  - **DUMP SCREEN**: One-shot dump of framebuffers, GBA VRAM/OAM/palettes/IO registers, and Samus's pose/animation state to the `debug/` folder inside the game folder.
+  - **LOG MARK**: Writes a timestamped marker in `debug/mzm-debug.log` (in the game folder).
+  - **SCENE RECORDER**: Toggles sampling emulated GBA state every few frames to `debug/mzm-rec-NN.bin` (with blinking "REC" indicator) until toggled off.
   - **WARP & EQUIPMENT**: Room warp, save/restore position, map unlock, and equipment toggles.

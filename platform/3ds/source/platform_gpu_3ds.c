@@ -5,6 +5,7 @@
 #include "port_gpu_renderer.h" /* PortGpuRendererDrawStats */
 #include "port_debug_files.h"
 #include "port_oam_census.h"
+#include "port_paths.h"
 
 /* How many captures of each kind to keep on the SD card before the oldest
  * slot is reused. Sized by what one costs: a perf capture is ~154KB and a
@@ -1162,7 +1163,7 @@ void PlatformGpu3DS_TogglePerfRecording(void) {
             sPerfSlot = (sPerfSlot % PORT_KEEP_PERF) + 1u;
         }
         if (!Port_DebugFiles_SetPath("mzm-perf", sPerfSlot, ".bin", perfPath, sizeof(perfPath)))
-            snprintf(perfPath, sizeof(perfPath), "sdmc:/3ds/mzm-perf-01.bin");
+            snprintf(perfPath, sizeof(perfPath), PORT_DEBUG_DIR "/mzm-perf-01.bin");
         snprintf(msg, sizeof(msg), "PERF REC STOP: %u frames -> %s", sPerfCount, perfPath);
         Port_DebugLog(msg);
         FILE* f = fopen(perfPath, "wb");
@@ -1270,7 +1271,7 @@ void PlatformGpu3DS_ToggleRecording(void) {
              * now the oldest of PORT_KEEP_RECORDINGS is reused. */
             char path[256];
             if (!Port_DebugFiles_NextPath("mzm-rec", ".bin", PORT_KEEP_RECORDINGS, path, sizeof(path)))
-                __builtin_snprintf(path, sizeof(path), "sdmc:/3ds/mzm-rec-01.bin");
+                __builtin_snprintf(path, sizeof(path), PORT_DEBUG_DIR "/mzm-rec-01.bin");
             /* A RAM capture writes no -shot-*.rgb. If this slot number was
              * last used by a STREAMING capture, its screenshots are still on
              * the card and read as if they belong to this .bin (they don't --
@@ -1296,7 +1297,7 @@ void PlatformGpu3DS_ToggleRecording(void) {
                 }
                 fclose(f);
             }
-            __builtin_snprintf(sRecLastFile, sizeof(sRecLastFile), "%s", path + 10 /* skip "sdmc:/3ds/" */);
+            __builtin_snprintf(sRecLastFile, sizeof(sRecLastFile), "%s", path + sizeof(PORT_DEBUG_DIR) /* skip "<debug dir>/" */);
             extern void Port_DebugLog(const char* msg);
             char msg[96];
             __builtin_snprintf(msg, sizeof(msg), "REC: %u frames (%u KB) -> %s",
@@ -1345,7 +1346,7 @@ void PlatformGpu3DS_ToggleRecording(void) {
         return;
     sRecFile = fopen(streamPath, "wb");
     if (!sRecFile) return;
-    __builtin_snprintf(sRecLastFile, sizeof(sRecLastFile), "%s", streamPath + 10 /* skip "sdmc:/3ds/" */);
+    __builtin_snprintf(sRecLastFile, sizeof(sRecLastFile), "%s", streamPath + sizeof(PORT_DEBUG_DIR) /* skip "<debug dir>/" */);
     sRecording = true;
 }
 

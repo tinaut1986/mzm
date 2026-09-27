@@ -28,6 +28,7 @@
 #include <strings.h> /* strcasecmp, for the title sort */
 
 #include "md5.h"
+#include "port_paths.h"
 
 /* The whole ROM is already in memory; the RA hash for a GBA game is just its
  * MD5, so the game is identified from that rather than from a hardcoded ID
@@ -39,7 +40,7 @@ extern unsigned int gRomSize;
 
 extern uint8_t gEwram[0x40000];
 
-#define RA_LOG_PATH   "sdmc:/3ds/Metroid Zero Mission 3DS/retroachievements.log"
+#define RA_LOG_PATH   PORT_DEBUG_DIR "/retroachievements.log"
 
 /* Server-call queue sizes; see the async section below. */
 #define RA_MAX_PENDING   8
