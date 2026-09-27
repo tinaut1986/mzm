@@ -26,6 +26,8 @@
 #include "structs/connection.h"
 #include "structs/minimap.h"
 #include "structs/room.h"
+#include "constants/room.h"
+#include "scroll.h"            /* ScrollGetBg3Scroll, for PortPpuMzm_WideLayerDivisor */
 #include "constants/minimap.h"
 #include "minimap.h"
 #include "menus/pause_screen.h" /* PauseScreenGetMinimapData */
@@ -130,7 +132,7 @@ static void UpdateFpsWindow(void) {
 #include <stdio.h>
 
 static int sFpsPosition = 1; /* 0 = OFF, 1 = BOTTOM-LEFT, 2 = BOTTOM-RIGHT, 3 = TOP-LEFT, 4 = TOP-RIGHT */
-static int sAspectRatio = 1; /* 1 = ORIGINAL, 2 = STRETCH (0 = WIDE retired -- not wired up yet) */
+static int sAspectRatio = 1; /* 1 = ORIGINAL, 2 = STRETCH, 3 = WIDE (0 = the old retired WIDE, clamped to ORIGINAL on load) */
 static int sDisplayStyle = 0; /* 0 = PIXEL PERFECT, 1 = SCALED (2 = BLUR retired -- no effect on the GPU path) */
 static const char* const sConfigPath = "mzm3ds.ini";
 
@@ -310,8 +312,10 @@ void Port_Config_Load(void) {
                 SramWrite_Language();
             }
         } else if (strcmp(key, "aspect_ratio") == 0) {
-            /* WIDE (0) retired -- clamp any old value into ORIGINAL/STRETCH. */
-            if (val >= 1 && val <= 2) sAspectRatio = val;
+            /* 0 was the old WIDE (a stretched 16:9 variant, retired), so an
+             * old file holding it falls through to ORIGINAL; the new WIDE --
+             * showing extra world around the GBA frame -- is 3. */
+            if (val >= 1 && val <= 3) sAspectRatio = val;
         } else if (strcmp(key, "display_style") == 0) {
             /* BLUR (2) retired -- clamp any old value into PIXEL PERFECT/SCALED. */
             if (val >= 0 && val <= 1) sDisplayStyle = val;
@@ -373,7 +377,7 @@ void Port_Config_Load(void) {
 }
 
 int Port_Config_GetAspectRatio(void) { return sAspectRatio; }
-void Port_Config_SetAspectRatio(int ratio) { if (ratio >= 0 && ratio < 3) { sAspectRatio = ratio; Port_Config_Save(); } }
+void Port_Config_SetAspectRatio(int ratio) { if (ratio >= 0 && ratio < 4) { sAspectRatio = ratio; Port_Config_Save(); } }
 
 int Port_Config_GetDisplayStyle(void) { return sDisplayStyle; }
 void Port_Config_SetDisplayStyle(int style) { if (style >= 0 && style < 3) { sDisplayStyle = style; Port_Config_Save(); } }
@@ -599,12 +603,18 @@ void Port_GetAreaItemTypeCounts(int area, int* outEnergy, int* outMissile, int* 
 
 int Port_Config_Get3DSAspectRatio(void) { return sAspectRatio; }
 const char* Port_Config_Get3DSAspectRatioName(void) {
-    static const char* const names[] = { "WIDE", "ORIGINAL", "STRETCH" };
-    return (sAspectRatio >= 0 && sAspectRatio < 3) ? names[sAspectRatio] : "WIDE";
+    static const char* const names[] = { "ORIGINAL", "ORIGINAL", "STRETCH", "WIDE" };
+    return (sAspectRatio >= 0 && sAspectRatio < 4) ? names[sAspectRatio] : "ORIGINAL";
 }
 void Port_Config_Cycle3DSAspectRatio(void) {
-    /* Toggle ORIGINAL (1) <-> STRETCH (2); WIDE (0) is retired. */
-    sAspectRatio = (sAspectRatio >= 2) ? 1 : 2;
+    if (sDisplayStyle == 0) {
+        /* PIXEL PERFECT is 1:1, so STRETCH has no meaning there: the choice
+         * is the plain frame or the WIDE view around it. */
+        sAspectRatio = (sAspectRatio == 3) ? 1 : 3;
+    } else {
+        /* SCALED: ORIGINAL -> STRETCH -> WIDE -> ORIGINAL. */
+        sAspectRatio = (sAspectRatio == 1) ? 2 : ((sAspectRatio == 2) ? 3 : 1);
+    }
     Port_Config_Save();
 }
 
@@ -1948,4 +1958,43 @@ bool PortPpuMzm_IsDoorDepthBlock(int blockX, int blockY) {
             return true;
     }
     return false;
+}
+
+/* ---------------------------------------------------------------------
+ * WIDE view: how each BG scrolls against the camera.
+ *
+ * The WIDE view slides past the GBA camera near a scroll limit (see
+ * ComputeWideView in port_gpu_renderer.c). Sliding every layer by the same
+ * amount is only right for the layers that follow the camera 1:1; a parallax
+ * backdrop that moves at half the camera's speed has to slide half as far, or
+ * it keeps drifting while the scenery in front is held still. These are the
+ * game's own rules (ScrollBg3, ScrollBg2, ScrollUpdateEffectAndHazePosition
+ * in src/scroll.c), reduced to "layer moves 1/divisor as far as the camera".
+ * 0 means the layer does not follow the camera at all.
+ * ------------------------------------------------------------------- */
+int PortPpuMzm_WideLayerDivisor(int bg, int vertical) {
+    switch (bg) {
+        case 0:
+            if (gCurrentRoomEntry.bg0Prop & BG_PROP_RLE_COMPRESSED)
+                return (gCurrentRoomEntry.bg0Prop == 0x11 && !vertical) ? 2 : 1;
+            if (gCurrentRoomEntry.effectY == USHORT_MAX && gCurrentRoomEntry.bg0Prop == BG_PROP_CLOSE_UP)
+                return 0;
+            return 1;
+        case 1:
+            return 1;
+        case 2:
+            return (gCurrentRoomEntry.bg2Prop & BG_PROP_RLE_COMPRESSED) ? 1 : 0;
+        case 3: {
+            const u32 types = ScrollGetBg3Scroll();
+            const u32 type = vertical ? HIGH_SHORT(types) : LOW_BYTE(types);
+            if (type == BG3_SCROLLING_TYPE_NORMAL) return 1;
+            if (type == BG3_SCROLLING_TYPE_HALVED)
+                /* Counted from the room's bottom, "halved" is really a quarter. */
+                return (vertical && gCurrentRoomEntry.bg3FromBottomFlag) ? 4 : 2;
+            if (type == BG3_SCROLLING_TYPE_QUARTERED) return 4;
+            return 0;
+        }
+        default:
+            return 1;
+    }
 }

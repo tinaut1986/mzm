@@ -120,8 +120,19 @@ void ParticleCheckOnScreen(struct ParticleEffect* pParticle)
     bgLeftBoundry = bgBaseX - (SCREEN_X_BLOCK_PADDING);
     bgRightBoundry = bgBaseX + (SCREEN_SIZE_X_SUB_PIXEL + SCREEN_X_BLOCK_PADDING);
 
+#if defined(MZM_3DS)
+    // WIDE display: particles across the extra view stay on screen. Signed
+    // math, the u16 bounds above would wrap near the room's origin.
+    extern int Port_WideMarginSubPixelX(void);
+    extern int Port_WideMarginSubPixelY(void);
+    if ((s32)bgLeftBoundry - Port_WideMarginSubPixelX() < (s32)particleX &&
+        (s32)particleX < (s32)bgRightBoundry + Port_WideMarginSubPixelX() &&
+        (s32)bgBottomBoundry - Port_WideMarginSubPixelY() < (s32)particleY &&
+        (s32)particleY < (s32)bgTopBoundry + Port_WideMarginSubPixelY())
+#else
     if (bgLeftBoundry < particleX && particleX < bgRightBoundry &&
         bgBottomBoundry < particleY && particleY < bgTopBoundry)
+#endif
     {
         pParticle->status |= PARTICLE_STATUS_ONSCREEN;
     }
@@ -217,6 +228,15 @@ void ParticleDraw(struct ParticleEffect* pParticle)
         }
 
         gNextOamSlot = partCount + prevSlot;
+
+#if defined(MZM_3DS)
+        {
+            // True screen position of the effect, so WIDE can undo the OAM wrap.
+            extern void Port_Wide_NoteSlots(int firstSlot, int endSlot, int originY, int originX);
+            if (!(pParticle->status & PARTICLE_STATUS_ABSOLUTE_POSITION))
+                Port_Wide_NoteSlots(prevSlot, gNextOamSlot, (s16)yPosition, (s16)xPosition);
+        }
+#endif
 
 #if defined(MZM_3DS) || defined(PORT_NATIVE)
         /* The escape countdown is an OBJ particle drawn during gameplay with
