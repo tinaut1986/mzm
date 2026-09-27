@@ -407,7 +407,7 @@ $(BUILD)/rec_render: $(CURDIR)/tests/rec_render.c $(ROOT)/port/ppu/src/mode1.c $
 
 ftp: $(TARGET).cia
 	@echo "Uploading $(TARGET).cia as mzm-3ds-$(VERSION).cia to FTP..."
-	curl -T $(TARGET).cia "ftp://$(FTP_HOST):$(FTP_PORT)/cias/mzm-3ds-$(VERSION).cia"
+	curl --ftp-create-dirs -T $(TARGET).cia "ftp://$(FTP_HOST):$(FTP_PORT)/cias/mzm-3ds-$(VERSION).cia"
 
 $(TARGET).cia: $(TARGET).elf $(BUILD)/mzm-3ds.smdh $(BUILD)/banner.bnr
 	@echo "Creating CIA: $(notdir $@)"

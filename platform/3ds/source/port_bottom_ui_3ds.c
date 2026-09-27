@@ -4732,7 +4732,7 @@ static bool HandleDebugToolsModalTouch(int x, int y) {
     switch (cell) {
         case 0:
             PlatformGpu3DS_DumpScreens();
-            DebugToolsSetMsg("DUMP -> sdmc:/3ds/");
+            DebugToolsSetMsg("DUMP -> debug/");
             break;
         case 1:
             Port_DebugLog("USER MARK: debug tools menu");
@@ -4749,7 +4749,7 @@ static bool HandleDebugToolsModalTouch(int x, int y) {
             break;
         case 4:
             Port_GpuRenderer_DumpAtlas(PORT_DEBUG_DIR "/mzm-live-atlas.ppm", PORT_DEBUG_DIR "/mzm-live-atlas-keys.csv");
-            DebugToolsSetMsg("ATLAS -> sdmc:/3ds/");
+            DebugToolsSetMsg("ATLAS -> debug/");
             break;
         case 5:
             PortPpuMzm_DebugKillSamus();

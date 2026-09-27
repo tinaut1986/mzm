@@ -11,6 +11,11 @@
 
 u8* gRomData = NULL;
 u32 gRomSize = 0;
+
+/* gRomSize for code that includes <3ds.h>, whose u32 is a different type. */
+u32 Port_RomSize(void) {
+    return gRomSize;
+}
 PortRomRegion gRomRegion = PORT_ROM_REGION_UNKNOWN;
 
 /* Game code at ROM header offset 0xAC. Matches Makefile:10,27,44

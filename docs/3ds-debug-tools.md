@@ -67,6 +67,8 @@ console is running an FTP server (see `make ftp` / `FTP_HOST`/`FTP_PORT` in
 
 ## Screen dump (was L+R+X)
 
+Menu row **VOLCADO PANTALLA** / **SCREEN DUMP**.
+
 Implemented in `PlatformGpu3DS_DumpScreens` (`platform_gpu_3ds.c`). Writes,
 all sharing one rotating set number, `NN` below (see **File rotation**):
 
@@ -79,6 +81,7 @@ all sharing one rotating set number, `NN` below (see **File rotation**):
 | `mzm-dump-NN-oam.bin` | OAM, 128 entries x 3x u16 (the 4th u16 per 8-byte slot is padding on real hardware and unused here). Standard GBA OAM attribute layout. |
 | `mzm-dump-NN-samus.txt` | Plain text: `pose`, `currentAnimationFrame`, `walljumpTimer`, `suitType`, `suitMiscActivation`, the four per-body-part gfx DMA sizes (`shoulderGfxSize` etc.), `armCannonGfxUpperSize/LowerSize`, `unk_22`. See `PortPpuMzm_DumpSamusState` in `port_ppu_mzm.c`. |
 | `mzm-dump-NN-samusdata.bin`, `-samusphysics.bin` | Raw `struct SamusData` / `struct SamusPhysics` (see `include/structs/samus.h`) for anything not already in the `.txt`. |
+| `mzm-dump-NN-sprites.txt` | Plain text. First line: BG1 camera position, WIDE state (`wideActive`, `frameDrawn`, culling margins in sub-pixels), adaptive frame skip and New3DS profile. Then one `sprNN` line per existing `gSpriteData` slot (id, status bits, properties, position, draw distances, draw order, pose) and one `tagNNN` line per OAM slot carrying a WIDE origin tag (the true screen position the renderer uses to undo OAM's Y/X wrap). Tells "the game never put the sprite in OAM" apart from "it is in OAM but drawn elsewhere". |
 
 **Why the split between `platform_gpu_3ds.c` and `port_ppu_mzm.c`:**
 `platform_gpu_3ds.c` includes `<3ds.h>`/`<citro2d.h>`, whose `u32` typedef

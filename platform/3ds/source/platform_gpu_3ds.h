@@ -65,8 +65,8 @@ struct C3D_RenderTarget_tag* PlatformGpu3DS_GetTopRightTarget(void);
  * for the current display style / aspect. Any output pointer may be NULL. */
 void PlatformGpu3DS_GetTopImageRect(int* outX, int* outY, int* outW, int* outH);
 
-/* One-shot diagnostic dump (L+R+X) and the start/stop scene recorder
- * (L+R+START), see platform_gpu_3ds.c. PlatformGpu3DS_RecordTick must be
+/* One-shot diagnostic dump and the start/stop scene recorder, both
+ * triggered from the DEBUG tab's tools menu, see platform_gpu_3ds.c. PlatformGpu3DS_RecordTick must be
  * called once per emulated GBA frame (Port_Bios_Halt does this) -- it's a
  * no-op unless recording is active. PlatformGpu3DS_IsRecording is for the
  * on-screen "REC" indicator (port_bottom_ui_3ds.c). */
@@ -85,7 +85,7 @@ const char* PlatformGpu3DS_RecordPresetLabel(void);
  * "mzm-rec-2.bin"); "" before the first one. */
 const char* PlatformGpu3DS_RecordLastFile(void);
 
-/* Perf-only frame-time recorder (L+R+A, issue #20): samples every emulated
+/* Perf-only frame-time recorder (debug tools menu, issue #20): samples every emulated
  * frame's duration + OAM census into a RAM buffer with no SD I/O while
  * running (unlike the full recorder above, which slows the game down);
  * flushing to <game folder>/debug/mzm-perf-NN.bin happens on stop. Same tick contract as

@@ -879,7 +879,7 @@ static void WriteBlob(const char* path, const void* data, size_t size) {
     fclose(f);
 }
 
-/* Scene recorder: L+R+START (see Platform3DS_PollKeysIntoGba) toggles this
+/* Scene recorder: the debug tools menu (port_bottom_ui_3ds.c) toggles this
  * on/off. Unlike PlatformGpu3DS_DumpScreens' one-shot dump, this samples the
  * emulated GBA state (VRAM/OAM/palettes/IO + a bit of Samus state) at the
  * rate the selected kRecPresets entry picks, appending each sample either
@@ -1107,7 +1107,8 @@ static uint32_t PackRendererFlags(const PortGpuRendererDrawStats* st) {
  * census -- enough to say not just THAT a frame missed the 16.67ms budget
  * but what it spent the time on, without the SD writes that make the full
  * scene recorder's own numbers meaningless.
- * L+R+A toggles; on stop the buffer is flushed to sdmc:/3ds/mzm-perf.bin
+ * The debug tools menu toggles it; on stop the buffer is flushed to
+ * <game folder>/debug/mzm-perf-NN.bin
  * as a PerfFileHeader followed by a flat little-endian array of PerfSample.
  * 60 samples/sec * 40s capacity = 2400 entries * 64B = ~154KB linear. ---- */
 typedef struct {
@@ -1568,7 +1569,7 @@ void PlatformGpu3DS_DumpScreens(void) {
 
     /* Flush any buffered Port_DebugLogBuffered() lines (e.g. kraid.c's
      * KraidSync/KraidPrimary diagnostics) now, so whatever led up to this
-     * L+R+X capture is on disk instead of sitting in RAM. */
+     * capture is on disk instead of sitting in RAM. */
     extern void Port_DebugLogFlush(void);
     Port_DebugLogFlush();
 }

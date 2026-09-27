@@ -15,6 +15,7 @@
 #include "structs/bg_clip.h"
 #include "structs/clipdata.h"
 #include "structs/scroll.h"
+#include "structs/sprite.h"    /* gSpriteData, for the dump's sprite list */
 #include "constants/clipdata.h"
 #include "constants/block.h"
 #include "constants/game_state.h"
@@ -979,7 +980,7 @@ bool Port_PPU_GpuPresentPump(void) {
  * Debug dump of Samus's animation/graphics state, for tracking down bugs
  * like #17 (wrong sprite/palette during the death animation) where the
  * VRAM/OAM/palette dump alone doesn't say which pose/frame/suit produced it.
- * Triggered together with the VRAM/OAM/palette dump from the L+R+X combo.
+ * Written together with the VRAM/OAM/palette screen dump (debug tools menu).
  */
 void PortPpuMzm_DumpSamusState(void) {
     /* Same rotating slot as the rest of this screen dump -- see
@@ -1023,6 +1024,41 @@ void PortPpuMzm_DumpSamusState(void) {
         fwrite(&gSamusPhysics, 1, sizeof(gSamusPhysics), fb);
         fclose(fb);
     }
+
+    /* Sprite + WIDE state: enough to tell apart "the game never put the
+     * enemy in OAM" (status/onscreen bits, culling margins) from "it is in
+     * OAM but the renderer placed it somewhere else" (per-slot WIDE origin
+     * tags, which undo the OAM Y/X wrap). */
+    snprintf(dumpPath, sizeof(dumpPath), PORT_DEBUG_DIR "/mzm-dump-%02u-sprites.txt", set);
+    f = fopen(dumpPath, "w");
+    if (!f)
+        return;
+
+    extern bool PortWide_FrameDrawn(void);
+    extern bool PortWide_GameActive(void);
+    extern int Port_WideMarginSubPixelX(void);
+    extern int Port_WideMarginSubPixelY(void);
+    extern bool PortWide_SlotOrigin(int oamIndex, int* outY, int* outX);
+    extern bool Port_Bios_AdaptiveFrameSkipEnabled(void);
+    fprintf(f, "bg1=%u,%u wideActive=%d frameDrawn=%d marginSub=%d,%d frameSkip=%d new3ds=%d\n",
+            (unsigned)gBg1XPosition, (unsigned)gBg1YPosition, (int)PortWide_GameActive(),
+            (int)PortWide_FrameDrawn(), Port_WideMarginSubPixelX(), Port_WideMarginSubPixelY(),
+            (int)Port_Bios_AdaptiveFrameSkipEnabled(), (int)Platform3DS_IsNew3DS());
+    for (int i = 0; i < MAX_AMOUNT_OF_SPRITES; ++i) {
+        const struct SpriteData* s = &gSpriteData[i];
+        if (!(s->status & SPRITE_STATUS_EXISTS))
+            continue;
+        fprintf(f, "spr%02d id=%02x status=%04x props=%02x pos=%u,%u draw=%u/%u/%u order=%u pose=%02x\n",
+                i, s->spriteId, (unsigned)s->status, (unsigned)s->properties,
+                (unsigned)s->xPosition, (unsigned)s->yPosition, s->drawDistanceTop,
+                s->drawDistanceBottom, s->drawDistanceHorizontal, s->drawOrder, s->pose);
+    }
+    for (int slot = 0; slot < 128; ++slot) {
+        int originY, originX;
+        if (PortWide_SlotOrigin(slot, &originY, &originX))
+            fprintf(f, "tag%03d origin=%d,%d\n", slot, originX, originY);
+    }
+    fclose(f);
 }
 
 /**
@@ -1035,11 +1071,11 @@ void PortPpuMzm_DumpSamusState(void) {
  * Samus's data into gSamusDataCopy and calls SamusChangeToHurtPose, which
  * itself checks gEquipment.currentEnergy and only then transitions to
  * SPOSE_DYING (src/samus.c). Zeroing energy first reproduces that exact
- * path instead of a synthetic one. Triggered by L+R+SELECT (see
- * Platform3DS_PollKeysIntoGba in platform_3ds_minimal.c, which can't call
- * SamusSetPose directly for the same <3ds.h>/structs-samus.h conflict
- * reason PortPpuMzm_GetSamusRecordState exists). No-op if Samus is already
- * in a hurt/dying/getting-knocked-back pose so mashing the combo doesn't
+ * path instead of a synthetic one. Triggered from the debug tools menu
+ * (port_bottom_ui_3ds.c, which can't call SamusSetPose directly for the
+ * same <3ds.h>/structs-samus.h conflict reason PortPpuMzm_GetSamusRecordState
+ * exists). No-op if Samus is already in a hurt/dying/getting-knocked-back
+ * pose so pressing it again doesn't
  * re-trigger mid-animation.
  */
 void PortPpuMzm_DebugKillSamus(void) {
@@ -1058,7 +1094,7 @@ void PortPpuMzm_DebugKillSamus(void) {
 }
 
 /**
- * Compact Samus state for the L+R+START scene recorder (platform_gpu_3ds.c):
+ * Compact Samus state for the scene recorder (platform_gpu_3ds.c):
  * that file can't include structs/samus.h directly (its u32 typedef conflicts
  * with <3ds.h>'s, see PortPpuMzm_DumpSamusState's comment above), so it gets
  * the handful of fields worth recording per sample through here instead.
