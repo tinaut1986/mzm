@@ -1771,10 +1771,7 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
                  * 6..8 cycle a GBA effect through OFF/LOW/MED/HIGH. */
                 switch (DispCellHit(x, y)) {
                     case 0: Port_Config_CycleLanguage(); break;
-                    case 1:
-                        /* Aspect is locked while PIXEL PERFECT is selected. */
-                        if (Port_Config_Get3DSDisplayStyle() != 0) Port_Config_Cycle3DSAspectRatio();
-                        break;
+                    case 1: Port_Config_Cycle3DSAspectRatio(); break;
                     case 2: Port_Config_Cycle3DSDisplayStyle(); break;
                     case 3: Port_Config_CycleFpsPosition(); break;
                     case 4: Port_Config_SetAutoHideHud(!Port_Config_GetAutoHideHud()); break;
@@ -1783,10 +1780,11 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
                     case 7: Port_Config_SetGbaFxGrid((Port_Config_GetGbaFxGrid() + 1) % 4); break;
                     case 8: Port_Config_SetGbaFxVignette((Port_Config_GetGbaFxVignette() + 1) % 4); break;
                     case 9:
-                        if (Port_Config_Get3DSDisplayStyle() == 0) Port_Config_ToggleHudOutside();
+                        if (Port_Config_Get3DSDisplayStyle() == 0 && Port_Config_Get3DSAspectRatio() != 3) Port_Config_ToggleHudOutside();
                         break;
                     case 10:
-                        if (Port_Config_Get3DSDisplayStyle() == 0 || Port_Config_Get3DSAspectRatio() == 1) {
+                        if (Port_Config_Get3DSAspectRatio() != 3 &&
+                            (Port_Config_Get3DSDisplayStyle() == 0 || Port_Config_Get3DSAspectRatio() == 1)) {
                             Port_Config_ToggleGbaBezel();
                         }
                         break;
@@ -2292,46 +2290,23 @@ static void Port_Config_CycleLanguage(void) {
 }
 
 static const char* GetAspectRatioDisplayName(int lang) {
+    /* Same order as the language ids used across this file: 0/1/2 EN, 3 DE,
+     * 4 FR, 5 IT, 6 ES. */
+    static const char* const originalL[7] = { "ORIGINAL (3:2)", "ORIGINAL (3:2)", "ORIGINAL (3:2)", "ORIGINAL (3:2)",
+                                              "ORIGINAL (3:2)", "ORIGINALE (3:2)", "ORIGINAL (3:2)" };
+    static const char* const originalPixelL[7] = { "ORIGINAL (1:1)", "ORIGINAL (1:1)", "ORIGINAL (1:1)", "ORIGINAL (1:1)",
+                                                   "ORIGINAL (1:1)", "ORIGINALE (1:1)", "ORIGINAL (1:1)" };
+    static const char* const stretchL[7] = { "STRETCH (16:9)", "STRETCH (16:9)", "STRETCH (16:9)", "GESTRECKT (16:9)",
+                                             "ETIRE (16:9)", "ALLARGATO (16:9)", "ESTIRADO (16:9)" };
+    /* WIDE shows the world the GBA hides past its frame instead of stretching. */
+    static const char* const wideL[7] = { "WIDE", "WIDE", "WIDE", "WEIT", "LARGE", "AMPIO", "AMPLIO" };
+
+    if (lang < 0 || lang > 6) lang = 0;
     int ar = Port_Config_Get3DSAspectRatio();
-    switch (lang) {
-        case 0:
-        case 1:
-            switch (ar) {
-                case 0: return "WIDE";
-                case 1: return "ORIGINAL (3:2)";
-                case 2: return "STRETCH (16:9)";
-                default: return "ORIGINAL";
-            }
-        case 3: /* DE */
-            switch (ar) {
-                case 0: return "BREITBILD";
-                case 1: return "ORIGINAL (3:2)";
-                case 2: return "GESTRECKT (16:9)";
-                default: return "ORIGINAL";
-            }
-        case 4: /* FR */
-            switch (ar) {
-                case 0: return "LARGE";
-                case 1: return "ORIGINAL (3:2)";
-                case 2: return "ETIRE (16:9)";
-                default: return "ORIGINAL";
-            }
-        case 5: /* IT */
-            switch (ar) {
-                case 0: return "PANORAMICO";
-                case 1: return "ORIGINALE (3:2)";
-                case 2: return "ALLARGATO (16:9)";
-                default: return "ORIGINALE";
-            }
-        case 6: /* ES */
-        default: /* EN */
-            switch (ar) {
-                case 0: return "PANORAMICO";
-                case 1: return "ORIGINAL (3:2)";
-                case 2: return "ESTIRADO (16:9)";
-                default: return "ORIGINAL";
-            }
-    }
+    if (ar == 3) return wideL[lang];
+    /* STRETCH has no meaning at 1:1, so PIXEL PERFECT only offers ORIGINAL / WIDE. */
+    if (Port_Config_Get3DSDisplayStyle() == 0) return originalPixelL[lang];
+    return ar == 2 ? stretchL[lang] : originalL[lang];
 }
 
 static const char* GetDisplayStyleDisplayName(int lang) {
@@ -3197,11 +3172,8 @@ static void RenderDisplayModal(int lang) {
     static const char* const spoL[7]   = { "HIDE SPOILERS","HIDE SPOILERS","HIDE SPOILERS","SPOILER AUS","MASQ. SPOILERS","NASC. SPOILER","OCULTAR SPOILERS" };
 
     DispCell(0, langL[lang], Port_Config_GetLanguageDisplayName(lang), valCol);
-    /* Aspect is meaningless at 1:1, so it is locked while PIXEL PERFECT is on. */
-    bool aspectLocked = (Port_Config_Get3DSDisplayStyle() == 0);
-    DispCell(1, aspL[lang],
-             aspectLocked ? ((lang == 6) ? "BLOQUEADO" : "LOCKED") : GetAspectRatioDisplayName(lang),
-             aspectLocked ? idleCol : valCol);
+    bool wideOn = (Port_Config_Get3DSAspectRatio() == 3);
+    DispCell(1, aspL[lang], GetAspectRatioDisplayName(lang), wideOn ? onCol : valCol);
     DispCell(2, styL[lang], GetDisplayStyleDisplayName(lang), valCol);
 
     bool fpsOn = Port_Config_GetShowFps();
@@ -3227,17 +3199,20 @@ static void RenderDisplayModal(int lang) {
 
     const char* lockedTxt = (lang == 6) ? "BLOQUEADO" : "LOCKED";
     bool pixelPerfect = (Port_Config_Get3DSDisplayStyle() == 0);
+    /* WIDE fills the border with world, leaving no room for a bezel or for
+     * the HUD to move into. */
+    const bool wide = (Port_Config_Get3DSAspectRatio() == 3);
 
     /* HUD Position: TOP BORDER vs DEFAULT (only active in Pixel Perfect) */
     bool hudOut = Port_Config_GetHudOutside();
     const char* hudOutTxt = (lang == 6) ? "BORDE SUP." : ((lang == 3) ? "OBEN" : ((lang == 4) ? "BORD SUP." : ((lang == 5) ? "BORDO SUP." : "TOP BORDER")));
     const char* hudDefTxt = (lang == 6) ? "NORMAL" : ((lang == 3) ? "NORMAL" : ((lang == 4) ? "NORMAL" : ((lang == 5) ? "NORMALE" : "DEFAULT")));
     DispCell(9, hudPosL[lang],
-             pixelPerfect ? (hudOut ? hudOutTxt : hudDefTxt) : lockedTxt,
-             pixelPerfect ? (hudOut ? onCol : valCol) : idleCol);
+             (pixelPerfect && !wide) ? (hudOut ? hudOutTxt : hudDefTxt) : lockedTxt,
+             (pixelPerfect && !wide) ? (hudOut ? onCol : valCol) : idleCol);
 
     /* GBA Bezel: ON vs OFF (active in Pixel Perfect or Scaled Original) */
-    bool bezelAllowed = (pixelPerfect || Port_Config_Get3DSAspectRatio() == 1);
+    bool bezelAllowed = !wide && (pixelPerfect || Port_Config_Get3DSAspectRatio() == 1);
     bool bezelOn = Port_Config_GetGbaBezel();
     DispCell(10, bezelL[lang],
              bezelAllowed ? (bezelOn ? onTxt : offTxt) : lockedTxt,

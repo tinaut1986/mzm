@@ -341,25 +341,43 @@ static inline bool Port_Bios_OamSlotVisible(const u16* oam, int i) {
     const bool affine = (a0 >> 8) & 1u;
     if (((a0 >> 9) & 1u) && !affine) return false;   /* non-affine hidden bit */
     if (((a0 >> 10) & 3u) == 2u) return false;        /* OBJ window, not drawn */
-    int y = a0 & 0xFF; if (y >= 160) y -= 256;
-    int x = (int)(a1 & 0x1FF); if (x >= 240) x -= 512;
-    return y > -64 && y < 160 && x > -64 && x < 240;  /* roughly on screen */
+    if (a0 == 0x00FFu && a1 == 0x00FFu && oam[i * 4 + 2] == 0u) return false; /* ResetFreeOam's parked slot */
+    /* The WIDE view (platform/3ds/source/port_wide_view.h) shows past the GBA
+     * frame, so "on screen" reaches that far too. Otherwise a sprite out in
+     * the extra area counts as blinked off, and the merge draws whatever that
+     * slot held a frame earlier in its place. */
+    extern int Port_WideMarginSubPixelX(void);
+    extern int Port_WideMarginSubPixelY(void);
+    const int mx = Port_WideMarginSubPixelX() / 4, my = Port_WideMarginSubPixelY() / 4;
+    int y = a0 & 0xFF; if (y >= 160 + my) y -= 256;
+    int x = (int)(a1 & 0x1FF); if (x >= 240 + mx) x -= 512;
+    return y > -64 - my && y < 160 + my && x > -64 - mx && x < 240 + mx;  /* roughly on screen */
 }
 
 /* Fold the current frame's OAM into sOamMerged. Called every game frame,
  * right after the logic tick, before the skip decision. */
 static void Port_Bios_OamMergeTick(void) {
     const u16* cur = gOamMem;
+    /* Which slots now hold this frame's entry. The WIDE view's per-slot
+     * position tags have to follow the same choice: a slot kept from an
+     * earlier frame must keep that frame's tag, or its sprite is placed with
+     * the position of whatever sits in the slot now. */
+    extern void Port_Wide_MergeTags(const bool* tookLive);
+    bool took[128];
     if (!sOamMergeSeeded) {
         memcpy(sOamMerged, cur, sizeof sOamMerged);
         sOamMergeSeeded = true;
+        for (int i = 0; i < 128; ++i) took[i] = true;
+        Port_Wide_MergeTags(took);
         return;
     }
     for (int i = 0; i < 128; ++i) {
-        if (Port_Bios_OamSlotVisible(cur, i) || !Port_Bios_OamSlotVisible(sOamMerged, i))
+        took[i] = Port_Bios_OamSlotVisible(cur, i) || !Port_Bios_OamSlotVisible(sOamMerged, i);
+        if (took[i])
             memcpy(&sOamMerged[i * 4], &cur[i * 4], 8);
         /* else current is a blink-off of a slot that was on -> keep it on */
     }
+    Port_Wide_MergeTags(took);
 }
 
 static void Port_Bios_PaceFrame(void) {

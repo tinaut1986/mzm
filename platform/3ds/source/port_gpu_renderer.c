@@ -21,6 +21,7 @@
 #include "port_sprite_depth_oam.h"
 #include "port_haze_3ds.h"
 #include "port_gba_bezel.h"
+#include "port_wide_view.h"
 #include "platform_gpu_3ds.h"
 #include "port_debug_tools.h" /* PORT_DEBUG_TOOLS_ACTIVE */
 
@@ -228,7 +229,9 @@ enum {
     ATLAS_B32_ROW0 = ATLAS_BLOCK_ROW0 + ATLAS_BLOCK_ROWS,
     ATLAS_B32_PER_ROW = ATLAS_TILES_PER_ROW / 4,
     ATLAS_MAX_B32 = ATLAS_B32_PER_ROW * ((ATLAS_SLOT_ROWS - ATLAS_B32_ROW0) / 4),
-    MAX_DRAW_ITEMS = 3200,
+    /* Sized for the WIDE view, which collects every layer over a 400x240
+     * area instead of 240x160. */
+    MAX_DRAW_ITEMS = 6144,
 };
 
 /* BLDCNT effect applied at decode time for brighten/darken (effect 1, alpha
@@ -300,6 +303,10 @@ typedef struct DrawItem {
     uint8_t affBleedEdges;
     WindowVis winVis;
     bool isHud;
+    /* Stays put on the screen instead of moving with the world -- the HUD and
+     * the overlay text. Only matters when the WIDE view slides the world
+     * (see ComputeWideView). */
+    bool screenFixed;
     /* A cached layer's quad samples a render target, whose texels come back
      * verbatim; the CPU-written atlas needs the channel unswizzle. The draw
      * loop switches the texenv when this changes, which costs a batch break
@@ -312,6 +319,10 @@ static C3D_Tex sAtlasTexture;
 static TileCacheKey sCacheKeys[ATLAS_MAX_SLOTS];
 static int sCacheCount;
 static DrawItem sDrawItems[MAX_DRAW_ITEMS];
+/* Added to every BG item's position while one layer is collected: the part of
+ * the view's slide that layer does NOT take (see WideLayerShift). Zero for
+ * sprites and whenever WIDE is off. */
+static float sCollectOffX, sCollectOffY;
 static int sDrawItemCount;
 static bool sAnyDirtySlot;
 /* Monotonic count of atlas (re)decodes this frame. sAnyDirtySlot only goes
@@ -776,6 +787,16 @@ static bool sDoorDepthOnScreen = false;
 
 extern int Port_Hud_GetOamCount(void);
 
+/* The game's gBgPointersAndDimensions: the room's decompressed block maps and
+ * clipdata size. Declared by hand -- this file stays out of the game headers --
+ * once, for every user below. */
+extern struct {
+    struct { u16* pDecomp; u16 width; u16 height; } backgrounds[3];
+    u16* pClipDecomp;
+    u16 clipdataWidth;
+    u16 clipdataHeight;
+} gBgPointersAndDimensions;
+
 /* Room the correction list was last selected for. Re-selecting on every frame
  * would rescan the whole list for nothing; the room only changes on a door. */
 static int sFixArea = -1, sFixRoom = -1;
@@ -806,12 +827,6 @@ static void UpdateLayerFixRoom(void) {
     /* The room's decompressed block maps, which is what each correction's
      * checksum is validated against. Only BG0..BG2 exist here -- BG3 is a
      * separate LZ77 backdrop and has no block map (src/room.c:454). */
-    extern struct {
-        struct { u16* pDecomp; u16 width; u16 height; } backgrounds[3];
-        u16* pClipDecomp;
-        u16 clipdataWidth;
-        u16 clipdataHeight;
-    } gBgPointersAndDimensions;
 
     const uint16_t* data[4];
     uint16_t w[4], h[4];
@@ -1897,6 +1912,7 @@ static inline int AllocDrawItemSubtex(const Tex3DS_SubTexture* subtex, int sortK
     item->img.tex = &sAtlasTexture;
     item->img.subtex = subtex;
     item->sortKey = sortKey;
+    item->screenFixed = false;
 
     sBucketNext[idx] = -1;
     if (sBucketHead[sortKey] < 0) sBucketHead[sortKey] = idx;
@@ -1958,8 +1974,8 @@ static inline void PushItemSubtex(const Tex3DS_SubTexture* subtex, float x, floa
     int idx = AllocDrawItemSubtex(subtex, sortKey);
     if (idx < 0) return;
     DrawItem* item = &sDrawItems[idx];
-    item->x = x;
-    item->y = y;
+    item->x = x + sCollectOffX;
+    item->y = y + sCollectOffY;
     item->w = w;
     item->h = h;
     item->angle = 0.0f;
@@ -2104,6 +2120,118 @@ static void CollectAffineBg2(void) {
 /* Text-mode BG tilemap addressing, byte-identical to the formula validated
  * in port/ppu/src/mode1.c (screen_block_x/y + blocks_per_row quadrant
  * layout for the 32x32/64x32/32x64/64x64 GBA screen sizes). */
+
+/* ---- WIDE view (port_wide_view.h) ----------------------------------------
+ * The GBA only keeps the part of a room around the camera in VRAM, and only
+ * processes sprites inside its 240x160 frame. Showing more world therefore
+ * needs two things: the game side keeps sprites alive further out (the culling
+ * margins in src/), and here the tiles past what VRAM holds are rebuilt from
+ * the room's own block maps -- the same data the game copies into VRAM as the
+ * camera moves.
+ *
+ * sExtL/R/T/B: how far past each edge of the 240x160 frame, in GBA px, this
+ * frame collects tiles and sprites. Not simply the margin on both sides: the
+ * view slides inside the room (WideView), so the range follows it. Both zero unless the frame is widened, in which
+ * case every range below collapses back to the original 240x160 one. */
+static bool sWideOn;
+static int sExtL, sExtR, sExtT, sExtB;
+
+/* WIDE view geometry for the frame -- see ComputeWideView. */
+typedef struct WideView {
+    int originX, originY;   /* room px at the GBA frame's top-left */
+    int shiftX, shiftY;
+    int loX, hiX, loY, hiY; /* room extent, room px */
+} WideView;
+static WideView sWideView;
+/* The margin the setting asks for, before the view slides (see WideView). */
+static int sWideMarginX, sWideMarginY;
+
+enum { COV_ROWS = 40 };
+
+typedef struct WideBgSource {
+    bool on;
+    const uint16_t* blocks;   /* the room's block map for this BG, blocksW x blocksH */
+    int blocksW, blocksH;
+    const uint16_t* tilemap;  /* block -> its four tile entries (TL, TR, BL, BR) */
+    int originTileX, originTileY; /* absolute room tile drawn at screen tile (0,0) */
+} WideBgSource;
+
+/* Whether screen tile (tx,ty) is one VRAM is known to hold for this BG: the
+ * tiles the plain 240x160 path reads. Anything else in a widened frame comes
+ * from the block map instead (WideBgEntry). */
+static inline bool TileInVramWindow(int tx, int ty) {
+    return tx >= -1 && tx <= 31 && ty >= 0 && ty <= 20;
+}
+
+/* Sets up the room-data source for a text BG, or leaves it off when the BG
+ * has no block map to rebuild from. Only "RLE" BGs have one -- the level
+ * layers, streamed into a VRAM window as the camera moves. The LZ77 ones
+ * (clouds, dark-room mask, the BG3 backdrop) hold their whole map in VRAM and
+ * wrap, which is also right for the extra area, so they read VRAM as usual.
+ *
+ * scrollX/scrollY are the hardware scroll registers. The room position the
+ * game tracks (gBgNPosition, sub-pixels) says where the BG really is; the two
+ * differ only by the screen-shake offset the game adds to the registers, and
+ * folding that back in keeps rebuilt tiles on the same grid as VRAM ones. */
+static WideBgSource WideBgSourceFor(int bgIndex, int scrollX, int scrollY) {
+    extern uint16_t gBg0XPosition, gBg0YPosition, gBg2XPosition, gBg2YPosition;
+    extern uint8_t gCurrentRoomEntry[]; /* struct RoomEntry: u8 tileset, then bg0..bg3Prop */
+    extern struct { u16* pTilemap; } gTilemapAndClipPointers;
+    enum { BG_PROP_RLE_COMPRESSED = 1 << 4 }; /* include/constants/room.h */
+
+    WideBgSource out = { 0 };
+    if (bgIndex < 0 || bgIndex > 2) return out;
+    if (!(gCurrentRoomEntry[1 + bgIndex] & BG_PROP_RLE_COMPRESSED)) return out;
+
+    out.blocks = gBgPointersAndDimensions.backgrounds[bgIndex].pDecomp;
+    out.blocksW = gBgPointersAndDimensions.backgrounds[bgIndex].width;
+    out.blocksH = gBgPointersAndDimensions.backgrounds[bgIndex].height;
+    out.tilemap = gTilemapAndClipPointers.pTilemap;
+    if (!out.blocks || !out.tilemap || out.blocksW <= 0 || out.blocksH <= 0) return out;
+
+    int posX, posY;
+    switch (bgIndex) {
+        case 0: posX = gBg0XPosition; posY = gBg0YPosition; break;
+        case 1: posX = gBg1XPosition; posY = gBg1YPosition; break;
+        default: posX = gBg2XPosition; posY = gBg2YPosition; break;
+    }
+    const int roomX = posX / 4, roomY = posY / 4; /* sub-pixels -> px */
+    int shakeX = (scrollX - roomX) & 0x1FF;
+    int shakeY = (scrollY - roomY) & 0x1FF;
+    if (shakeX >= 256) shakeX -= 512;
+    if (shakeY >= 256) shakeY -= 512;
+    out.originTileX = (roomX + shakeX) >> 3;
+    out.originTileY = (roomY + shakeY) >> 3;
+    out.on = true;
+    return out;
+}
+
+/* The tilemap entry the game would have put in VRAM for screen tile (tx,ty).
+ * Outside the room's block map it is 0, like the cleared VRAM there. */
+static inline uint16_t WideBgEntry(const WideBgSource* src, int tx, int ty) {
+    const int ax = src->originTileX + tx;
+    const int ay = src->originTileY + ty;
+    const int bx = ax >> 1, by = ay >> 1;
+    if (bx < 0 || by < 0 || bx >= src->blocksW || by >= src->blocksH) return 0;
+    const unsigned block = src->blocks[bx + by * src->blocksW];
+    /* pTilemap is gTilemap, and the game indexes past it on purpose: blocks
+     * 0x400.. land in gCommonTilemap, which sits right after it (hatches,
+     * for one, live there -- 0x411..). ewram_symbols.ld keeps that layout:
+     * 0x400 room blocks, then 0x100 common ones. */
+    if (block >= 0x500u) return 0;
+    return src->tilemap[block * 4u + (unsigned)(ay & 1) * 2u + (unsigned)(ax & 1)];
+}
+
+/* How far a BG slides when the WIDE view slides by `shift` (GBA px): the
+ * game scrolls some layers slower than the camera (PortPpuMzm_WideLayerDivisor),
+ * and those must slide proportionally less. */
+static int WideLayerShift(int bgIndex, int shift, bool vertical) {
+    extern int PortPpuMzm_WideLayerDivisor(int bg, int vertical);
+    if (shift == 0) return 0;
+    const int div = PortPpuMzm_WideLayerDivisor(bgIndex, vertical ? 1 : 0);
+    return div > 0 ? shift / div : 0;
+}
+
 static void CollectBgLayer(int bgIndex) {
     /* Two independent, mutually-exclusive window-clip sources tag/gate this
      * layer differently: rectWinVis (WIN0/WIN1) is carried on each pushed
@@ -2147,6 +2275,27 @@ static void CollectBgLayer(int bgIndex) {
     int fineX = scrollX % 8;
     int fineY = scrollY % 8;
 
+    /* WIDE: this layer slides by its own share of the view's slide (a
+     * parallax backdrop moving at half the camera's speed slides half as
+     * far), so its visible range and draw offset are its own. */
+    const int lsX = WideLayerShift(bgIndex, sWideView.shiftX, false);
+    const int lsY = WideLayerShift(bgIndex, sWideView.shiftY, true);
+    const int eL = sWideMarginX - lsX, eR = sWideMarginX + lsX;
+    const int eT = sWideMarginY - lsY, eB = sWideMarginY + lsY;
+    sCollectOffX = (float)(sWideView.shiftX - lsX);
+    sCollectOffY = (float)(sWideView.shiftY - lsY);
+
+    /* Tile ranges the passes below walk. Without the WIDE view they are the
+     * original ones (-1..31 by 0..20); with it they grow by however many
+     * tiles cover the extra area. wideSrc rebuilds the tiles VRAM does not
+     * hold out there -- see WideBgSourceFor. */
+    const int txMin = -1 - (eL + 7) / 8, txMax = 31 + (eR + 7) / 8;
+    const int tyMin = -(eT + 7) / 8, tyMax = 20 + (eB + 7) / 8;
+    /* `covered` is indexed from the range's own start, so it fits however far
+     * the view reaches (at most ~54 tiles across, ~32 down). */
+    const int covX = -txMin, covY = -tyMin;
+    const WideBgSource wideSrc = sWideOn ? WideBgSourceFor(bgIndex, scrollX, scrollY) : (WideBgSource){ 0 };
+
     /* ---- Step B: is this layer cacheable, and is its cache still good? ---
      * Declined when something resolves visibility or placement per TILE,
      * because a cached layer is one quad and cannot carry per-tile
@@ -2173,11 +2322,12 @@ static void CollectBgLayer(int bgIndex) {
      * render-target compose + C3D_FrameSplit this frame, and stacking the
      * layer cache's own target compose and split on top is the one
      * combination step B was never exercised in -- it corrupts the frame in
-     * lava/heat rooms (reported from hardware). Matches the OBJWIN / layer-
+     * lava/heat rooms (reported from hardware). Also declined for the WIDE
+     * view: the cached target is a fixed 240x160 window. Matches the OBJWIN / layer-
      * fix exclusions above: whenever another feature is already compositing
      * per-frame, the cache stands down. */
     const bool layerCacheable =
-        sLayerCacheEnabled && sLayerRtReady[bgIndex] && !sObjWindowActive && !sHazeActive &&
+        sLayerCacheEnabled && sLayerRtReady[bgIndex] && !sObjWindowActive && !sHazeActive && !sWideOn &&
         PortLayerFix_ActiveCount() == 0 && !roomHasTankOnThisBg && !roomHasDoorDepth;
     /* Not cacheable this frame -> its composed target is now stale and its
      * sLayerKey frozen. Clear the flag so if the layer becomes cacheable
@@ -2286,7 +2436,7 @@ static void CollectBgLayer(int bgIndex) {
      * so a room with a handful of corrections still gets the pass everywhere
      * else. And per group, only groups wholly inside the 240x160 frame are
      * taken -- the border ring stays per-tile. */
-    uint64_t covered[21]; /* tx runs -1..31, so bit index 0..32: needs 64 */
+    uint64_t covered[COV_ROWS]; /* bit tx + covX of row ty + covY */
     memset(covered, 0, sizeof(covered));
     const bool blocksEligible = sBlockPassEnabled && !bpp8 && !sObjWindowActive;
 
@@ -2299,17 +2449,17 @@ static void CollectBgLayer(int bgIndex) {
     const int sk = (3 - priority) * 10 + (3 - bgIndex);
     const int depthTierBg = PortStereoDepth_BgTier(&sDepthState, bgIndex);
     if (blocksEligible && sBlock32PassEnabled) {
-        const int ty0 = (4 - (startTileY & 3)) & 3;
-        const int tx0 = (4 - (startTileX & 3)) & 3;
-        for (int ty = ty0; ty + 3 <= 20; ty += 4) {
+        const int ty0 = tyMin + ((-(startTileY + tyMin)) & 3);
+        const int tx0 = txMin + ((-(startTileX + txMin)) & 3);
+        for (int ty = ty0; ty + 3 <= tyMax; ty += 4) {
             const float drawY = (float)(ty * 8 - fineY);
-            if (drawY < 0.0f || drawY + 32.0f > 160.0f) continue;
+            if (drawY < (float)-eT || drawY + 32.0f > 160.0f + (float)eB) continue;
             const int tileRow = (startTileY + ty) & (mapHeightTiles - 1);
             const int screenBlockY = tileRow / 32;
             const int localRow = tileRow % 32;
-            for (int tx = tx0; tx + 3 <= 31; tx += 4) {
+            for (int tx = tx0; tx + 3 <= txMax; tx += 4) {
                 const float drawX = (float)(tx * 8 - fineX);
-                if (drawX < 0.0f || drawX + 32.0f > 240.0f) continue;
+                if (drawX < (float)-eL || drawX + 32.0f > 240.0f + (float)eR) continue;
                 /* Any tile corrected -> leave the whole 4x4 group to the
                  * 16x16 pass, which re-checks per sub-block. */
                 if (GROUP_CORRECTED(tx, ty, 4, 4)) continue;
@@ -2319,19 +2469,24 @@ static void CollectBgLayer(int bgIndex) {
                 const int screenBlockIndex = screenBlockX + screenBlockY * blocksPerRow;
                 const uint32_t mapAddr =
                     screenBase + (uint32_t)screenBlockIndex * 0x800u + (uint32_t)(localRow * 32 + localCol) * 2u;
+                const bool rebuilt = wideSrc.on && !(TileInVramWindow(tx, ty) && TileInVramWindow(tx + 3, ty + 3));
                 uint16_t entry[16];
                 const uint8_t* src[16];
                 bool anyOpaque = false;
                 for (int q = 0; q < 16; ++q) {
-                    const uint32_t a = mapAddr + (uint32_t)(q / 4) * 64u + (uint32_t)(q % 4) * 2u;
-                    entry[q] = (uint16_t)(gVram[a] | (gVram[a + 1] << 8));
+                    if (rebuilt) {
+                        entry[q] = WideBgEntry(&wideSrc, tx + q % 4, ty + q / 4);
+                    } else {
+                        const uint32_t a = mapAddr + (uint32_t)(q / 4) * 64u + (uint32_t)(q % 4) * 2u;
+                        entry[q] = (uint16_t)(gVram[a] | (gVram[a + 1] << 8));
+                    }
                     const uint32_t byteOffset = charBase + (uint32_t)(entry[q] & 0x3FFu) * 32u;
                     src[q] = &gVram[byteOffset];
                     if (TileHasOpaquePixel(byteOffset, false)) anyOpaque = true;
                 }
-                const uint64_t span = 0xFull << (tx + 1);
+                const uint64_t span = 0xFull << (tx + covX);
                 if (!anyOpaque) {
-                    for (int r = 0; r < 4; ++r) covered[ty + r] |= span;
+                    for (int r = 0; r < 4; ++r) covered[ty + covY + r] |= span;
                     continue;
                 }
                 uint32_t palHash = 2166136261u;
@@ -2346,22 +2501,22 @@ static void CollectBgLayer(int bgIndex) {
                 PushItemSubtex(&sB32SubtexTable[b32], drawX, drawY, 32.0f, 32.0f, sk,
                                depthTierBg, blendAlpha, rectWinVis, false);
                 ++sB32ItemsThisFrame;
-                for (int r = 0; r < 4; ++r) covered[ty + r] |= span;
+                for (int r = 0; r < 4; ++r) covered[ty + covY + r] |= span;
             }
         }
     }
 
     if (blocksEligible) {
-        for (int ty = (startTileY & 1) ? 1 : 0; ty + 1 <= 20; ty += 2) {
+        for (int ty = tyMin + ((startTileY + tyMin) & 1); ty + 1 <= tyMax; ty += 2) {
             const float drawY = (float)(ty * 8 - fineY);
-            if (drawY < 0.0f || drawY + 16.0f > 160.0f) continue;
+            if (drawY < (float)-eT || drawY + 16.0f > 160.0f + (float)eB) continue;
             const int tileRow = (startTileY + ty) & (mapHeightTiles - 1);
             const int screenBlockY = tileRow / 32;
             const int localRow = tileRow % 32;
-            for (int tx = (startTileX & 1) ? 1 : 0; tx + 1 <= 31; tx += 2) {
-                if (covered[ty] & (3ull << (tx + 1))) continue; /* taken by the 32x32 pass */
+            for (int tx = txMin + ((startTileX + txMin) & 1); tx + 1 <= txMax; tx += 2) {
+                if (covered[ty + covY] & (3ull << (tx + covX))) continue; /* taken by the 32x32 pass */
                 const float drawX = (float)(tx * 8 - fineX);
-                if (drawX < 0.0f || drawX + 16.0f > 240.0f) continue;
+                if (drawX < (float)-eL || drawX + 16.0f > 240.0f + (float)eR) continue;
                 if (GROUP_CORRECTED(tx, ty, 2, 2)) continue; /* per-tile handles this block */
                 const int tileCol = (startTileX + tx) & (mapWidthTiles - 1);
                 const int screenBlockX = tileCol / 32;
@@ -2374,11 +2529,13 @@ static void CollectBgLayer(int bgIndex) {
                 const uint32_t mapAddr =
                     screenBase + (uint32_t)screenBlockIndex * 0x800u + (uint32_t)(localRow * 32 + localCol) * 2u;
                 const uint32_t addr[4] = { mapAddr, mapAddr + 2u, mapAddr + 64u, mapAddr + 66u };
+                const bool rebuilt = wideSrc.on && !(TileInVramWindow(tx, ty) && TileInVramWindow(tx + 1, ty + 1));
                 uint16_t entry[4];
                 const uint8_t* src[4];
                 bool anyOpaque = false;
                 for (int q = 0; q < 4; ++q) {
-                    entry[q] = (uint16_t)(gVram[addr[q]] | (gVram[addr[q] + 1] << 8));
+                    entry[q] = rebuilt ? WideBgEntry(&wideSrc, tx + q % 2, ty + q / 2)
+                                       : (uint16_t)(gVram[addr[q]] | (gVram[addr[q] + 1] << 8));
                     const uint32_t byteOffset = charBase + (uint32_t)(entry[q] & 0x3FFu) * 32u;
                     src[q] = &gVram[byteOffset];
                     if (TileHasOpaquePixel(byteOffset, false)) anyOpaque = true;
@@ -2386,8 +2543,8 @@ static void CollectBgLayer(int bgIndex) {
                 if (!anyOpaque) {
                     /* Nothing to draw; still mark it covered so the tile
                      * loop does not walk four transparent tiles either. */
-                    covered[ty] |= 3ull << (tx + 1);
-                    covered[ty + 1] |= 3ull << (tx + 1);
+                    covered[ty + covY] |= 3ull << (tx + covX);
+                    covered[ty + covY + 1] |= 3ull << (tx + covX);
                     continue;
                 }
                 /* Staleness hash over the palette banks all four tiles
@@ -2409,31 +2566,34 @@ static void CollectBgLayer(int bgIndex) {
                 PushItemSubtex(&sBlockSubtexTable[block], drawX, drawY, 16.0f, 16.0f, sortKey,
                                depthTier, blendAlpha, rectWinVis, false);
                 ++sBlockItemsThisFrame;
-                covered[ty] |= 3ull << (tx + 1);
-                covered[ty + 1] |= 3ull << (tx + 1);
+                covered[ty + covY] |= 3ull << (tx + covX);
+                covered[ty + covY + 1] |= 3ull << (tx + covX);
             }
         }
     }
 
-    for (int ty = 0; ty <= 20; ++ty) {
+    for (int ty = tyMin; ty <= tyMax; ++ty) {
         int tileRow = (startTileY + ty) & (mapHeightTiles - 1);
         int screenBlockY = tileRow / 32;
         int localRow = tileRow % 32;
-        for (int tx = -1; tx <= 31; ++tx) {
-            if (covered[ty] & (1ull << (tx + 1))) continue;
+        for (int tx = txMin; tx <= txMax; ++tx) {
+            if (covered[ty + covY] & (1ull << (tx + covX))) continue;
             int tileCol = (startTileX + tx) & (mapWidthTiles - 1);
             int screenBlockX = tileCol / 32;
             int localCol = tileCol % 32;
             int screenBlockIndex = screenBlockX + screenBlockY * blocksPerRow;
             uint32_t mapAddr = screenBase + (uint32_t)screenBlockIndex * 0x800u + (uint32_t)(localRow * 32 + localCol) * 2u;
-            uint16_t entry = (uint16_t)(gVram[mapAddr] | (gVram[mapAddr + 1] << 8));
+            uint16_t entry = (wideSrc.on && !TileInVramWindow(tx, ty))
+                                 ? WideBgEntry(&wideSrc, tx, ty)
+                                 : (uint16_t)(gVram[mapAddr] | (gVram[mapAddr + 1] << 8));
             uint16_t tileId = entry & 0x3FFu;
             bool hflip = (entry & 0x0400u) != 0;
             bool vflip = (entry & 0x0800u) != 0;
             int palBank = (entry >> 12) & 0x0Fu;
             float drawX = (float)(tx * 8 - fineX);
             float drawY = (float)(ty * 8 - fineY);
-            if (drawY <= -8.0f || drawY >= 160.0f || drawX <= -16.0f || drawX >= 248.0f) continue;
+            if (drawY <= -8.0f - (float)eT || drawY >= 160.0f + (float)eB ||
+                drawX <= -16.0f - (float)eL || drawX >= 248.0f + (float)eR) continue;
 
             uint32_t byteOffset = charBase + (uint32_t)tileId * bytesPerTile;
             if (!TileHasOpaquePixel(byteOffset, bpp8)) continue;
@@ -2758,6 +2918,11 @@ static void CollectSprite(int oamIndex, bool obj1D) {
 
     bool isAffine = ((attr0 >> 8) & 1u) != 0u;
     if (((attr0 >> 9) & 1u) && !isAffine) return; /* disabled (non-affine hidden bit) */
+    /* ResetFreeOam (src/init_helpers.c) parks every unused slot as an 8x8
+     * sprite at x=255, y=255: off the GBA's right edge, but inside the WIDE
+     * view -- where it drew OBJ tile 0, i.e. a piece of Samus, at the top of
+     * the extra area on the right. */
+    if (attr0 == 0x00FFu && attr1 == 0x00FFu && attr2 == 0u) return;
     uint8_t objMode = (uint8_t)((attr0 >> 10) & 3u);
     if (objMode == 2) return; /* OBJ window: not a drawable sprite */
 
@@ -2777,10 +2942,24 @@ static void CollectSprite(int oamIndex, bool obj1D) {
     int boundsWidth = doubleSize ? width * 2 : width;
     int boundsHeight = doubleSize ? height * 2 : height;
 
+    /* OAM Y is 8 bits and X 9 (signed, wrapping): a value past the visible
+     * range is a position above / left of the frame instead. The WIDE view
+     * moves that cut-over out with the frame's edges. That is only a guess
+     * for a sprite far out, so the sprites the game tags with their true
+     * position (Port_Wide_NoteSlots) skip it. */
     int y = attr0 & 0xFFu;
-    if (y >= 160) y -= 256;
     int x = (int)(attr1 & 0x1FFu);
-    if (x >= 240) x -= 512;
+    int originY, originX;
+    if (sWideOn && PortWide_SlotOrigin(oamIndex, &originY, &originX)) {
+        /* The game recorded where this sprite really is, so pick the wrap of
+         * y / x that lands nearest it. Exact for any part within 128 px
+         * vertically / 256 horizontally of the origin, i.e. all of them. */
+        y = originY + ((y - originY + 128) & 255) - 128;
+        x = originX + ((x - originX + 256) & 511) - 256;
+    } else {
+        if (y >= 160 + sExtB) y -= 256;
+        if (x >= 240 + sExtR) x -= 512;
+    }
 
     bool bpp8 = ((attr0 >> 13) & 1u) != 0;
     /* attr1 bits12-13 are hflip/vflip only for non-affine OBJs -- for
@@ -2794,7 +2973,7 @@ static void CollectSprite(int oamIndex, bool obj1D) {
     uint8_t priority = (uint8_t)((attr2 >> 10) & 3u);
     uint8_t palBank = (uint8_t)((attr2 >> 12) & 0x0Fu);
 
-    if (y >= 160 || y + boundsHeight <= 0 || x >= 240 || x + boundsWidth <= 0) return;
+    if (y >= 160 + sExtB || y + boundsHeight <= -sExtT || x >= 240 + sExtR || x + boundsWidth <= -sExtL) return;
 
     /* See CollectBgLayer's comment: rectWinVis tags items for the WIN0/WIN1
      * draw-time scissor mechanism; objWinVis is resolved per-subtile right
@@ -3005,10 +3184,13 @@ static void CollectSprite(int oamIndex, bool obj1D) {
             if (!isAffine) {
                 float drawX = (float)(x + tx * 8);
                 float drawY = (float)(y + ty * 8);
-                if (drawY <= -8.0f || drawY >= 160.0f || drawX <= -8.0f || drawX >= 240.0f) continue;
+                if (drawY <= -8.0f - (float)sExtT || drawY >= 160.0f + (float)sExtB ||
+                    drawX <= -8.0f - (float)sExtL || drawX >= 240.0f + (float)sExtR) continue;
                 if (sObjWindowActive && !ObjWinItemVisible(objWinVis, drawX, drawY)) continue;
                 int slot = GetOrDecodeTileSlot(byteOffset, bpp8, pal, palBank, hflip, vflip, true, brightAdjust);
+                const int before = sDrawItemCount;
                 PushItem(slot, drawX, drawY, sortKey, depthTier, blendAlpha, rectWinVis, isRealHud);
+                if (sDrawItemCount > before && (isRealHud || isOverlayText)) sDrawItems[before].screenFixed = true;
                 continue;
             }
 
@@ -3407,6 +3589,90 @@ static inline bool ItemPassesWindow(bool windowActive, WindowVis winVis, bool in
     return insidePass ? (winVis == WIN_VIS_INSIDE_ONLY) : (winVis == WIN_VIS_OUTSIDE_ONLY);
 }
 
+/* WIDE view geometry for this frame: where the camera is and how far the
+ * widened view has to slide to stay inside the room.
+ *
+ * A view wider than the GBA frame would poke past the camera's limits whenever
+ * it is near one and show scenery that was never meant to be seen (or black
+ * "outside the map"); instead the view is slid back inside (shiftX/Y, GBA px;
+ * the world moves on screen by the negative of it). The camera itself is
+ * untouched, so at a limit the scenery simply stops scrolling and Samus walks
+ * on toward the border, and the side that is not blocked shows more. An extent
+ * smaller than the view is centred, which is what leaves the black borders on
+ * both sides of a single-screen room. */
+
+static int WideAxisShift(int origin, int ext, int frame, int lo, int hi) {
+    const int viewLo = origin - ext, viewHi = origin + frame + ext;
+    if (hi - lo <= viewHi - viewLo) return (lo + hi - viewLo - viewHi) / 2; /* room fits: centre it */
+    if (viewLo < lo) return lo - viewLo;
+    if (viewHi > hi) return hi - viewHi;
+    return 0;
+}
+
+static void ComputeWideView(void) {
+    extern void PortPpuMzm_ScreenOrigin(int* outX, int* outY);
+    WideView* v = &sWideView;
+    *v = (WideView){ 0 };
+    /* The whole room: everything it has data for is shown, even the parts
+     * the GBA camera never reaches (a neighbouring scroll region, the padding
+     * blocks). Only what lies outside the room is black. Tried the camera's
+     * scroll regions instead: the view then jumped every time Samus crossed
+     * into another region and hid scenery that is really there. */
+    PortPpuMzm_ScreenOrigin(&v->originX, &v->originY);
+    const int roomW = gBgPointersAndDimensions.clipdataWidth;
+    const int roomH = gBgPointersAndDimensions.clipdataHeight;
+    if (roomW <= 0 || roomH <= 0) {
+        /* No room loaded: leave the view centred on the frame. */
+        v->loX = v->originX; v->hiX = v->originX + 240;
+        v->loY = v->originY; v->hiY = v->originY + 160;
+        return;
+    }
+    v->loX = 0; v->hiX = roomW * 16;
+    v->loY = 0; v->hiY = roomH * 16;
+    v->shiftX = WideAxisShift(v->originX, sWideMarginX, 240, v->loX, v->hiX);
+    v->shiftY = WideAxisShift(v->originY, sWideMarginY, 160, v->loY, v->hiY);
+    /* The view never slides further than its own margin, so what is collected
+     * never has to reach past twice the margin on one side. */
+    if (v->shiftX < -sWideMarginX) v->shiftX = -sWideMarginX;
+    if (v->shiftX > sWideMarginX) v->shiftX = sWideMarginX;
+    if (v->shiftY < -sWideMarginY) v->shiftY = -sWideMarginY;
+    if (v->shiftY > sWideMarginY) v->shiftY = sWideMarginY;
+}
+
+/* Blacks out whatever lies beyond the room extent (see WideView), which only
+ * shows for a room smaller than the view. baseX/Y is where the shifted world
+ * starts on screen. Clamped to stay clear of the 240x160 frame itself, so a
+ * camera that is momentarily outside the extent (a transition) can never
+ * black out the game or the HUD. */
+static void DrawWideRoomMasks(float baseX, float baseY, float scaleX, float scaleY) {
+    const WideView* v = &sWideView;
+    /* The tile quads before this are still queued with the atlas texenv. A
+     * solid rectangle drawn on top of that samples the atlas instead of being
+     * flat black -- the repeating stray-tile pattern seen in the border of
+     * small rooms. Flush them, then put the texenv back to plain colour (see
+     * PlatformGpu3DS_ResetSolidTexEnv). */
+    C2D_Flush();
+    PlatformGpu3DS_ResetSolidTexEnv();
+    int left = v->loX - v->originX - v->shiftX;
+    int top = v->loY - v->originY - v->shiftY;
+    int right = v->hiX - v->originX - v->shiftX;
+    int bottom = v->hiY - v->originY - v->shiftY;
+    if (left > -v->shiftX) left = -v->shiftX;
+    if (top > -v->shiftY) top = -v->shiftY;
+    if (right < 240 - v->shiftX) right = 240 - v->shiftX;
+    if (bottom < 160 - v->shiftY) bottom = 160 - v->shiftY;
+
+    const u32 black = C2D_Color32(0, 0, 0, 255);
+    const float x0 = baseX + (float)left * scaleX;
+    const float x1 = baseX + (float)right * scaleX;
+    const float y0 = baseY + (float)top * scaleY;
+    const float y1 = baseY + (float)bottom * scaleY;
+    if (x0 > 0.0f) C2D_DrawRectSolid(0.0f, 0.0f, 0.6f, x0, 240.0f, black);
+    if (x1 < 400.0f) C2D_DrawRectSolid(x1, 0.0f, 0.6f, 400.0f - x1, 240.0f, black);
+    if (y0 > 0.0f) C2D_DrawRectSolid(0.0f, 0.0f, 0.6f, 400.0f, y0, black);
+    if (y1 < 240.0f) C2D_DrawRectSolid(0.0f, y1, 0.6f, 400.0f, 240.0f - y1, black);
+}
+
 void Port_GpuRenderer_RenderFrame(void) {
     if (!sInitialized) return;
     u64 tStart = svcGetSystemTick();
@@ -3588,6 +3854,23 @@ void Port_GpuRenderer_RenderFrame(void) {
      * the flat path (kept simple: those never coincide with a ripple room). */
     sHazeActive = (sHazeMode != HAZE_OFF) && sHazeRtReady && (dispcnt & (1u << 11)) && !sWindowActive && !sPbFlashActive &&
                   PortHaze_Bg3RowScroll(sHazeRowDelta, &sHazeBakeHofs);
+    /* WIDE view (port_wide_view.h). Left off for the frames this renderer
+     * cannot yet widen: window-clipped ones (the scissor rect is in GBA
+     * coordinates), the BG3 haze pass (its offscreen target is 240 wide) and
+     * the affine BG2 scene. Those draw as the plain frame. */
+    sWideOn = PortWide_GameActive() && !sWindowActive && !sHazeActive && !sAffineBg2Active;
+    sWideMarginX = sWideOn ? PortWide_MarginX() : 0;
+    sWideMarginY = sWideOn ? PortWide_MarginY() : 0;
+    PortWide_SetFrameDrawn(sWideOn);
+    if (sWideOn) ComputeWideView();
+    else sWideView = (WideView){ 0 };
+    /* The visible range in frame coordinates is [-margin + shift, 240 + margin
+     * + shift] (likewise vertically). */
+    sExtL = sWideMarginX - sWideView.shiftX;
+    sExtR = sWideMarginX + sWideView.shiftX;
+    sExtT = sWideMarginY - sWideView.shiftY;
+    sExtB = sWideMarginY + sWideView.shiftY;
+
     if (sHazeActive) CollectHazeBg3();
 
     /* Any layer NOT collected as a cached layer this frame has a stale
@@ -3609,15 +3892,23 @@ void Port_GpuRenderer_RenderFrame(void) {
     sDiagSemiTransColl = sDiagAffineColl = sDiagMosaicColl = 0;
     sDiagSemiTransX = sDiagSemiTransOam = -1;
 #endif
+    /* Sprites first. The item table and the tile atlas both have a ceiling,
+     * and the WIDE view's extra background tiles come close to it; whatever is
+     * collected last is what gets dropped, and a missing enemy is far worse
+     * than a missing patch of far-off scenery. Draw order comes from the sort
+     * keys, not from collection order, so this changes nothing else. */
+    if (dispcnt & (1u << 12)) {
+        for (int i = 127; i >= 0; --i) CollectSprite(i, obj1D);
+    }
+    sCollectOffX = sCollectOffY = 0.0f;
     for (int bg = 3; bg >= 0; --bg) {
+        sCollectOffX = sCollectOffY = 0.0f; /* CollectBgLayer sets its own */
         if (!(dispcnt & (1u << (8 + bg)))) continue;
         if (sHazeActive && bg == 3) continue; /* drawn via the offscreen strip pass */
         if (sAffineBg2Active && bg == 2) { CollectAffineBg2(); continue; }
         CollectBgLayer(bg);
     }
-    if (dispcnt & (1u << 12)) {
-        for (int i = 127; i >= 0; --i) CollectSprite(i, obj1D);
-    }
+    sCollectOffX = sCollectOffY = 0.0f; /* sprites, next frame, take no layer offset */
     sOpaqueCount = 0;
     sBlendCount = 0;
     sDrawOrderCount = 0;
@@ -3788,7 +4079,8 @@ void Port_GpuRenderer_RenderFrame(void) {
     float slider3d = PlatformGpu3DS_Get3DSlider();
     int style = Port_Config_Get3DSDisplayStyle();
     int aspect = Port_Config_Get3DSAspectRatio();
-    bool hudOutside = (style == 0 && Port_Config_GetHudOutside());
+    /* HUD-in-the-border needs the black border, which WIDE fills with world. */
+    bool hudOutside = (style == 0 && Port_Config_GetHudOutside() && !PortWide_Selected());
 
     /* Emulated GBA main game mode (GM_INGAME == 4, GM_DEMO == 11, etc.) */
     extern s16 gMainGameMode;
@@ -3822,6 +4114,19 @@ void Port_GpuRenderer_RenderFrame(void) {
             screenBaseY = 0.0f;
         }
     }
+
+    /* Where things start on screen. The world slides by the WIDE view's shift
+     * (ComputeWideView); screen-fixed items (HUD, overlay text) stay on the
+     * GBA frame, and the HUD itself rides up to the top edge of the screen
+     * along with the extra rows the view adds above the frame. All equal
+     * screenBase when WIDE is off. */
+    const float worldBaseX = screenBaseX - (float)sWideView.shiftX * scaleX;
+    const float worldBaseY = screenBaseY - (float)sWideView.shiftY * scaleY;
+    /* Keyed on the setting, not on this frame being widened: a door
+     * transition draws a few plain frames (the room-settle window), and the
+     * HUD must not jump down to the frame and back up for them. */
+    const float hudBaseY = screenBaseY - (float)PortWide_MarginY() * scaleY;
+    const bool hudOverMasks = sWideOn || PortWide_MarginY() > 0;
 
     C3D_RenderTarget* leftTarget = PlatformGpu3DS_GetTopLeftTarget();
     C3D_RenderTarget* rightTarget = (slider3d > 0.01f) ? PlatformGpu3DS_GetTopRightTarget() : NULL;
@@ -3999,6 +4304,7 @@ void Port_GpuRenderer_RenderFrame(void) {
                 const DrawItem* item = &sDrawItems[sDrawOrder[oi]];
                 if (!ItemPassesWindow(sWindowActive, item->winVis, insidePass)) continue;
                 if (hudOutside && item->isHud) continue;
+                if (hudOverMasks && item->isHud) continue; /* drawn over the masks, below */
                 /* item->blendAlpha already implies alpha mode: the BG/OBJ
                  * collect paths only set it when sBldEffect==1, and a
                  * Semi-Transparent OBJ sets it unconditionally (and must
@@ -4056,7 +4362,10 @@ void Port_GpuRenderer_RenderFrame(void) {
                     plainEnvActive = item->plainEnv;
                     reassertedTexEnv = true;
                 }
-                C2D_DrawParams params = BuildDrawParams(item, screenBaseX, screenBaseY, eyeOffset, scaleX, scaleY, false);
+                C2D_DrawParams params = BuildDrawParams(item,
+                    item->screenFixed ? screenBaseX : worldBaseX,
+                    item->screenFixed ? (item->isHud ? hudBaseY : screenBaseY) : worldBaseY,
+                    eyeOffset, scaleX, scaleY, false);
                 C2D_DrawImage(item->img, &params, NULL);
                 ++drawCount;
 #ifdef PORT_DEBUG_TOOLS_ACTIVE
@@ -4122,8 +4431,10 @@ void Port_GpuRenderer_RenderFrame(void) {
                 }
                 float eo = floorf(eyeSign * slider3d *
                                   PortStereoDepth_TierPx(item->depthTier) + 0.5f);
-                C2D_DrawParams p = BuildDrawParams(item, screenBaseX, screenBaseY,
-                                                   eo, scaleX, scaleY, false);
+                C2D_DrawParams p = BuildDrawParams(item,
+                    item->screenFixed ? screenBaseX : worldBaseX,
+                    item->screenFixed ? (item->isHud ? hudBaseY : screenBaseY) : worldBaseY,
+                    eo, scaleX, scaleY, false);
                 C2D_DrawImage(item->img, &p, NULL);
                 if (!tReasserted) {
                     if (item->plainEnv) ConfigureDepthTintPlainTexEnv();
@@ -4155,8 +4466,8 @@ void Port_GpuRenderer_RenderFrame(void) {
                            GPU_CONSTANT_ALPHA, GPU_ONE_MINUS_CONSTANT_ALPHA);
 
             const u32 c = C2D_Color32(0, 0, 0, 255); /* vertex colour unused: blend is CONSTANT_ALPHA */
-            float cx = screenBaseX + sPbFlashCxGba * scaleX;
-            float cy = screenBaseY + sPbFlashCyGba * scaleY;
+            float cx = worldBaseX + sPbFlashCxGba * scaleX;
+            float cy = worldBaseY + sPbFlashCyGba * scaleY;
             float rx = sPbFlashRxGba * scaleX;
             float ry = sPbFlashRyGba * scaleY;
             if (rx < 1.0f) rx = 1.0f;
@@ -4184,9 +4495,19 @@ void Port_GpuRenderer_RenderFrame(void) {
             C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
         }
 
+        /* WIDE view: the border is world, so the only black is what lies
+         * outside the room itself. */
+        if (sWideOn) {
+            DrawWideRoomMasks(screenBaseX, screenBaseY, scaleX, scaleY);
+        }
+
         /* Draw solid black border masks over letterbox/pillarbox areas (covers any
          * tiles or 3D stereo parallax layers that extend beyond the GBA frame). */
-        if (screenBaseX > 0.0f || screenBaseY > 0.0f) {
+        if (!sWideOn && (screenBaseX > 0.0f || screenBaseY > 0.0f)) {
+            /* Queued atlas quads first, then a plain-colour texenv, or the
+             * rectangles sample the atlas (see DrawWideRoomMasks). */
+            C2D_Flush();
+            PlatformGpu3DS_ResetSolidTexEnv();
             float gameW = 240.0f * scaleX;
             float gameH = 160.0f * scaleY;
             float topY = screenBaseY;
@@ -4206,6 +4527,44 @@ void Port_GpuRenderer_RenderFrame(void) {
             if (bottomY < 240.0f) {
                 C2D_DrawRectSolid(0.0f, bottomY, 0.6f, 400.0f, 240.0f - bottomY, C2D_Color32(0, 0, 0, 255));
             }
+        }
+
+        if (hudOverMasks) {
+            /* The HUD sits in the extra rows above the frame, which in a small
+             * room are exactly what the masks blacken -- so it goes on top. */
+            C2D_Flush();
+            ConfigureAtlasTextureEnv();
+            C3D_AlphaTest(true, GPU_GREATER, 0);
+            C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
+            bool hudEnvAsserted = false;
+            for (int oi = 0; oi < sDrawOrderCount; ++oi) {
+                const DrawItem* item = &sDrawItems[sDrawOrder[oi]];
+                if (!item->isHud) continue;
+                float eyeOffset = floorf(eyeSign * slider3d * PortStereoDepth_TierPx(item->depthTier) + 0.5f);
+                C2D_DrawParams params = BuildDrawParams(item, screenBaseX, hudBaseY, eyeOffset, scaleX, scaleY, false);
+                C2D_Image img = item->img;
+                Tex3DS_SubTexture clippedSub;
+                if (item->x + item->w > 240.0f) {
+                    /* The minimap sprite overhangs the GBA frame by a few
+                     * pixels, which the GBA cuts off; drawn whole it shows a
+                     * stray white line down the map's right edge. Same clip
+                     * as the HUD-outside pass. */
+                    if (item->x >= 240.0f) continue;
+                    const float visibleW = 240.0f - item->x;
+                    params.pos.w = visibleW * scaleX;
+                    clippedSub = *item->img.subtex;
+                    clippedSub.right = clippedSub.left + (clippedSub.right - clippedSub.left) * (visibleW / item->w);
+                    img.subtex = &clippedSub;
+                }
+                C2D_DrawImage(img, &params, NULL);
+                ++drawCount;
+                if (!hudEnvAsserted) {
+                    ConfigureAtlasTextureEnv(); /* citro2d re-inits the TEV on a scene's first draw */
+                    hudEnvAsserted = true;
+                }
+            }
+            C2D_Flush();
+            PlatformGpu3DS_ResetSolidTexEnv();
         }
 
         /* GBA Bezel overlay */

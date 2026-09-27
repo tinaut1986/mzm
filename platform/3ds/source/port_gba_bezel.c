@@ -1,5 +1,6 @@
 #include "port_gba_bezel.h"
 #include "platform_gpu_3ds.h"
+#include "port_wide_view.h"
 
 #include <citro2d.h>
 #include <citro3d.h>
@@ -124,6 +125,8 @@ bool PortGbaBezel_Ready(void) {
 
 GbaBezelMode PortGbaBezel_GetMode(void) {
     if (!sBezelReady || !Port_Config_GetGbaBezel()) return GBA_BEZEL_MODE_NONE;
+    /* WIDE fills the border with world, so there is no frame to put a bezel on. */
+    if (PortWide_Selected()) return GBA_BEZEL_MODE_NONE;
     int style = Port_Config_Get3DSDisplayStyle();
     if (style == 0) return GBA_BEZEL_MODE_FULL;
     int aspect = Port_Config_Get3DSAspectRatio();

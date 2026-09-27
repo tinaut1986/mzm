@@ -2,6 +2,7 @@
 #include "port_debug_tools.h" /* PORT_DEBUG_TOOLS_ACTIVE */
 #include "port_gba_screen_fx.h"
 #include "port_gba_bezel.h"
+#include "port_wide_view.h"
 #include "port_gpu_renderer.h" /* PortGpuRendererDrawStats */
 #include "port_debug_files.h"
 #include "port_oam_census.h"
@@ -91,9 +92,13 @@ extern bool Port_PPU_3DS_LastFrameUsedGpu(void);
 extern void Port_GpuRenderer_GetLastFrameStats(int* outItems, int* outObjItems, int* outCacheSlots);
 
 enum {
-    TOP_ASPECT_WIDE = 0, /* retired -- Port_Config_Load clamps it to ORIGINAL */
+    TOP_ASPECT_LEGACY_WIDE = 0, /* the old stretched WIDE, retired -- Port_Config_Load clamps it to ORIGINAL */
     TOP_ASPECT_ORIGINAL,
     TOP_ASPECT_STRETCH,
+    /* Shows the world past the GBA frame (port_wide_view.h). Only the GPU
+     * renderer can draw that; a frame this file draws itself is a plain
+     * ORIGINAL one. */
+    TOP_ASPECT_WIDE,
 };
 
 enum {
@@ -548,6 +553,7 @@ static void DrawTopImageStereo(const uint32_t* leftPixels, const uint32_t* right
     const C2D_Image imageLeft = { .tex = &sTopTexture, .subtex = &sTopSubtexture };
     const C2D_Image imageRight = { .tex = rightTex, .subtex = &sTopSubtexture };
     const int style = Port_Config_Get3DSDisplayStyle();
+    PortWide_SetFrameDrawn(false); /* this path only ever draws the plain frame */
     C3D_TexSetFilter(&sTopTexture, style == TOP_DISPLAY_BLUR ? GPU_LINEAR : GPU_NEAREST,
                      style == TOP_DISPLAY_BLUR ? GPU_LINEAR : GPU_NEAREST);
     if (sTopRightTexture.data) {
@@ -562,9 +568,9 @@ static void DrawTopImageStereo(const uint32_t* leftPixels, const uint32_t* right
         drawH = 160.0f;
     } else {
         drawH = 240.0f;
-        /* Only STRETCH fills the screen width; ORIGINAL -- and TOP_ASPECT_WIDE
-         * or any stale out-of-range value, both retired and clamped out by
-         * Port_Config_Load -- pillarbox to 360. Kept identical to
+        /* Only STRETCH fills the screen width; ORIGINAL, WIDE (whose extra
+         * world only the GPU renderer draws) and any stale out-of-range value
+         * pillarbox to 360. Kept identical to
          * PlatformGpu3DS_GetTopImageRect and to port_gpu_renderer.c's
          * screenBaseX/scaleX: a rect that disagrees with what was actually
          * drawn misplaces every screen-space effect built on it. */
@@ -649,7 +655,10 @@ C3D_RenderTarget* PlatformGpu3DS_GetTopRightTarget(void) { return sTopRightTarge
  * width is fixed at 240 (TOP_NATIVE_W), matching both present paths. */
 void PlatformGpu3DS_GetTopImageRect(int* outX, int* outY, int* outW, int* outH) {
     int w, h;
-    if (Port_Config_Get3DSDisplayStyle() == TOP_DISPLAY_PIXEL_PERFECT) {
+    if (PortWide_FrameDrawn()) {
+        /* WIDE: the picture is the whole screen. */
+        w = 400; h = 240;
+    } else if (Port_Config_Get3DSDisplayStyle() == TOP_DISPLAY_PIXEL_PERFECT) {
         w = 240; h = 160;
     } else {
         h = 240;
