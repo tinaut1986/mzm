@@ -1974,8 +1974,12 @@ void PortPpuMzm_SetDoorDepthRoom(int area, int room) {
         }
 
         int dx0 = (int)d->xStart - 1, dx1 = (int)d->xEnd + 1;
-        if (dx0 < 0) dx0 = 0;
-        if (bw > 0 && dx1 > bw - 1) dx1 = bw - 1;
+        /* A door against the room's edge: the trim runs on to the edge, and
+         * the block or two past the outboard one would otherwise stay on
+         * their own plane -- a lone tile at the end of the lintel/sill that
+         * sits at a different depth from the rest. Take them too. */
+        if (dx0 <= 2) dx0 = 0;
+        if (bw > 0 && dx1 >= bw - 3) dx1 = bw - 1;
         int y0 = (int)d->yStart - PORT_DOOR_DEPTH_MARGIN_Y;
         int y1 = (int)d->yEnd   + PORT_DOOR_DEPTH_MARGIN_Y;
         if (y0 < 0) y0 = 0;

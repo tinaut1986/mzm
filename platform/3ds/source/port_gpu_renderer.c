@@ -1320,9 +1320,12 @@ static void ComputeDepthState(uint16_t dispcnt) {
             extern bool PortPpuMzm_DoorDepthInView(int bx0, int by0, int bx1, int by1);
             int ox = 0, oy = 0;
             PortPpuMzm_ScreenOrigin(&ox, &oy);
-            /* px -> 16px blocks; the 240x160 frame spans ~16x11 blocks. */
+            /* px -> 16px blocks; the 240x160 frame spans ~16x11 blocks. The
+             * WIDE view reaches past it -- up to twice the margin on the side
+             * it slides toward -- and a door out there needs the pull too. */
+            const int mx = 2 * PortWide_MarginX(), my = 2 * PortWide_MarginY();
             sDoorDepthOnScreen = PortPpuMzm_DoorDepthInView(
-                ox >> 4, oy >> 4, (ox + 240) >> 4, (oy + 160) >> 4);
+                (ox - mx) >> 4, (oy - my) >> 4, (ox + 240 + mx) >> 4, (oy + 160 + my) >> 4);
         }
     }
 
@@ -2641,6 +2644,13 @@ static inline void LayerMapCheckCell(int bg, LayerMapPass* pass, int cellCol, in
                               : BgColorsChangedSince(bank, cell->used, cell->stamp)) ||
                         TileChangeStamp(byteOffset, bpp8) > cell->stamp));
     if (!stale) return;
+    if (pass->ops >= LM_MAX_OPS) {
+        /* Op list full (cannot happen with one check per visible cell, but a
+         * cell checked twice in a frame must not run past the arrays): leave
+         * the cell stale so the next frame redraws it. */
+        cell->stamp = 0;
+        return;
+    }
     int slot = LM_TRANSPARENT_SLOT;
     if (!corrected && TileHasOpaquePixel(byteOffset, bpp8)) {
         /* Same tile as before under the same layer state (a palette step, an
@@ -4809,11 +4819,14 @@ void Port_GpuRenderer_CollectFrame(void) {
      * the flat path (kept simple: those never coincide with a ripple room). */
     sHazeActive = (sHazeMode != HAZE_OFF) && sHazeRtReady && (dispcnt & (1u << 11)) && !sWindowActive && !sPbFlashActive &&
                   PortHaze_Bg3RowScroll(sHazeRowDelta, &sHazeBakeHofs);
-    /* WIDE view (port_wide_view.h). Left off for the frames this renderer
-     * cannot yet widen: window-clipped ones (the scissor rect is in GBA
-     * coordinates) and the affine BG2 scene. Those draw as the plain frame.
-     * The BG3 haze pass widens with it (CollectHazeBg3). */
-    sWideOn = PortWide_GameActive() && !sWindowActive && !sAffineBg2Active;
+    /* WIDE view (port_wide_view.h). Left off only for the affine BG2 scene,
+     * which draws as the plain frame. The BG3 haze pass widens with it
+     * (CollectHazeBg3). Window frames widen too: the WIN0/WIN1 rect is not
+     * used to clip anything in this renderer, only the per-layer inside /
+     * outside visibility is (ItemPassesWindow), and that holds anywhere.
+     * Excluding them flashed the plain frame for the one windowed frame at
+     * the end of a power bomb. */
+    sWideOn = PortWide_GameActive() && !sAffineBg2Active;
     sWideMarginX = sWideOn ? PortWide_MarginX() : 0;
     sWideMarginY = sWideOn ? PortWide_MarginY() : 0;
     PortWide_SetFrameDrawn(sWideOn);
