@@ -875,6 +875,7 @@ static inline void MarkAtlasRowDirty(int row) {
 /* Work counters for the perf recorder (PERF_COUNT_*, platform_gpu_3ds.h),
  * handed over once per frame at the end of Port_GpuRenderer_CollectFrame. */
 static uint32_t sPerfCount[8];
+static inline uint32_t TicksToUs(u64 ticks) { return (uint32_t)(ticks * 1000u / (u64)(SYSCLOCK_ARM11 / 1000u)); }
 
 
 
@@ -2521,6 +2522,7 @@ static void CollectBgLayer(int bgIndex) {
      * not be allocated, or OBJWIN resolves visibility per tile) every
      * position goes through the per-tile pass. */
     const bool useLayerMap = sLmReady[bgIndex] && !sObjWindowActive;
+    const u64 tLm = svcGetSystemTick();
     if (useLayerMap) {
         /* Cells hold the layer without brighten/darken or a palette fade: the
          * quad applies them (ConfigureFxTextureEnv), so a fade does not make
@@ -2628,6 +2630,7 @@ static void CollectBgLayer(int bgIndex) {
             }
             /* 3. Tile pixels or palette banks that changed this frame: re-check
              *    the visible cells that show them (by the entry they hold). */
+            const u64 tWalk = svcGetSystemTick();
             bool anyBank = false;
             for (int b = 0; b < 17; ++b) anyBank |= (sLmBankStamp[bgIndex][b] == now);
             bool anyTile = false;
@@ -2662,6 +2665,7 @@ static void CollectBgLayer(int bgIndex) {
                     }
                 }
             }
+            sPerfCount[PERF_COUNT_LM_WALK_US] += TicksToUs(svcGetSystemTick() - tWalk);
             /* 4. A rolling full re-check, one row a frame (the whole view in
              *    about half a second): catches what no VRAM chunk announces --
              *    the room's block map changing out in the WIDE margins (a
@@ -2717,6 +2721,7 @@ static void CollectBgLayer(int bgIndex) {
         }
         const int ops = pass.ops;
         sLmOpCount[bgIndex] = ops;
+        sPerfCount[PERF_COUNT_LM_US] += TicksToUs(svcGetSystemTick() - tLm);
         sPerfCount[PERF_COUNT_TILE_POSITIONS] += (uint32_t)ops; /* here: cells redrawn */
 
         /* The layer on screen: one quad over the visible range plus a tile
@@ -4347,7 +4352,11 @@ void Port_GpuRenderer_CollectFrame(void) {
         tPhase = now;
     }
     sHazeFromMap = false;
-    if (sHazeActive) CollectHazeBg3();
+    if (sHazeActive) {
+        const u64 tHaze = svcGetSystemTick();
+        CollectHazeBg3();
+        sPerfCount[PERF_COUNT_HAZE_US] += TicksToUs(svcGetSystemTick() - tHaze);
+    }
 
 #ifdef PORT_DEBUG_TOOLS_ACTIVE
     sDiagAffineDrawn[0] = sDiagAffineDrawn[1] = 0;
@@ -4381,7 +4390,9 @@ void Port_GpuRenderer_CollectFrame(void) {
         if (!(dispcnt & (1u << (8 + bg)))) continue;
         if (sHazeActive && bg == 3) continue; /* drawn via the offscreen strip pass */
         if (sAffineBg2Active && bg == 2) { CollectAffineBg2(); continue; }
+        const u64 tLayer = svcGetSystemTick();
         CollectBgLayer(bg);
+        sPerfCount[PERF_COUNT_BG_LAYERS_US] += TicksToUs(svcGetSystemTick() - tLayer);
     }
     sCollectOffX = sCollectOffY = 0.0f; /* sprites, next frame, take no layer offset */
     sPushFx = 0;

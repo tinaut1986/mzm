@@ -458,9 +458,13 @@ struct PerfSample {      // 148 bytes, sampleCount of them back to back
                                  //   before the block passes were removed hold
                                  //   the 32x32 / 16x16 block passes here.
                                  // 10 ('MZP7') per-tile pass (part of phase 3)
-    uint32_t counts[8];          // 'MZP7': work over this frame -- 32x32 block
-                                 // lookups, decodes; 16x16 lookups, decodes
-                                 // (0 since the block passes were removed);
+    uint32_t counts[8];          // 'MZP7': work over this frame -- times in
+                                 // us: layer maps finding/re-checking cells
+                                 // whose tiles or palette changed; layer maps
+                                 // in all (that included); CollectBgLayer in
+                                 // all (that included); the haze BG3 (older
+                                 // captures: the 32x32 / 16x16 block lookups
+                                 // and decodes);
                                  // tile lookups, decodes; positions the
                                  // per-tile pass examined; WIDE entries rebuilt
                                  // from the room's block map

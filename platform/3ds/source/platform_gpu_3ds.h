@@ -84,9 +84,12 @@ void PlatformGpu3DS_PerfPhaseAdd(PerfPhase phase, unsigned long long ticks);
 
 /* Work counts over the same frame, 'MZP7'. */
 typedef enum {
-    /* The four block-pass counts stay 0 since the block passes were removed. */
-    PERF_COUNT_B32_LOOKUPS = 0, PERF_COUNT_B32_DECODES,
-    PERF_COUNT_B16_LOOKUPS, PERF_COUNT_B16_DECODES,
+    /* Slots 0-3 counted the block passes until they were removed. */
+    PERF_COUNT_LM_WALK_US = 0, /* layer maps: finding and re-checking the cells
+                                * whose tile pixels or palette changed, us */
+    PERF_COUNT_LM_US,          /* layer maps: everything (the above included), us */
+    PERF_COUNT_BG_LAYERS_US,   /* CollectBgLayer, all layers (the above included), us */
+    PERF_COUNT_HAZE_US,        /* the haze BG3 collection, us */
     PERF_COUNT_TILE_LOOKUPS, PERF_COUNT_TILE_DECODES,
     PERF_COUNT_TILE_POSITIONS, /* positions the per-tile pass examined */
     PERF_COUNT_WIDE_REBUILT,   /* tilemap entries rebuilt from the room's block map */
