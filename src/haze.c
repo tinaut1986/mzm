@@ -498,6 +498,15 @@ u32 HazeProcess(void)
     return ended;
 }
 
+#if defined(MZM_3DS)
+/* Hands the 3DS GPU renderer the wave this function just laid down, so the
+ * WIDE view can ripple the rows past the GBA frame the same way
+ * (platform/3ds/source/port_haze_3ds.c). */
+extern void PortHaze_NoteBg3Wave(const s8* above, s32 aboveMask, s32 abovePhase,
+                                 const s8* below, s32 belowMask, s32 belowPhase,
+                                 s32 surfaceLine, u16 bg3X, u16 bg3Y);
+#endif
+
 /**
  * @brief 5d768 | c0 | Updates the haze effect (BG3, strong everywhere)
  * 
@@ -554,6 +563,13 @@ void Haze_Bg3(void)
         dst[i] = src[position] + gBackgroundPositions.bg[3].x;
         i++;
     }
+
+#if defined(MZM_3DS)
+    // Flat above the surface, strong below
+    PortHaze_NoteBg3Wave(NULL, 0, 0, src, mask, gUnk_3005728,
+        SUB_PIXEL_TO_PIXEL(gEffectYPosition) - SUB_PIXEL_TO_PIXEL(gBg1YPosition) - 1,
+        gBackgroundPositions.bg[3].x, gBackgroundPositions.bg[3].y);
+#endif
 }
 
 /**
@@ -630,6 +646,13 @@ void Haze_Bg3StrongWeak(void)
         dst[i] = src1[offset] + gBackgroundPositions.bg[3].x;
         i++;
     }
+
+#if defined(MZM_3DS)
+    // Weak above the surface, strong below
+    PortHaze_NoteBg3Wave(src2, mask2, gUnk_3005729, src1, mask1, gUnk_3005728,
+        SUB_PIXEL_TO_PIXEL(gEffectYPosition) - SUB_PIXEL_TO_PIXEL(gBg1YPosition) - 1,
+        gBackgroundPositions.bg[3].x, gBackgroundPositions.bg[3].y);
+#endif
 }
 
 /**
@@ -669,6 +692,12 @@ void Haze_Bg3NoneWeak(void)
     {
         gPreviousHazeValues[i] = src[(gBackgroundPositions.bg[3].y + i + *ptr) & mask] + gBackgroundPositions.bg[3].x;
     }
+
+#if defined(MZM_3DS)
+    // Weak everywhere, no surface
+    PortHaze_NoteBg3Wave(src, mask, *ptr, src, mask, *ptr, -0x8000,
+        gBackgroundPositions.bg[3].x, gBackgroundPositions.bg[3].y);
+#endif
 }
 
 /**

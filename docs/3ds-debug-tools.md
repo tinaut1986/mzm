@@ -67,6 +67,8 @@ console is running an FTP server (see `make ftp` / `FTP_HOST`/`FTP_PORT` in
 
 ## Screen dump (was L+R+X)
 
+Menu row **VOLCADO PANTALLA** / **SCREEN DUMP**.
+
 Implemented in `PlatformGpu3DS_DumpScreens` (`platform_gpu_3ds.c`). Writes,
 all sharing one rotating set number, `NN` below (see **File rotation**):
 
@@ -79,6 +81,7 @@ all sharing one rotating set number, `NN` below (see **File rotation**):
 | `mzm-dump-NN-oam.bin` | OAM, 128 entries x 3x u16 (the 4th u16 per 8-byte slot is padding on real hardware and unused here). Standard GBA OAM attribute layout. |
 | `mzm-dump-NN-samus.txt` | Plain text: `pose`, `currentAnimationFrame`, `walljumpTimer`, `suitType`, `suitMiscActivation`, the four per-body-part gfx DMA sizes (`shoulderGfxSize` etc.), `armCannonGfxUpperSize/LowerSize`, `unk_22`. See `PortPpuMzm_DumpSamusState` in `port_ppu_mzm.c`. |
 | `mzm-dump-NN-samusdata.bin`, `-samusphysics.bin` | Raw `struct SamusData` / `struct SamusPhysics` (see `include/structs/samus.h`) for anything not already in the `.txt`. |
+| `mzm-dump-NN-sprites.txt` | Plain text. First line: BG1 camera position, WIDE state (`wideActive`, `frameDrawn`, culling margins in sub-pixels), adaptive frame skip and New3DS profile. Then one `sprNN` line per existing `gSpriteData` slot (id, status bits, properties, position, draw distances, draw order, pose) and one `tagNNN` line per OAM slot carrying a WIDE origin tag (the true screen position the renderer uses to undo OAM's Y/X wrap). Tells "the game never put the sprite in OAM" apart from "it is in OAM but drawn elsewhere". |
 
 **Why the split between `platform_gpu_3ds.c` and `port_ppu_mzm.c`:**
 `platform_gpu_3ds.c` includes `<3ds.h>`/`<citro2d.h>`, whose `u32` typedef
@@ -315,10 +318,17 @@ uint8_t  vram[0x18000];   // gVram
 ```
 
 Record size = 64 + 0x400 + 512 + 512 + 0x400 + 0x18000 + the clip block
-(`PortPpuMzm_GetClipRecordBlockSize()`, **232 bytes** as of 'MZM6' -- 28 bytes
+(`PortPpuMzm_GetClipRecordBlockSize()`, **256 bytes** as of 'MZM6' -- 28 bytes
 of scalars then a 17x12 clip grid; the scalars are camera x/y, Samus x/y,
 clipdata w/h, `gMainGameMode`, Samus pose, screen-origin x/y, area, room,
-`gCurrentCutscene`, and the montage-cutscene stage) = 101,672 bytes. The
+`gCurrentCutscene`, and the montage-cutscene stage; then 12 int16 words on
+how the WIDE view was worked out: the renderer's slide x/y, room masks
+left/right/top/bottom and flags (bit 0 widened, 1 leaving a room, 2
+following the door tunnel), `gSubGameMode1`, `gColorFading` type and stage,
+the door tunnel's phase (0 none, 1 over the old room, 2 sliding) and its
+x) = 101,696 bytes. The WIDE words were appended without a magic bump:
+nothing before them moved, and every parser finds the stride by scanning
+for the magic, so 232-byte-block recordings still read. The
 block is kept a multiple of 4 (a `_Static_assert` enforces it) so that
 `N * recordSize` file offsets stay on a 4-byte grid -- 'MZM5' was 230 bytes
 and off-grid, which made a byte-scanner necessary. If any of those extern
@@ -380,12 +390,12 @@ Toggled from the tools menu. ~1 minute of capacity (3600 frames at 60 FPS,
 
 ```
 struct PerfFileHeader {  // 16 bytes, at offset 0
-    uint32_t magic;       // 'MZP3' = 0x33505A4D little-endian
+    uint32_t magic;       // 'MZP7' = 0x37505A4D little-endian
     uint32_t sampleSize;  // sizeof(PerfSample) -- stride from this, don't hardcode
     uint32_t sampleCount;
     uint32_t reserved;    // zero
 };
-struct PerfSample {      // 64 bytes, sampleCount of them back to back
+struct PerfSample {      // 148 bytes, sampleCount of them back to back
     uint32_t frameCounter;
     uint32_t durationUs;         // wall clock of the frame that just ended.
                                  // ~16675 = on budget; ~33350 = one vblank missed
@@ -426,6 +436,38 @@ struct PerfSample {      // 64 bytes, sampleCount of them back to back
                                  // bit  18    frame drawn by the GPU renderer
                                  //            (clear = CPU fallback, so the
                                  //            draw-call census is stale)
+    uint32_t drawnPixels;        // 'MZP4'+: device pixels the quads covered, all eyes
+    uint32_t gpuWaitX100;        // 'MZP5'+: CPU time C3D_FrameBegin waited for the
+                                 // GPU to finish the previous frame. The renderer
+                                 // collects before that wait (it overlaps the GPU),
+                                 // so this is the GPU work the CPU could not hide.
+    uint32_t phaseX100[11];      // 'MZP6'+ (8 entries in 'MZP6'): CPU time per phase over this frame,
+                                 // 1/100 ms (PerfPhase, platform_gpu_3ds.h):
+                                 // 0 game logic (every tick since the last
+                                 //   presented frame, VBlank callback included)
+                                 // 1 renderer VRAM change-stamp pass
+                                 // 2 renderer OAM walk
+                                 // 3 renderer BG layers (+ haze BG3)
+                                 // 4 renderer sort, diagnostics, atlas flush
+                                 // 5 bottom screen tick + redraw
+                                 // 6 screen FX + C3D_FrameEnd
+                                 // 7 C3D_FrameSync, waiting for the display
+                                 // 8-9 ('MZP7') draw submission split (part
+                                 //   of cpuDrawX100): the eyes' item loops,
+                                 //   the layer-map cell redraw. Captures from
+                                 //   before the block passes were removed hold
+                                 //   the 32x32 / 16x16 block passes here.
+                                 // 10 ('MZP7') per-tile pass (part of phase 3)
+    uint32_t counts[8];          // 'MZP7': work over this frame -- times in
+                                 // us: layer maps finding/re-checking cells
+                                 // whose tiles or palette changed; layer maps
+                                 // in all (that included); CollectBgLayer in
+                                 // all (that included); the haze BG3 (older
+                                 // captures: the 32x32 / 16x16 block lookups
+                                 // and decodes);
+                                 // tile lookups, decodes; positions the
+                                 // per-tile pass examined; WIDE entries rebuilt
+                                 // from the room's block map
 };
 ```
 
@@ -437,7 +479,8 @@ that this was happening, in the first capture: 2-vblank frames reported
 lower GPU times than 1-vblank ones. A frame that is sampled but never
 presented keeps zeros in those fields.
 
-'MZP2' was this without `captureFlags`, which made a set of captures
+'MZP6' has 8 phases and no `counts`, 'MZP5' lacks `phaseX100`, 'MZP4' also `gpuWaitX100` and 'MZP3' also `drawnPixels`; the fields before
+them are unchanged. 'MZP2' was this without `captureFlags`, which made a set of captures
 impossible to tell apart afterwards: the 2026-09-04 round taking four of
 them (3D on/off against display style) to ask whether cost scales with
 pixels or with quads could not say which capture used which style, and
@@ -452,15 +495,15 @@ samples with no magic at all. Check the magic, and stride by `sampleSize`.
 import struct
 d = open('mzm-perf.bin', 'rb').read()
 magic, size, count, _ = struct.unpack_from('<4I', d, 0)
-assert magic == 0x33505A4D, 'not an MZP3 perf capture'
+assert magic == 0x37505A4D, 'not an MZP7 perf capture'
 for i in range(count):
     (frame, us, spr, vis, aff, drawX, procX, tileX, upX, cpuDrawX,
-     quads, bg, obj, flushes, flags, cap) = struct.unpack_from('<16I', d, 16 + i * size)
+     quads, bg, obj, flushes, flags, cap, pixels, waitX) = struct.unpack_from('<18I', d, 16 + i * size)
     print(f"{frame} {us:6d}us gpu={drawX/100:5.2f}+{procX/100:5.2f} "
           f"cpu={tileX/100:5.2f}+{upX/100:5.2f}+{cpuDrawX/100:5.2f}ms "
           f"quads={quads:4d} (bg={bg} obj={obj}) eyes={(flags >> 10) & 3} "
           f"flushes={flushes:3d} spr={vis:3d} passes={flags & 0xFF} "
-          f"style={cap & 3} slider={(cap >> 4) & 0x7F}")
+          f"style={cap & 3} slider={(cap >> 4) & 0x7F} gpuWait={waitX/100:5.2f}ms")
 ```
 
 ### Reading the numbers

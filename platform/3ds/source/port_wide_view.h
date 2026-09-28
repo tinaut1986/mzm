@@ -43,4 +43,15 @@ int Port_WideMarginSubPixelY(void);
  * game did not tag (HUD, screen-fixed sprites). */
 bool PortWide_SlotOrigin(int oamIndex, int* outY, int* outX);
 
+/* The door tunnel of a door transition (defined in port_ppu_mzm.c): whether
+ * it is on screen, over the room being left or sliding to the new room's
+ * door, and where it is / is headed (BG3 scroll, px). While sliding,
+ * outPause is how far through the game's pause between the vertical and
+ * the horizontal slide it is (0..3 frames; 3 once the horizontal slide has
+ * begun). Any pointer may be NULL. The WIDE view follows the tunnel from
+ * the old room's view to the new. */
+enum { PORT_DOOR_TUNNEL_NONE = 0, PORT_DOOR_TUNNEL_OLD_ROOM, PORT_DOOR_TUNNEL_SLIDING };
+enum { PORT_DOOR_TUNNEL_PAUSE_FRAMES = 3 };
+int PortPpuMzm_DoorTunnel(int* outX, int* outY, int* outTargetX, int* outTargetY, int* outPause);
+
 #endif /* PORT_WIDE_VIEW_H */

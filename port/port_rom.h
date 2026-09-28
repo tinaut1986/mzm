@@ -26,6 +26,7 @@ typedef enum PortRomRegion {
  * include; both declarations must stay in sync). */
 extern u8* gRomData;
 extern u32 gRomSize;
+u32 Port_RomSize(void);
 
 /* Region of the currently loaded ROM. PORT_ROM_REGION_UNKNOWN until a
  * successful Port_LoadRom(). */

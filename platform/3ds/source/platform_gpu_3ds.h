@@ -58,6 +58,44 @@ bool PlatformGpu3DS_EndBottom(const uint32_t* pixels, bool changed);
  * would double VRAM usage and race over which one actually reaches the
  * screen. */
 bool PlatformGpu3DS_BeginTopSceneGpu(void);
+
+/* Per-phase CPU time for the perf recorder (mzm-perf-NN.bin, 'MZP6'): each
+ * phase accumulates over one presented frame -- game logic over every logic
+ * tick since the last one, so a frame-skipped pair counts both. Ticks come
+ * from svcGetSystemTick. Cheap enough to leave on; only the recorder reads it. */
+typedef enum {
+    PERF_PHASE_LOGIC = 0,     /* game code between two Port_Bios_Halt calls */
+    PERF_PHASE_VRAM_DIFF,     /* renderer: VRAM change-stamp pass */
+    PERF_PHASE_SPRITES,       /* renderer: OAM walk */
+    PERF_PHASE_BG,            /* renderer: BG layers (and the haze BG3) */
+    PERF_PHASE_COLLECT_REST,  /* renderer: sort, diagnostics, atlas flush */
+    PERF_PHASE_BOTTOM_UI,     /* bottom screen tick + (throttled) redraw */
+    PERF_PHASE_FRAME_END,     /* screen FX + C3D_FrameEnd submission */
+    PERF_PHASE_VSYNC,         /* C3D_FrameSync: waiting for the display */
+    /* Slots 8-9 held the 32x32 / 16x16 block passes (a breakdown of
+     * PERF_PHASE_BG) until those were removed; now a breakdown of the draw
+     * submission (cpuDrawX100), not of any phase above: */
+    PERF_PHASE_DRAW_ITEMS,    /* the eyes' item loops (quads + state changes) */
+    PERF_PHASE_DRAW_MAPS,     /* redrawing stale layer-map cells */
+    PERF_PHASE_BG_TILES,      /* the per-tile pass (a breakdown of PERF_PHASE_BG) */
+    PERF_PHASE_COUNT
+} PerfPhase;
+void PlatformGpu3DS_PerfPhaseAdd(PerfPhase phase, unsigned long long ticks);
+
+/* Work counts over the same frame, 'MZP7'. */
+typedef enum {
+    /* Slots 0-3 counted the block passes until they were removed. */
+    PERF_COUNT_LM_WALK_US = 0, /* layer maps: finding and re-checking the cells
+                                * whose tile pixels or palette changed, us */
+    PERF_COUNT_LM_US,          /* layer maps: everything (the above included), us */
+    PERF_COUNT_BG_LAYERS_US,   /* CollectBgLayer, all layers (the above included), us */
+    PERF_COUNT_HAZE_US,        /* the haze BG3 collection, us */
+    PERF_COUNT_TILE_LOOKUPS, PERF_COUNT_TILE_DECODES,
+    PERF_COUNT_TILE_POSITIONS, /* positions the per-tile pass examined */
+    PERF_COUNT_WIDE_REBUILT,   /* tilemap entries rebuilt from the room's block map */
+    PERF_COUNT_COUNT
+} PerfCounter;
+void PlatformGpu3DS_PerfCountAdd(PerfCounter counter, unsigned count);
 struct C3D_RenderTarget_tag* PlatformGpu3DS_GetTopLeftTarget(void);
 struct C3D_RenderTarget_tag* PlatformGpu3DS_GetTopRightTarget(void);
 
@@ -65,8 +103,8 @@ struct C3D_RenderTarget_tag* PlatformGpu3DS_GetTopRightTarget(void);
  * for the current display style / aspect. Any output pointer may be NULL. */
 void PlatformGpu3DS_GetTopImageRect(int* outX, int* outY, int* outW, int* outH);
 
-/* One-shot diagnostic dump (L+R+X) and the start/stop scene recorder
- * (L+R+START), see platform_gpu_3ds.c. PlatformGpu3DS_RecordTick must be
+/* One-shot diagnostic dump and the start/stop scene recorder, both
+ * triggered from the DEBUG tab's tools menu, see platform_gpu_3ds.c. PlatformGpu3DS_RecordTick must be
  * called once per emulated GBA frame (Port_Bios_Halt does this) -- it's a
  * no-op unless recording is active. PlatformGpu3DS_IsRecording is for the
  * on-screen "REC" indicator (port_bottom_ui_3ds.c). */
@@ -85,7 +123,7 @@ const char* PlatformGpu3DS_RecordPresetLabel(void);
  * "mzm-rec-2.bin"); "" before the first one. */
 const char* PlatformGpu3DS_RecordLastFile(void);
 
-/* Perf-only frame-time recorder (L+R+A, issue #20): samples every emulated
+/* Perf-only frame-time recorder (debug tools menu, issue #20): samples every emulated
  * frame's duration + OAM census into a RAM buffer with no SD I/O while
  * running (unlike the full recorder above, which slows the game down);
  * flushing to <game folder>/debug/mzm-perf-NN.bin happens on stop. Same tick contract as

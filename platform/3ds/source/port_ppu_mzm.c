@@ -15,6 +15,7 @@
 #include "structs/bg_clip.h"
 #include "structs/clipdata.h"
 #include "structs/scroll.h"
+#include "structs/sprite.h"    /* gSpriteData, for the dump's sprite list */
 #include "constants/clipdata.h"
 #include "constants/block.h"
 #include "constants/game_state.h"
@@ -28,10 +29,13 @@
 #include "structs/room.h"
 #include "constants/room.h"
 #include "scroll.h"            /* ScrollGetBg3Scroll, for PortPpuMzm_WideLayerDivisor */
+#include "structs/color_effects.h"  /* gColorFading, for PortPpuMzm_DoorTunnel */
+#include "constants/color_fading.h"
 #include "constants/minimap.h"
 #include "minimap.h"
 #include "menus/pause_screen.h" /* PauseScreenGetMinimapData */
 #include "port_haze_3ds.h"
+#include "port_wide_view.h"
 #include "macros.h"
 #include "port_debug_tools.h" /* PORT_DEBUG_TOOLS_ACTIVE */
 
@@ -880,11 +884,30 @@ void Port_PPU_RenderFrame(void) {
      * game-logic thread -- must not run concurrently with the present
      * thread's own submission in Port_PPU_GpuPresentPump below. See
      * platform_gpu_3ds.c's sGpuSubmitLock doc comment. */
-    PlatformGpu3DS_SubmitLock_Acquire();
+#ifdef PORT_GPU_TILE_RENDERER
+    /* Collect BEFORE C3D_FrameBegin: FrameBegin blocks until the GPU has
+     * finished the previous frame, and the collection is pure CPU work, so
+     * doing it first lets the two overlap instead of queueing. The exception
+     * is a frame that is about to reassign atlas slots -- that one waits for
+     * the GPU first, since the previous frame may still be sampling them. */
+    if (useGpuRenderer) {
+        if (Port_GpuRenderer_CollectNeedsIdleGpu()) {
+            PlatformGpu3DS_SubmitLock_Acquire();
+            PlatformGpu3DS_BeginTopSceneGpu();
+            Port_GpuRenderer_CollectFrame();
+        } else {
+            Port_GpuRenderer_CollectFrame();
+            PlatformGpu3DS_SubmitLock_Acquire();
+        }
+    } else
+#endif
+    {
+        PlatformGpu3DS_SubmitLock_Acquire();
+    }
 #ifdef PORT_GPU_TILE_RENDERER
     if (useGpuRenderer) {
         if (PlatformGpu3DS_BeginTopSceneGpu()) {
-            Port_GpuRenderer_RenderFrame();
+            Port_GpuRenderer_DrawFrame();
             sLastFrameUsedGpu = true;
         } else {
             /* Frame-begin failed (GPU busy/queue full) -- nothing was drawn
@@ -979,7 +1002,7 @@ bool Port_PPU_GpuPresentPump(void) {
  * Debug dump of Samus's animation/graphics state, for tracking down bugs
  * like #17 (wrong sprite/palette during the death animation) where the
  * VRAM/OAM/palette dump alone doesn't say which pose/frame/suit produced it.
- * Triggered together with the VRAM/OAM/palette dump from the L+R+X combo.
+ * Written together with the VRAM/OAM/palette screen dump (debug tools menu).
  */
 void PortPpuMzm_DumpSamusState(void) {
     /* Same rotating slot as the rest of this screen dump -- see
@@ -1023,6 +1046,41 @@ void PortPpuMzm_DumpSamusState(void) {
         fwrite(&gSamusPhysics, 1, sizeof(gSamusPhysics), fb);
         fclose(fb);
     }
+
+    /* Sprite + WIDE state: enough to tell apart "the game never put the
+     * enemy in OAM" (status/onscreen bits, culling margins) from "it is in
+     * OAM but the renderer placed it somewhere else" (per-slot WIDE origin
+     * tags, which undo the OAM Y/X wrap). */
+    snprintf(dumpPath, sizeof(dumpPath), PORT_DEBUG_DIR "/mzm-dump-%02u-sprites.txt", set);
+    f = fopen(dumpPath, "w");
+    if (!f)
+        return;
+
+    extern bool PortWide_FrameDrawn(void);
+    extern bool PortWide_GameActive(void);
+    extern int Port_WideMarginSubPixelX(void);
+    extern int Port_WideMarginSubPixelY(void);
+    extern bool PortWide_SlotOrigin(int oamIndex, int* outY, int* outX);
+    extern bool Port_Bios_AdaptiveFrameSkipEnabled(void);
+    fprintf(f, "bg1=%u,%u wideActive=%d frameDrawn=%d marginSub=%d,%d frameSkip=%d new3ds=%d\n",
+            (unsigned)gBg1XPosition, (unsigned)gBg1YPosition, (int)PortWide_GameActive(),
+            (int)PortWide_FrameDrawn(), Port_WideMarginSubPixelX(), Port_WideMarginSubPixelY(),
+            (int)Port_Bios_AdaptiveFrameSkipEnabled(), (int)Platform3DS_IsNew3DS());
+    for (int i = 0; i < MAX_AMOUNT_OF_SPRITES; ++i) {
+        const struct SpriteData* s = &gSpriteData[i];
+        if (!(s->status & SPRITE_STATUS_EXISTS))
+            continue;
+        fprintf(f, "spr%02d id=%02x status=%04x props=%02x pos=%u,%u draw=%u/%u/%u order=%u pose=%02x\n",
+                i, s->spriteId, (unsigned)s->status, (unsigned)s->properties,
+                (unsigned)s->xPosition, (unsigned)s->yPosition, s->drawDistanceTop,
+                s->drawDistanceBottom, s->drawDistanceHorizontal, s->drawOrder, s->pose);
+    }
+    for (int slot = 0; slot < 128; ++slot) {
+        int originY, originX;
+        if (PortWide_SlotOrigin(slot, &originY, &originX))
+            fprintf(f, "tag%03d origin=%d,%d\n", slot, originX, originY);
+    }
+    fclose(f);
 }
 
 /**
@@ -1035,11 +1093,11 @@ void PortPpuMzm_DumpSamusState(void) {
  * Samus's data into gSamusDataCopy and calls SamusChangeToHurtPose, which
  * itself checks gEquipment.currentEnergy and only then transitions to
  * SPOSE_DYING (src/samus.c). Zeroing energy first reproduces that exact
- * path instead of a synthetic one. Triggered by L+R+SELECT (see
- * Platform3DS_PollKeysIntoGba in platform_3ds_minimal.c, which can't call
- * SamusSetPose directly for the same <3ds.h>/structs-samus.h conflict
- * reason PortPpuMzm_GetSamusRecordState exists). No-op if Samus is already
- * in a hurt/dying/getting-knocked-back pose so mashing the combo doesn't
+ * path instead of a synthetic one. Triggered from the debug tools menu
+ * (port_bottom_ui_3ds.c, which can't call SamusSetPose directly for the
+ * same <3ds.h>/structs-samus.h conflict reason PortPpuMzm_GetSamusRecordState
+ * exists). No-op if Samus is already in a hurt/dying/getting-knocked-back
+ * pose so pressing it again doesn't
  * re-trigger mid-animation.
  */
 void PortPpuMzm_DebugKillSamus(void) {
@@ -1058,7 +1116,7 @@ void PortPpuMzm_DebugKillSamus(void) {
 }
 
 /**
- * Compact Samus state for the L+R+START scene recorder (platform_gpu_3ds.c):
+ * Compact Samus state for the scene recorder (platform_gpu_3ds.c):
  * that file can't include structs/samus.h directly (its u32 typedef conflicts
  * with <3ds.h>'s, see PortPpuMzm_DumpSamusState's comment above), so it gets
  * the handful of fields worth recording per sample through here instead.
@@ -1688,7 +1746,7 @@ void PortPpuMzm_ScreenOrigin(int* outX, int* outY) {
  * off the alignment the scanner steps on -- keep the block a multiple of 4.
  * (It was 230 under 'MZM5' and off-grid, which made 2-byte scanning
  * necessary; 'MZM6' brought it back to 232.) */
-_Static_assert((28 + PORT_CLIPREC_COLS * PORT_CLIPREC_ROWS) % 4 == 0,
+_Static_assert((28 + PORT_CLIPREC_COLS * PORT_CLIPREC_ROWS + 12 * 2) % 4 == 0,
                "clip record block must stay 4-byte aligned");
 
 /* Which page of a montage cutscene is on screen. A single GM_CUTSCENE or
@@ -1757,10 +1815,26 @@ void PortPpuMzm_GetClipRecordBlock(uint8_t* out) {
             grid[r * PORT_CLIPREC_COLS + c] = v;
         }
     }
+
+    /* After the grid (nothing before it moves, so older parsers still read
+     * the rest): how the WIDE view was worked out for this frame. 12 words:
+     * the renderer's view (slide x/y, room masks l/r/t/b, flags -- see
+     * Port_GpuRenderer_GetWideRecord), gSubGameMode1, gColorFading type and
+     * stage, the door tunnel's phase (PortPpuMzm_DoorTunnel) and its x/y. */
+    extern void Port_GpuRenderer_GetWideRecord(int16_t out[7]);
+    int16_t* wide = (int16_t*)(grid + PORT_CLIPREC_COLS * PORT_CLIPREC_ROWS);
+    Port_GpuRenderer_GetWideRecord(wide);
+    int tunX = 0, tunY = 0;
+    wide[7] = (int16_t)gSubGameMode1;
+    wide[8] = (int16_t)gColorFading.type;
+    wide[9] = (int16_t)gColorFading.stage;
+    wide[10] = (int16_t)PortPpuMzm_DoorTunnel(&tunX, &tunY, NULL, NULL, NULL);
+    wide[11] = (int16_t)tunX;
+    (void)tunY;
 }
 
 int PortPpuMzm_GetClipRecordBlockSize(void) {
-    return 28 + PORT_CLIPREC_COLS * PORT_CLIPREC_ROWS;
+    return 28 + PORT_CLIPREC_COLS * PORT_CLIPREC_ROWS + 12 * 2;
 }
 
 /* ---------------------------------------------------------------------
@@ -1823,6 +1897,11 @@ void PortPpuMzm_ScanRoomTanks(void) {
 
 int PortPpuMzm_RoomTankCount(void) {
     return sTankCount;
+}
+
+void PortPpuMzm_RoomTankBlock(int i, int* blockX, int* blockY) {
+    *blockX = (int)sTankBlockX[i];
+    *blockY = (int)sTankBlockY[i];
 }
 
 bool PortPpuMzm_IsVisibleTankBlock(int blockX, int blockY) {
@@ -1914,8 +1993,12 @@ void PortPpuMzm_SetDoorDepthRoom(int area, int room) {
         }
 
         int dx0 = (int)d->xStart - 1, dx1 = (int)d->xEnd + 1;
-        if (dx0 < 0) dx0 = 0;
-        if (bw > 0 && dx1 > bw - 1) dx1 = bw - 1;
+        /* A door against the room's edge: the trim runs on to the edge, and
+         * the block or two past the outboard one would otherwise stay on
+         * their own plane -- a lone tile at the end of the lintel/sill that
+         * sits at a different depth from the rest. Take them too. */
+        if (dx0 <= 2) dx0 = 0;
+        if (bw > 0 && dx1 >= bw - 3) dx1 = bw - 1;
         int y0 = (int)d->yStart - PORT_DOOR_DEPTH_MARGIN_Y;
         int y1 = (int)d->yEnd   + PORT_DOOR_DEPTH_MARGIN_Y;
         if (y0 < 0) y0 = 0;
@@ -1940,6 +2023,13 @@ void PortPpuMzm_SetDoorDepthRoom(int area, int room) {
 
 int PortPpuMzm_DoorDepthCount(void) { return sDoorSpanCount; }
 
+/* Span i of the door footprint: block row y, block columns x0..x1. */
+void PortPpuMzm_DoorDepthSpan(int i, int* y, int* x0, int* x1) {
+    *y = (int)sDoorSpanY[i];
+    *x0 = (int)sDoorSpanX0[i];
+    *x1 = (int)sDoorSpanX1[i];
+}
+
 /* Any door span overlapping the block-space box [bx0,bx1] x [by0,by1]. */
 bool PortPpuMzm_DoorDepthInView(int bx0, int by0, int bx1, int by1) {
     for (int i = 0; i < sDoorSpanCount; ++i) {
@@ -1961,6 +2051,40 @@ bool PortPpuMzm_IsDoorDepthBlock(int blockX, int blockY) {
 }
 
 /* ---------------------------------------------------------------------
+ * The door tunnel of a door transition (COLOR_FADING_DOOR_TRANSITION and its
+ * white variant). BG3 holds the tunnel graphic from
+ * ColorFadingProcess_DoorTransition stage 3 -- still over the room being
+ * left -- until ColorFadingUpdate_DoorTransition has slid it to the new
+ * room's door and put the room's BG3 back (its stage 3 ends by jumping to
+ * stage 5). The slide is gBackgroundPositions.doorTransition moving toward
+ * gDoorPositionStart: vertically first (stage 1), then horizontally
+ * (stage 3). Positions are BG3 scroll, in pixels.
+ * ------------------------------------------------------------------- */
+int PortPpuMzm_DoorTunnel(int* outX, int* outY, int* outTargetX, int* outTargetY, int* outPause) {
+    if (gMainGameMode != GM_INGAME) return PORT_DOOR_TUNNEL_NONE;
+    if (gColorFading.type != COLOR_FADING_DOOR_TRANSITION && gColorFading.type != COLOR_FADING_WHITE)
+        return PORT_DOOR_TUNNEL_NONE;
+    int phase = PORT_DOOR_TUNNEL_NONE;
+    if (gSubGameMode1 == SUB_GAME_MODE_LOADING_ROOM && gColorFading.stage >= 3)
+        phase = PORT_DOOR_TUNNEL_OLD_ROOM;
+    else if (gSubGameMode1 == SUB_GAME_MODE_DOOR_TRANSITION && gColorFading.stage <= 3)
+        phase = PORT_DOOR_TUNNEL_SLIDING;
+    if (outX) *outX = gBackgroundPositions.doorTransition.x;
+    if (outY) *outY = gBackgroundPositions.doorTransition.y;
+    if (outTargetX) *outTargetX = gDoorPositionStart.x;
+    if (outTargetY) *outTargetY = gDoorPositionStart.y;
+    if (outPause) {
+        /* ColorFadingUpdate_DoorTransition: stage 2 waits while unk_3 counts
+         * 1, 2, 3, then stage 3 slides horizontally. */
+        *outPause = gColorFading.stage < 2 ? 0
+                  : gColorFading.stage == 2 ? (gColorFading.unk_3 > PORT_DOOR_TUNNEL_PAUSE_FRAMES
+                                                   ? PORT_DOOR_TUNNEL_PAUSE_FRAMES : gColorFading.unk_3)
+                  : PORT_DOOR_TUNNEL_PAUSE_FRAMES;
+    }
+    return phase;
+}
+
+/* ---------------------------------------------------------------------
  * WIDE view: how each BG scrolls against the camera.
  *
  * The WIDE view slides past the GBA camera near a scroll limit (see
@@ -1973,6 +2097,10 @@ bool PortPpuMzm_IsDoorDepthBlock(int blockX, int blockY) {
  * 0 means the layer does not follow the camera at all.
  * ------------------------------------------------------------------- */
 int PortPpuMzm_WideLayerDivisor(int bg, int vertical) {
+    /* The door tunnel is drawn on BG3 in screen space, over the door: it
+     * slides with the view like the room itself, whatever the room's own
+     * BG3 does. */
+    if (bg == 3 && PortPpuMzm_DoorTunnel(NULL, NULL, NULL, NULL, NULL) != PORT_DOOR_TUNNEL_NONE) return 1;
     switch (bg) {
         case 0:
             if (gCurrentRoomEntry.bg0Prop & BG_PROP_RLE_COMPRESSED)

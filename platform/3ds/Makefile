@@ -134,7 +134,16 @@ OBJS_ROOT := $(patsubst $(ROOT)/%.c, $(BUILD)/root/%.o, $(SRCS_ROOT))
 OBJS_ASM  := $(patsubst $(ROOT)/%.s, $(BUILD)/root/%.o, $(SRCS_ASM))
 OBJS_3DS  := $(patsubst $(CURDIR)/%.c, $(BUILD)/3ds/%.o, $(SRCS_3DS))
 OBJS_RC   := $(patsubst $(RCHEEVOS)/%.c, $(BUILD)/rcheevos/%.o, $(SRCS_RCHEEVOS))
-C_OBJS    := $(OBJS_ROOT) $(OBJS_ASM) $(OBJS_3DS) $(OBJS_RC)
+
+# PICA200 vertex shaders: picasso assembles each into a .shbin, bin2s turns
+# that into an object plus a header (<name>_shbin / <name>_shbin_size) the C
+# side includes.
+SHADERS     := $(wildcard $(CURDIR)/source/*.v.pica)
+SHADER_OBJS := $(patsubst $(CURDIR)/source/%.v.pica, $(BUILD)/shaders/%.shbin.o, $(SHADERS))
+PICASSO     := $(DEVKITPRO)/tools/bin/picasso
+BIN2S       := $(DEVKITPRO)/tools/bin/bin2s
+
+C_OBJS    := $(OBJS_ROOT) $(OBJS_ASM) $(OBJS_3DS) $(OBJS_RC) $(SHADER_OBJS)
 DEPS      := $(C_OBJS:.o=.d)
 
 # Asegurar que existan todos los directorios de salida y tmp antes de compilar en paralelo
@@ -298,6 +307,7 @@ INCLUDES := \
 	-I$(ROOT)/port/generated \
 	-I$(ROOT)/port/ppu/include \
 	-I$(CURDIR)/source \
+	-I$(BUILD)/shaders \
 	-I$(ROOT)/third_party/rcheevos/include \
 	-I$(ROOT)/third_party/rcheevos/src/rhash \
 	-I$(CTRULIB)/include \
@@ -349,6 +359,18 @@ all: check-portlibs $(TARGET).cia
 # $(BUILD)/3ds/%.o (ver más abajo), no $(BUILD)/%.o.
 $(BUILD)/3ds/source/port_layer_fixes.o: $(wildcard $(CURDIR)/source/port_layer_fixes.inc)
 $(BUILD)/3ds/source/port_cutscene_depth.o: $(wildcard $(CURDIR)/source/port_cutscene_depth.inc)
+# Generated shader header, same reason: it does not exist before the first build.
+$(BUILD)/3ds/source/port_gpu_renderer.o: $(BUILD)/shaders/tilequad_shbin.h
+
+$(BUILD)/shaders/%.shbin: $(CURDIR)/source/%.v.pica
+	@mkdir -p $(dir $@)
+	@echo "PICASSO $(notdir $<)"
+	@$(PICASSO) -o $@ $<
+
+$(BUILD)/shaders/%.shbin.o $(BUILD)/shaders/%_shbin.h: $(BUILD)/shaders/%.shbin
+	@echo "BIN2S $(notdir $<)"
+	@cd $(BUILD)/shaders && $(BIN2S) -a 4 -H $*_shbin.h $*.shbin > $*.shbin.s
+	@$(CC) $(ARCH) -x assembler-with-cpp -c $(BUILD)/shaders/$*.shbin.s -o $(BUILD)/shaders/$*.shbin.o
 
 cia: $(TARGET).cia
 
@@ -407,7 +429,7 @@ $(BUILD)/rec_render: $(CURDIR)/tests/rec_render.c $(ROOT)/port/ppu/src/mode1.c $
 
 ftp: $(TARGET).cia
 	@echo "Uploading $(TARGET).cia as mzm-3ds-$(VERSION).cia to FTP..."
-	curl -T $(TARGET).cia "ftp://$(FTP_HOST):$(FTP_PORT)/cias/mzm-3ds-$(VERSION).cia"
+	curl --ftp-create-dirs -T $(TARGET).cia "ftp://$(FTP_HOST):$(FTP_PORT)/cias/mzm-3ds-$(VERSION).cia"
 
 $(TARGET).cia: $(TARGET).elf $(BUILD)/mzm-3ds.smdh $(BUILD)/banner.bnr
 	@echo "Creating CIA: $(notdir $@)"

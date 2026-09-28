@@ -106,3 +106,55 @@ bool PortHaze_Bg3RowScroll(int16_t rowDelta[160], int16_t *bakeHofs)
     *bakeHofs = (int16_t)(base & 0x1FFu);
     return true;
 }
+
+/* ---- The wave past the GBA frame (WIDE view) ------------------------------
+ * The game only computes its 160 scanlines. Every BG3 ripple routine is one
+ * formula per line, though -- a LUT indexed by the BG3 row, one table above
+ * the surface line and another below -- so the routines hand their inputs
+ * over (PortHaze_NoteBg3Wave, called from src/haze.c right after they fill
+ * the table) and any line can be computed exactly as the game would. */
+static struct {
+    bool valid;
+    const s8 *above, *below;  /* NULL above = no ripple there */
+    int aboveMask, belowMask;
+    int abovePhase, belowPhase;
+    int surfaceLine;          /* camera line of the surface; above it = "above" */
+    uint16_t bg3X, bg3Y;
+} sWave;
+
+void PortHaze_NoteBg3Wave(const s8 *above, s32 aboveMask, s32 abovePhase,
+                          const s8 *below, s32 belowMask, s32 belowPhase,
+                          s32 surfaceLine, u16 bg3X, u16 bg3Y)
+{
+    sWave.above = above;
+    sWave.aboveMask = aboveMask;
+    sWave.abovePhase = abovePhase;
+    sWave.below = below;
+    sWave.belowMask = belowMask;
+    sWave.belowPhase = belowPhase;
+    sWave.surfaceLine = surfaceLine;
+    sWave.bg3X = bg3X;
+    sWave.bg3Y = bg3Y;
+    sWave.valid = true;
+}
+
+bool PortHaze_Bg3WaveRows(int16_t *rowDelta, int rows, int firstLayerLine, int cameraOffset,
+                          int16_t *bakeHofs)
+{
+    const struct Haze *h = &gHazeInfo;
+    if (!sWave.valid || !h->active || h->size != 2 || PortHaze_IoOffset() != HAZE_BG3HOFS_OFF)
+        return false;
+
+    for (int r = 0; r < rows; ++r) {
+        const int layerLine = firstLayerLine + r;
+        const bool isAbove = layerLine + cameraOffset < sWave.surfaceLine;
+        const s8 *lut = isAbove ? sWave.above : sWave.below;
+        const int mask = isAbove ? sWave.aboveMask : sWave.belowMask;
+        const int phase = isAbove ? sWave.abovePhase : sWave.belowPhase;
+        /* Same index as the game's (bg[3].y + i + phase) & mask; the value it
+         * stores is lut[] + bg[3].x, so relative to bg[3].x it is lut[] alone. */
+        rowDelta[r] = lut ? (int16_t)lut[((int)sWave.bg3Y + layerLine + phase) & mask] : 0;
+    }
+    *bakeHofs = (int16_t)(sWave.bg3X & 0x1FFu);
+    return true;
+}
