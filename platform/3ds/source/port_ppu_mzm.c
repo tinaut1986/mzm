@@ -1880,6 +1880,11 @@ int PortPpuMzm_RoomTankCount(void) {
     return sTankCount;
 }
 
+void PortPpuMzm_RoomTankBlock(int i, int* blockX, int* blockY) {
+    *blockX = (int)sTankBlockX[i];
+    *blockY = (int)sTankBlockY[i];
+}
+
 bool PortPpuMzm_IsVisibleTankBlock(int blockX, int blockY) {
     for (int i = 0; i < sTankCount; ++i) {
         if (sTankBlockX[i] == (uint16_t)blockX && sTankBlockY[i] == (uint16_t)blockY)
@@ -1994,6 +1999,13 @@ void PortPpuMzm_SetDoorDepthRoom(int area, int room) {
 }
 
 int PortPpuMzm_DoorDepthCount(void) { return sDoorSpanCount; }
+
+/* Span i of the door footprint: block row y, block columns x0..x1. */
+void PortPpuMzm_DoorDepthSpan(int i, int* y, int* x0, int* x1) {
+    *y = (int)sDoorSpanY[i];
+    *x0 = (int)sDoorSpanX0[i];
+    *x1 = (int)sDoorSpanX1[i];
+}
 
 /* Any door span overlapping the block-space box [bx0,bx1] x [by0,by1]. */
 bool PortPpuMzm_DoorDepthInView(int bx0, int by0, int bx1, int by1) {
