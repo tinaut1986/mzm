@@ -663,6 +663,14 @@ void ProjectileDraw(struct ProjectileData* pProj)
         }
 
         gNextOamSlot = partCount + prevSlot;
+
+#if defined(MZM_3DS)
+        {
+            // True screen position of the projectile, so WIDE can undo the OAM wrap.
+            extern void Port_Wide_NoteSlots(int firstSlot, int endSlot, int originY, int originX);
+            Port_Wide_NoteSlots(prevSlot, gNextOamSlot, (s16)yPosition, (s16)xPosition);
+        }
+#endif
     }
 }
 
@@ -715,7 +723,18 @@ void ProjectileCheckDespawn(struct ProjectileData* pProj)
     drawDistance += (SCREEN_SIZE_X_SUB_PIXEL);
     projRight = bgXRange + drawDistance;
 
+#if defined(MZM_3DS)
+    // WIDE display: keep projectiles alive and drawn across the extra view.
+    // Signed math, the u16 bounds above would wrap near the room's origin.
+    extern int Port_WideMarginSubPixelX(void);
+    extern int Port_WideMarginSubPixelY(void);
+    if ((s32)projLeft - Port_WideMarginSubPixelX() < (s32)xDistance &&
+        (s32)xDistance < (s32)projRight + Port_WideMarginSubPixelX() &&
+        (s32)projTop - Port_WideMarginSubPixelY() < (s32)yDistance &&
+        (s32)yDistance < (s32)projBottom + Port_WideMarginSubPixelY())
+#else
     if (projLeft < xDistance && xDistance < projRight && projTop < yDistance && yDistance < projBottom)
+#endif
         pProj->status |= PROJ_STATUS_ON_SCREEN;
     else
     {

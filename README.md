@@ -100,10 +100,13 @@ Two extras beyond the original game:
 
 ### Files the port creates
 
-Both live in the ROM directory (`sdmc:/3ds/Metroid Zero Mission 3DS/`):
+Everything lives inside the game folder (`sdmc:/3ds/Metroid Zero Mission 3DS/`); nothing is written to the SD root or elsewhere in `/3ds`:
 
 - `mzm.sav` — the save file. It is shared by every region: if you switch ROMs, a language that the new ROM does not have is clamped to that region's default on load.
 - `mzm3ds.ini` — settings (display, button mapping, C-Stick mode, bottom-screen state, RetroAchievements).
+- `states/` — save states and the saved warp point.
+- `debug/` — logs (debug, RetroAchievements) and debug-menu captures (perf, scene recorder, dumps). Only appears in use with the logging/debug tools.
+- `update/` — the CIA downloaded by the in-app updater (removed after a successful install).
 
 ---
 

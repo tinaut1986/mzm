@@ -46,8 +46,25 @@ void Port_SaveState_ServicePending(void);
  * Port_SaveState_RefreshSlots forces a re-scan (call when the tab opens). */
 void Port_SaveState_RefreshSlots(void);
 bool Port_SaveState_SlotUsed(int slot);
-/* Short human label for the slot: "AREA 2  SALA 8" style, or "" if empty. */
-void Port_SaveState_SlotLabel(int slot, char* out, int outSize);
+
+/* What the slot list shows for one save state. Read from the slot's header,
+ * so it costs no more than the scan the tab already does. */
+typedef struct {
+    bool     hasStats;       /* false for a slot written by an older format:
+                              * only area/room are known (and it cannot load) */
+    uint8_t  area;
+    uint8_t  room;
+    uint32_t savedAt;        /* Unix seconds of the console clock; 0 = unknown */
+    uint16_t energy, maxEnergy;
+    uint16_t missiles, maxMissiles;
+    uint8_t  superMissiles, maxSuperMissiles;
+    uint8_t  powerBombs, maxPowerBombs;
+} PortSaveStateInfo;
+
+/* Fills `out` and returns true if the slot is in use. */
+bool Port_SaveState_GetInfo(int slot, PortSaveStateInfo* out);
+/* Area name as shown in the slot list ("BRINSTAR", ...). */
+const char* Port_SaveState_AreaName(unsigned area);
 
 /* Result of the most recent save/load, for a one-line status toast. Empty
  * string until the first action. */

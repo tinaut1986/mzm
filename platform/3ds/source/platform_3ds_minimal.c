@@ -8,6 +8,7 @@
 
 #include <3ds.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static bool sIsNew3DS;      /* EFFECTIVE profile: what Platform3DS_IsNew3DS() reports */
@@ -35,8 +36,25 @@ static void (*sLogicThreadEntry)(void);
  * can trigger sound setup before the first VBlankIntrWait call). */
 extern void Port_AudioStateLock_Acquire(void);
 
+/* Highest address of the logic thread's live stack, taken at thread entry
+ * (see Platform3DS_IsActiveStackAddress). 0 until the thread runs. */
+static uintptr_t sLogicStackTop;
+
 static void Platform3DS_LogicThreadTrampoline(void* arg) {
     (void)arg;
+    /* Nothing below this frame is ever handed out as a pointer; the slack
+     * covers this frame's own locals. */
+    sLogicStackTop = (uintptr_t)__builtin_frame_address(0) + 256u;
+    {
+        extern void Port_DebugLog_Note(const char* msg);
+        extern uint32_t Port_RomSize(void);
+        char msg[96];
+        const uintptr_t romEnd = 0x08000000u + Port_RomSize();
+        snprintf(msg, sizeof(msg), "logic stack top=%08lx romEnd=%08lx (%s)",
+                 (unsigned long)sLogicStackTop, (unsigned long)romEnd,
+                 sLogicStackTop < romEnd ? "INSIDE ROM RANGE" : "clear");
+        Port_DebugLog_Note(msg);
+    }
     Port_AudioStateLock_Acquire();
     sLogicThreadEntry();
     /* agbmain() never returns in practice -- it's an infinite loop that only
@@ -57,7 +75,36 @@ bool Platform3DS_StartLogicThread(void (*entry)(void)) {
     svcGetThreadPriority(&priority, CUR_THREAD_HANDLE);
     if (priority > 0x18) --priority;
 
-    sLogicThread = threadCreate(Platform3DS_LogicThreadTrampoline, NULL, 32 * 1024, priority, -1, false);
+    /* threadCreate takes the stack from the regular heap, which starts at
+     * 0x08000000 -- numerically the GBA ROM. port_resolve_addr leaves any
+     * value on the logic thread's live stack untranslated (see
+     * Platform3DS_IsActiveStackAddress), so a stack sitting on top of real
+     * ROM data makes those ROM pointers unreadable from game logic. That is
+     * what made every sprite invisible on an Old 3DS: its smaller heap put
+     * the stack over the sprite animation tables, SpriteDraw read garbage
+     * part counts and bailed out, while the sprites still moved and hit.
+     *
+     * So fill every free heap chunk below the ROM's end with a placeholder
+     * block of the stack's size first (any chunk big enough for the thread
+     * is big enough for one), create the thread above them, then free them. */
+    enum { LOGIC_STACK_SIZE = 32 * 1024, MAX_HEAP_PADS = 512 };
+    extern uint32_t Port_RomSize(void);
+    const uintptr_t romEnd = 0x08000000u + Port_RomSize();
+    static void* sHeapPads[MAX_HEAP_PADS];
+    unsigned padCount = 0;
+    while (padCount < MAX_HEAP_PADS) {
+        void* pad = malloc(LOGIC_STACK_SIZE);
+        if (!pad) break;
+        if ((uintptr_t)pad >= romEnd) {
+            free(pad);
+            break;
+        }
+        sHeapPads[padCount++] = pad;
+    }
+
+    sLogicThread = threadCreate(Platform3DS_LogicThreadTrampoline, NULL, LOGIC_STACK_SIZE, priority, -1, false);
+
+    while (padCount > 0) free(sHeapPads[--padCount]);
     return sLogicThread != NULL;
 }
 
@@ -121,6 +168,19 @@ int Platform3DS_Init(void) {
 void Platform3DS_Shutdown(void) {
     gfxExit();
     sRunning = false;
+}
+
+/* Asks the game to exit through the same path as closing it from the HOME
+ * menu (Port_Bios_Halt polls Platform3DS_QuitRequested); used to relaunch
+ * into a freshly installed build. */
+static volatile bool sQuitRequested = false;
+
+void Platform3DS_RequestQuit(void) {
+    sQuitRequested = true;
+}
+
+bool Platform3DS_QuitRequested(void) {
+    return sQuitRequested;
 }
 
 bool Platform3DS_IsRunning(void) {
@@ -498,6 +558,12 @@ int Platform3DS_IsActiveStackAddress(uintptr_t value) {
 
     uintptr_t currentSp;
     __asm__ volatile("mov %0, sp" : "=r"(currentSp));
+
+    /* Live stack only: everything a caller can point at sits between the
+     * current sp and the thread's entry frame. The +/-64KB window below was
+     * far wider than that, and whatever ROM data sat in it became unreadable. */
+    if (sLogicStackTop != 0)
+        return value >= currentSp && value < sLogicStackTop;
 
     /* GBA ROM addresses (0x08000000..0x08000000+gRomSize) may numerically
      * overlap the 3DS main-thread stack reservation, and stack locals passed

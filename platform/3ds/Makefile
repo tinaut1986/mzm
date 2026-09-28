@@ -108,13 +108,16 @@ SRCS_3DS := \
 	$(CURDIR)/source/port_sprite_depth_oam.c \
 	$(CURDIR)/source/port_mzm_audio_3ds.c \
 	$(CURDIR)/source/port_retroachievements_3ds.c \
+	$(CURDIR)/source/port_updater_3ds.c \
+	$(CURDIR)/source/port_updater_parse.c \
 	$(CURDIR)/source/port_ra_iwram_map.c \
 	$(CURDIR)/source/port_ra_badges_data.c \
 	$(CURDIR)/source/port_ra_unlock_sound_data.c \
 	$(CURDIR)/source/port_haze_3ds.c \
 	$(CURDIR)/source/port_gba_screen_fx.c \
 	$(CURDIR)/source/port_gba_bezel.c \
-	$(CURDIR)/source/port_gba_bezel_data.c
+	$(CURDIR)/source/port_gba_bezel_data.c \
+	$(CURDIR)/source/port_wide_view.c
 
 # rcheevos: the official RetroAchievements library, vendored under
 # third_party/rcheevos (see its VERSION.txt for the commit, and for which of
@@ -131,7 +134,16 @@ OBJS_ROOT := $(patsubst $(ROOT)/%.c, $(BUILD)/root/%.o, $(SRCS_ROOT))
 OBJS_ASM  := $(patsubst $(ROOT)/%.s, $(BUILD)/root/%.o, $(SRCS_ASM))
 OBJS_3DS  := $(patsubst $(CURDIR)/%.c, $(BUILD)/3ds/%.o, $(SRCS_3DS))
 OBJS_RC   := $(patsubst $(RCHEEVOS)/%.c, $(BUILD)/rcheevos/%.o, $(SRCS_RCHEEVOS))
-C_OBJS    := $(OBJS_ROOT) $(OBJS_ASM) $(OBJS_3DS) $(OBJS_RC)
+
+# PICA200 vertex shaders: picasso assembles each into a .shbin, bin2s turns
+# that into an object plus a header (<name>_shbin / <name>_shbin_size) the C
+# side includes.
+SHADERS     := $(wildcard $(CURDIR)/source/*.v.pica)
+SHADER_OBJS := $(patsubst $(CURDIR)/source/%.v.pica, $(BUILD)/shaders/%.shbin.o, $(SHADERS))
+PICASSO     := $(DEVKITPRO)/tools/bin/picasso
+BIN2S       := $(DEVKITPRO)/tools/bin/bin2s
+
+C_OBJS    := $(OBJS_ROOT) $(OBJS_ASM) $(OBJS_3DS) $(OBJS_RC) $(SHADER_OBJS)
 DEPS      := $(C_OBJS:.o=.d)
 
 # Asegurar que existan todos los directorios de salida y tmp antes de compilar en paralelo
@@ -252,7 +264,7 @@ endif
 # PORT_PPU_PERF_LOG) for the logs, each its own EXTRA_CFLAGS. Now a
 # DEBUG_TOOLS=1 build compiles every stream in and you pick which one(s)
 # write from the menu: LOG mode OFF / ALL / GPU / AUDIO / PERF (nothing hits
-# sdmc:/3ds/mzm-debug.log while it is OFF -- port_debug_log.h). So a debug
+# <game folder>/debug/mzm-debug.log while it is OFF -- port_debug_log.h). So a debug
 # build that is never asked to log costs nothing, and the flag split stopped
 # earning its keep.
 # The clean matters: changing flags alone does not invalidate existing
@@ -295,6 +307,7 @@ INCLUDES := \
 	-I$(ROOT)/port/generated \
 	-I$(ROOT)/port/ppu/include \
 	-I$(CURDIR)/source \
+	-I$(BUILD)/shaders \
 	-I$(ROOT)/third_party/rcheevos/include \
 	-I$(ROOT)/third_party/rcheevos/src/rhash \
 	-I$(CTRULIB)/include \
@@ -304,7 +317,7 @@ INCLUDES := \
 # vendored copy in this directory (3dsx.ld), which adds the save-state section
 # brackets. ewram_symbols.ld stays a pure symbol-assignment augmenter.
 LDFLAGS  := -specs=3dsx.specs -B$(CURDIR) -g $(ARCH) -Wl,-Map,$(BUILD)/mzm-3ds.map -Wl,--gc-sections -T $(CURDIR)/ewram_symbols.ld
-LIBS     := -L$(CTRULIB)/lib -L$(PORTLIBS)/lib -lcitro2d -lcitro3d -lctru -lm
+LIBS     := -L$(CTRULIB)/lib -L$(PORTLIBS)/lib -lcitro2d -lcitro3d -lcurl -lmbedtls -lmbedx509 -lmbedcrypto -lz -lctru -lm
 
 
 # The committed tools/bin/{makerom,bannertool} are Linux x86-64 ELF binaries,
@@ -329,7 +342,16 @@ endif
 # a bare `make` built one object and stopped, and CI's `cp mzm-3ds.cia` failed.
 .DEFAULT_GOAL := all
 
-all: $(TARGET).cia
+# The self-updater needs libcurl + mbedtls (the console's own TLS cannot talk
+# to GitHub). Fail early with the fix instead of a wall of linker errors.
+.PHONY: check-portlibs
+check-portlibs:
+	@test -f $(PORTLIBS)/lib/libcurl.a -a -f $(PORTLIBS)/lib/libmbedtls.a || { \
+		echo "error: missing 3DS portlibs (libcurl/mbedtls). Install them with:"; \
+		echo "  dkp-pacman -S 3ds-curl 3ds-mbedtls 3ds-zlib     (Windows: pacman -S ... in the devkitPro MSYS2 shell)"; \
+		exit 1; }
+
+all: check-portlibs $(TARGET).cia
 
 # La lista de correcciones es un include opcional, y cuando port_layer_fixes.c
 # se compiló por primera vez todavía no existía: su .d no la menciona y make no
@@ -337,6 +359,18 @@ all: $(TARGET).cia
 # $(BUILD)/3ds/%.o (ver más abajo), no $(BUILD)/%.o.
 $(BUILD)/3ds/source/port_layer_fixes.o: $(wildcard $(CURDIR)/source/port_layer_fixes.inc)
 $(BUILD)/3ds/source/port_cutscene_depth.o: $(wildcard $(CURDIR)/source/port_cutscene_depth.inc)
+# Generated shader header, same reason: it does not exist before the first build.
+$(BUILD)/3ds/source/port_gpu_renderer.o: $(BUILD)/shaders/tilequad_shbin.h
+
+$(BUILD)/shaders/%.shbin: $(CURDIR)/source/%.v.pica
+	@mkdir -p $(dir $@)
+	@echo "PICASSO $(notdir $<)"
+	@$(PICASSO) -o $@ $<
+
+$(BUILD)/shaders/%.shbin.o $(BUILD)/shaders/%_shbin.h: $(BUILD)/shaders/%.shbin
+	@echo "BIN2S $(notdir $<)"
+	@cd $(BUILD)/shaders && $(BIN2S) -a 4 -H $*_shbin.h $*.shbin > $*.shbin.s
+	@$(CC) $(ARCH) -x assembler-with-cpp -c $(BUILD)/shaders/$*.shbin.s -o $(BUILD)/shaders/$*.shbin.o
 
 cia: $(TARGET).cia
 
@@ -368,6 +402,10 @@ test:
 	@$(BUILD)/layer_fixes_test
 	@$(TEST_CC) -std=c11 -O1 -Wall -Wextra -Werror -I$(CURDIR)/source 		-o $(BUILD)/oam_census_test 		$(CURDIR)/tests/oam_census_test.c $(CURDIR)/source/port_oam_census.c
 	@$(BUILD)/oam_census_test
+	@$(TEST_CC) -std=c11 -O1 -Wall -Wextra -Werror -I$(CURDIR)/source \
+		-o $(BUILD)/updater_parse_test \
+		$(CURDIR)/tests/updater_parse_test.c $(CURDIR)/source/port_updater_parse.c
+	@$(BUILD)/updater_parse_test
 
 # Reference renderer for the GPU-renderer regression harness: renders the
 # PPU states in a fetched mzm-rec-NN.bin through the port's own CPU PPU and
@@ -391,7 +429,7 @@ $(BUILD)/rec_render: $(CURDIR)/tests/rec_render.c $(ROOT)/port/ppu/src/mode1.c $
 
 ftp: $(TARGET).cia
 	@echo "Uploading $(TARGET).cia as mzm-3ds-$(VERSION).cia to FTP..."
-	curl -T $(TARGET).cia "ftp://$(FTP_HOST):$(FTP_PORT)/cias/mzm-3ds-$(VERSION).cia"
+	curl --ftp-create-dirs -T $(TARGET).cia "ftp://$(FTP_HOST):$(FTP_PORT)/cias/mzm-3ds-$(VERSION).cia"
 
 $(TARGET).cia: $(TARGET).elf $(BUILD)/mzm-3ds.smdh $(BUILD)/banner.bnr
 	@echo "Creating CIA: $(notdir $@)"

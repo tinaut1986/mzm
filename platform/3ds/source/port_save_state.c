@@ -2,14 +2,18 @@
  * design rationale (why this file is GBA-side and what it deliberately does
  * NOT snapshot). */
 
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "port_gba_mem.h"        /* gEwram/gIwram/... + the u8/u16 typedefs */
+#include "structs/samus.h"       /* struct Equipment */
 #include "port_gpu_renderer.h"   /* Port_GpuRenderer_InvalidateAll */
 #include "port_save_state.h"
 #include "constants/game_state.h" /* GM_INGAME, SUB_GAME_MODE_PLAYING */
+#include "port_paths.h"
 
 /* Decomp globals used only for the "am I in gameplay" gate and the slot
  * label -- extern'd rather than pulling in the big struct headers. */
@@ -34,9 +38,9 @@ extern char __ss_bss_start[],  __ss_bss_end[];
 /* ------------------------------------------------------------------------- */
 
 #define SS_MAGIC    0x314D5A53u   /* "SZM1" */
-#define SS_VERSION  2
+#define SS_VERSION  3
 #define SS_REGIONS  10
-#define SS_PATH_FMT "sdmc:/3ds/mzm-state%d.bin"
+#define SS_PATH_FMT PORT_STATES_DIR "/mzm-state%d.bin"
 
 /* A snapshot is a raw dump of EWRAM/IWRAM/.data/.bss, and those regions are
  * full of ABSOLUTE host pointers whose targets only exist at the addresses
@@ -105,8 +109,38 @@ typedef struct {
     uint32_t room;
     uint32_t frame16;
     uint32_t buildFingerprint;   /* SsBuildFingerprint() at save time */
-    uint32_t reserved[2];
+    uint32_t savedAt;            /* Unix seconds, console clock */
+    uint16_t energy, maxEnergy;
+    uint16_t missiles, maxMissiles;
+    uint8_t  superMissiles, maxSuperMissiles;
+    uint8_t  powerBombs, maxPowerBombs;
 } SsHeader;
+
+/* Version 2 wrote the same fields up to buildFingerprint followed by two
+ * reserved words, i.e. 76 bytes; version 3 appended the stats after that.
+ * The payload starts right after the header, so a v2 file has to be read
+ * with the v2 length or every region would be misaligned. */
+#define SS_VERSION_V2     2
+#define SS_HEADER_V2_SIZE 76u
+_Static_assert(offsetof(SsHeader, savedAt) <= SS_HEADER_V2_SIZE &&
+               sizeof(SsHeader) > SS_HEADER_V2_SIZE, "SsHeader layout");
+
+/* Reads a slot's header, leaving the file positioned at the payload.
+ * Accepts the current version and v2 (its stats stay zero). Returns 0 for a
+ * short read or a file that is not a save state, else the file's version. */
+static uint32_t SsReadHeader(FILE* f, SsHeader* h) {
+    memset(h, 0, sizeof(*h));
+    if (fread(h, SS_HEADER_V2_SIZE, 1, f) != 1 || h->magic != SS_MAGIC) return 0;
+    if (h->version == SS_VERSION_V2) {
+        /* v2's two reserved words overlap the start of the new fields. */
+        h->savedAt = 0;
+        return SS_VERSION_V2;
+    }
+    if (h->version != SS_VERSION) return h->version ? h->version : 0;
+    if (fread((char*)h + SS_HEADER_V2_SIZE, sizeof(*h) - SS_HEADER_V2_SIZE, 1, f) != 1) return 0;
+    return SS_VERSION;
+}
+
 
 /* ------------------------------------------------------------------------- */
 
@@ -123,14 +157,29 @@ static int  sMsgTtl   = 0;
 
 static bool sScanned = false;
 static bool sSlotUsed[PORT_SAVE_STATE_SLOTS];
-static char sSlotLabel[PORT_SAVE_STATE_SLOTS][28];
+static PortSaveStateInfo sSlotInfo[PORT_SAVE_STATE_SLOTS];
 
-static const char* SsAreaName(unsigned a) {
+const char* Port_SaveState_AreaName(unsigned a) {
     static const char* const kNames[] = {
         "BRINSTAR", "KRAID", "NORFAIR", "RIDLEY",
         "TOURIAN", "CRATERIA", "CHOZODIA",
     };
     return (a < sizeof(kNames) / sizeof(kNames[0])) ? kNames[a] : "???";
+}
+
+static void SsInfoFromHeader(const SsHeader* h, PortSaveStateInfo* info) {
+    info->hasStats = true;
+    info->area = (uint8_t)h->area;
+    info->room = (uint8_t)h->room;
+    info->savedAt = h->savedAt;
+    info->energy = h->energy;
+    info->maxEnergy = h->maxEnergy;
+    info->missiles = h->missiles;
+    info->maxMissiles = h->maxMissiles;
+    info->superMissiles = h->superMissiles;
+    info->maxSuperMissiles = h->maxSuperMissiles;
+    info->powerBombs = h->powerBombs;
+    info->maxPowerBombs = h->maxPowerBombs;
 }
 
 static void SsSetMsg(const char* m) {
@@ -162,7 +211,7 @@ static void SsDoSave(int slot) {
     SsRegion r[SS_REGIONS];
     int n = SsBuildRegions(r);
 
-    char path[64];
+    char path[128];
     snprintf(path, sizeof(path), SS_PATH_FMT, slot + 1);
     FILE* f = fopen(path, "wb");
     if (!f) { SsSetMsg("GUARDADO FALLIDO (SD)"); return; }
@@ -177,6 +226,15 @@ static void SsDoSave(int slot) {
     h.room = gCurrentRoom;
     h.frame16 = gFrameCounter16Bit;
     h.buildFingerprint = SsBuildFingerprint();
+    h.savedAt = (uint32_t)time(NULL);
+    h.energy = gEquipment.currentEnergy;
+    h.maxEnergy = gEquipment.maxEnergy;
+    h.missiles = gEquipment.currentMissiles;
+    h.maxMissiles = gEquipment.maxMissiles;
+    h.superMissiles = gEquipment.currentSuperMissiles;
+    h.maxSuperMissiles = gEquipment.maxSuperMissiles;
+    h.powerBombs = gEquipment.currentPowerBombs;
+    h.maxPowerBombs = gEquipment.maxPowerBombs;
 
     bool ok = fwrite(&h, sizeof(h), 1, f) == 1;
     for (int i = 0; i < n && ok; ++i)
@@ -186,22 +244,21 @@ static void SsDoSave(int slot) {
     if (!ok) { remove(path); SsSetMsg("GUARDADO FALLIDO"); return; }
 
     sSlotUsed[slot] = true;
-    snprintf(sSlotLabel[slot], sizeof(sSlotLabel[slot]), "%s  SALA %u",
-             SsAreaName(gCurrentArea), (unsigned)gCurrentRoom);
+    SsInfoFromHeader(&h, &sSlotInfo[slot]);
     char m[48];
     snprintf(m, sizeof(m), "SLOT %d GUARDADO", slot + 1);
     SsSetMsg(m);
 }
 
 static void SsDoLoad(int slot) {
-    char path[64];
+    char path[128];
     snprintf(path, sizeof(path), SS_PATH_FMT, slot + 1);
     FILE* f = fopen(path, "rb");
     if (!f) { SsSetMsg("SLOT VACIO"); return; }
 
     SsHeader h;
-    if (fread(&h, sizeof(h), 1, f) != 1 ||
-        h.magic != SS_MAGIC || h.version != SS_VERSION ||
+    const uint32_t version = SsReadHeader(f, &h);
+    if ((version != SS_VERSION && version != SS_VERSION_V2) ||
         h.regionCount != SS_REGIONS) {
         fclose(f);
         SsSetMsg("SLOT INCOMPATIBLE");
@@ -299,16 +356,23 @@ static void SsScan(void) {
     sScanned = true;
     for (int s = 0; s < PORT_SAVE_STATE_SLOTS; ++s) {
         sSlotUsed[s] = false;
-        sSlotLabel[s][0] = '\0';
-        char path[64];
+        memset(&sSlotInfo[s], 0, sizeof(sSlotInfo[s]));
+        char path[128];
         snprintf(path, sizeof(path), SS_PATH_FMT, s + 1);
         FILE* f = fopen(path, "rb");
         if (!f) continue;
         SsHeader h;
-        if (fread(&h, sizeof(h), 1, f) == 1 && h.magic == SS_MAGIC) {
+        const uint32_t version = SsReadHeader(f, &h);
+        if (version != 0) {
             sSlotUsed[s] = true;
-            snprintf(sSlotLabel[s], sizeof(sSlotLabel[s]), "%s  SALA %u",
-                     SsAreaName(h.area), (unsigned)h.room);
+            if (version == SS_VERSION) {
+                SsInfoFromHeader(&h, &sSlotInfo[s]);
+            } else {
+                /* Version 2 (or unknown): area/room sit at the same offset in
+                 * every version, the stats do not exist. */
+                sSlotInfo[s].area = (uint8_t)h.area;
+                sSlotInfo[s].room = (uint8_t)h.room;
+            }
         }
         fclose(f);
     }
@@ -325,12 +389,14 @@ bool Port_SaveState_SlotUsed(int slot) {
     return sSlotUsed[slot];
 }
 
-void Port_SaveState_SlotLabel(int slot, char* out, int outSize) {
-    if (!out || outSize <= 0) return;
-    out[0] = '\0';
-    if (slot < 0 || slot >= PORT_SAVE_STATE_SLOTS) return;
+bool Port_SaveState_GetInfo(int slot, PortSaveStateInfo* out) {
+    if (!out) return false;
+    memset(out, 0, sizeof(*out));
+    if (slot < 0 || slot >= PORT_SAVE_STATE_SLOTS) return false;
     SsScan();
-    snprintf(out, (size_t)outSize, "%s", sSlotLabel[slot]);
+    if (!sSlotUsed[slot]) return false;
+    *out = sSlotInfo[slot];
+    return true;
 }
 
 const char* Port_SaveState_LastMessage(void) { return sMsg; }

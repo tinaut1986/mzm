@@ -48,6 +48,15 @@ void PortHaze_SetCpuPerLine(bool active);
  * path. */
 bool PortHaze_Bg3RowScroll(int16_t rowDelta[160], int16_t *bakeHofs);
 
+/* The same wave for any number of rows, including ones past the GBA frame
+ * (the WIDE view). Row r shows BG3 layer line firstLayerLine + r, which sits
+ * at camera line firstLayerLine + r + cameraOffset -- they differ when BG3
+ * scrolls slower than the camera and the view has slid. Deltas are relative
+ * to *bakeHofs, as above. False when there is no single-layer BG3 ripple, or
+ * the game has not run a ripple routine yet. */
+bool PortHaze_Bg3WaveRows(int16_t *rowDelta, int rows, int firstLayerLine, int cameraOffset,
+                          int16_t *bakeHofs);
+
 #ifdef __cplusplus
 }
 #endif

@@ -1,14 +1,25 @@
 #include "port_debug_files.h"
+#include "port_paths.h"
 
+#include <errno.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
 
-#ifdef PLATFORM_LINUX
-#define PORT_DEBUG_FILES_DIR "/tmp"
-#else
-#define PORT_DEBUG_FILES_DIR "sdmc:/3ds"
+#define PORT_DEBUG_FILES_DIR PORT_DEBUG_DIR
+
+int Port_Paths_Ensure(void) {
+    /* The parent of PORT_APP_DIR ("sdmc:/3ds") already exists on any 3DS
+     * with homebrew; create it anyway, it is harmless when present. */
+#ifndef PLATFORM_LINUX
+    mkdir("sdmc:/3ds", 0777);
 #endif
+    if (mkdir(PORT_APP_DIR, 0777) != 0 && errno != EEXIST) return 0;
+    mkdir(PORT_STATES_DIR, 0777);
+    mkdir(PORT_DEBUG_DIR, 0777);
+    mkdir(PORT_UPDATE_DIR, 0777);
+    return 1;
+}
 
 #define PORT_DEBUG_FILES_MAX_KEEP 99u
 

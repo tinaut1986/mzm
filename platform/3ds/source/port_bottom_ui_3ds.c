@@ -10,6 +10,7 @@
 #include "port_debug_tools.h"
 #include "port_debug_log.h"
 #include "port_save_state.h"
+#include "port_updater_3ds.h"
 
 /* GBA & MZM minimap and state globals */
 extern uint16_t gDecompressedMinimapVisitedTiles[32 * 32];
@@ -210,12 +211,34 @@ typedef struct { float x, w; PortBottomTab tab; int icon; } BottomTabSlot;
 #define BOTTOM_TAB_SLOT_MAX 6
 static int BottomTabLayout(BottomTabSlot slots[BOTTOM_TAB_SLOT_MAX]);
 
+/* Update prompt geometry, shared by the renderer and the touch handler. The
+ * OK button of the error prompt reuses the YES slot. */
+#define UPD_BTN_Y0 138
+#define UPD_BTN_Y1 166
+#define UPD_YES_X0 44
+#define UPD_YES_X1 148
+#define UPD_NO_X0 172
+#define UPD_NO_X1 276
+
 /* Called once per frame (even on frames the UI is not redrawn) so time-based
  * state keeps advancing: the blink counter and the RA session pump. */
 void Port_BottomUI_FrameTick(void) {
     extern void Port_RA_Update(void); /* port_retroachievements_3ds.h, included below */
     ++sFrameCounter;
     Port_RA_Update();
+
+    /* The prompt is raised by the updater's worker thread: redraw when it (or
+     * the install progress it shows) changes instead of waiting for a tap. */
+    {
+        static int sLastPrompt = 0, sLastProgress = -1;
+        int pr = (int)Port_Updater_GetPrompt();
+        int pg = Port_Updater_GetProgress();
+        if (pr != sLastPrompt || (pr == (int)UPDATER_PROMPT_PROGRESS && pg != sLastProgress)) {
+            sLastPrompt = pr;
+            sLastProgress = pg;
+            sBottomUiDirty = true;
+        }
+    }
 
     /* Refresh battery ~every 2s; it moves far slower than the UI redraws.
      * ptm:u may not be up yet the first time Port_BottomUI_Init ran (service
@@ -280,6 +303,7 @@ static bool sShowAchPacksModal = false;
 static bool sAchFromPacks = false;
 static bool sShowRASettingsModal = false;
 static bool sShowDisplayModal = false;
+static bool sShowUpdateModal = false;
 
 #ifdef PORT_DEBUG_TOOLS_ACTIVE
 /* DEBUG tab -> [HERRAMIENTAS] modal. Touchable equivalent of the L+R+<btn>
@@ -316,20 +340,8 @@ extern void PortPpuMzm_DebugKillSamus(void);
 extern void Port_GpuRenderer_DumpAtlas(const char* ppmPath, const char* csvPath);
 extern bool Port_GpuRenderer_IsActive(void);
 extern void Port_GpuRenderer_SetActive(bool active);
-extern void Port_GpuRenderer_SetBlockPass(bool on);
-extern bool Port_GpuRenderer_BlockPassEnabled(void);
-extern void Port_GpuRenderer_SetBlockDebugTint(bool on);
-extern bool Port_GpuRenderer_BlockDebugTintEnabled(void);
 extern void Port_GpuRenderer_SetDepthTint(bool on);
 extern bool Port_GpuRenderer_DepthTintEnabled(void);
-extern void Port_GpuRenderer_SetAffineBg(bool on);
-extern bool Port_GpuRenderer_AffineBgEnabled(void);
-extern void Port_GpuRenderer_SetBlock32Pass(bool on);
-extern bool Port_GpuRenderer_Block32PassEnabled(void);
-extern void Port_GpuRenderer_SetLayerCache(bool on);
-extern bool Port_GpuRenderer_LayerCacheEnabled(void);
-extern void Port_GpuRenderer_CycleHazeMode(void);
-extern int Port_GpuRenderer_HazeMode(void);
 extern void Port_DebugLog(const char* msg);
 extern bool Port_DebugLog_IsEnabled(void);
 extern void Port_DebugLog_SetBuffered(bool buffered);
@@ -434,6 +446,7 @@ extern void Port_Config_SetFramePacing(int mode);
 
 /* RetroAchievements Helpers */
 #include "port_retroachievements_3ds.h"
+#include "port_paths.h"
 
 /* Tapping a card in the list opens a read-only detail popup over it. The
  * chosen achievement is snapshotted rather than referenced, so a background
@@ -1170,6 +1183,18 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
      * unchanged. */
     if (isNewTap) Port_BottomUI_NoteTap(x, y);
 
+    /* The update prompt is modal over every tab: it swallows all touches. */
+    if (Port_Updater_GetPrompt() != UPDATER_PROMPT_NONE) {
+        if (isNewTap) {
+            const bool isError = (Port_Updater_GetPrompt() == UPDATER_PROMPT_ERROR);
+            const bool yes = (y >= UPD_BTN_Y0 && y <= UPD_BTN_Y1) &&
+                             (isError ? (x >= 116 && x <= 204) : (x >= UPD_YES_X0 && x <= UPD_YES_X1));
+            const bool no = (x >= UPD_NO_X0 && x <= UPD_NO_X1 && y >= UPD_BTN_Y0 && y <= UPD_BTN_Y1);
+            if (yes || no) Port_Updater_AnswerPrompt(yes);
+        }
+        return;
+    }
+
     /* Top navigation bar: icon tabs, left-aligned (Y: 2 to 24). */
     if (y >= 2 && y <= 24) {
         if (isNewTap) {
@@ -1661,6 +1686,32 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
             return;
         }
 
+        if (sShowUpdateModal) {
+            if (isNewTap) {
+                UpdaterState us = Port_Updater_GetState();
+                if (x >= 100 && x <= 220 && y >= 204 && y <= 230) {
+                    sShowUpdateModal = false;
+                } else if (x >= 10 && x <= 308) {
+                    if (y >= 56 && y <= 80) {
+                        Port_Updater_SetAuto(!Port_Updater_GetAuto());
+                        Port_Config_Save();
+                    } else if (y >= 84 && y <= 108) {
+                        Port_Updater_SetBeta(!Port_Updater_GetBeta());
+                        Port_Config_Save();
+                    } else if (y >= 140 && y <= 172) {
+                        if (us == UPDATER_AVAILABLE) {
+                            Port_Updater_Install();
+                        } else if (us == UPDATER_INSTALLED) {
+                            Port_Updater_Restart();
+                        } else if (us != UPDATER_CHECKING && us != UPDATER_DOWNLOADING) {
+                            Port_Updater_CheckNow();
+                        }
+                    }
+                }
+            }
+            return;
+        }
+
         if (sShowRASettingsModal) {
             if (isNewTap) {
                 if (x >= 100 && x <= 220 && y >= 204 && y <= 230) {
@@ -1708,10 +1759,7 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
                  * 6..8 cycle a GBA effect through OFF/LOW/MED/HIGH. */
                 switch (DispCellHit(x, y)) {
                     case 0: Port_Config_CycleLanguage(); break;
-                    case 1:
-                        /* Aspect is locked while PIXEL PERFECT is selected. */
-                        if (Port_Config_Get3DSDisplayStyle() != 0) Port_Config_Cycle3DSAspectRatio();
-                        break;
+                    case 1: Port_Config_Cycle3DSAspectRatio(); break;
                     case 2: Port_Config_Cycle3DSDisplayStyle(); break;
                     case 3: Port_Config_CycleFpsPosition(); break;
                     case 4: Port_Config_SetAutoHideHud(!Port_Config_GetAutoHideHud()); break;
@@ -1720,10 +1768,11 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
                     case 7: Port_Config_SetGbaFxGrid((Port_Config_GetGbaFxGrid() + 1) % 4); break;
                     case 8: Port_Config_SetGbaFxVignette((Port_Config_GetGbaFxVignette() + 1) % 4); break;
                     case 9:
-                        if (Port_Config_Get3DSDisplayStyle() == 0) Port_Config_ToggleHudOutside();
+                        if (Port_Config_Get3DSDisplayStyle() == 0 && Port_Config_Get3DSAspectRatio() != 3) Port_Config_ToggleHudOutside();
                         break;
                     case 10:
-                        if (Port_Config_Get3DSDisplayStyle() == 0 || Port_Config_Get3DSAspectRatio() == 1) {
+                        if (Port_Config_Get3DSAspectRatio() != 3 &&
+                            (Port_Config_Get3DSDisplayStyle() == 0 || Port_Config_Get3DSAspectRatio() == 1)) {
                             Port_Config_ToggleGbaBezel();
                         }
                         break;
@@ -1799,9 +1848,11 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
                 sShowRemapModal = true;
                 sRemapScrollY = 0.0f;
                 sRemapSelectButtonIdx = -1;
-            } else if (x >= 16 && x <= 304 && y >= 164 && y <= 192) {
+            } else if (x >= 16 && x <= 156 && y >= 164 && y <= 192) {
                 sConfirmIsRestart = true;
                 sShowConfirmModal = true;
+            } else if (x >= 164 && x <= 304 && y >= 164 && y <= 192) {
+                sShowUpdateModal = true;
             }
         }
     }
@@ -2227,46 +2278,23 @@ static void Port_Config_CycleLanguage(void) {
 }
 
 static const char* GetAspectRatioDisplayName(int lang) {
+    /* Same order as the language ids used across this file: 0/1/2 EN, 3 DE,
+     * 4 FR, 5 IT, 6 ES. */
+    static const char* const originalL[7] = { "ORIGINAL (3:2)", "ORIGINAL (3:2)", "ORIGINAL (3:2)", "ORIGINAL (3:2)",
+                                              "ORIGINAL (3:2)", "ORIGINALE (3:2)", "ORIGINAL (3:2)" };
+    static const char* const originalPixelL[7] = { "ORIGINAL (1:1)", "ORIGINAL (1:1)", "ORIGINAL (1:1)", "ORIGINAL (1:1)",
+                                                   "ORIGINAL (1:1)", "ORIGINALE (1:1)", "ORIGINAL (1:1)" };
+    static const char* const stretchL[7] = { "STRETCH (16:9)", "STRETCH (16:9)", "STRETCH (16:9)", "GESTRECKT (16:9)",
+                                             "ETIRE (16:9)", "ALLARGATO (16:9)", "ESTIRADO (16:9)" };
+    /* WIDE shows the world the GBA hides past its frame instead of stretching. */
+    static const char* const wideL[7] = { "WIDE", "WIDE", "WIDE", "WEIT", "LARGE", "AMPIO", "AMPLIO" };
+
+    if (lang < 0 || lang > 6) lang = 0;
     int ar = Port_Config_Get3DSAspectRatio();
-    switch (lang) {
-        case 0:
-        case 1:
-            switch (ar) {
-                case 0: return "WIDE";
-                case 1: return "ORIGINAL (3:2)";
-                case 2: return "STRETCH (16:9)";
-                default: return "ORIGINAL";
-            }
-        case 3: /* DE */
-            switch (ar) {
-                case 0: return "BREITBILD";
-                case 1: return "ORIGINAL (3:2)";
-                case 2: return "GESTRECKT (16:9)";
-                default: return "ORIGINAL";
-            }
-        case 4: /* FR */
-            switch (ar) {
-                case 0: return "LARGE";
-                case 1: return "ORIGINAL (3:2)";
-                case 2: return "ETIRE (16:9)";
-                default: return "ORIGINAL";
-            }
-        case 5: /* IT */
-            switch (ar) {
-                case 0: return "PANORAMICO";
-                case 1: return "ORIGINALE (3:2)";
-                case 2: return "ALLARGATO (16:9)";
-                default: return "ORIGINALE";
-            }
-        case 6: /* ES */
-        default: /* EN */
-            switch (ar) {
-                case 0: return "PANORAMICO";
-                case 1: return "ORIGINAL (3:2)";
-                case 2: return "ESTIRADO (16:9)";
-                default: return "ORIGINAL";
-            }
-    }
+    if (ar == 3) return wideL[lang];
+    /* STRETCH has no meaning at 1:1, so PIXEL PERFECT only offers ORIGINAL / WIDE. */
+    if (Port_Config_Get3DSDisplayStyle() == 0) return originalPixelL[lang];
+    return ar == 2 ? stretchL[lang] : originalL[lang];
 }
 
 static const char* GetDisplayStyleDisplayName(int lang) {
@@ -3132,11 +3160,8 @@ static void RenderDisplayModal(int lang) {
     static const char* const spoL[7]   = { "HIDE SPOILERS","HIDE SPOILERS","HIDE SPOILERS","SPOILER AUS","MASQ. SPOILERS","NASC. SPOILER","OCULTAR SPOILERS" };
 
     DispCell(0, langL[lang], Port_Config_GetLanguageDisplayName(lang), valCol);
-    /* Aspect is meaningless at 1:1, so it is locked while PIXEL PERFECT is on. */
-    bool aspectLocked = (Port_Config_Get3DSDisplayStyle() == 0);
-    DispCell(1, aspL[lang],
-             aspectLocked ? ((lang == 6) ? "BLOQUEADO" : "LOCKED") : GetAspectRatioDisplayName(lang),
-             aspectLocked ? idleCol : valCol);
+    bool wideOn = (Port_Config_Get3DSAspectRatio() == 3);
+    DispCell(1, aspL[lang], GetAspectRatioDisplayName(lang), wideOn ? onCol : valCol);
     DispCell(2, styL[lang], GetDisplayStyleDisplayName(lang), valCol);
 
     bool fpsOn = Port_Config_GetShowFps();
@@ -3162,17 +3187,20 @@ static void RenderDisplayModal(int lang) {
 
     const char* lockedTxt = (lang == 6) ? "BLOQUEADO" : "LOCKED";
     bool pixelPerfect = (Port_Config_Get3DSDisplayStyle() == 0);
+    /* WIDE fills the border with world, leaving no room for a bezel or for
+     * the HUD to move into. */
+    const bool wide = (Port_Config_Get3DSAspectRatio() == 3);
 
     /* HUD Position: TOP BORDER vs DEFAULT (only active in Pixel Perfect) */
     bool hudOut = Port_Config_GetHudOutside();
     const char* hudOutTxt = (lang == 6) ? "BORDE SUP." : ((lang == 3) ? "OBEN" : ((lang == 4) ? "BORD SUP." : ((lang == 5) ? "BORDO SUP." : "TOP BORDER")));
     const char* hudDefTxt = (lang == 6) ? "NORMAL" : ((lang == 3) ? "NORMAL" : ((lang == 4) ? "NORMAL" : ((lang == 5) ? "NORMALE" : "DEFAULT")));
     DispCell(9, hudPosL[lang],
-             pixelPerfect ? (hudOut ? hudOutTxt : hudDefTxt) : lockedTxt,
-             pixelPerfect ? (hudOut ? onCol : valCol) : idleCol);
+             (pixelPerfect && !wide) ? (hudOut ? hudOutTxt : hudDefTxt) : lockedTxt,
+             (pixelPerfect && !wide) ? (hudOut ? onCol : valCol) : idleCol);
 
     /* GBA Bezel: ON vs OFF (active in Pixel Perfect or Scaled Original) */
-    bool bezelAllowed = (pixelPerfect || Port_Config_Get3DSAspectRatio() == 1);
+    bool bezelAllowed = !wide && (pixelPerfect || Port_Config_Get3DSAspectRatio() == 1);
     bool bezelOn = Port_Config_GetGbaBezel();
     DispCell(10, bezelL[lang],
              bezelAllowed ? (bezelOn ? onTxt : offTxt) : lockedTxt,
@@ -3293,6 +3321,125 @@ static void RenderRASettingsModal(int lang) {
     };
     DrawButton(116.0f, 206.0f, 88.0f, 22.0f, closeRALabels[lang],
                C2D_Color32(255, 255, 255, 255), BTN_BLUE_BODY, BTN_BLUE_BORDER);
+}
+
+/* Self-update modal: auto-update + channel toggles, a status line and one
+ * context-sensitive action button (check / install / restart). */
+static void RenderUpdateModal(int lang) {
+    const bool es = (lang == 6);
+    const UpdaterState us = Port_Updater_GetState();
+    const uint32_t rowBody = C2D_Color32(16, 24, 40, 255);
+    const uint32_t rowBorder = C2D_Color32(50, 80, 130, 255);
+    const uint32_t white = C2D_Color32(255, 255, 255, 255);
+    const uint32_t green = C2D_Color32(80, 255, 120, 255);
+    const uint32_t red = C2D_Color32(255, 100, 100, 255);
+    char line[64];
+
+    C2D_DrawRectSolid(10.0f, 26.0f, 0.85f, 300.0f, 206.0f, C2D_Color32(10, 14, 24, 250));
+    C2D_DrawRectSolid(10.0f, 26.0f, 0.84f, 300.0f, 206.0f, C2D_Color32(40, 70, 120, 255));
+    DrawText(20.0f, 32.0f, 1.0f, es ? "ACTUALIZACIONES" : "UPDATES", C2D_Color32(255, 215, 0, 255));
+    DrawText(170.0f, 32.0f, 1.0f, MZM_PORT_VERSION, C2D_Color32(140, 160, 190, 255));
+
+    DrawButtonBox(16.0f, 56.0f, 288.0f, 24.0f, rowBody, rowBorder);
+    DrawText(24.0f, 65.0f, 1.0f, es ? "AUTOACTUALIZAR:" : "AUTO UPDATE:", white);
+    bool autoUp = Port_Updater_GetAuto();
+    DrawText(170.0f, 65.0f, 1.0f, autoUp ? (es ? "ACTIVADO" : "ENABLED") : (es ? "DESACTIVADO" : "DISABLED"),
+             autoUp ? green : red);
+
+    DrawButtonBox(16.0f, 84.0f, 288.0f, 24.0f, rowBody, rowBorder);
+    DrawText(24.0f, 93.0f, 1.0f, es ? "CANAL:" : "CHANNEL:", white);
+    DrawText(170.0f, 93.0f, 1.0f,
+             Port_Updater_GetBeta() ? (es ? "RELEASES + BETAS" : "RELEASES + BETAS") : (es ? "SOLO RELEASES" : "RELEASES ONLY"),
+             C2D_Color32(120, 200, 255, 255));
+
+    /* Status (not tappable) */
+    DrawButtonBox(16.0f, 112.0f, 288.0f, 24.0f, rowBody, rowBorder);
+    uint32_t statusCol = C2D_Color32(140, 160, 190, 255);
+    switch (us) {
+        case UPDATER_CHECKING:    snprintf(line, sizeof(line), "%s", es ? "BUSCANDO..." : "CHECKING..."); statusCol = C2D_Color32(255, 220, 80, 255); break;
+        case UPDATER_UP_TO_DATE:  snprintf(line, sizeof(line), "%s", es ? "YA ESTAS AL DIA" : "UP TO DATE"); statusCol = green; break;
+        case UPDATER_AVAILABLE:   snprintf(line, sizeof(line), "%s %s", es ? "NUEVA:" : "NEW:", Port_Updater_GetRemoteTag()); statusCol = C2D_Color32(255, 220, 80, 255); break;
+        case UPDATER_DOWNLOADING: snprintf(line, sizeof(line), "%s %d%%", es ? "INSTALANDO" : "INSTALLING", Port_Updater_GetProgress()); statusCol = C2D_Color32(255, 220, 80, 255); break;
+        case UPDATER_INSTALLED:   snprintf(line, sizeof(line), "%s %s", es ? "INSTALADA" : "INSTALLED", Port_Updater_GetRemoteTag()); statusCol = green; break;
+        case UPDATER_ERROR:       snprintf(line, sizeof(line), "%s", Port_Updater_GetMessage()); statusCol = red; break;
+        default:                  snprintf(line, sizeof(line), "%s", es ? "SIN COMPROBAR" : "NOT CHECKED"); break;
+    }
+    DrawText(24.0f, 121.0f, 1.0f, line, statusCol);
+    if (us == UPDATER_DOWNLOADING) {
+        C2D_DrawRectSolid(16.0f, 132.0f, 0.9f, 288.0f * (float)Port_Updater_GetProgress() / 100.0f, 4.0f, green);
+    }
+
+    /* Action button */
+    const char* actionLabel;
+    uint32_t actionBody = BTN_BLUE_BODY, actionBorder = BTN_BLUE_BORDER;
+    switch (us) {
+        case UPDATER_AVAILABLE:   actionLabel = es ? "INSTALAR AHORA" : "INSTALL NOW"; break;
+        case UPDATER_INSTALLED:   actionLabel = es ? "REINICIAR AHORA" : "RESTART NOW"; break;
+        case UPDATER_CHECKING:
+        case UPDATER_DOWNLOADING: actionLabel = "..."; actionBody = C2D_Color32(30, 34, 44, 255); actionBorder = C2D_Color32(70, 76, 90, 255); break;
+        default:                  actionLabel = es ? "BUSCAR ACTUALIZACION" : "CHECK NOW"; break;
+    }
+    DrawButton(16.0f, 142.0f, 288.0f, 28.0f, actionLabel, white, actionBody, actionBorder);
+
+    DrawButton(116.0f, 206.0f, 88.0f, 22.0f, es ? "CERRAR" : "CLOSE", white, BTN_BLUE_BODY, BTN_BLUE_BORDER);
+}
+
+/* Modal prompt for the self-updater, drawn over whichever tab is active. */
+static void RenderUpdatePrompt(int lang) {
+    const UpdaterPrompt pr = Port_Updater_GetPrompt();
+    const bool es = (lang == 6);
+    const uint32_t white = C2D_Color32(255, 255, 255, 255);
+    const uint32_t gold = C2D_Color32(255, 215, 0, 255);
+    const char* title = "";
+    const char* question = "";
+    char line[64];
+
+    if (pr == UPDATER_PROMPT_NONE) return;
+
+    C2D_DrawRectSolid(0.0f, 0.0f, 0.97f, 320.0f, 240.0f, C2D_Color32(0, 0, 0, 170));
+    C2D_DrawRectSolid(20.0f, 58.0f, 0.98f, 280.0f, 122.0f, C2D_Color32(40, 70, 120, 255));
+    C2D_DrawRectSolid(22.0f, 60.0f, 0.99f, 276.0f, 118.0f, C2D_Color32(10, 14, 24, 255));
+
+    switch (pr) {
+        case UPDATER_PROMPT_ASK_INSTALL:
+            title = es ? "ACTUALIZACION DISPONIBLE" : "UPDATE AVAILABLE";
+            question = es ? "INSTALAR AHORA?" : "INSTALL NOW?";
+            snprintf(line, sizeof(line), "%s -> %s", MZM_PORT_VERSION, Port_Updater_GetRemoteTag());
+            break;
+        case UPDATER_PROMPT_PROGRESS:
+            title = es ? "ACTUALIZANDO" : "UPDATING";
+            snprintf(line, sizeof(line), "%d%%", Port_Updater_GetProgress());
+            break;
+        case UPDATER_PROMPT_ASK_RESTART:
+            title = es ? "ACTUALIZACION INSTALADA" : "UPDATE INSTALLED";
+            question = es ? "REINICIAR AHORA?" : "RESTART NOW?";
+            snprintf(line, sizeof(line), "%s", Port_Updater_GetRemoteTag());
+            break;
+        default:
+            title = es ? "ERROR DE ACTUALIZACION" : "UPDATE FAILED";
+            snprintf(line, sizeof(line), "%s", Port_Updater_GetMessage());
+            break;
+    }
+    DrawTextCentered(160.0f, 70.0f, 1.0f, title, gold);
+    DrawTextCentered(160.0f, 94.0f, 1.0f, line, C2D_Color32(150, 200, 255, 255));
+    if (question[0]) DrawTextCentered(160.0f, 114.0f, 1.0f, question, white);
+    if (pr == UPDATER_PROMPT_ERROR && Port_Updater_KeptCia()) {
+        DrawTextCentered(160.0f, 112.0f, 1.0f, es ? "CIA EN SD: mzm-update.cia" : "CIA KEPT: sdmc:/mzm-update.cia",
+                         C2D_Color32(255, 220, 80, 255));
+    }
+
+    if (pr == UPDATER_PROMPT_PROGRESS) {
+        C2D_DrawRectSolid(40.0f, 132.0f, 0.99f, 240.0f, 8.0f, C2D_Color32(30, 40, 60, 255));
+        C2D_DrawRectSolid(40.0f, 132.0f, 1.0f, 240.0f * (float)Port_Updater_GetProgress() / 100.0f, 8.0f,
+                          C2D_Color32(80, 255, 120, 255));
+    } else if (pr == UPDATER_PROMPT_ERROR) {
+        DrawButton(116.0f, (float)UPD_BTN_Y0, 88.0f, 28.0f, es ? "ACEPTAR" : "OK", white, BTN_BLUE_BODY, BTN_BLUE_BORDER);
+    } else {
+        DrawButton((float)UPD_YES_X0, (float)UPD_BTN_Y0, (float)(UPD_YES_X1 - UPD_YES_X0), 28.0f,
+                   es ? "SI" : "YES", white, C2D_Color32(16, 60, 32, 255), C2D_Color32(55, 150, 95, 255));
+        DrawButton((float)UPD_NO_X0, (float)UPD_BTN_Y0, (float)(UPD_NO_X1 - UPD_NO_X0), 28.0f,
+                   "NO", white, C2D_Color32(64, 22, 22, 255), C2D_Color32(180, 60, 60, 255));
+    }
 }
 
 /* Action picker popup for remapping */
@@ -4154,8 +4301,12 @@ static void RenderOptionsView(void) {
         "RESTART GAME", "RESTART GAME", "RESTART GAME",
         "SPIEL NEUSTARTEN", "RECOMMENCER PARTIE", "RIAVVIA PARTITA", "REINICIAR PARTIDA"
     };
-    DrawButton(16.0f, 164.0f, 288.0f, 28.0f, restartBtnTitles[lang],
+    DrawButton(16.0f, 164.0f, 140.0f, 28.0f, restartBtnTitles[lang],
                C2D_Color32(255, 150, 150, 255), C2D_Color32(64, 22, 22, 255), C2D_Color32(180, 60, 60, 255));
+
+    /* Updates button, right half of the restart row */
+    DrawButton(164.0f, 164.0f, 140.0f, 28.0f, (lang == 6) ? "ACTUALIZAR" : "UPDATES",
+               C2D_Color32(150, 230, 255, 255), C2D_Color32(16, 44, 64, 255), C2D_Color32(60, 130, 180, 255));
 
     /* Footer */
     DrawTextCentered(160.0f, 212.0f, 1.0f, "METROID ZERO MISSION 3DS " MZM_PORT_VERSION, C2D_Color32(90, 115, 145, 255));
@@ -4163,6 +4314,7 @@ static void RenderOptionsView(void) {
     /* Render active modal on top */
     if (sShowDisplayModal) RenderDisplayModal(lang);
     else if (sShowRASettingsModal) RenderRASettingsModal(lang);
+    else if (sShowUpdateModal) RenderUpdateModal(lang);
     else if (sShowAchPacksModal) RenderAchPacksModal(lang);
     else if (sShowAchievementsModal) {
         RenderAchievementsModal(lang);
@@ -4184,11 +4336,11 @@ static void RenderOptionsView(void) {
 #define DBGTOOL_GRID_Y0   42   /* clears the modal title at y=32..39 */
 #define DBGTOOL_GRID_PITCH 20
 #define DBGTOOL_CELL_H    19
-/* Cells 9..13 (RENDERER, BLOQUES, CAPAS/HAZE, PERFIL 3DS, PROFUNDIDAD) only
- * exist when the GPU tile renderer is compiled in -- a RENDERER=cpu build has
- * nothing to switch to and neither pass to switch off. */
+/* Cells 9..11 (RENDERER, PERFIL 3DS, PROFUNDIDAD) only exist when the GPU
+ * tile renderer is compiled in -- a RENDERER=cpu build has nothing to switch
+ * to. */
 #ifdef PORT_GPU_TILE_RENDERER
-#define DBGTOOL_COUNT     16
+#define DBGTOOL_COUNT     13
 #else
 #define DBGTOOL_COUNT     10
 #endif
@@ -4399,37 +4551,7 @@ static void RenderDebugToolsModal(int lang) {
                            skipOn ? "SKIP" : "skip",
                            skipOn ? C2D_Color32(140, 235, 150, 255) : C2D_Color32(120, 135, 160, 255));
     }
-    /* Step A (one quad per 16x16 tilemap-aligned block instead of four).
-     * A switch rather than a build flag because it is a PERFORMANCE change
-     * and the only place its cost can be read is a console: same scene, one
-     * press, compare the FPS overlay. Off falls through to the untouched
-     * per-tile loop. */
     {
-        const bool blocks = Port_GpuRenderer_BlockPassEnabled();
-        const bool blocks32 = Port_GpuRenderer_Block32PassEnabled();
-        const bool blockGrid = Port_GpuRenderer_BlockDebugTintEnabled();
-        /* Tap cycles OFF -> 16 -> 16+32 -> OFF; right edge toggles the debug
-         * outline (16x16 magenta, 32x32 cyan). */
-        const char* bTxt = blocks ? (blocks32 ? "16+32" : "16") : offTxt;
-        /* Left: cycle OFF -> 16 -> 16+32. Right: debug outline (16 magenta,
-         * 32 cyan). */
-        DrawDebugCellSplit(10, (lang == 6) ? "BLOQUES" : "BLOCKS",
-                           bTxt, blocks ? C2D_Color32(120, 230, 140, 255) : C2D_Color32(150, 170, 200, 255),
-                           blockGrid ? "REJ" : "rej",
-                           blockGrid ? C2D_Color32(230, 120, 230, 255) : C2D_Color32(120, 135, 160, 255));
-        /* Two renderer experiments share this cell, because the grid has no
-         * room for a fifteenth two-line row without running into the status
-         * line and the CLOSE button (see DBGTOOL_GRID_ROWS). Tapping the
-         * cell toggles the layer cache; tapping its right edge toggles the
-         * BG3 haze pass. */
-        const bool layers = Port_GpuRenderer_LayerCacheEnabled();
-        static const char* const hazeTxt[4] = { "FULL", "NC", "OFF", "RT" };
-        const int haze = Port_GpuRenderer_HazeMode();
-        /* Left: layer cache on/off. Right: cycle the BG3 haze mode. */
-        DrawDebugCellSplit(11, (lang == 6) ? "CAPAS/HAZE" : "LAYERS/HAZE",
-                           layers ? "CACHE ON" : "cache --",
-                           layers ? C2D_Color32(230, 200, 120, 255) : C2D_Color32(150, 170, 200, 255),
-                           hazeTxt[haze & 3], haze ? C2D_Color32(230, 200, 120, 255) : C2D_Color32(120, 135, 160, 255));
         /* Run the Old3DS profile on New3DS hardware without a FORCE_OLD3DS
          * rebuild. Locked on a real Old3DS (nothing to force). */
         {
@@ -4438,7 +4560,7 @@ static void RenderDebugToolsModal(int lang) {
             const bool hwNew = Platform3DS_HardwareIsNew3DS();
             const bool forced = Platform3DS_ForcedOld3DSProfile();
             const char* st = !hwNew ? "OLD (hw)" : (forced ? "OLD (forz.)" : "NEW");
-            DrawDebugCell(12, "PERFIL 3DS", st,
+            DrawDebugCell(10, "PERFIL 3DS", st,
                           !hwNew ? C2D_Color32(120, 135, 160, 255)
                                  : (forced ? C2D_Color32(230, 200, 120, 255)
                                            : C2D_Color32(120, 230, 140, 255)));
@@ -4447,17 +4569,9 @@ static void RenderDebugToolsModal(int lang) {
          * wrongly-placed cutscene layer stands out at a glance. */
         {
             const bool dt = Port_GpuRenderer_DepthTintEnabled();
-            DrawDebugCell(13, (lang == 6) ? "PROFUNDIDAD" : "DEPTH TINT",
+            DrawDebugCell(11, (lang == 6) ? "PROFUNDIDAD" : "DEPTH TINT",
                           dt ? onTxt : offTxt,
                           dt ? colOn : colAct);
-        }
-        /* Mode-1 affine BG2 on the GPU (Tourian escape). Off = that scene
-         * falls back to the flat CPU renderer. */
-        {
-            const bool ab = Port_GpuRenderer_AffineBgEnabled();
-            DrawDebugCell(14, (lang == 6) ? "BG AFIN" : "AFFINE BG",
-                          ab ? onTxt : offTxt,
-                          ab ? colOn : colAct);
         }
     }
 #endif
@@ -4513,44 +4627,6 @@ static bool HandleDebugToolsModalTouch(int x, int y) {
                          : (last && last[0]) ? last : "REC OFF");
         return true;
     }
-#ifdef PORT_GPU_TILE_RENDERER
-    if (cell == 10) {
-        if (DebugCellRightZoneHit(x, 10)) {
-            const bool on = !Port_GpuRenderer_BlockDebugTintEnabled();
-            Port_GpuRenderer_SetBlockDebugTint(on);
-            DebugToolsSetMsg(on ? "REJILLA BLOQUES: ON" : "REJILLA BLOQUES: OFF");
-        } else {
-            /* Cycle OFF -> 16 -> 16+32 -> OFF. */
-            const bool b16 = Port_GpuRenderer_BlockPassEnabled();
-            const bool b32 = Port_GpuRenderer_Block32PassEnabled();
-            if (!b16) {
-                Port_GpuRenderer_SetBlockPass(true);
-                DebugToolsSetMsg("BLOQUES: 16x16");
-            } else if (!b32) {
-                Port_GpuRenderer_SetBlock32Pass(true);
-                DebugToolsSetMsg("BLOQUES: 16x16 + 32x32");
-            } else {
-                Port_GpuRenderer_SetBlock32Pass(false);
-                Port_GpuRenderer_SetBlockPass(false);
-                DebugToolsSetMsg("BLOQUES: OFF");
-            }
-        }
-        return true;
-    }
-    if (cell == 11) {
-        if (DebugCellRightZoneHit(x, 11)) {
-            static const char* const msg[4] = { "HAZE: COMPLETA", "HAZE: SIN COMPONER",
-                                                "HAZE: APAGADA", "HAZE: A TARGET (RT)" };
-            Port_GpuRenderer_CycleHazeMode();
-            DebugToolsSetMsg(msg[Port_GpuRenderer_HazeMode() & 3]);
-        } else {
-            const bool on = !Port_GpuRenderer_LayerCacheEnabled();
-            Port_GpuRenderer_SetLayerCache(on);
-            DebugToolsSetMsg(on ? "CACHE CAPAS: ON" : "CACHE CAPAS: OFF");
-        }
-        return true;
-    }
-#endif
     if (cell == 7 && DebugCellRightZoneHit(x, 7)) {
         /* Side button: start/stop logging on the selected stream. */
         if (Port_DebugLog_IsEnabled()) {
@@ -4568,7 +4644,7 @@ static bool HandleDebugToolsModalTouch(int x, int y) {
     switch (cell) {
         case 0:
             PlatformGpu3DS_DumpScreens();
-            DebugToolsSetMsg("DUMP -> sdmc:/3ds/");
+            DebugToolsSetMsg("DUMP -> debug/");
             break;
         case 1:
             Port_DebugLog("USER MARK: debug tools menu");
@@ -4584,8 +4660,8 @@ static bool HandleDebugToolsModalTouch(int x, int y) {
             DebugToolsSetMsg(PlatformGpu3DS_IsPerfRecording() ? "PERF ON" : "PERF OFF");
             break;
         case 4:
-            Port_GpuRenderer_DumpAtlas("sdmc:/3ds/mzm-live-atlas.ppm", "sdmc:/3ds/mzm-live-atlas-keys.csv");
-            DebugToolsSetMsg("ATLAS -> sdmc:/3ds/");
+            Port_GpuRenderer_DumpAtlas(PORT_DEBUG_DIR "/mzm-live-atlas.ppm", PORT_DEBUG_DIR "/mzm-live-atlas-keys.csv");
+            DebugToolsSetMsg("ATLAS -> debug/");
             break;
         case 5:
             PortPpuMzm_DebugKillSamus();
@@ -4631,7 +4707,7 @@ static bool HandleDebugToolsModalTouch(int x, int y) {
             }
             break;
         }
-        case 12: {
+        case 10: {
             extern bool Platform3DS_HardwareIsNew3DS(void);
             extern bool Platform3DS_ForcedOld3DSProfile(void);
             extern void Platform3DS_SetForcedOld3DSProfile(bool forced);
@@ -4645,17 +4721,11 @@ static bool HandleDebugToolsModalTouch(int x, int y) {
             }
             break;
         }
-        case 13: {
+        case 11: {
             const bool on = !Port_GpuRenderer_DepthTintEnabled();
             Port_GpuRenderer_SetDepthTint(on);
             DebugToolsSetMsg(on ? "TINTE DE PROFUNDIDAD: ON"
                                 : "TINTE DE PROFUNDIDAD: OFF");
-            break;
-        }
-        case 14: {
-            const bool on = !Port_GpuRenderer_AffineBgEnabled();
-            Port_GpuRenderer_SetAffineBg(on);
-            DebugToolsSetMsg(on ? "BG AFIN (GPU): ON" : "BG AFIN (GPU): OFF");
             break;
         }
 #endif
@@ -5137,9 +5207,34 @@ static uint32_t sStateArmFrame  = 0;
 #define STATE_ROW_Y0    42.0f
 #define STATE_ROW_PITCH 29.0f
 #define STATE_ROW_H     25.0f
-#define STATE_BTN_SAVE_X 190.0f
-#define STATE_BTN_LOAD_X 252.0f
-#define STATE_BTN_W      58.0f
+#define STATE_BTN_SAVE_X 252.0f
+#define STATE_BTN_LOAD_X 282.0f
+#define STATE_BTN_W      26.0f
+#define STATE_TEXT_RIGHT 246.0f   /* right edge of the slot's text area */
+
+/* 12x12 floppy disk centred on (cx, cy): body, metal shutter at the top,
+ * label at the bottom. `bg` is the button colour, used for the notch. */
+static void DrawFloppyIcon(float cx, float cy, uint32_t ink, uint32_t bg) {
+    const float x = floorf(cx) - 6.0f, y = floorf(cy) - 6.0f;
+    C2D_DrawRectSolid(x, y, 0.95f, 12.0f, 12.0f, ink);
+    C2D_DrawRectSolid(x + 3.0f, y, 0.96f, 6.0f, 4.0f, bg);          /* shutter slot */
+    C2D_DrawRectSolid(x + 6.0f, y + 1.0f, 0.97f, 2.0f, 2.0f, ink);  /* shutter pin */
+    C2D_DrawRectSolid(x + 2.0f, y + 7.0f, 0.96f, 8.0f, 5.0f, bg);   /* label */
+    C2D_DrawRectSolid(x + 3.0f, y + 8.0f, 0.97f, 6.0f, 1.0f, ink);
+    C2D_DrawRectSolid(x + 3.0f, y + 10.0f, 0.97f, 6.0f, 1.0f, ink);
+}
+
+/* 14x11 open folder centred on (cx, cy): back tab plus a slanted front. */
+static void DrawFolderIcon(float cx, float cy, uint32_t ink, uint32_t bg) {
+    const float x = floorf(cx) - 7.0f, y = floorf(cy) - 5.0f;
+    C2D_DrawRectSolid(x, y, 0.95f, 6.0f, 2.0f, ink);                 /* tab */
+    C2D_DrawRectSolid(x, y + 2.0f, 0.95f, 12.0f, 9.0f, ink);         /* back */
+    C2D_DrawRectSolid(x + 1.0f, y + 4.0f, 0.96f, 10.0f, 6.0f, bg);   /* inside */
+    C2D_DrawTriangle(x + 2.0f, y + 10.0f, ink, x + 4.0f, y + 5.0f, ink,
+                     x + 4.0f, y + 10.0f, ink, 0.97f);
+    C2D_DrawRectSolid(x + 4.0f, y + 5.0f, 0.97f, 10.0f, 6.0f, ink);  /* front flap */
+    C2D_DrawRectSolid(x + 5.0f, y + 6.0f, 0.98f, 8.0f, 4.0f, bg);
+}
 
 static bool StateArmed(int slot, int action) {
     return sStateArmSlot == slot && sStateArmAction == action &&
@@ -5168,33 +5263,81 @@ static void RenderStateView(void) {
         snprintf(num, sizeof(num), "%d", s + 1);
         DrawTextCentered(20.0f, y + 9.0f, 1.0f, num, C2D_Color32(255, 255, 255, 255));
 
-        char label[40];
-        Port_SaveState_SlotLabel(s, label, sizeof(label));
-        DrawText(34.0f, y + 9.0f, 1.0f,
-                 used ? label : (es ? "- vacio -" : "- empty -"),
-                 used ? C2D_Color32(170, 210, 245, 255)
-                      : C2D_Color32(110, 125, 150, 255));
+        PortSaveStateInfo info;
+        if (used && Port_SaveState_GetInfo(s, &info)) {
+            char head[40];
+            snprintf(head, sizeof(head), es ? "%s  SALA %u" : "%s  ROOM %u",
+                     Port_SaveState_AreaName(info.area), (unsigned)info.room);
+            DrawText(34.0f, y + 4.0f, 1.0f, head, C2D_Color32(170, 210, 245, 255));
 
-        /* SAVE */
+            if (info.savedAt != 0) {
+                time_t t = (time_t)info.savedAt;   /* the console clock is local time */
+                struct tm* tm = gmtime(&t);
+                if (tm) {
+                    char when[40];
+                    snprintf(when, sizeof(when), "%04d-%02d-%02d %02d:%02d",
+                             tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday,
+                             tm->tm_hour, tm->tm_min);
+                    DrawText(STATE_TEXT_RIGHT - (float)Utf8CharCount(when) * 6.0f,
+                             y + 4.0f, 1.0f, when, C2D_Color32(120, 140, 170, 255));
+                }
+            }
+
+            if (info.hasStats) {
+                /* E = energy, M = missiles, S = super missiles, P = power
+                 * bombs. Ammo the save had not found yet (max 0) is left out. */
+                char seg[20];
+                float x = 34.0f;
+                snprintf(seg, sizeof(seg), "E%u/%u", (unsigned)info.energy, (unsigned)info.maxEnergy);
+                DrawText(x, y + 14.0f, 1.0f, seg, C2D_Color32(255, 215, 90, 255));
+                x += ((float)Utf8CharCount(seg) + 1.0f) * 6.0f;
+                if (info.maxMissiles > 0) {
+                    snprintf(seg, sizeof(seg), "M%u/%u", (unsigned)info.missiles, (unsigned)info.maxMissiles);
+                    DrawText(x, y + 14.0f, 1.0f, seg, C2D_Color32(255, 130, 110, 255));
+                    x += ((float)Utf8CharCount(seg) + 1.0f) * 6.0f;
+                }
+                if (info.maxSuperMissiles > 0) {
+                    snprintf(seg, sizeof(seg), "S%u/%u", (unsigned)info.superMissiles, (unsigned)info.maxSuperMissiles);
+                    DrawText(x, y + 14.0f, 1.0f, seg, C2D_Color32(120, 220, 130, 255));
+                    x += ((float)Utf8CharCount(seg) + 1.0f) * 6.0f;
+                }
+                if (info.maxPowerBombs > 0) {
+                    snprintf(seg, sizeof(seg), "P%u/%u", (unsigned)info.powerBombs, (unsigned)info.maxPowerBombs);
+                    DrawText(x, y + 14.0f, 1.0f, seg, C2D_Color32(255, 170, 70, 255));
+                }
+            } else {
+                DrawText(34.0f, y + 14.0f, 1.0f, es ? "sin datos (guardado antiguo)" : "no stats (older save)",
+                         C2D_Color32(110, 125, 150, 255));
+            }
+        } else {
+            DrawText(34.0f, y + 9.0f, 1.0f, es ? "- vacio -" : "- empty -",
+                     C2D_Color32(110, 125, 150, 255));
+        }
+
+        /* SAVE: floppy disk icon (text only while waiting for the 2nd tap) */
         bool saveArmed = StateArmed(s, 1);
         uint32_t saveBody = !avail ? C2D_Color32(30, 34, 40, 255)
                           : saveArmed ? C2D_Color32(120, 90, 20, 255)
                                       : C2D_Color32(24, 60, 34, 255);
+        const uint32_t saveInk = avail ? C2D_Color32(200, 240, 205, 255)
+                                       : C2D_Color32(90, 100, 115, 255);
         DrawButton(STATE_BTN_SAVE_X, y + 1.0f, STATE_BTN_W, STATE_ROW_H - 2.0f,
-                   saveArmed ? (es ? "OK?" : "OK?") : (es ? "GUARDAR" : "SAVE"),
-                   avail ? C2D_Color32(200, 240, 205, 255) : C2D_Color32(90, 100, 115, 255),
-                   saveBody, C2D_Color32(70, 150, 90, 255));
+                   saveArmed ? "OK?" : NULL, saveInk, saveBody, C2D_Color32(70, 150, 90, 255));
+        if (!saveArmed)
+            DrawFloppyIcon(STATE_BTN_SAVE_X + STATE_BTN_W * 0.5f, y + STATE_ROW_H * 0.5f, saveInk, saveBody);
 
-        /* LOAD */
+        /* LOAD: open folder icon */
         bool canLoad = used && avail;
         bool loadArmed = StateArmed(s, 2);
         uint32_t loadBody = !canLoad ? C2D_Color32(30, 34, 40, 255)
                           : loadArmed ? C2D_Color32(120, 90, 20, 255)
                                       : C2D_Color32(24, 46, 70, 255);
+        const uint32_t loadInk = canLoad ? C2D_Color32(200, 225, 245, 255)
+                                         : C2D_Color32(90, 100, 115, 255);
         DrawButton(STATE_BTN_LOAD_X, y + 1.0f, STATE_BTN_W, STATE_ROW_H - 2.0f,
-                   loadArmed ? (es ? "OK?" : "OK?") : (es ? "CARGAR" : "LOAD"),
-                   canLoad ? C2D_Color32(200, 225, 245, 255) : C2D_Color32(90, 100, 115, 255),
-                   loadBody, C2D_Color32(80, 140, 200, 255));
+                   loadArmed ? "OK?" : NULL, loadInk, loadBody, C2D_Color32(80, 140, 200, 255));
+        if (!loadArmed)
+            DrawFolderIcon(STATE_BTN_LOAD_X + STATE_BTN_W * 0.5f, y + STATE_ROW_H * 0.5f, loadInk, loadBody);
     }
 
     const char* msg = Port_SaveState_LastMessage();
@@ -5299,6 +5442,7 @@ void Port_BottomUI_Render(void) {
     /* RA session pump runs every frame in Port_BottomUI_FrameTick; here we
      * only draw the toast (if one is active) onto this frame's target. */
     Port_RA_RenderToastOverlay();
+    RenderUpdatePrompt(GetLang());
 
     /* L+R+START scene recorder indicator (platform_gpu_3ds.c) -- drawn last,
      * on top of whichever tab is active, so it's never hidden by one. Blinks

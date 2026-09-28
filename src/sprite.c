@@ -1847,8 +1847,10 @@ void SpriteDrawAll_HighPriority(void)
     {
         extern void Port_OverlayText_BeginFrame(void);
         extern void Port_SpriteDepth_BeginFrame(void);
+        extern void Port_Wide_BeginFrame(void);
         Port_OverlayText_BeginFrame();
         Port_SpriteDepth_BeginFrame();
+        Port_Wide_BeginFrame();
     }
 #endif
 
@@ -2361,6 +2363,18 @@ void SpriteDraw(struct SpriteData* pSprite, s32 slot)
     {
         u32 spriteId = pSprite->spriteId;
         u32 secondary = pSprite->properties & SP_SECONDARY_SPRITE;
+
+        /* OAM only keeps Y in 8 bits and X in 9, so a part's real position is
+         * ambiguous once the view reaches past the GBA frame (WIDE). Hand the
+         * renderer the sprite's true screen position; each part sits within
+         * a short distance of it, which is enough to undo the wrap. */
+        if (!(pSprite->properties & SP_ABSOLUTE_POSITION))
+        {
+            extern void Port_Wide_NoteSlots(int firstSlot, int endSlot, int originY, int originX);
+            Port_Wide_NoteSlots(prevSlot, gNextOamSlot,
+                (s16)(SUB_PIXEL_TO_PIXEL_(pSprite->yPosition) - SUB_PIXEL_TO_PIXEL(gBg1YPosition)),
+                (s16)(SUB_PIXEL_TO_PIXEL_(pSprite->xPosition) - SUB_PIXEL_TO_PIXEL(gBg1XPosition)));
+        }
         u32 isOverlayText =
             (!secondary && (spriteId == PSPRITE_MESSAGE_BANNER || spriteId == PSPRITE_AREA_BANNER)) ||
             (secondary && spriteId == SSPRITE_SAVE_YES_NO_CURSOR);
@@ -2445,6 +2459,31 @@ void SpriteCheckOnScreen(struct SpriteData* pSprite)
     spriteLeft = bgXRange - PIXEL_TO_SUB_PIXEL(pSprite->drawDistanceHorizontal);
     drawOffset = PIXEL_TO_SUB_PIXEL(pSprite->drawDistanceHorizontal) + SCREEN_SIZE_X_SUB_PIXEL;
     spriteRight = bgXRange + drawOffset;
+
+#if defined(MZM_3DS)
+    {
+        // WIDE display: the view reaches past the GBA frame, so sprites there
+        // count as on screen. Signed math, the u16 range above would wrap.
+        extern int Port_WideMarginSubPixelX(void);
+        extern int Port_WideMarginSubPixelY(void);
+        s32 marginX = Port_WideMarginSubPixelX();
+        s32 marginY = Port_WideMarginSubPixelY();
+
+        if (marginX != 0 || marginY != 0)
+        {
+            s32 left = (s32)bgXRange - (s32)PIXEL_TO_SUB_PIXEL(pSprite->drawDistanceHorizontal) - marginX;
+            s32 right = (s32)bgXRange + (s32)drawOffset + marginX;
+            s32 bottom = (s32)bgYRange - (s32)PIXEL_TO_SUB_PIXEL(pSprite->drawDistanceBottom) - marginY;
+            s32 top = (s32)bgYRange + (s32)(PIXEL_TO_SUB_PIXEL(pSprite->drawDistanceTop) + SCREEN_SIZE_Y_SUB_PIXEL) + marginY;
+
+            if (left < (s32)spriteXRange && (s32)spriteXRange < right && bottom < (s32)spriteYRange && (s32)spriteYRange < top)
+            {
+                pSprite->status |= SPRITE_STATUS_ONSCREEN;
+                return;
+            }
+        }
+    }
+#endif
 
     if (spriteLeft < spriteXRange && spriteXRange < spriteRight && spriteBottom < spriteYRange && spriteYRange < spriteTop)
     {

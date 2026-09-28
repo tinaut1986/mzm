@@ -8,7 +8,7 @@
  * dump from Luma3DS -- but a genuine infinite loop (no fault, just spinning)
  * produces no dump at all, and there's no way to see on-screen console
  * output after a hang without another deploy/observe cycle. This appends a
- * line to sdmc:/3ds/mzm-debug.log, so whatever the LAST line written is
+ * line to <game folder>/debug/mzm-debug.log, so whatever the LAST line written is
  * tells us exactly where execution got stuck.
  *
  * NOTHING IS WRITTEN unless logging has been switched on at runtime from
@@ -72,6 +72,9 @@ typedef enum {
 } PortDebugLogMode;
 
 void Port_DebugLog_SetMode(PortDebugLogMode mode);
+/* Keep a startup line and repeat it at the top of every logging session's
+ * file (logging can only be turned on long after startup). */
+void Port_DebugLog_Note(const char* msg);
 PortDebugLogMode Port_DebugLog_GetMode(void);
 void Port_DebugLog_CycleMode(void);
 /* Path of the file the current logging session is writing to, or "" while

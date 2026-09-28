@@ -6,6 +6,7 @@
 #include "audio/track_internal.h"
 
 #include <stdio.h>
+#include "port_paths.h"
 
 extern void Port_DebugLog(const char* msg);
 extern void Port_DebugLog_Audio(const char* msg);
@@ -104,7 +105,7 @@ void Port_MzmAudio_SetRateHook(void (*hook)(unsigned int engineRate)) {
  * to inspect sample VALUES, and prefer capturing system audio output instead
  * (section 6r methodology). */
 #ifdef PORT_AUDIO_DUMP_RAW
-#define MZM_DUMP_PATH "sdmc:/3ds/mzm_audio_dump.bin"
+#define MZM_DUMP_PATH PORT_DEBUG_DIR "/mzm_audio_dump.bin"
 #define MZM_DUMP_MAX (2u * 1024u * 1024u)
 static unsigned int sDumpBytes;
 static void DumpRaw(const unsigned char* left, const unsigned char* right, unsigned int n) {
