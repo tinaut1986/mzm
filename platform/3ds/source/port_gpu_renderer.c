@@ -2593,6 +2593,9 @@ typedef struct WideView {
     int originX, originY;   /* room px at the GBA frame's top-left */
     int shiftX, shiftY;
     int loX, hiX, loY, hiY; /* room extent, room px */
+    /* The room extent in GBA frame px (extent minus origin): what
+     * DrawWideRoomMasks blacks out beyond. */
+    int maskL, maskR, maskT, maskB;
 } WideView;
 static WideView sWideView;
 /* The margin the setting asks for, before the view slides (see WideView). */
@@ -4554,9 +4557,36 @@ static int WideAxisShift(int origin, int ext, int frame, int lo, int hi) {
     return 0;
 }
 
+/* Leaving-a-room state of ComputeWideView (see there). File scope so the
+ * scene recorder can report it (Port_GpuRenderer_GetWideRecord). */
+static WideView sHeld;
+static bool sHeldValid, sLeaving, sTunnelStarted;
+static int sTunnelX0, sTunnelY0;
+
 static void ComputeWideView(void) {
     extern void PortPpuMzm_ScreenOrigin(int* outX, int* outY);
     WideView* v = &sWideView;
+    /* Leaving a room. From the moment a room is left (SUB_GAME_MODE_LOADING_ROOM,
+     * include/constants/game_state.h) the game loads the next room and
+     * moves the camera while the screen still shows the old room, so a view
+     * worked out from them would slide on its own: the view the last playing
+     * frame had is kept while the old room is up. A door transition then
+     * slides its tunnel (BG3) from the old room's door to the new room's, and
+     * the view follows it there -- from the old room's view to the new one,
+     * in step with the tunnel's own travel -- so the door arrives where the
+     * new room's view has it instead of jumping by the difference between
+     * the two views when the room changes. Transitions without a tunnel
+     * (elevators, fades) take the new view as soon as the new room is in. */
+    extern s16 gSubGameMode1;
+    enum { SUB_GAME_MODE_LOADING_ROOM = 3 };
+    int tunX, tunY, tunTX, tunTY, tunPause;
+    const int tunnel = PortPpuMzm_DoorTunnel(&tunX, &tunY, &tunTX, &tunTY, &tunPause);
+    if (sHeldValid && (gSubGameMode1 == SUB_GAME_MODE_LOADING_ROOM || (sLeaving && gSubGameMode1 == 0))) {
+        sLeaving = true;
+        sTunnelStarted = false;
+        *v = sHeld;
+        return;
+    }
     *v = (WideView){ 0 };
     /* The whole room: everything it has data for is shown, even the parts
      * the GBA camera never reaches (a neighbouring scroll region, the padding
@@ -4570,6 +4600,7 @@ static void ComputeWideView(void) {
         /* No room loaded: leave the view centred on the frame. */
         v->loX = v->originX; v->hiX = v->originX + 240;
         v->loY = v->originY; v->hiY = v->originY + 160;
+        v->maskL = 0; v->maskR = 240; v->maskT = 0; v->maskB = 160;
         return;
     }
     v->loX = 0; v->hiX = roomW * 16;
@@ -4582,6 +4613,42 @@ static void ComputeWideView(void) {
     if (v->shiftX > sWideMarginX) v->shiftX = sWideMarginX;
     if (v->shiftY < -sWideMarginY) v->shiftY = -sWideMarginY;
     if (v->shiftY > sWideMarginY) v->shiftY = sWideMarginY;
+    v->maskL = v->loX - v->originX; v->maskR = v->hiX - v->originX;
+    v->maskT = v->loY - v->originY; v->maskB = v->hiY - v->originY;
+
+    if (sLeaving && tunnel == PORT_DOOR_TUNNEL_SLIDING) {
+        if (!sTunnelStarted) {
+            sTunnelStarted = true;
+            sTunnelX0 = tunX;
+            sTunnelY0 = tunY;
+        }
+        /* How far along each axis the tunnel is. The game slides it
+         * vertically, pauses, then slides it horizontally, and the view does
+         * the same: an axis the tunnel does not travel on changes during
+         * the pause (vertical) or with the other axis (horizontal), so it
+         * never turns into a diagonal. */
+        const int dx = tunTX - sTunnelX0, dy = tunTY - sTunnelY0;
+        float px = dx ? (float)(tunX - sTunnelX0) / (float)dx : -1.0f;
+        float py = dy ? (float)(tunY - sTunnelY0) / (float)dy
+                      : (float)tunPause / (float)PORT_DOOR_TUNNEL_PAUSE_FRAMES;
+        if (px < 0.0f) px = (tunPause >= PORT_DOOR_TUNNEL_PAUSE_FRAMES) ? 1.0f : 0.0f;
+        if (px > 1.0f) px = 1.0f;
+        if (py > 1.0f) py = 1.0f;
+        const WideView* h = &sHeld;
+#define WIDE_LERP(A, B, T) ((A) + (int)((float)((B) - (A)) * (T) + ((B) >= (A) ? 0.5f : -0.5f)))
+        v->shiftX = WIDE_LERP(h->shiftX, v->shiftX, px);
+        v->shiftY = WIDE_LERP(h->shiftY, v->shiftY, py);
+        v->maskL = WIDE_LERP(h->maskL, v->maskL, px);
+        v->maskR = WIDE_LERP(h->maskR, v->maskR, px);
+        v->maskT = WIDE_LERP(h->maskT, v->maskT, py);
+        v->maskB = WIDE_LERP(h->maskB, v->maskB, py);
+#undef WIDE_LERP
+        return; /* sHeld stays the old room's until the slide is over */
+    }
+    sLeaving = false;
+    sTunnelStarted = false;
+    sHeld = *v;
+    sHeldValid = true;
 }
 
 /* Blacks out whatever lies beyond the room extent (see WideView), which only
@@ -4598,10 +4665,10 @@ static void DrawWideRoomMasks(float baseX, float baseY, float scaleX, float scal
      * PlatformGpu3DS_ResetSolidTexEnv). */
     C2D_Flush();
     PlatformGpu3DS_ResetSolidTexEnv();
-    int left = v->loX - v->originX - v->shiftX;
-    int top = v->loY - v->originY - v->shiftY;
-    int right = v->hiX - v->originX - v->shiftX;
-    int bottom = v->hiY - v->originY - v->shiftY;
+    int left = v->maskL - v->shiftX;
+    int top = v->maskT - v->shiftY;
+    int right = v->maskR - v->shiftX;
+    int bottom = v->maskB - v->shiftY;
     if (left > -v->shiftX) left = -v->shiftX;
     if (top > -v->shiftY) top = -v->shiftY;
     if (right < 240 - v->shiftX) right = 240 - v->shiftX;
@@ -5735,6 +5802,19 @@ void Port_GpuRenderer_RenderFrame(void) {
  * docs/3ds-port-gpu-renderer-status-2026-08-20.md). Values hold their last
  * value between RenderFrame calls, which is fine since the overlay is only
  * read once per presented frame anyway. */
+/* The WIDE view this frame was drawn with, for the scene recorder: slide
+ * x/y, room masks left/right/top/bottom (GBA frame px), and flags (bit 0
+ * widened, 1 leaving a room, 2 following the door tunnel). */
+void Port_GpuRenderer_GetWideRecord(int16_t out[7]) {
+    out[0] = (int16_t)sWideView.shiftX;
+    out[1] = (int16_t)sWideView.shiftY;
+    out[2] = (int16_t)sWideView.maskL;
+    out[3] = (int16_t)sWideView.maskR;
+    out[4] = (int16_t)sWideView.maskT;
+    out[5] = (int16_t)sWideView.maskB;
+    out[6] = (int16_t)((sWideOn ? 1 : 0) | (sLeaving ? 2 : 0) | (sTunnelStarted ? 4 : 0));
+}
+
 void Port_GpuRenderer_GetLastFrameStats(int* outItems, int* outObjItems, int* outCacheSlots) {
     if (outItems) *outItems = sDrawItemCount;
     if (outObjItems) *outObjItems = sLastObjItemCount;

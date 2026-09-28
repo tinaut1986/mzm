@@ -318,10 +318,17 @@ uint8_t  vram[0x18000];   // gVram
 ```
 
 Record size = 64 + 0x400 + 512 + 512 + 0x400 + 0x18000 + the clip block
-(`PortPpuMzm_GetClipRecordBlockSize()`, **232 bytes** as of 'MZM6' -- 28 bytes
+(`PortPpuMzm_GetClipRecordBlockSize()`, **256 bytes** as of 'MZM6' -- 28 bytes
 of scalars then a 17x12 clip grid; the scalars are camera x/y, Samus x/y,
 clipdata w/h, `gMainGameMode`, Samus pose, screen-origin x/y, area, room,
-`gCurrentCutscene`, and the montage-cutscene stage) = 101,672 bytes. The
+`gCurrentCutscene`, and the montage-cutscene stage; then 12 int16 words on
+how the WIDE view was worked out: the renderer's slide x/y, room masks
+left/right/top/bottom and flags (bit 0 widened, 1 leaving a room, 2
+following the door tunnel), `gSubGameMode1`, `gColorFading` type and stage,
+the door tunnel's phase (0 none, 1 over the old room, 2 sliding) and its
+x) = 101,696 bytes. The WIDE words were appended without a magic bump:
+nothing before them moved, and every parser finds the stride by scanning
+for the magic, so 232-byte-block recordings still read. The
 block is kept a multiple of 4 (a `_Static_assert` enforces it) so that
 `N * recordSize` file offsets stay on a 4-byte grid -- 'MZM5' was 230 bytes
 and off-grid, which made a byte-scanner necessary. If any of those extern

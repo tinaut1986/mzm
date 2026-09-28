@@ -29,10 +29,13 @@
 #include "structs/room.h"
 #include "constants/room.h"
 #include "scroll.h"            /* ScrollGetBg3Scroll, for PortPpuMzm_WideLayerDivisor */
+#include "structs/color_effects.h"  /* gColorFading, for PortPpuMzm_DoorTunnel */
+#include "constants/color_fading.h"
 #include "constants/minimap.h"
 #include "minimap.h"
 #include "menus/pause_screen.h" /* PauseScreenGetMinimapData */
 #include "port_haze_3ds.h"
+#include "port_wide_view.h"
 #include "macros.h"
 #include "port_debug_tools.h" /* PORT_DEBUG_TOOLS_ACTIVE */
 
@@ -1743,7 +1746,7 @@ void PortPpuMzm_ScreenOrigin(int* outX, int* outY) {
  * off the alignment the scanner steps on -- keep the block a multiple of 4.
  * (It was 230 under 'MZM5' and off-grid, which made 2-byte scanning
  * necessary; 'MZM6' brought it back to 232.) */
-_Static_assert((28 + PORT_CLIPREC_COLS * PORT_CLIPREC_ROWS) % 4 == 0,
+_Static_assert((28 + PORT_CLIPREC_COLS * PORT_CLIPREC_ROWS + 12 * 2) % 4 == 0,
                "clip record block must stay 4-byte aligned");
 
 /* Which page of a montage cutscene is on screen. A single GM_CUTSCENE or
@@ -1812,10 +1815,26 @@ void PortPpuMzm_GetClipRecordBlock(uint8_t* out) {
             grid[r * PORT_CLIPREC_COLS + c] = v;
         }
     }
+
+    /* After the grid (nothing before it moves, so older parsers still read
+     * the rest): how the WIDE view was worked out for this frame. 12 words:
+     * the renderer's view (slide x/y, room masks l/r/t/b, flags -- see
+     * Port_GpuRenderer_GetWideRecord), gSubGameMode1, gColorFading type and
+     * stage, the door tunnel's phase (PortPpuMzm_DoorTunnel) and its x/y. */
+    extern void Port_GpuRenderer_GetWideRecord(int16_t out[7]);
+    int16_t* wide = (int16_t*)(grid + PORT_CLIPREC_COLS * PORT_CLIPREC_ROWS);
+    Port_GpuRenderer_GetWideRecord(wide);
+    int tunX = 0, tunY = 0;
+    wide[7] = (int16_t)gSubGameMode1;
+    wide[8] = (int16_t)gColorFading.type;
+    wide[9] = (int16_t)gColorFading.stage;
+    wide[10] = (int16_t)PortPpuMzm_DoorTunnel(&tunX, &tunY, NULL, NULL, NULL);
+    wide[11] = (int16_t)tunX;
+    (void)tunY;
 }
 
 int PortPpuMzm_GetClipRecordBlockSize(void) {
-    return 28 + PORT_CLIPREC_COLS * PORT_CLIPREC_ROWS;
+    return 28 + PORT_CLIPREC_COLS * PORT_CLIPREC_ROWS + 12 * 2;
 }
 
 /* ---------------------------------------------------------------------
@@ -2032,6 +2051,40 @@ bool PortPpuMzm_IsDoorDepthBlock(int blockX, int blockY) {
 }
 
 /* ---------------------------------------------------------------------
+ * The door tunnel of a door transition (COLOR_FADING_DOOR_TRANSITION and its
+ * white variant). BG3 holds the tunnel graphic from
+ * ColorFadingProcess_DoorTransition stage 3 -- still over the room being
+ * left -- until ColorFadingUpdate_DoorTransition has slid it to the new
+ * room's door and put the room's BG3 back (its stage 3 ends by jumping to
+ * stage 5). The slide is gBackgroundPositions.doorTransition moving toward
+ * gDoorPositionStart: vertically first (stage 1), then horizontally
+ * (stage 3). Positions are BG3 scroll, in pixels.
+ * ------------------------------------------------------------------- */
+int PortPpuMzm_DoorTunnel(int* outX, int* outY, int* outTargetX, int* outTargetY, int* outPause) {
+    if (gMainGameMode != GM_INGAME) return PORT_DOOR_TUNNEL_NONE;
+    if (gColorFading.type != COLOR_FADING_DOOR_TRANSITION && gColorFading.type != COLOR_FADING_WHITE)
+        return PORT_DOOR_TUNNEL_NONE;
+    int phase = PORT_DOOR_TUNNEL_NONE;
+    if (gSubGameMode1 == SUB_GAME_MODE_LOADING_ROOM && gColorFading.stage >= 3)
+        phase = PORT_DOOR_TUNNEL_OLD_ROOM;
+    else if (gSubGameMode1 == SUB_GAME_MODE_DOOR_TRANSITION && gColorFading.stage <= 3)
+        phase = PORT_DOOR_TUNNEL_SLIDING;
+    if (outX) *outX = gBackgroundPositions.doorTransition.x;
+    if (outY) *outY = gBackgroundPositions.doorTransition.y;
+    if (outTargetX) *outTargetX = gDoorPositionStart.x;
+    if (outTargetY) *outTargetY = gDoorPositionStart.y;
+    if (outPause) {
+        /* ColorFadingUpdate_DoorTransition: stage 2 waits while unk_3 counts
+         * 1, 2, 3, then stage 3 slides horizontally. */
+        *outPause = gColorFading.stage < 2 ? 0
+                  : gColorFading.stage == 2 ? (gColorFading.unk_3 > PORT_DOOR_TUNNEL_PAUSE_FRAMES
+                                                   ? PORT_DOOR_TUNNEL_PAUSE_FRAMES : gColorFading.unk_3)
+                  : PORT_DOOR_TUNNEL_PAUSE_FRAMES;
+    }
+    return phase;
+}
+
+/* ---------------------------------------------------------------------
  * WIDE view: how each BG scrolls against the camera.
  *
  * The WIDE view slides past the GBA camera near a scroll limit (see
@@ -2044,6 +2097,10 @@ bool PortPpuMzm_IsDoorDepthBlock(int blockX, int blockY) {
  * 0 means the layer does not follow the camera at all.
  * ------------------------------------------------------------------- */
 int PortPpuMzm_WideLayerDivisor(int bg, int vertical) {
+    /* The door tunnel is drawn on BG3 in screen space, over the door: it
+     * slides with the view like the room itself, whatever the room's own
+     * BG3 does. */
+    if (bg == 3 && PortPpuMzm_DoorTunnel(NULL, NULL, NULL, NULL, NULL) != PORT_DOOR_TUNNEL_NONE) return 1;
     switch (bg) {
         case 0:
             if (gCurrentRoomEntry.bg0Prop & BG_PROP_RLE_COMPRESSED)
