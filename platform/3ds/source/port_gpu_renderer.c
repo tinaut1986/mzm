@@ -162,17 +162,28 @@ typedef enum { BRIGHT_ADJUST_NONE, BRIGHT_ADJUST_BRIGHTEN, BRIGHT_ADJUST_DARKEN 
  * Mirrors C2D_DrawImage's geometry exactly (see BatchQuad) so nothing moves.
  * Used only for the main item loop; everything else keeps using citro2d, and
  * BatchEnd hands the GPU state back to it with C2D_Prepare. */
-typedef struct { float x, y, u, v; } BatchVertex;
+/* tier: the item's stereo tier, which picks this eye's horizontal offset
+ * from the shader's tierOffset[] (BATCH_TIER_NONE: no offset). */
+typedef struct { float x, y, u, v, tier; } BatchVertex;
+enum { BATCH_TIERS = 8, BATCH_TIER_NONE = BATCH_TIERS - 1 };
 enum { BATCH_MAX_QUADS = 12288 }; /* both eyes of a full item table */
 static BatchVertex* sBatchVerts;  /* linear, 4 per quad, rewritten every frame */
 static u16* sBatchIndices;        /* linear, 6 per quad, fixed */
 static DVLB_s* sBatchDvlb;
 static shaderProgram_s sBatchProgram;
 static int sBatchProjectionLoc;
+static int sBatchTierOffsetLoc;
+/* Device px added to x per tier, for the eye being drawn; zero for targets
+ * that are not an eye. Uploaded with the projection (citro2d's shader uses
+ * the same uniform registers). */
+static float sBatchTierOffset[BATCH_TIERS];
 static C3D_AttrInfo sBatchAttr;
 static C3D_BufInfo sBatchBuf;
 static bool sBatchReady;
 static int sBatchUsed;            /* quads written this frame */
+/* Replaying: BatchQuad only advances over quads an earlier pass wrote (the
+ * second eye re-issuing the first eye's quads, see the eye loop). */
+static bool sBatchReplay;
 static int sBatchDrawn;           /* quads already submitted */
 static const C3D_Tex* sBatchTex;
 
@@ -193,12 +204,15 @@ static bool BatchInit(void) {
     shaderProgramInit(&sBatchProgram);
     shaderProgramSetVsh(&sBatchProgram, &sBatchDvlb->DVLE[0]);
     sBatchProjectionLoc = shaderInstanceGetUniformLocation(sBatchProgram.vertexShader, "projection");
+    sBatchTierOffsetLoc = shaderInstanceGetUniformLocation(sBatchProgram.vertexShader, "tierOffset");
+    if (sBatchProjectionLoc < 0 || sBatchTierOffsetLoc < 0) return false;
 
     AttrInfo_Init(&sBatchAttr);
     AttrInfo_AddLoader(&sBatchAttr, 0, GPU_FLOAT, 2); /* v0: position */
     AttrInfo_AddLoader(&sBatchAttr, 1, GPU_FLOAT, 2); /* v1: texcoord */
+    AttrInfo_AddLoader(&sBatchAttr, 2, GPU_FLOAT, 1); /* v2: tier */
     BufInfo_Init(&sBatchBuf);
-    BufInfo_Add(&sBatchBuf, sBatchVerts, sizeof(BatchVertex), 2, 0x10);
+    BufInfo_Add(&sBatchBuf, sBatchVerts, sizeof(BatchVertex), 3, 0x210);
     return true;
 }
 
@@ -221,9 +235,16 @@ static void BatchBeginTarget(float width, float height, bool tilt) {
     if (tilt) Mtx_OrthoTilt(&projection, 0.0f, width, height, 0.0f, 1.0f, -1.0f, true);
     else Mtx_Ortho(&projection, 0.0f, width, height, 0.0f, 1.0f, -1.0f, true);
     C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, sBatchProjectionLoc, &projection);
+    for (int t = 0; t < BATCH_TIERS; ++t)
+        C3D_FVUnifSet(GPU_VERTEX_SHADER, sBatchTierOffsetLoc + t, sBatchTierOffset[t], 0.0f, 0.0f, 0.0f);
     C3D_CullFace(GPU_CULL_NONE);
     sBatchTex = NULL;
     sBatchDrawn = sBatchUsed;
+}
+
+/* The per-tier offsets the next BatchBeginTarget uploads; NULL for none. */
+static void BatchSetTierOffsets(const float* offsets) {
+    for (int t = 0; t < BATCH_TIERS; ++t) sBatchTierOffset[t] = offsets ? offsets[t] : 0.0f;
 }
 
 /* The top screen, 400x240. */
@@ -243,13 +264,20 @@ static void BatchFlush(void) {
 
 /* One item, with C2D_DrawImage's own geometry: the rectangle offset by
  * -center, rotated by angle about the origin, then moved to pos; texture
- * corners from the (non-rotated) subtexture. False when the buffer is full. */
-static bool BatchQuad(const C3D_Tex* tex, const Tex3DS_SubTexture* st, const C2D_DrawParams* p) {
+ * corners from the (non-rotated) subtexture. `tier` picks the eye offset
+ * (BATCH_TIER_NONE for none). False when the buffer is full. While
+ * replaying, p and st are not read (NULL is fine): the quad is already
+ * there. */
+static bool BatchQuad(const C3D_Tex* tex, const Tex3DS_SubTexture* st, const C2D_DrawParams* p, int tier) {
     if (sBatchUsed >= BATCH_MAX_QUADS) return false;
     if (tex != sBatchTex) {
         BatchFlush();
         C3D_TexBind(0, (C3D_Tex*)tex);
         sBatchTex = tex;
+    }
+    if (sBatchReplay) {
+        ++sBatchUsed;
+        return true;
     }
     const float x0 = -p->center.x, y0 = -p->center.y;
     const float x1 = x0 + p->pos.w, y1 = y0 + p->pos.h;
@@ -265,10 +293,11 @@ static bool BatchQuad(const C3D_Tex* tex, const Tex3DS_SubTexture* st, const C2D
         }
     }
     BatchVertex* v = sBatchVerts + sBatchUsed * 4;
-    v[0] = (BatchVertex){ p->pos.x + px[0], p->pos.y + py[0], st->left, st->top };
-    v[1] = (BatchVertex){ p->pos.x + px[1], p->pos.y + py[1], st->left, st->bottom };
-    v[2] = (BatchVertex){ p->pos.x + px[2], p->pos.y + py[2], st->right, st->bottom };
-    v[3] = (BatchVertex){ p->pos.x + px[3], p->pos.y + py[3], st->right, st->top };
+    const float t = (float)tier;
+    v[0] = (BatchVertex){ p->pos.x + px[0], p->pos.y + py[0], st->left, st->top, t };
+    v[1] = (BatchVertex){ p->pos.x + px[1], p->pos.y + py[1], st->left, st->bottom, t };
+    v[2] = (BatchVertex){ p->pos.x + px[2], p->pos.y + py[2], st->right, st->bottom, t };
+    v[3] = (BatchVertex){ p->pos.x + px[3], p->pos.y + py[3], st->right, st->top, t };
     ++sBatchUsed;
     return true;
 }
@@ -3416,6 +3445,80 @@ static void CollectSprite(int oamIndex, bool obj1D) {
         pivotY = (float)(y + boundsHeight / 2);
     }
 
+    /* The sprite's depth plane and HUD status: the same for every subtile,
+     * so worked out once (it asks four other modules). */
+    extern s16 gMainGameMode;
+    bool inMapOrPauseScreen = gMainGameMode == 5;
+    /* HUD sprites are exactly the OAM slots HudUpdateOam wrote
+     * this frame -- it fills OAM from slot 0 and runs before every
+     * sprite system in in_game.c's frame (SpriteDrawAll_*,
+     * ParticleProcessAll, ProjectileDrawAll_*, SamusDraw), so the
+     * count it publishes is a real boundary. See port_hud_oam.c.
+     *
+     * Three earlier signals for "this is real HUD, elevate it" each
+     * failed on hardware:
+     *  - OAM priority 0: also catches explosions, shot impacts,
+     *    reload flashes and bombs, which use priority 0 as a
+     *    "draw above everything" tool, not because they are HUD.
+     *  - gNextOamSlot: a running cursor every sprite system keeps
+     *    advancing all frame, so by the time it was read it covered
+     *    Samus, enemies and save/map stations. Reading oamSlot
+     *    INSIDE HudUpdateOam instead is what makes this work.
+     *  - Palette bank 4/5 plus sprite shape: classifies a sprite by
+     *    how it LOOKS rather than by what drew it. Bank 4 is not
+     *    exclusively HUD in the real ROM data (the Morph Ball bomb
+     *    sprite sits there too, which is why a shape test was bolted
+     *    on), and the 2026-08-28 recording has a pulsing item orb on
+     *    bank 4 in the middle of the play field. It happened to fall
+     *    the right side of the shape test; nothing guaranteed it.
+     *
+     * Gated on gameplay so a stale count cannot leak into a mode
+     * that never calls HudDraw: the map/pause branch above already
+     * handles GM_MAP_SCREEN, and everywhere else these are world
+     * sprites. */
+    bool isRealHud = gMainGameMode == 4 && oamIndex < Port_Hud_GetOamCount();
+    /* In-game message / area-name banners (and the save cursor) are
+     * ordinary sprites, so isRealHud never catches them, yet they
+     * are an overlay and draw at OAM priority 0 in 2D. SpriteDraw
+     * tags their OAM slots (port_overlay_text_oam.c); lift them to
+     * the same front tier as the HUD so stereo does not sink the
+     * flat text into Samus. */
+    extern int Port_OverlayText_IsSlot(int oamIndex);
+    bool isOverlayText = gMainGameMode == 4 && Port_OverlayText_IsSlot(oamIndex);
+    /* The escape countdown digits (PE_ESCAPE particle, tagged in
+     * src/particle.c). Route them exactly like real HUD: HUD depth
+     * tier, and off-screen with the HUD when that option is on. */
+    extern int Port_OverlayText_IsEscapeSlot(int oamIndex);
+    bool isEscapeHud = gMainGameMode == 4 && Port_OverlayText_IsEscapeSlot(oamIndex);
+    if (isEscapeHud) isRealHud = true;
+    /* Per-sprite depth override (port_sprite_depth_oam.c): a few
+     * sprite TYPES are authored to composite with a specific BG --
+     * the Kraid/Ridley statues set their OAM priority to BG1's so
+     * the sprite face blends with the BG that carries the top of
+     * the head. SpriteDraw tags their slots; honour that here
+     * instead of the one forced world-sprite plane. */
+    int spriteDepthCode = (gMainGameMode == 4) ? Port_SpriteDepth_SlotCode(oamIndex)
+                                               : PORT_SPRITE_DEPTH_NONE;
+    int depthTier;
+    if (inMapOrPauseScreen) {
+        depthTier = (priority == 0) ? 5 : 6;
+    } else if (isRealHud || isOverlayText) {
+        depthTier = 5;
+    } else if (spriteDepthCode == PORT_SPRITE_DEPTH_BG_COPLANAR) {
+        depthTier = PortStereoDepth_BgTierForPriority(&sDepthState, priority);
+    } else if (spriteDepthCode >= 0) {
+        depthTier = spriteDepthCode;
+    } else {
+        /* World sprites: parallax must follow the same ordering the
+         * 2D compositor already uses. An OBJ of priority p draws in
+         * front of BGs whose priority is >= p and BEHIND those with
+         * a lower priority, so a high-priority-number sprite has to
+         * get a farther offset too -- otherwise a sprite the BGs
+         * paint over still appears nearest to the viewer in stereo.
+         * Priority 0/1 keeps tier 4's tuned -0.8f (Samus, enemies,
+         * particles); 2 and 3 map to the new intermediate tiers. */
+        depthTier = PortStereoDepth_ObjTier(&sDepthState, priority);
+    }
     for (int ty = 0; ty < tilesH; ++ty) {
         for (int tx = 0; tx < tilesW; ++tx) {
             int srcTx = hflip ? (tilesW - 1 - tx) : tx;
@@ -3444,78 +3547,6 @@ static void CollectSprite(int oamIndex, bool obj1D) {
              * hint, map download, item pickup -- not just gameplay. Tier 6
              * only applies there so real in-game Samus/enemy depth is
              * untouched. */
-            extern s16 gMainGameMode;
-            bool inMapOrPauseScreen = gMainGameMode == 5;
-            /* HUD sprites are exactly the OAM slots HudUpdateOam wrote
-             * this frame -- it fills OAM from slot 0 and runs before every
-             * sprite system in in_game.c's frame (SpriteDrawAll_*,
-             * ParticleProcessAll, ProjectileDrawAll_*, SamusDraw), so the
-             * count it publishes is a real boundary. See port_hud_oam.c.
-             *
-             * Three earlier signals for "this is real HUD, elevate it" each
-             * failed on hardware:
-             *  - OAM priority 0: also catches explosions, shot impacts,
-             *    reload flashes and bombs, which use priority 0 as a
-             *    "draw above everything" tool, not because they are HUD.
-             *  - gNextOamSlot: a running cursor every sprite system keeps
-             *    advancing all frame, so by the time it was read it covered
-             *    Samus, enemies and save/map stations. Reading oamSlot
-             *    INSIDE HudUpdateOam instead is what makes this work.
-             *  - Palette bank 4/5 plus sprite shape: classifies a sprite by
-             *    how it LOOKS rather than by what drew it. Bank 4 is not
-             *    exclusively HUD in the real ROM data (the Morph Ball bomb
-             *    sprite sits there too, which is why a shape test was bolted
-             *    on), and the 2026-08-28 recording has a pulsing item orb on
-             *    bank 4 in the middle of the play field. It happened to fall
-             *    the right side of the shape test; nothing guaranteed it.
-             *
-             * Gated on gameplay so a stale count cannot leak into a mode
-             * that never calls HudDraw: the map/pause branch above already
-             * handles GM_MAP_SCREEN, and everywhere else these are world
-             * sprites. */
-            bool isRealHud = gMainGameMode == 4 && oamIndex < Port_Hud_GetOamCount();
-            /* In-game message / area-name banners (and the save cursor) are
-             * ordinary sprites, so isRealHud never catches them, yet they
-             * are an overlay and draw at OAM priority 0 in 2D. SpriteDraw
-             * tags their OAM slots (port_overlay_text_oam.c); lift them to
-             * the same front tier as the HUD so stereo does not sink the
-             * flat text into Samus. */
-            extern int Port_OverlayText_IsSlot(int oamIndex);
-            bool isOverlayText = gMainGameMode == 4 && Port_OverlayText_IsSlot(oamIndex);
-            /* The escape countdown digits (PE_ESCAPE particle, tagged in
-             * src/particle.c). Route them exactly like real HUD: HUD depth
-             * tier, and off-screen with the HUD when that option is on. */
-            extern int Port_OverlayText_IsEscapeSlot(int oamIndex);
-            bool isEscapeHud = gMainGameMode == 4 && Port_OverlayText_IsEscapeSlot(oamIndex);
-            if (isEscapeHud) isRealHud = true;
-            /* Per-sprite depth override (port_sprite_depth_oam.c): a few
-             * sprite TYPES are authored to composite with a specific BG --
-             * the Kraid/Ridley statues set their OAM priority to BG1's so
-             * the sprite face blends with the BG that carries the top of
-             * the head. SpriteDraw tags their slots; honour that here
-             * instead of the one forced world-sprite plane. */
-            int spriteDepthCode = (gMainGameMode == 4) ? Port_SpriteDepth_SlotCode(oamIndex)
-                                                       : PORT_SPRITE_DEPTH_NONE;
-            int depthTier;
-            if (inMapOrPauseScreen) {
-                depthTier = (priority == 0) ? 5 : 6;
-            } else if (isRealHud || isOverlayText) {
-                depthTier = 5;
-            } else if (spriteDepthCode == PORT_SPRITE_DEPTH_BG_COPLANAR) {
-                depthTier = PortStereoDepth_BgTierForPriority(&sDepthState, priority);
-            } else if (spriteDepthCode >= 0) {
-                depthTier = spriteDepthCode;
-            } else {
-                /* World sprites: parallax must follow the same ordering the
-                 * 2D compositor already uses. An OBJ of priority p draws in
-                 * front of BGs whose priority is >= p and BEHIND those with
-                 * a lower priority, so a high-priority-number sprite has to
-                 * get a farther offset too -- otherwise a sprite the BGs
-                 * paint over still appears nearest to the viewer in stereo.
-                 * Priority 0/1 keeps tier 4's tuned -0.8f (Samus, enemies,
-                 * particles); 2 and 3 map to the new intermediate tiers. */
-                depthTier = PortStereoDepth_ObjTier(&sDepthState, priority);
-            }
             if (!isAffine) {
                 float drawX = (float)(x + tx * 8);
                 float drawY = (float)(y + ty * 8);
@@ -4609,6 +4640,7 @@ void Port_GpuRenderer_DrawFrame(void) {
      * transparent texels included, which is what clears a cell whose tile
      * went transparent. Sampled later this frame, hence the frame split
      * below (sLastLayerComposes). */
+    const u64 tMaps = svcGetSystemTick();
     for (int li = 0; li < 4; ++li) {
         const int ops = sLmOpCount[li];
         if (ops == 0 || !sLmReady[li]) continue;
@@ -4618,13 +4650,14 @@ void Port_GpuRenderer_DrawFrame(void) {
         C3D_AlphaTest(false, GPU_ALWAYS, 0);
         C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
         ConfigureAtlasTextureEnv();
+        BatchSetTierOffsets(NULL);
         if (sBatchReady) BatchBeginTarget((float)LM_W, (float)LM_H, false);
         for (int i = 0; i < ops; ++i) {
             const int cellIndex = sLmOps[li][i];
             C2D_DrawParams p = { { (float)((cellIndex % LM_COLS) * 8), (float)((cellIndex / LM_COLS) * 8),
                                    8.0f, 8.0f }, { 0.0f, 0.0f }, 0.5f, 0.0f };
             const Tex3DS_SubTexture* sub = &sSlotSubtexTable[sLmOpSlot[li][i]];
-            if (!sBatchReady || !BatchQuad(&sAtlasTexture, sub, &p)) {
+            if (!sBatchReady || !BatchQuad(&sAtlasTexture, sub, &p, BATCH_TIER_NONE)) {
                 if (sBatchReady) { BatchFlush(); C2D_Prepare(); C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_ALL); }
                 C2D_Image img = { &sAtlasTexture, sub };
                 C2D_DrawImage(img, &p, NULL);
@@ -4638,6 +4671,7 @@ void Port_GpuRenderer_DrawFrame(void) {
         C2D_Flush();
         ++sLastLayerComposes;
     }
+    PlatformGpu3DS_PerfPhaseAdd(PERF_PHASE_DRAW_MAPS, svcGetSystemTick() - tMaps);
     C3D_AlphaTest(true, GPU_GREATER, 0);
     /* Sampled later this frame -- by the eye passes, and by the haze ripple
      * when BG3 comes from its map -- so split here, once: sampling a target
@@ -4705,10 +4739,39 @@ void Port_GpuRenderer_DrawFrame(void) {
     sLastEyesRendered = 0;
     sLastDrawnPixels = 0;
 
+    /* The scene's quads differ between the eyes only by each tier's
+     * horizontal offset, which the batch shader adds from a uniform. So the
+     * first eye drawn writes the vertices once, without offsets, and the
+     * second re-issues the same quads and state changes with its own offsets
+     * (sBatchReplay) instead of building them again -- the per-quad CPU work
+     * was the cost of the second eye. The offsets are whole pixels, so
+     * adding them after the pixel snap lands where snapping the offset
+     * position did. */
+    int replayStart = 0, replayEnd = 0;
+    bool replayOk = false;
+    uint32_t replayPixels = 0;
+
     for (int eye = 0; eye < 2; ++eye) {
         C3D_RenderTarget* target = (eye == 0) ? leftTarget : rightTarget;
         if (!target) continue;
         float eyeSign = (eye == 0) ? 1.0f : -1.0f;
+        /* Whole device pixels, rounded ONCE per tier per eye.
+         *
+         * A fractional parallax offset cannot be drawn: with GPU_NEAREST
+         * every tile quad rounds it independently, so part of a layer shifts
+         * by a pixel and part of it doesn't. Within one layer that tears
+         * glyphs apart -- and because the fractional part changes with the
+         * slider, WHICH glyphs tear changes as the slider moves, which is the
+         * "text gets cut when I change the depth" symptom exactly.
+         *
+         * Rounding here makes each tier shift rigidly, as one plane. The cost
+         * is that a tier whose offset never reaches half a pixel (BG priority
+         * 0's -0.3f at any slider position) renders with no parallax at all --
+         * but it never really had any: what it had was per-tile rounding
+         * noise that read as shimmer. */
+        float tierOffset[BATCH_TIERS] = { 0 };
+        for (int t = 0; t < PORT_TIER_COUNT && t < BATCH_TIER_NONE; ++t)
+            tierOffset[t] = floorf(eyeSign * slider3d * PortStereoDepth_TierPx(t) + 0.5f);
 
         /* Issue #17: the GBA shows BG palette entry 0 -- the backdrop --
          * wherever no enabled layer draws, which this renderer used to
@@ -4776,7 +4839,19 @@ void Port_GpuRenderer_DrawFrame(void) {
         /* Items go through the batch (see BatchQuad) unless it could not be
          * set up; either way the state changes below flush what came first. */
         const bool batched = sBatchReady;
+        const u64 tItems = svcGetSystemTick();
+        BatchSetTierOffsets(tierOffset);
         if (batched) BatchBegin();
+        const bool replaying = batched && replayOk;
+        if (replaying) {
+            sBatchUsed = replayStart;
+            sBatchDrawn = replayStart;
+            sBatchReplay = true;
+        } else {
+            replayStart = sBatchUsed;
+        }
+        bool batchOverflowed = false;
+        uint32_t eyePixels = 0;
 #define FLUSH_ITEMS() do { if (batched) BatchFlush(); else C2D_Flush(); } while (0)
         for (int sp = 0; sp < scissorPasses; ++sp) {
             bool insidePass = (sp == 0);
@@ -4816,23 +4891,8 @@ void Port_GpuRenderer_DrawFrame(void) {
                     }
                     blendModeActive = wantBlend;
                 }
-                /* Whole device pixels, rounded ONCE per tier per eye.
-                 *
-                 * A fractional parallax offset cannot be drawn: with
-                 * GPU_NEAREST every tile quad rounds it independently, so
-                 * part of a layer shifts by a pixel and part of it doesn't.
-                 * Within one layer that tears glyphs apart -- and because
-                 * the fractional part changes with the slider, WHICH glyphs
-                 * tear changes as the slider moves, which is the "text gets
-                 * cut when I change the depth" symptom exactly.
-                 *
-                 * Rounding here makes each tier shift rigidly, as one plane.
-                 * The cost is that a tier whose offset never reaches half a
-                 * pixel (BG priority 0's -0.3f at any slider position) now
-                 * renders with no parallax at all -- but it never really had
-                 * any: what it had was per-tile rounding noise that read as
-                 * shimmer. */
-                float eyeOffset = floorf(eyeSign * slider3d * PortStereoDepth_TierPx(item->depthTier) + 0.5f);
+                const int tier = (item->depthTier >= 0 && item->depthTier < BATCH_TIER_NONE)
+                                     ? item->depthTier : BATCH_TIER_NONE;
                 /* Render target or atlas, and the fades applied at draw
                  * time (see ConfigureFxTextureEnv). */
                 const int envKey = ITEM_ENV_KEY(item);
@@ -4842,31 +4902,32 @@ void Port_GpuRenderer_DrawFrame(void) {
                     envActive = envKey;
                     reassertedTexEnv = true;
                 }
-                C2D_DrawParams params = BuildDrawParams(item,
-                    item->screenFixed ? screenBaseX : worldBaseX,
-                    item->screenFixed ? (item->isHud ? hudBaseY : screenBaseY) : worldBaseY,
-                    eyeOffset, scaleX, scaleY, false);
-                if (!batched || !BatchQuad(item->img.tex, item->img.subtex, &params)) {
+                const float baseX = item->screenFixed ? screenBaseX : worldBaseX;
+                const float baseY = item->screenFixed ? (item->isHud ? hudBaseY : screenBaseY) : worldBaseY;
+                C2D_DrawParams params;
+                bool drawn = false;
+                if (batched) {
+                    /* The eye offset comes from the shader (tierOffset). */
+                    if (!replaying) params = BuildDrawParams(item, baseX, baseY, 0.0f, scaleX, scaleY, false);
+                    drawn = BatchQuad(item->img.tex, item->img.subtex, replaying ? NULL : &params, tier);
+                    if (!drawn) batchOverflowed = true;
+                    else if (!replaying) eyePixels += (uint32_t)(params.pos.w * params.pos.h);
+                }
+                if (!drawn) {
                     /* Batch full (or unavailable): citro2d for this one. */
+                    params = BuildDrawParams(item, baseX, baseY, tierOffset[tier], scaleX, scaleY, false);
                     if (batched) { BatchFlush(); C2D_Prepare(); C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_ALL); }
                     C2D_DrawImage(item->img, &params, NULL);
                     C2D_Flush();
                     APPLY_ITEM_ENV(envActive);
                     if (batched) BatchBegin();
+                    eyePixels += (uint32_t)(params.pos.w * params.pos.h);
                 }
                 ++drawCount;
 #ifdef PORT_DEBUG_TOOLS_ACTIVE
                 if (item->affine)      ++sDiagAffineDrawn[eye & 1];
                 if (item->blendAlpha)  ++sDiagBlendDrawn[eye & 1];
 #endif
-                /* Device pixels this quad covers, summed over every eye.
-                 * The point of counting it is to separate two explanations
-                 * of where a frame goes that the quad count alone cannot:
-                 * after step A, six times fewer quads bought 5% of the
-                 * frame, which says cost is NOT per-quad any more. If it is
-                 * per-pixel instead, this number tracks the frame time and
-                 * the fix is to remove overdraw, not quads. */
-                sLastDrawnPixels += (uint32_t)(params.pos.w * params.pos.h);
                 if (!reassertedTexEnv) {
                     APPLY_ITEM_ENV(envActive);
                     reassertedTexEnv = true;
@@ -4874,6 +4935,20 @@ void Port_GpuRenderer_DrawFrame(void) {
             }
         }
         if (batched) BatchEnd();
+        /* Device pixels the quads covered, summed over every eye: separates
+         * "cost is per quad" from "cost is per pixel", which the quad count
+         * alone cannot. A replayed eye covers what the first one did. */
+        if (replaying) {
+            sBatchReplay = false;
+            eyePixels = replayPixels;
+        } else {
+            replayEnd = sBatchUsed;
+            replayOk = batched && !batchOverflowed;
+            replayPixels = eyePixels;
+        }
+        if (sBatchUsed < replayEnd) sBatchUsed = replayEnd;
+        sLastDrawnPixels += eyePixels;
+        PlatformGpu3DS_PerfPhaseAdd(PERF_PHASE_DRAW_ITEMS, svcGetSystemTick() - tItems);
 #undef FLUSH_ITEMS
 #undef APPLY_ITEM_ENV
 #undef ITEM_ENV_KEY

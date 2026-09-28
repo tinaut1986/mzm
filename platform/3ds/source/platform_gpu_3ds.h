@@ -72,10 +72,12 @@ typedef enum {
     PERF_PHASE_BOTTOM_UI,     /* bottom screen tick + (throttled) redraw */
     PERF_PHASE_FRAME_END,     /* screen FX + C3D_FrameEnd submission */
     PERF_PHASE_VSYNC,         /* C3D_FrameSync: waiting for the display */
-    /* Breakdown of PERF_PHASE_BG (not in addition to it): */
-    PERF_PHASE_BG_B32,        /* the 32x32 block pass (removed: always 0, */
-    PERF_PHASE_BG_B16,        /* the 16x16 block pass  kept for the MZP7 layout) */
-    PERF_PHASE_BG_TILES,      /* the per-tile pass */
+    /* Slots 8-9 held the 32x32 / 16x16 block passes (a breakdown of
+     * PERF_PHASE_BG) until those were removed; now a breakdown of the draw
+     * submission (cpuDrawX100), not of any phase above: */
+    PERF_PHASE_DRAW_ITEMS,    /* the eyes' item loops (quads + state changes) */
+    PERF_PHASE_DRAW_MAPS,     /* redrawing stale layer-map cells */
+    PERF_PHASE_BG_TILES,      /* the per-tile pass (a breakdown of PERF_PHASE_BG) */
     PERF_PHASE_COUNT
 } PerfPhase;
 void PlatformGpu3DS_PerfPhaseAdd(PerfPhase phase, unsigned long long ticks);

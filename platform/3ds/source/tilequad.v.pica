@@ -1,10 +1,15 @@
 ; Vertex shader for the GPU tile renderer's batched quads
-; (port_gpu_renderer.c, the Batch* functions): 2D position and a texture
-; coordinate in, clip-space position and the same coordinate out. The
-; texture environment does the rest.
+; (port_gpu_renderer.c, the Batch* functions): 2D position, a texture
+; coordinate and a stereo tier in, clip-space position and the same
+; coordinate out. The texture environment does the rest.
+;
+; The tier picks the eye's horizontal offset for that depth plane from
+; tierOffset[] (device px, whole numbers), so both eyes draw the same
+; vertices and only the uniforms change between them.
 
 ; Uniforms
 .fvec projection[4]
+.fvec tierOffset[8]
 
 ; Constants
 .constf consts(0.0, 1.0, 0.5, 0.0)
@@ -14,12 +19,16 @@
 .out outtc0 texcoord0
 
 ; Inputs
-.alias inpos v0
-.alias intc  v1
+.alias inpos  v0
+.alias intc   v1
+.alias intier v2
 
 .proc main
-	; position = projection * (x, y, 0.5, 1)
-	mov r0.xy, inpos
+	; position = projection * (x + tierOffset[tier].x, y, 0.5, 1)
+	mova a0.x, intier.x
+	mov r1, tierOffset[a0.x]
+	add r0.x, inpos.x, r1.x
+	mov r0.y, inpos.y
 	mov r0.z, consts.z
 	mov r0.w, consts.y
 	dp4 outpos.x, projection[0], r0

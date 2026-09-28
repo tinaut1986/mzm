@@ -452,9 +452,12 @@ struct PerfSample {      // 148 bytes, sampleCount of them back to back
                                  // 5 bottom screen tick + redraw
                                  // 6 screen FX + C3D_FrameEnd
                                  // 7 C3D_FrameSync, waiting for the display
-                                 // 8-10 ('MZP7') phase 3 split: 32x32 block
-                                 //   pass, 16x16 block pass, per-tile pass
-                                 //   (the block passes are gone: 8-9 are 0)
+                                 // 8-9 ('MZP7') draw submission split (part
+                                 //   of cpuDrawX100): the eyes' item loops,
+                                 //   the layer-map cell redraw. Captures from
+                                 //   before the block passes were removed hold
+                                 //   the 32x32 / 16x16 block passes here.
+                                 // 10 ('MZP7') per-tile pass (part of phase 3)
     uint32_t counts[8];          // 'MZP7': work over this frame -- 32x32 block
                                  // lookups, decodes; 16x16 lookups, decodes
                                  // (0 since the block passes were removed);
