@@ -54,9 +54,9 @@ bool Port_GpuRenderer_AffineBgEnabled(void);
  * pass on. See the Block32 cache in port_gpu_renderer.c. */
 void Port_GpuRenderer_SetBlock32Pass(bool on);
 bool Port_GpuRenderer_Block32PassEnabled(void);
-/* Step B: compose each eligible scrolling BG layer into its own render
- * target once per frame and draw it as ONE quad per eye. See the definition
- * -- off by default, because whether it pays depends on the room. */
+/* Layer maps: each text BG layer kept in a wrapping render target, only its
+ * stale cells redrawn, drawn as ONE quad per eye. On by default; off falls
+ * back to the block and per-tile passes. See LayerMapInit. */
 void Port_GpuRenderer_SetLayerCache(bool on);
 bool Port_GpuRenderer_LayerCacheEnabled(void);
 /* BG3 ripple pass: 0 full, 1 blit without re-composing, 2 off. A measurement
@@ -95,8 +95,8 @@ typedef struct {
      * quad count alone cannot separate "cost is per-quad" from "cost is per
      * pixel", and after step A the two disagree -- see the definition. */
     uint32_t drawnPixels;
-    uint8_t layerComposes;     /* step B: layers re-composed this frame; 0 = all reused */
-    bool layerCacheOn;         /* step B enabled at all, so 0 composes can be told from off */
+    uint8_t layerComposes;     /* layer maps with cells redrawn this frame */
+    bool layerCacheOn;         /* layer maps enabled at all, so 0 can be told from off */
     uint8_t eyesRendered;      /* 1, or 2 while the 3D slider is up */
     uint8_t scissorPasses;     /* 1, or 2 while a GBA window splits the draw order */
     bool windowActive;

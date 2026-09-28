@@ -142,6 +142,14 @@ static void ConfigurePlainTextureEnv(void) {
     C3D_TexEnvInit(C3D_GetTexEnv(2));
 }
 
+/* BLDCNT effect applied at decode time for brighten/darken (effect 1, alpha
+ * blend, is applied later at draw time via GPU blending instead -- see
+ * kBlendAlpha in DrawItem). NONE/BRIGHTEN/DARKEN affect the palette-to-RGBA
+ * conversion itself, so they're part of what makes a decoded tile unique.
+ * BG layers are the exception: their tiles are decoded plain and the effect
+ * is applied on the GPU when they are drawn (ConfigureFxTextureEnv). */
+typedef enum { BRIGHT_ADJUST_NONE, BRIGHT_ADJUST_BRIGHTEN, BRIGHT_ADJUST_DARKEN } BrightAdjust;
+
 /* ---- Batched quads -------------------------------------------------------
  * The scene's items used to go through C2D_DrawImage one by one, which works
  * out rotation, per-corner tints and texture state for every call: measured
@@ -346,11 +354,6 @@ enum {
     MAX_DRAW_ITEMS = 6144,
 };
 
-/* BLDCNT effect applied at decode time for brighten/darken (effect 1, alpha
- * blend, is applied later at draw time via GPU blending instead -- see
- * kBlendAlpha in DrawItem). NONE/BRIGHTEN/DARKEN affect the palette-to-RGBA
- * conversion itself, so they're part of what makes a decoded tile unique. */
-typedef enum { BRIGHT_ADJUST_NONE, BRIGHT_ADJUST_BRIGHTEN, BRIGHT_ADJUST_DARKEN } BrightAdjust;
 
 typedef struct TileCacheKey {
     uint32_t byteOffset; /* offset of the tile's first byte within gVram */
@@ -419,12 +422,13 @@ typedef struct DrawItem {
      * the overlay text. Only matters when the WIDE view slides the world
      * (see ComputeWideView). */
     bool screenFixed;
-    /* A cached layer's quad samples a render target, whose texels come back
-     * verbatim; the CPU-written atlas needs the channel unswizzle. The draw
-     * loop switches the texenv when this changes, which costs a batch break
-     * per switch -- a handful per eye against the hundreds of quads the
-     * cache removes. */
+    /* The quad samples a render target (a layer map) rather than the atlas.
+     * Both are pass-through texenvs now; the draw loop still switches on it,
+     * which costs a batch break per switch -- a handful per eye. */
     bool plainEnv;
+    /* ITEM_FX_* applied at draw time (ConfigureFxTextureEnv): BG tiles are
+     * decoded without the frame's brightness fade or palette fade. */
+    uint8_t gpuFx;
 } DrawItem;
 
 static C3D_Tex sAtlasTexture;
@@ -439,12 +443,6 @@ static DrawItem sDrawItems[MAX_DRAW_ITEMS];
 static float sCollectOffX, sCollectOffY;
 static int sDrawItemCount;
 static bool sAnyDirtySlot;
-/* Monotonic count of atlas (re)decodes this frame. sAnyDirtySlot only goes
- * false->true, so "did MY layer decode anything" cannot be read from it once
- * an earlier layer already set it -- a later layer with a stale cached
- * target but all-cache-hit tiles then never re-composed. A counter is
- * unambiguous: entry value != end value means this layer touched a slot. */
-static uint32_t sDecodeSeq;
 static int sLastObjItemCount;
 
 /* --- issue #29: per-scanline BG3 ripple (water / lava / acid / heat haze) ---
@@ -544,60 +542,9 @@ static C3D_RenderTarget* sHazeRippleRT;
 static bool sHazeRippleReady;
 static Tex3DS_SubTexture sHazeRippleSubtex;
 
-/* ---- Step B: cache a whole scrolling BG layer in a render target -------
- *
- * A text BG layer's tiles are homogeneous in everything the draw order
- * cares about -- sort key, stereo tier, blend mode, window visibility are
- * all per-LAYER -- so the ~370 quads a layer contributes can be composed
- * once into an offscreen target and drawn as ONE quad per eye, at the
- * layer's own place in the priority order.
- *
- * The target is anchored to the TILE GRID, not to the camera: it holds the
- * 31x21 world tiles starting at (startTileX, startTileY), and the fine
- * scroll is applied by moving the sampled rectangle instead of re-rendering.
- * A layer therefore survives up to 8 pixels of scrolling before the origin
- * moves and it has to be composed again. 31x21 tiles is 248x168 px, which is
- * what a 240x160 view plus a fine offset of up to 7 can reach, and it fits a
- * 256x256 texture.
- *
- * Correctness over cheapness on the invalidation: the layer's tiles are
- * still walked every frame and still go through the atlas cache's staleness
- * checks, so an animated tile or a palette change is caught exactly as
- * before -- what the cache skips is the offscreen COMPOSE, not the check.
- * That keeps the CPU cost roughly as it was and takes the GPU quads down,
- * which is the half that was over budget. */
-enum {
-    LAYER_RT_DIM = 256,
-    /* Window the sampled rectangle can reach, and so the window the
-     * invalidation hash covers: 240 px plus a fine offset of up to 7 needs
-     * 31 tiles, 160 plus 7 needs 21. */
-    LAYER_TILES_X = 31,
-    LAYER_TILES_Y = 21,
-    /* Capacity for what COLLECTION can push, which is a little more: its
-     * loops run tx -1..31 and ty 0..20, and everything with a non-negative
-     * target coordinate is captured even if the quad never samples it.
-     * Sizing this at LAYER_TILES_X * LAYER_TILES_Y instead would silently
-     * drop the last column and leave a seam. */
-    LAYER_MAX_TILES = 32 * 22,
-};
-typedef struct { C2D_Image img; float x, y, w, h; } LayerTile;
-static C3D_Tex sLayerTex[4];
-static C3D_RenderTarget* sLayerRT[4];
-static bool sLayerRtReady[4];
-static Tex3DS_SubTexture sLayerSubtex[4];
-static LayerTile sLayerTiles[4][LAYER_MAX_TILES];
-static int sLayerTileCount[4];
-static bool sLayerNeedsCompose[4];
-static bool sLayerComposed[4]; /* has valid content from some earlier frame */
 /* Set by Port_GpuRenderer_InvalidateAll (save-state load); forces the
  * RenderFrame settle window even with area/room/mode unchanged. */
 static int sForcedSettleFrames;
-typedef struct {
-    int originTileX, originTileY;
-    uint32_t screenBase, charBase, mapHash, palHash;
-    uint8_t evy, brightAdjust, bpp8;
-} LayerKey;
-static LayerKey sLayerKey[4];
 
 /* ---- Layer maps: each BG layer kept in a wrapping render target ----------
  *
@@ -644,7 +591,7 @@ static uint16_t sAtlasGen = 1;
 static uint32_t sSlotFreshThisFrame[ATLAS_MAX_SLOTS / 32];
 typedef struct {
     uint32_t charBase;
-    uint8_t bpp8, brightAdjust, evy;
+    uint8_t bpp8;
 } LayerMapState;
 static C3D_Tex sLmTex[4];
 static C3D_RenderTarget* sLmRT[4];
@@ -700,7 +647,7 @@ static uint32_t sBgPalBankHash[16], sObjPalBankHash[16];
 static uint32_t sBgPalFullHash, sObjPalFullHash;
 static uint32_t sFrameStamp;
 
-static LayerMapPass LayerMapBegin(int bg, uint32_t charBase, bool bpp8, BrightAdjust brightAdjust, int evy) {
+static LayerMapPass LayerMapBegin(int bg, uint32_t charBase, bool bpp8) {
     /* memset first: the struct has a padding byte, and memcmp compares it --
      * left as stack garbage it made the state "change" at random, redrawing
      * the whole map every few frames. */
@@ -708,8 +655,6 @@ static LayerMapPass LayerMapBegin(int bg, uint32_t charBase, bool bpp8, BrightAd
     memset(&st, 0, sizeof(st));
     st.charBase = charBase;
     st.bpp8 = (uint8_t)bpp8;
-    st.brightAdjust = (uint8_t)brightAdjust;
-    st.evy = (uint8_t)((brightAdjust != BRIGHT_ADJUST_NONE) ? evy : 0);
     if (memcmp(&st, &sLmState[bg], sizeof(st)) != 0 || sLmStateStamp[bg] == 0) {
         sLmState[bg] = st;
         sLmStateStamp[bg] = sFrameStamp;
@@ -728,14 +673,8 @@ static LayerMapPass LayerMapBegin(int bg, uint32_t charBase, bool bpp8, BrightAd
     return pass;
 }
 
-/* On by default. Measured on hardware (2026-09): ~2ms GPU + ~1ms CPU and
- * ~100 fewer BG quads per eye in busy rooms, and 4-5 FPS in spots where
- * that tips a frame under a vblank boundary. Auto-declines while the BG3
- * haze pass runs (they would both drive a target compose + C3D_FrameSplit)
- * and per layer when anything resolves visibility/placement per tile. The
- * one case to watch is an ANIMATED-PALETTE room with no haze: a palette
- * change invalidates the composed target, so the cache re-composes every
- * frame there -- toggle it off (debug menu) if such a room regresses. */
+/* Layer maps on/off (debug menu, CAPAS/HAZE left side). On by default; off
+ * falls back to the 32x32 / 16x16 block passes and the per-tile pass. */
 static bool sLayerCacheEnabled = true;
 void Port_GpuRenderer_SetLayerCache(bool on) { sLayerCacheEnabled = on; }
 bool Port_GpuRenderer_LayerCacheEnabled(void) { return sLayerCacheEnabled; }
@@ -763,9 +702,11 @@ bool Port_GpuRenderer_LayerCacheEnabled(void) { return sLayerCacheEnabled; }
  *   OFF      BG3 back to the ordinary per-tile path, no ripple.
  *
  * If NOCOMPOSE recovers most of the time, the fix is to stop re-composing a
- * target whose BG3 has not changed, which is what the layer cache already
+ * target whose BG3 has not changed, which is what a cached layer
  * does for BG0-2. If it does not, the per-scanline blit is the problem and
- * needs a different answer. */
+ * needs a different answer. (RT with the layer map is what came of it: BG3
+ * ripples straight from its map. FULL and NOCOMPOSE are measurement modes
+ * and still bake per tile.) */
 typedef enum { HAZE_FULL = 0, HAZE_NOCOMPOSE, HAZE_OFF, HAZE_RIPPLE_RT, HAZE_MODE_COUNT } HazeMode;
 /* RT by default: measured 17,77 -> 11,26 ms on the same scene, same quads,
  * same pixels. The other modes stay for measuring against, and RT falls back
@@ -779,25 +720,12 @@ bool Port_GpuRenderer_HazeRippleActive(void) {
 }
 int Port_GpuRenderer_HazeMode(void) { return sHazeMode; }
 
-/* While >= 0, BG pushes are captured into that layer's compose list instead
- * of going straight into the frame's draw items. */
-static int sCaptureLayer = -1;
-static float sCaptureOffX, sCaptureOffY;
-static bool sLayerSameKey;
-static uint32_t sLayerDecodeSeqAtEntry;
 #ifdef PORT_DEBUG_TOOLS_ACTIVE
-typedef struct {
-    uint8_t captured, sameKey, needsCompose;
-    int tiles, orgX, orgY;
-    uint32_t mapHash, decodedThisLayer;
-} LayerCacheDiag;
-static LayerCacheDiag sLCdiag[4];
 static int sDiagAffineDrawn[2], sDiagBlendDrawn[2];
 static int sDiagSemiTransColl, sDiagAffineColl, sDiagMosaicColl, sDiagSemiTransX, sDiagSemiTransOam;
 #endif
-/* How many layers had to be composed this frame -- 0 means every cached
- * layer was reused, which is what the cache is for. Recorded per perf
- * sample so the toggle produces a number and not an impression. */
+/* How many layer maps had cells redrawn this frame. Recorded per perf
+ * sample. */
 static unsigned sLastLayerComposes;
 /* Device pixels covered by the frame's quads, summed over every eye. See
  * where it is accumulated for why it exists. */
@@ -896,11 +824,16 @@ static uint16_t sCacheUsedMask[ATLAS_MAX_SLOTS];
  * a few entries of one bank (a glow, a light); with these a layer-map cell or
  * atlas slot is stale only if a colour its tile uses changed, not whenever
  * anything in its bank did. */
+/* The BG palette every BG tile is decoded from, and the one the change
+ * stamps and hashes follow: the palette itself, except the banks a palette
+ * fade is being applied on the GPU for, which hold the game's source copy
+ * (see PalFadeBeginFrame). */
+static uint16_t sBgPalEff[256];
 static uint16_t sBgPalPrev[256];
 static uint32_t sBgPalColorStamp[256];
 
 static void BgPaletteStampsBeginFrame(void) {
-    const uint16_t* pal = (const uint16_t*)gBgPltt;
+    const uint16_t* pal = sBgPalEff;
     for (int i = 0; i < 256; ++i) {
         if (pal[i] != sBgPalPrev[i] || sBgPalColorStamp[i] == 0) {
             sBgPalPrev[i] = pal[i];
@@ -1294,10 +1227,6 @@ static void ComputeDepthState(uint16_t dispcnt) {
         if (sForcedSettleFrames > 0) --sForcedSettleFrames;
         if (sCacheSettleFrames > 0) {
             --sCacheSettleFrames;
-            for (int i = 0; i < 4; ++i) {
-                sLayerComposed[i] = false;
-                sLayerNeedsCompose[i] = true; /* re-bake every frame of the window */
-            }
             sBlockCacheResetPending = true; /* rebuild blocks from VRAM each frame */
             sB32CacheResetPending = true;
             /* Per-tile cache too: it normally persists (OBJ + fallbacks) but
@@ -1595,14 +1524,8 @@ bool Port_GpuRenderer_Init(void) {
         else C3D_TexDelete(&sHazeRippleTex);
     }
 
-    /* Step B's per-layer targets. VRAM, like the haze pair: 4 x 256KB. A
-     * failure here is not fatal -- that layer simply keeps drawing per tile,
-     * which is what every ineligible layer does anyway. */
-    for (int i = 0; i < 4; ++i) {
-        sLayerRtReady[i] = false;
-        sLayerComposed[i] = false;
-    }
-    /* The layer maps replace step B and take its VRAM (4 x 256KB). */
+    /* One wrapping target per BG layer. Not fatal if one fails: that layer
+     * falls back to the block passes. */
     LayerMapInit();
 
     InitSlotSubtexTable();
@@ -1707,6 +1630,184 @@ static uint16_t sIoBldcnt;
 static int sBldEva, sBldEvb, sBldEvy;
 
 static inline bool BldIsFirstTarget(uint16_t bldcnt, int layerId) { return ((bldcnt >> layerId) & 1u) != 0u; }
+
+/* ---- Fades applied on the GPU --------------------------------------------
+ * Two kinds of whole-screen fade step every frame, and baked into the tiles
+ * each step made every cell of every layer map stale -- a full redraw of
+ * every map, every frame of the fade (15-18 ms of BG work on an Old 3DS):
+ *
+ *  - BLDY brighten / darken (BLDCNT effect 2/3) on a first-target layer.
+ *  - The game's palette fades (door transitions, flashes, fades to/from
+ *    black): src/color_effects.c ApplySpecialBackgroundFadingColor writes
+ *    T(source) into the palette every frame, where source is the game's own
+ *    unfaded copy (COLOR_DATA_BG_EWRAM2) and T scales each 5-bit channel
+ *    toward black or white by a step k/32.
+ *
+ * Both are per-channel affine maps, out = in * A + B, so BG tiles are
+ * decoded without them and the map is applied by the texenv when the tiles
+ * (or a layer map) are drawn. For palette fades that means decoding from
+ * the source copy instead of the palette: it does not change while the
+ * fade runs, so nothing goes stale. The fade is only taken when the
+ * palette is EXACTLY T(source) under the game's integer arithmetic, bank by
+ * bank (PalFadeBeginFrame); a bank that is not (the door transition leaves
+ * the hatch bank lit) keeps its own colours and its tiles are drawn per
+ * tile, outside the layer maps. The GPU result is within one 5-bit level of
+ * the GBA's. */
+enum { ITEM_FX_BRIGHT = 1, ITEM_FX_PALFADE = 2 };
+static bool sPalFadeOn;
+static uint16_t sPalFadeBanks;     /* banks drawn from the source copy */
+static float sPalFadeA, sPalFadeB; /* the fade as out = in * A + B */
+/* gpuFx given to items as they are allocated (AllocDrawItemSubtex). */
+static uint8_t sPushFx;
+
+/* out = texture * A + B on RGB, alpha passed through (the alpha test still
+ * drops index 0): the item's fades, palette fade first, then BLDY -- the
+ * GBA's order (the palette is looked up, then the blend unit applies BLDY).
+ * GBATEK: brighten I + (31 - I) * EVY / 16, darken I - I * EVY / 16. */
+static void ConfigureFxTextureEnv(int fx) {
+    float a = 1.0f, b = 0.0f;
+    if (fx & ITEM_FX_PALFADE) {
+        a = sPalFadeA;
+        b = sPalFadeB;
+    }
+    if ((fx & ITEM_FX_BRIGHT) && (sBldEffect == 2 || sBldEffect == 3)) {
+        const float e = (float)sBldEvy / 16.0f;
+        a *= 1.0f - e;
+        b = b * (1.0f - e) + (sBldEffect == 2 ? e : 0.0f);
+    }
+    const u8 a8 = (u8)(a * 255.0f + 0.5f), b8 = (u8)(b * 255.0f + 0.5f);
+    C3D_TexEnv* env = C3D_GetTexEnv(0);
+    C3D_TexEnvInit(env);
+    C3D_TexEnvSrc(env, C3D_RGB, GPU_TEXTURE0, GPU_CONSTANT, GPU_PRIMARY_COLOR);
+    C3D_TexEnvFunc(env, C3D_RGB, GPU_MODULATE);
+    C3D_TexEnvSrc(env, C3D_Alpha, GPU_TEXTURE0, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR);
+    C3D_TexEnvFunc(env, C3D_Alpha, GPU_REPLACE);
+    C3D_TexEnvColor(env, C2D_Color32(a8, a8, a8, 255));
+    env = C3D_GetTexEnv(1);
+    C3D_TexEnvInit(env); /* previous, replace */
+    if (b8 != 0) {
+        C3D_TexEnvSrc(env, C3D_RGB, GPU_PREVIOUS, GPU_CONSTANT, GPU_PRIMARY_COLOR);
+        C3D_TexEnvFunc(env, C3D_RGB, GPU_ADD);
+        C3D_TexEnvColor(env, C2D_Color32(b8, b8, b8, 255));
+    }
+    C3D_TexEnvInit(C3D_GetTexEnv(2));
+}
+
+/* The game's palette fade on one colour (ApplySpecialBackgroundFadingColor,
+ * same arithmetic and wrap). */
+enum { PAL_FADE_IN, PAL_FADE_FLASH, PAL_FADE_OUT, PAL_FADE_TOWARD_WHITE, PAL_FADE_TYPES };
+static inline uint16_t PalFadeColor(int type, uint16_t c, int k) {
+    int ch[3] = { c & 31, (c >> 5) & 31, (c >> 10) & 31 };
+    for (int i = 0; i < 3; ++i) {
+        const int v = ch[i];
+        switch (type) {
+            case PAL_FADE_IN: ch[i] = ((v * k) >> 5) & 31; break;
+            case PAL_FADE_FLASH: ch[i] = (31 - (((31 - v) * k) >> 5)) & 31; break;
+            case PAL_FADE_OUT: ch[i] = (v - ((v * k) >> 5)) & 31; break;
+            default: ch[i] = (v + ((k * (31 - v)) >> 5)) & 31; break;
+        }
+    }
+    return (uint16_t)(ch[0] | (ch[1] << 5) | (ch[2] << 10));
+}
+
+/* Whether bank `b` of the palette is exactly the fade of the source's.
+ * Colour 0 is skipped: transparent in a tile (the backdrop is drawn from the
+ * palette itself), and the game pokes it on its own (src/haze.c). */
+static inline bool PalFadeBankMatches(const uint16_t* pal, const uint16_t* src, int b, int type, int k) {
+    for (int i = b * 16 + 1; i < b * 16 + 16; ++i)
+        if ((pal[i] & 0x7FFFu) != PalFadeColor(type, src[i], k)) return false;
+    return true;
+}
+
+/* Works out this frame's effective BG palette (sBgPalEff) and whether a
+ * palette fade is taken on the GPU. `allowed` is false whenever a BG layer
+ * would not go through a layer map / the per-tile pass (see the caller). */
+static void PalFadeBeginFrame(bool allowed) {
+    extern uint8_t gEwram[];
+    const uint16_t* pal = (const uint16_t*)gBgPltt;
+    const uint16_t* src = (const uint16_t*)(gEwram + 0x35000 + 0x400); /* COLOR_DATA_BG_EWRAM2 */
+    memcpy(sBgPalEff, pal, sizeof(sBgPalEff));
+    sPalFadeOn = false;
+    if (!allowed) return;
+
+    /* Banks that differ from the source at all: only those say anything
+     * about a fade. None -> no fade (or the identity step at its end). */
+    uint16_t differ = 0;
+    for (int b = 0; b < 16; ++b)
+        for (int i = b * 16 + 1; i < b * 16 + 16; ++i)
+            if ((pal[i] & 0x7FFFu) != (src[i] & 0x7FFFu)) { differ |= (uint16_t)(1u << b); break; }
+    if (differ == 0) return;
+
+    /* The same (palette, source) as last frame gives the same answer. */
+    static bool sLastValid;
+    static uint32_t sLastPalHash, sLastSrcHash;
+    static int sLastType = -1, sLastK;
+    static uint16_t sLastBanks;
+    const uint32_t palHash = HashBytes((const uint8_t*)pal, 512);
+    const uint32_t srcHash = HashBytes((const uint8_t*)src, 512);
+    int bestType = -1, bestK = 0;
+    uint16_t bestBanks = 0;
+    if (sLastValid && palHash == sLastPalHash && srcHash == sLastSrcHash) {
+        bestType = sLastType; bestK = sLastK; bestBanks = sLastBanks;
+    } else {
+        /* The type and step that explain the most differing banks. The
+         * candidates are the ones that reproduce a changed colour of the
+         * first two differing banks -- at most one differing bank may go
+         * unexplained (below), so one of the two is a faded bank.
+         *
+         * Taken only if it explains every differing bank but at most one,
+         * and at least two: outside a fade the source copy can be stale,
+         * and a lone bank that happens to match (all black against any
+         * source is IN at step 0) would push every tile of the others out
+         * of the layer maps for nothing. Rendering would still be right --
+         * a bank that matches is drawn exactly -- just slower. */
+        int differCount = 0;
+        for (int b = 0; b < 16; ++b) differCount += (differ >> b) & 1u;
+        uint64_t candidates[PAL_FADE_TYPES] = { 0 }; /* bit k */
+        int probes = 0;
+        for (int b = 0; b < 16 && probes < 2; ++b) {
+            if (!((differ >> b) & 1u)) continue;
+            int i = b * 16 + 1;
+            while ((pal[i] & 0x7FFFu) == (src[i] & 0x7FFFu)) ++i; /* the bank differs somewhere */
+            for (int type = 0; type < PAL_FADE_TYPES; ++type)
+                for (int k = 0; k <= 32; ++k)
+                    if (PalFadeColor(type, src[i], k) == (pal[i] & 0x7FFFu)) candidates[type] |= 1ull << k;
+            ++probes;
+        }
+        int bestHits = 0;
+        for (int type = 0; type < PAL_FADE_TYPES; ++type) {
+            for (int k = 0; k <= 32; ++k) {
+                if (!((candidates[type] >> k) & 1u)) continue;
+                uint16_t banks = 0;
+                int hits = 0;
+                for (int b = 0; b < 16; ++b) {
+                    if (!PalFadeBankMatches(pal, src, b, type, k)) continue;
+                    banks |= (uint16_t)(1u << b);
+                    if ((differ >> b) & 1u) ++hits;
+                }
+                if (hits > bestHits) { bestHits = hits; bestType = type; bestK = k; bestBanks = banks; }
+            }
+        }
+        if (bestHits < 2 || bestHits + 1 < differCount) bestType = -1;
+        sLastValid = true;
+        sLastPalHash = palHash;
+        sLastSrcHash = srcHash;
+        sLastType = bestType; sLastK = bestK; sLastBanks = bestBanks;
+    }
+    if (bestType < 0) return;
+
+    for (int b = 0; b < 16; ++b)
+        if ((bestBanks >> b) & 1u) memcpy(&sBgPalEff[b * 16 + 1], &src[b * 16 + 1], 15 * sizeof(uint16_t));
+    sPalFadeOn = true;
+    sPalFadeBanks = bestBanks;
+    const float t = (float)bestK / 32.0f;
+    switch (bestType) {
+        case PAL_FADE_IN: sPalFadeA = t; sPalFadeB = 0.0f; break;
+        case PAL_FADE_FLASH: sPalFadeA = t; sPalFadeB = 1.0f - t; break;
+        case PAL_FADE_OUT: sPalFadeA = 1.0f - t; sPalFadeB = 0.0f; break;
+        default: sPalFadeA = 1.0f - t; sPalFadeB = t; break;
+    }
+}
 
 /* Frame-global window-clip state (WIN0 xor WIN1 -- see
  * Port_GpuRenderer_CanRenderFrame's scope note: two simultaneously-clipping
@@ -2030,7 +2131,6 @@ static void DecodeTileIntoSlot(int slot, const uint8_t* src, bool bpp8, const ui
 
     MarkAtlasRowDirty(slot / ATLAS_TILES_PER_ROW);
     sAnyDirtySlot = true;
-    ++sDecodeSeq;
 }
 
 /* Hashes a zero-padded key a word at a time (the keys are memset before
@@ -2094,7 +2194,6 @@ static void DecodeBlockIntoSlot(int block, const uint8_t* src[4], const uint16_t
     MarkAtlasRowDirty(base / ATLAS_TILES_PER_ROW);
     MarkAtlasRowDirty(base / ATLAS_TILES_PER_ROW + 1);
     sAnyDirtySlot = true;
-    ++sDecodeSeq;
 }
 
 /* Atlas block index for this 2x2 tilemap group, decoding only if needed;
@@ -2199,7 +2298,6 @@ static void DecodeBlock32IntoSlot(int b32, const uint8_t* src[16], const uint16_
     }
     for (int r = 0; r < 4; ++r) MarkAtlasRowDirty(base / ATLAS_TILES_PER_ROW + r);
     sAnyDirtySlot = true;
-    ++sDecodeSeq;
 }
 
 /* Atlas 32x32 block index for this 4x4 tilemap group; -1 when the region is
@@ -2307,33 +2405,13 @@ static inline int AllocDrawItemSubtex(const Tex3DS_SubTexture* subtex, int sortK
     item->img.subtex = subtex;
     item->sortKey = sortKey;
     item->screenFixed = false;
+    item->gpuFx = sPushFx;
 
     sBucketNext[idx] = -1;
     if (sBucketHead[sortKey] < 0) sBucketHead[sortKey] = idx;
     else sBucketNext[sBucketTail[sortKey]] = idx;
     sBucketTail[sortKey] = idx;
     return idx;
-}
-
-/* Pushes one quad that samples something other than the atlas -- a cached
- * layer's render target. */
-static void PushLayerQuad(const C3D_Tex* tex, const Tex3DS_SubTexture* subtex, int sortKey,
-                          int depthTier, bool blendAlpha, WindowVis winVis) {
-    int idx = AllocDrawItemSubtex(subtex, sortKey);
-    if (idx < 0) return;
-    DrawItem* item = &sDrawItems[idx];
-    item->img.tex = (C3D_Tex*)tex;
-    item->x = 0.0f;
-    item->y = 0.0f;
-    item->w = 240.0f;
-    item->h = 160.0f;
-    item->angle = 0.0f;
-    item->depthTier = (int8_t)depthTier;
-    item->blendAlpha = blendAlpha;
-    item->affine = false;
-    item->winVis = winVis;
-    item->isHud = false;
-    item->plainEnv = true;
 }
 
 static inline int AllocDrawItem(int slot, int sortKey) {
@@ -2345,26 +2423,6 @@ static inline int AllocDrawItem(int slot, int sortKey) {
 static inline void PushItemSubtex(const Tex3DS_SubTexture* subtex, float x, float y, float w, float h,
                                   int sortKey, int depthTier, bool blendAlpha, WindowVis winVis,
                                   bool isHud) {
-    if (sCaptureLayer >= 0) {
-        /* Composing a cached layer: the quad belongs in that layer's target,
-         * at the tile grid's own coordinates, not on screen. Everything left
-         * of or above the target is off the sampled rectangle by
-         * construction (see LAYER_TILES_X/Y) and is simply not needed. */
-        const float tx = x + sCaptureOffX;
-        const float ty = y + sCaptureOffY;
-        if (tx < 0.0f || ty < 0.0f) return;
-        int n = sLayerTileCount[sCaptureLayer];
-        if (n >= LAYER_MAX_TILES) return;
-        LayerTile* lt = &sLayerTiles[sCaptureLayer][n];
-        lt->img.tex = &sAtlasTexture;
-        lt->img.subtex = subtex;
-        lt->x = tx;
-        lt->y = ty;
-        lt->w = w;
-        lt->h = h;
-        sLayerTileCount[sCaptureLayer] = n + 1;
-        return;
-    }
     int idx = AllocDrawItemSubtex(subtex, sortKey);
     if (idx < 0) return;
     DrawItem* item = &sDrawItems[idx];
@@ -2629,9 +2687,11 @@ static int WideLayerShift(int bgIndex, int shift, bool vertical) {
 
 /* One layer-map cell for this frame: redraw it (queue an op) if it holds a
  * different entry, or the layer state, its tile's pixels or its palette bank
- * changed since it was drawn. `corrected` cells are kept transparent. */
+ * changed since it was drawn. `corrected` cells are kept transparent in the
+ * map, but their atlas slot is kept current all the same: the per-tile pass
+ * that draws them takes it from the cell instead of looking the tile up. */
 static inline void LayerMapCheckCell(int bg, LayerMapPass* pass, int cellCol, int cellRow, uint16_t entry,
-                                     uint32_t charBase, bool bpp8, BrightAdjust brightAdjust, bool corrected) {
+                                     uint32_t charBase, bool bpp8, bool corrected) {
     LayerMapCell* cell = &sLmCells[bg][cellRow][cellCol];
     const uint16_t flags = corrected ? LM_CELL_CORRECTED : 0;
     const uint32_t byteOffset = charBase + (uint32_t)(entry & 0x3FFu) * (bpp8 ? 64u : 32u);
@@ -2640,11 +2700,13 @@ static inline void LayerMapCheckCell(int bg, LayerMapPass* pass, int cellCol, in
      * palette animation usually steps a couple of entries of one bank). */
     const bool stale =
         sLmStateStamp[bg] > cell->stamp || cell->entry != entry || cell->flags != flags ||
-        (!corrected && ((bpp8 ? sLmBankStamp[bg][16] > cell->stamp
-                              : BgColorsChangedSince(bank, cell->used, cell->stamp)) ||
-                        TileChangeStamp(byteOffset, bpp8) > cell->stamp));
+        (bpp8 ? sLmBankStamp[bg][16] > cell->stamp : BgColorsChangedSince(bank, cell->used, cell->stamp)) ||
+        TileChangeStamp(byteOffset, bpp8) > cell->stamp;
     if (!stale) return;
-    if (pass->ops >= LM_MAX_OPS) {
+    /* A corrected cell only needs its map texels cleared when they are not
+     * already (it was not corrected before, or was never drawn). */
+    const bool needsOp = !corrected || cell->flags != LM_CELL_CORRECTED || cell->stamp == 0;
+    if (needsOp && pass->ops >= LM_MAX_OPS) {
         /* Op list full (cannot happen with one check per visible cell, but a
          * cell checked twice in a frame must not run past the arrays): leave
          * the cell stale so the next frame redraws it. */
@@ -2652,7 +2714,7 @@ static inline void LayerMapCheckCell(int bg, LayerMapPass* pass, int cellCol, in
         return;
     }
     int slot = LM_TRANSPARENT_SLOT;
-    if (!corrected && TileHasOpaquePixel(byteOffset, bpp8)) {
+    if (TileHasOpaquePixel(byteOffset, bpp8)) {
         /* Same tile as before under the same layer state (a palette step, an
          * animation frame): the slot it came from still holds that key, so
          * refresh it in place rather than looking it up again -- a palette
@@ -2664,23 +2726,21 @@ static inline void LayerMapCheckCell(int bg, LayerMapPass* pass, int cellCol, in
             uint32_t* fresh = &sSlotFreshThisFrame[slot >> 5];
             if (!((*fresh >> (slot & 31)) & 1u)) {
                 const uint32_t palHash = bpp8 ? sBgPalFullHash : sBgPalBankHash[bank];
-                const uint8_t curEvy = (brightAdjust != BRIGHT_ADJUST_NONE) ? (uint8_t)sBldEvy : 0;
                 /* The slot is stale for the palette only if a colour it uses
                  * changed since it was decoded; if not, its pixels are still
                  * exact and its hash is simply brought up to date. */
                 const bool palStale = bpp8 ? sCachePalHash[slot] != palHash
                                            : BgColorsChangedSince(bank, sCacheUsedMask[slot], sCacheDecodeStamp[slot]);
-                if (sCacheDecodeStamp[slot] < TileChangeStamp(byteOffset, bpp8) || palStale ||
-                    sCacheEvy[slot] != curEvy)
-                    DecodeTileIntoSlot(slot, gVram + byteOffset, bpp8, (const uint16_t*)gBgPltt, bank,
-                                       (entry & 0x0400u) != 0, (entry & 0x0800u) != 0, brightAdjust, palHash);
+                if (sCacheDecodeStamp[slot] < TileChangeStamp(byteOffset, bpp8) || palStale)
+                    DecodeTileIntoSlot(slot, gVram + byteOffset, bpp8, sBgPalEff, bank, (entry & 0x0400u) != 0,
+                                       (entry & 0x0800u) != 0, BRIGHT_ADJUST_NONE, palHash);
                 else
                     sCachePalHash[slot] = palHash;
                 *fresh |= 1u << (slot & 31);
             }
         } else {
-            slot = GetOrDecodeTileSlot(byteOffset, bpp8, (const uint16_t*)gBgPltt, bank, (entry & 0x0400u) != 0,
-                                       (entry & 0x0800u) != 0, false, brightAdjust);
+            slot = GetOrDecodeTileSlot(byteOffset, bpp8, sBgPalEff, bank, (entry & 0x0400u) != 0,
+                                       (entry & 0x0800u) != 0, false, BRIGHT_ADJUST_NONE);
             if (slot >= 0) sSlotFreshThisFrame[slot >> 5] |= 1u << (slot & 31);
         }
     }
@@ -2690,8 +2750,9 @@ static inline void LayerMapCheckCell(int bg, LayerMapPass* pass, int cellCol, in
     cell->slot = (int16_t)slot;
     cell->slotGen = sAtlasGen;
     cell->used = (slot == LM_TRANSPARENT_SLOT) ? 0u : sCacheUsedMask[slot];
+    if (!needsOp) return;
     sLmOps[bg][pass->ops] = (uint16_t)(cellRow * LM_COLS + cellCol);
-    sLmOpSlot[bg][pass->ops] = (int16_t)slot;
+    sLmOpSlot[bg][pass->ops] = (int16_t)(corrected ? LM_TRANSPARENT_SLOT : slot);
     ++pass->ops;
 }
 
@@ -2723,15 +2784,18 @@ static void CollectBgLayer(int bgIndex) {
     int scrollX = (int)((uint16_t)(gIoMem[hofsAddr] | (gIoMem[hofsAddr + 1] << 8)) & 0x1FFu);
     int scrollY = (int)((uint16_t)(gIoMem[vofsAddr] | (gIoMem[vofsAddr + 1] << 8)) & 0x1FFu);
 
-    const uint16_t* pal = (const uint16_t*)gBgPltt;
+    const uint16_t* pal = sBgPalEff;
     const int bytesPerTile = bpp8 ? 64 : 32;
 
     /* BLDCNT: is this BG a first-target layer for the active effect? Only
      * matters when an effect is active at all (sBldEffect != 0). */
     bool isFirstTarget = sBldEffect != 0 && BldIsFirstTarget(sIoBldcnt, bgIndex);
-    BrightAdjust brightAdjust = BRIGHT_ADJUST_NONE;
-    if (isFirstTarget && sBldEffect == 2) brightAdjust = BRIGHT_ADJUST_BRIGHTEN;
-    else if (isFirstTarget && sBldEffect == 3) brightAdjust = BRIGHT_ADJUST_DARKEN;
+    /* Brighten / darken is applied when the layer is drawn, not decoded into
+     * its tiles (see ConfigureFxTextureEnv): every item this layer pushes
+     * carries it. */
+    const uint8_t layerFx = (isFirstTarget && (sBldEffect == 2 || sBldEffect == 3)) ? ITEM_FX_BRIGHT : 0;
+    const BrightAdjust brightAdjust = BRIGHT_ADJUST_NONE;
+    sPushFx = layerFx;
     bool blendAlpha = isFirstTarget && sBldEffect == 1;
     int startTileX = scrollX / 8;
     int startTileY = scrollY / 8;
@@ -2759,13 +2823,6 @@ static void CollectBgLayer(int bgIndex) {
     const int covX = -txMin, covY = -tyMin;
     const WideBgSource wideSrc = sWideOn ? WideBgSourceFor(bgIndex, scrollX, scrollY) : (WideBgSource){ 0 };
 
-    /* ---- Step B: is this layer cacheable, and is its cache still good? ---
-     * Declined when something resolves visibility or placement per TILE,
-     * because a cached layer is one quad and cannot carry per-tile
-     * decisions: OBJWIN masks tiles individually, and a layer-fix list moves
-     * single tiles to another plane and draw order. Window (WIN0/WIN1)
-     * visibility is per-layer and resolved by the scissor at draw time, so
-     * it is fine. */
     /* A room with a visible item tank forces the per-tile path on BG1 (the
      * clipdata layer): the tank is an animated tile with no block-map entry,
      * so it can only be recognised and lifted to Samus's plane one tile at a
@@ -2781,62 +2838,6 @@ static void CollectBgLayer(int bgIndex) {
      * footprint is deliberately tiny (door span, no side growth, a row or two
      * above/below) so only actual doorway tiles are caught, not open wall. */
     const bool roomHasDoorDepth = sDoorDepthOnScreen && bgIndex < 3;
-    /* Declined while the BG3 haze pass runs: it already drives a
-     * render-target compose + C3D_FrameSplit this frame, and stacking the
-     * layer cache's own target compose and split on top is the one
-     * combination step B was never exercised in -- it corrupts the frame in
-     * lava/heat rooms (reported from hardware). Also declined for the WIDE
-     * view: the cached target is a fixed 240x160 window. Matches the OBJWIN / layer-
-     * fix exclusions above: whenever another feature is already compositing
-     * per-frame, the cache stands down. */
-    const bool layerCacheable =
-        sLayerCacheEnabled && sLayerRtReady[bgIndex] && !sObjWindowActive && !sHazeActive && !sWideOn &&
-        PortLayerFix_ActiveCount() == 0 && !roomHasTankOnThisBg && !roomHasDoorDepth;
-    /* Not cacheable this frame -> its composed target is now stale and its
-     * sLayerKey frozen. Clear the flag so if the layer becomes cacheable
-     * again it is forced to re-compose instead of matching the old key and
-     * drawing a target from another room / scroll position. */
-    if (!layerCacheable) sLayerComposed[bgIndex] = false;
-    if (layerCacheable) {
-        /* Hash the tilemap window this target covers, so a room redrawing
-         * its map invalidates even when the origin has not moved. */
-        uint32_t mapHash = 2166136261u;
-        for (int ty = 0; ty < LAYER_TILES_Y; ++ty) {
-            const int tileRow = (startTileY + ty) & (mapHeightTiles - 1);
-            const int sby = tileRow / 32, lry = tileRow % 32;
-            for (int tx = 0; tx < LAYER_TILES_X; ++tx) {
-                const int tileCol = (startTileX + tx) & (mapWidthTiles - 1);
-                const uint32_t a = screenBase + (uint32_t)(tileCol / 32 + sby * blocksPerRow) * 0x800u +
-                                   (uint32_t)(lry * 32 + tileCol % 32) * 2u;
-                mapHash = (mapHash ^ gVram[a]) * 16777619u;
-                mapHash = (mapHash ^ gVram[a + 1]) * 16777619u;
-            }
-        }
-        const LayerKey key = {
-            startTileX, startTileY, screenBase, charBase, mapHash,
-            sBgPalFullHash,
-            (uint8_t)((brightAdjust != BRIGHT_ADJUST_NONE) ? sBldEvy : 0),
-            (uint8_t)brightAdjust, (uint8_t)bpp8,
-        };
-        const LayerKey* prev = &sLayerKey[bgIndex];
-        sLayerSameKey = sLayerComposed[bgIndex] &&
-                        prev->originTileX == key.originTileX && prev->originTileY == key.originTileY &&
-                        prev->screenBase == key.screenBase && prev->charBase == key.charBase &&
-                        prev->mapHash == key.mapHash && prev->palHash == key.palHash &&
-                        prev->evy == key.evy && prev->brightAdjust == key.brightAdjust &&
-                        prev->bpp8 == key.bpp8;
-        sLayerKey[bgIndex] = key;
-        sLayerTileCount[bgIndex] = 0;
-        sLayerDecodeSeqAtEntry = sDecodeSeq;
-        /* Capture the tiles regardless: they still have to go through the
-         * atlas staleness checks, which is what catches an animated tile
-         * whose bytes changed without the tilemap moving. Whether the
-         * offscreen compose is skipped is decided after collection, from
-         * whether any slot was actually rewritten. */
-        sCaptureLayer = bgIndex;
-        sCaptureOffX = (float)fineX;
-        sCaptureOffY = (float)fineY;
-    }
 
     /* World tile shown at screen (0,0), de-wrapped from the 9-bit BG scroll
      * via the camera (PortPpuMzm_ScreenOrigin). The per-block layer
@@ -2960,7 +2961,15 @@ static void CollectBgLayer(int bgIndex) {
      * needed when it runs. */
     const bool useLayerMap = sLayerCacheEnabled && sLmReady[bgIndex] && !sObjWindowActive;
     if (useLayerMap) {
-        LayerMapPass pass = LayerMapBegin(bgIndex, charBase, bpp8, brightAdjust, sBldEvy);
+        /* Cells hold the layer without brighten/darken or a palette fade: the
+         * quad applies them (ConfigureFxTextureEnv), so a fade does not make
+         * the whole map stale every frame. During a palette fade the banks
+         * it does not cover keep their own colours, which the quad must not
+         * fade: their cells are left out like corrected ones and drawn by
+         * the per-tile pass. */
+        LayerMapPass pass = LayerMapBegin(bgIndex, charBase, bpp8);
+        const uint16_t fadeExcl = sPalFadeOn ? (uint16_t)~sPalFadeBanks : 0u;
+#define LM_FADE_EXCLUDED(E) (((fadeExcl >> ((E) >> 12)) & 1u) != 0u)
         const uint32_t now = pass.stampNow;
 
         /* The visible tile rect: the positions the old per-tile pass drew. */
@@ -2993,7 +3002,7 @@ static void CollectBgLayer(int bgIndex) {
                                         : (uint16_t)(gVram[mapAddr_] | (gVram[mapAddr_ + 1] << 8)); \
             LayerMapCheckCell(bgIndex, &pass, (startTileX + tx_) & (LM_COLS - 1),                   \
                               (startTileY + ty_) & (LM_ROWS - 1), entry_, charBase, bpp8,           \
-                              brightAdjust, TILE_CORR_MASK(tx_, ty_) != 0u);                         \
+                              TILE_CORR_MASK(tx_, ty_) != 0u || LM_FADE_EXCLUDED(entry_));           \
         } while (0)
 
         /* A full look is needed when anything that maps positions to entries
@@ -3008,6 +3017,7 @@ static void CollectBgLayer(int bgIndex) {
         LM_KEY(roomHasBlockCorrections); LM_KEY(roomHasTankOnThisBg ? PortPpuMzm_RoomTankCount() : 0);
         LM_KEY(roomHasDoorDepth); LM_KEY(PortLayerFix_ActiveCount());
         LM_KEY(fixOriginTileX - startTileX); LM_KEY(fixOriginTileY - startTileY);
+        LM_KEY(fadeExcl);
 #undef LM_KEY
         LayerMapScan* sc = &sLmScan[bgIndex];
         int dX = ((startTileX - sc->startTileX) + 32) & 63; dX -= 32;
@@ -3079,13 +3089,15 @@ static void CollectBgLayer(int bgIndex) {
                     for (int tx = vTxLo; tx <= vTxHi; ++tx) {
                         const int cellCol = (startTileX + tx) & (LM_COLS - 1);
                         const LayerMapCell* cell = &sLmCells[bgIndex][cellRow][cellCol];
-                        if (cell->flags & LM_CELL_CORRECTED) continue;
                         const unsigned t = cell->entry & 0x3FFu;
                         const int bank = bpp8 ? 16 : (cell->entry >> 12) & 0x0F;
+                        /* Corrected cells too: their slot feeds the per-tile
+                         * pass. Their correction cannot have changed without
+                         * the scan key changing, so it is the cell's own. */
                         if ((anyTile && ((changedTile[t >> 5] >> (t & 31)) & 1u)) ||
                             sLmBankStamp[bgIndex][bank] == now)
                             LayerMapCheckCell(bgIndex, &pass, cellCol, cellRow, cell->entry, charBase, bpp8,
-                                              brightAdjust, false);
+                                              (cell->flags & LM_CELL_CORRECTED) != 0);
                     }
                 }
             }
@@ -3101,6 +3113,7 @@ static void CollectBgLayer(int bgIndex) {
             }
         }
 #undef LM_PROCESS
+#undef LM_FADE_EXCLUDED
         sc->valid = true;
         sc->frame = now;
         sc->key = key;
@@ -3129,6 +3142,17 @@ static void CollectBgLayer(int bgIndex) {
             for (int ty = vTyLo; ty <= vTyHi; ++ty)
                 for (int tx = vTxLo; tx <= vTxHi; ++tx)
                     if (TILE_CORR_MASK(tx, ty) != 0u) covered[ty + covY] &= ~(1ull << (tx + covX));
+        }
+        if (fadeExcl) {
+            /* The cells left out for a bank the palette fade does not cover
+             * (every visible cell was checked under this fade: it is in the
+             * scan key). Only during the fade. */
+            for (int ty = vTyLo; ty <= vTyHi; ++ty) {
+                const LayerMapCell* row = sLmCells[bgIndex][(startTileY + ty) & (LM_ROWS - 1)];
+                for (int tx = vTxLo; tx <= vTxHi; ++tx)
+                    if (row[(startTileX + tx) & (LM_COLS - 1)].flags & LM_CELL_CORRECTED)
+                        covered[ty + covY] &= ~(1ull << (tx + covX));
+            }
         }
         const int ops = pass.ops;
         sLmOpCount[bgIndex] = ops;
@@ -3163,6 +3187,7 @@ static void CollectBgLayer(int bgIndex) {
             item->winVis = rectWinVis;
             item->isHud = false;
             item->plainEnv = true;
+            item->gpuFx = (uint8_t)(layerFx | (sPalFadeOn ? ITEM_FX_PALFADE : 0));
         }
     }
 
@@ -3337,7 +3362,19 @@ static void CollectBgLayer(int bgIndex) {
             if (!TileHasOpaquePixel(byteOffset, bpp8)) continue;
             if (sObjWindowActive && !ObjWinItemVisible(objWinVis, drawX, drawY)) continue;
 
-            int slot = GetOrDecodeTileSlot(byteOffset, bpp8, pal, palBank, hflip, vflip, false, brightAdjust);
+            /* With the layer map on, the positions left here are cells it
+             * keeps current (corrected ones included, see LayerMapCheckCell):
+             * their slot is already known. The lookup is the fallback. */
+            int slot = -1;
+            if (useLayerMap) {
+                const LayerMapCell* cell =
+                    &sLmCells[bgIndex][(startTileY + ty) & (LM_ROWS - 1)][(startTileX + tx) & (LM_COLS - 1)];
+                if (cell->entry == entry && cell->stamp != 0 && cell->slotGen == sAtlasGen && cell->slot >= 0) {
+                    if (cell->slot == LM_TRANSPARENT_SLOT) continue;
+                    slot = cell->slot;
+                }
+            }
+            if (slot < 0) slot = GetOrDecodeTileSlot(byteOffset, bpp8, pal, palBank, hflip, vflip, false, brightAdjust);
 
             /* GBA BGCNT priority is 0=highest (drawn on top), 3=lowest
              * (drawn furthest back) -- the inverse of sortKey's own
@@ -3423,54 +3460,13 @@ static void CollectBgLayer(int bgIndex) {
             if (corr & CORR_DOOR) {
                 depthTier = PORT_TIER_BG_PLAY;
             }
+            /* A bank the palette fade covers was decoded from the source
+             * copy (sBgPalEff), so the fade is applied at draw time. */
+            sPushFx = (uint8_t)(layerFx | ((sPalFadeOn && ((sPalFadeBanks >> palBank) & 1u)) ? ITEM_FX_PALFADE : 0));
             PushItem(slot, drawX, drawY, sortKey, depthTier, blendAlpha, rectWinVis, false);
         }
     }
     PlatformGpu3DS_PerfPhaseAdd(PERF_PHASE_BG_TILES, svcGetSystemTick() - tPass);
-
-    if (sCaptureLayer == bgIndex) {
-        sCaptureLayer = -1;
-        /* Compose again unless nothing moved at all: same key AND no atlas
-         * slot rewritten while collecting this layer (an animated tile, a
-         * palette phase, an evy step). */
-        sLayerNeedsCompose[bgIndex] =
-            !(sLayerSameKey && sDecodeSeq == sLayerDecodeSeqAtEntry);
-#ifdef PORT_DEBUG_TOOLS_ACTIVE
-        sLCdiag[bgIndex] = (LayerCacheDiag){
-            1, sLayerSameKey, sLayerNeedsCompose[bgIndex], sLayerTileCount[bgIndex],
-            startTileX, startTileY, sLayerKey[bgIndex].mapHash,
-            sDecodeSeq - sLayerDecodeSeqAtEntry
-        };
-#endif
-
-        /* The sampled rectangle carries the fine scroll. Same full-span,
-         * eighth-of-a-texel-shifted convention as the atlas and the
-         * presentation quad -- see ATLAS_UV_TIE_SHIFT. */
-        const float inv = 1.0f / (float)LAYER_RT_DIM;
-        const float sh = ATLAS_UV_TIE_SHIFT;
-        sLayerSubtex[bgIndex] = (Tex3DS_SubTexture){
-            .width = 240, .height = 160,
-            .left = ((float)fineX + sh) * inv,
-            .top = 1.0f - ((float)fineY + sh) * inv,
-            .right = ((float)(fineX + 240) + sh) * inv,
-            .bottom = 1.0f - ((float)(fineY + 160) + sh) * inv,
-        };
-        /* Nothing collected: this layer is fully transparent over the visible
-         * window right now. The compose loop skips a zero-tile layer (there
-         * is nothing to draw into the target), so the target still holds
-         * WHATEVER WAS COMPOSED INTO IT LAST -- the file-select screen, the
-         * intro starfield, the previous room. Pushing the quad anyway
-         * plastered that over the frame. Draw nothing, and drop the composed
-         * flag so no later frame trusts those pixels either. */
-        if (sLayerTileCount[bgIndex] == 0) {
-            sLayerComposed[bgIndex] = false;
-            sLayerNeedsCompose[bgIndex] = false;
-            return;
-        }
-        PushLayerQuad(&sLayerTex[bgIndex], &sLayerSubtex[bgIndex],
-                      (3 - priority) * 10 + (3 - bgIndex),
-                      PortStereoDepth_BgTier(&sDepthState, bgIndex), blendAlpha, rectWinVis);
-    }
 }
 
 /* Issue #29: gather BG3's visible tiles into sHazeTiles[] for the offscreen
@@ -3524,7 +3520,7 @@ static void CollectHazeBg3(void) {
     int scrollX = (int)(sHazeBakeHofs & 0x1FF);
     int scrollY = (int)((uint16_t)(gIoMem[0x1E] | (gIoMem[0x1F] << 8)) & 0x1FFu);
 
-    const uint16_t *pal = (const uint16_t *)gBgPltt;
+    const uint16_t *pal = sBgPalEff;
     const int bytesPerTile = bpp8 ? 64 : 32;
     int startTileX = scrollX / 8;
     int startTileY = scrollY / 8;
@@ -3536,7 +3532,7 @@ static void CollectHazeBg3(void) {
      * of lag. The strips reach HAZE_MARGIN past the view on each side. */
     sHazeFromMap = sLayerCacheEnabled && sLmReady[bgIndex] && sHazeMode == HAZE_RIPPLE_RT && sHazeRippleReady;
     if (sHazeFromMap) {
-        LayerMapPass pass = LayerMapBegin(bgIndex, charBase, bpp8, BRIGHT_ADJUST_NONE, 0);
+        LayerMapPass pass = LayerMapBegin(bgIndex, charBase, bpp8);
         const uint32_t now = pass.stampNow;
         const int xLo = -eL - HAZE_MARGIN, xHi = 240 + eR + HAZE_MARGIN; /* layer px, [lo, hi) */
         const int yLo = -eT, yHi = 160 + eB;
@@ -3552,7 +3548,7 @@ static void CollectHazeBg3(void) {
             LayerMapCheckCell(bgIndex, &pass, (startTileX + (TX)) & (LM_COLS - 1),              \
                               (startTileY + (TY)) & (LM_ROWS - 1),                              \
                               (uint16_t)(gVram[mapAddr_] | (gVram[mapAddr_ + 1] << 8)),         \
-                              charBase, bpp8, BRIGHT_ADJUST_NONE, false);                       \
+                              charBase, bpp8, false);                                           \
         } while (0)
         /* Same incremental look as CollectBgLayer's (see there): BG3 here is
          * always plain VRAM, no WIDE block map and no corrections. */
@@ -3621,7 +3617,7 @@ static void CollectHazeBg3(void) {
                             const int bank = bpp8 ? 16 : (cell->entry >> 12) & 0x0F;
                             if (((changedTile[t >> 5] >> (t & 31)) & 1u) || sLmBankStamp[bgIndex][bank] == now)
                                 LayerMapCheckCell(bgIndex, &pass, cellCol, cellRow, cell->entry, charBase, bpp8,
-                                                  BRIGHT_ADJUST_NONE, false);
+                                                  false);
                         }
                     }
                 }
@@ -3770,12 +3766,21 @@ static void HazeRippleFromMap(int buf) {
     C2D_Flush();
 }
 
+/* Texenv for putting the rippled BG3 on screen: plain, or with the frame's
+ * brighten/darken when BG3 is its first target. The BG3 bake and the layer
+ * map both hold BG3 unfaded, so this is the only place a fade reaches it
+ * (before, a haze room's BG3 stayed at full brightness through one). */
+static void ConfigureHazeBlitTextureEnv(void) {
+    if ((sBldEffect == 2 || sBldEffect == 3) && BldIsFirstTarget(sIoBldcnt, 3)) ConfigureFxTextureEnv(ITEM_FX_BRIGHT);
+    else ConfigurePlainTextureEnv();
+}
+
 /* Mode 3's per-eye half: one quad. Same shifted-full-span UV convention as
  * everything else that samples a target (see ATLAS_UV_TIE_SHIFT). baseX/Y is
  * the GBA frame's top-left; a WIDE bake reaches its margin past it. */
 static void HazeBlitRippled(int buf, float baseX, float baseY, float scaleX, float scaleY) {
     C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
-    ConfigurePlainTextureEnv();
+    ConfigureHazeBlitTextureEnv();
     const float width = 240.0f + 2.0f * (float)sHazeBakedMarginX[buf];
     const float height = (float)sHazeBakedRows[buf];
     const float sh = ATLAS_UV_TIE_SHIFT;
@@ -3792,7 +3797,7 @@ static void HazeBlitRippled(int buf, float baseX, float baseY, float scaleX, flo
                            width * scaleX, height * scaleY },
                          { 0.0f, 0.0f }, 0.5f, 0.0f };
     C2D_DrawImage(img, &p, NULL);
-    ConfigurePlainTextureEnv(); /* citro2d re-inits on a scene's first draw */
+    ConfigureHazeBlitTextureEnv(); /* citro2d re-inits on a scene's first draw */
     C2D_Flush();
     ConfigureAtlasTextureEnv(); /* restore for the BG0-2 / OBJ pass that follows */
 }
@@ -3805,7 +3810,7 @@ static void HazeBlitStrips(int buf, float baseX, float baseY, float scaleX, floa
     baseY -= (float)sHazeBakedMarginY[buf] * scaleY;
 
     C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
-    ConfigurePlainTextureEnv();
+    ConfigureHazeBlitTextureEnv();
 
     C2D_Image img = { &sHazeTex[buf], &sHazeStripSubtex };
     bool reasserted = false;
@@ -3838,7 +3843,7 @@ static void HazeBlitStrips(int buf, float baseX, float baseY, float scaleX, floa
         /* citro2d re-inits the texenv on the first C2D_DrawImage of a scene
          * (see the sDrawOrder loop's reassertedTexEnv workaround) -- undo
          * that stomp so the rest of the strips keep the plain env. */
-        if (!reasserted) { ConfigurePlainTextureEnv(); reasserted = true; }
+        if (!reasserted) { ConfigureHazeBlitTextureEnv(); reasserted = true; }
     }
     C2D_Flush();
     ConfigureAtlasTextureEnv(); /* restore for the BG0-2 / OBJ pass that follows */
@@ -4636,7 +4641,6 @@ void Port_GpuRenderer_CollectFrame(void) {
     if (!sInitialized) return;
     u64 tStart = svcGetSystemTick();
     VramDiffBeginFrame();
-    BgPaletteStampsBeginFrame();
     memset(sSlotFreshThisFrame, 0, sizeof(sSlotFreshThisFrame));
     u64 tPhase = svcGetSystemTick();
     PlatformGpu3DS_PerfPhaseAdd(PERF_PHASE_VRAM_DIFF, tPhase - tStart);
@@ -4671,7 +4675,6 @@ void Port_GpuRenderer_CollectFrame(void) {
     }
     sDrawItemCount = 0;
     sLastLayerComposes = 0;
-    for (int li = 0; li < 4; ++li) sLayerNeedsCompose[li] = false;
     /* Block cache housekeeping for the frame about to be collected -- must
      * run before any CollectBgLayer call, and never mid-frame (see
      * BlockCacheBeginFrame). */
@@ -4685,12 +4688,9 @@ void Port_GpuRenderer_CollectFrame(void) {
      * per-reference memcmp of up to 512 bytes, a real cost in GPUTIME
      * collectMs on hardware). gBgPltt/gObjPltt don't change mid-frame, so
      * every reference this frame can safely reuse these. */
-    for (int b = 0; b < 16; ++b) {
-        sBgPalBankHash[b] = HashBytes(gBgPltt + b * 32, 32);
-        sObjPalBankHash[b] = HashBytes(gObjPltt + b * 32, 32);
-    }
-    sBgPalFullHash = HashBytes(gBgPltt, 512);
+    for (int b = 0; b < 16; ++b) sObjPalBankHash[b] = HashBytes(gObjPltt + b * 32, 32);
     sObjPalFullHash = HashBytes(gObjPltt, 512);
+    /* The BG ones come from the effective palette, further down. */
 
     uint16_t dispcnt = (uint16_t)(gIoMem[0] | (gIoMem[1] << 8));
     bool obj1D = (dispcnt & (1u << 6)) != 0;
@@ -4839,6 +4839,25 @@ void Port_GpuRenderer_CollectFrame(void) {
     sExtT = sWideMarginY - sWideView.shiftY;
     sExtB = sWideMarginY + sWideView.shiftY;
 
+    /* The BG palette the tiles are decoded from (see PalFadeBeginFrame), then
+     * its change stamps and hashes. A palette fade goes to the GPU only when
+     * every BG layer is drawn through a layer map and the per-tile pass,
+     * which are what apply it: not with the layer maps off (block passes),
+     * an 8bpp text layer (one palette for the whole layer), the affine BG2
+     * or the BG3 haze pass. */
+    {
+        bool fadeAllowed = sLayerCacheEnabled && !sObjWindowActive && !sHazeActive && !sAffineBg2Active;
+        for (int bg = 0; bg < 4 && fadeAllowed; ++bg) {
+            if (!(dispcnt & (1u << (8 + bg)))) continue;
+            const uint16_t cnt = (uint16_t)(gIoMem[0x08 + bg * 2] | (gIoMem[0x09 + bg * 2] << 8));
+            if (!sLmReady[bg] || (cnt & 0x80u)) fadeAllowed = false;
+        }
+        PalFadeBeginFrame(fadeAllowed);
+    }
+    BgPaletteStampsBeginFrame();
+    for (int b = 0; b < 16; ++b) sBgPalBankHash[b] = HashBytes((const uint8_t*)sBgPalEff + b * 32, 32);
+    sBgPalFullHash = HashBytes((const uint8_t*)sBgPalEff, 512);
+
     {
         const u64 now = svcGetSystemTick();
         PlatformGpu3DS_PerfPhaseAdd(PERF_PHASE_COLLECT_REST, now - tPhase);
@@ -4847,20 +4866,7 @@ void Port_GpuRenderer_CollectFrame(void) {
     sHazeFromMap = false;
     if (sHazeActive) CollectHazeBg3();
 
-    /* Any layer NOT collected as a cached layer this frame has a stale
-     * composed target and a frozen sLayerKey. Drop sLayerComposed for all
-     * four up front; CollectBgLayer sets it true again only for the ones it
-     * actually composes. Without this, a layer that stopped being cacheable
-     * (near a doorway, OBJWIN, a room edge) and later became cacheable again
-     * could match its OLD key and draw the target from another room -- seen
-     * as sprites from another area scrolling a corridor. */
-    for (int bg = 0; bg < 4; ++bg) {
-        bool disabled = !(dispcnt & (1u << (8 + bg)));
-        bool hazeBg3 = sHazeActive && bg == 3;
-        if (disabled || hazeBg3) sLayerComposed[bg] = false;
-    }
 #ifdef PORT_DEBUG_TOOLS_ACTIVE
-    for (int bg = 0; bg < 4; ++bg) sLCdiag[bg] = (LayerCacheDiag){ 0 };
     sDiagAffineDrawn[0] = sDiagAffineDrawn[1] = 0;
     sDiagBlendDrawn[0] = sDiagBlendDrawn[1] = 0;
     sDiagSemiTransColl = sDiagAffineColl = sDiagMosaicColl = 0;
@@ -4876,6 +4882,7 @@ void Port_GpuRenderer_CollectFrame(void) {
         PlatformGpu3DS_PerfPhaseAdd(PERF_PHASE_BG, now - tPhase); /* the haze BG3 */
         tPhase = now;
     }
+    sPushFx = 0; /* only BG layers set it */
     if (dispcnt & (1u << 12)) {
         for (int i = 127; i >= 0; --i) CollectSprite(i, obj1D);
     }
@@ -4887,12 +4894,14 @@ void Port_GpuRenderer_CollectFrame(void) {
     sCollectOffX = sCollectOffY = 0.0f;
     for (int bg = 3; bg >= 0; --bg) {
         sCollectOffX = sCollectOffY = 0.0f; /* CollectBgLayer sets its own */
+        sPushFx = 0;                         /* likewise */
         if (!(dispcnt & (1u << (8 + bg)))) continue;
         if (sHazeActive && bg == 3) continue; /* drawn via the offscreen strip pass */
         if (sAffineBg2Active && bg == 2) { CollectAffineBg2(); continue; }
         CollectBgLayer(bg);
     }
     sCollectOffX = sCollectOffY = 0.0f; /* sprites, next frame, take no layer offset */
+    sPushFx = 0;
     {
         const u64 now = svcGetSystemTick();
         PlatformGpu3DS_PerfPhaseAdd(PERF_PHASE_BG, now - tPhase);
@@ -4963,13 +4972,9 @@ void Port_GpuRenderer_CollectFrame(void) {
                                           sDiagSemiTransColl, sDiagAffineColl, sDiagMosaicColl,
                                           sDiagSemiTransX, sDiagSemiTransOam);
             }
-            for (int bg = 0; bg < 4 && off < (int)sizeof(msg); ++bg) {
-                const LayerCacheDiag* d = &sLCdiag[bg];
-                off += __builtin_snprintf(msg + off, sizeof(msg) - (size_t)off,
-                                          " LC%d[cap=%d sk=%d cmp=%d til=%d org=%d,%d mh=%08x dec=%u composed=%d]",
-                                          bg, d->captured, d->sameKey, d->needsCompose, d->tiles,
-                                          d->orgX, d->orgY, d->mapHash, d->decodedThisLayer, sLayerComposed[bg]);
-            }
+            for (int bg = 0; bg < 4 && off < (int)sizeof(msg); ++bg)
+                off += __builtin_snprintf(msg + off, sizeof(msg) - (size_t)off, " LM%d[ops=%d]", bg,
+                                          sLmOpCount[bg]);
             Port_DebugLog(msg);
         }
     }
@@ -5183,7 +5188,11 @@ void Port_GpuRenderer_DrawFrame(void) {
     }
     C3D_AlphaTest(true, GPU_GREATER, 0);
     /* Sampled later this frame -- by the eye passes, and by the haze ripple
-     * when BG3 comes from its map -- so split here, once. */
+     * when BG3 comes from its map -- so split here, once: sampling a target
+     * rendered in the same C3D frame without one is a read-after-write race
+     * (one eye came back as 8x8-block garbage on hardware). Double buffering
+     * would avoid the sync but lag the layer a frame behind everything else
+     * every time a cell changes. */
     const bool lmSplit = sLastLayerComposes > 0;
     if (lmSplit) C3D_FrameSplit(0);
 
@@ -5226,55 +5235,6 @@ void Port_GpuRenderer_DrawFrame(void) {
         C3D_FrameSplit(0);
     }
 
-    /* Step B: compose the layers whose cache went stale. Cleared to fully
-     * transparent, not to the backdrop: a cached layer is composited over
-     * whatever is behind it, and the eye pass's alpha test (GREATER 0)
-     * discards the untouched texels, so the layer occludes exactly the
-     * pixels its own tiles cover. Once per frame, not once per eye -- both
-     * eyes sample the same target, which is the point. */
-    for (int li = 0; li < 4; ++li) {
-        if (!sLayerRtReady[li] || !sLayerNeedsCompose[li]) continue;
-        if (sLayerTileCount[li] == 0) {
-            /* Nothing to compose. Belt and braces with CollectBgLayer's own
-             * zero-tile bail: never leave the flag set on a target whose
-             * pixels belong to some earlier screen. */
-            sLayerComposed[li] = false;
-            sLayerNeedsCompose[li] = false;
-            continue;
-        }
-        C2D_SceneBegin(sLayerRT[li]);
-        C3D_RenderTargetClear(sLayerRT[li], C3D_CLEAR_COLOR, 0, 0);
-        C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_ALL);
-        C3D_AlphaTest(true, GPU_GREATER, 0);
-        C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
-        ConfigureAtlasTextureEnv();
-        for (int i = 0; i < sLayerTileCount[li]; ++i) {
-            const LayerTile* lt = &sLayerTiles[li][i];
-            C2D_DrawParams p = { { lt->x, lt->y, lt->w, lt->h }, { 0.0f, 0.0f }, 0.0f, 0.0f };
-            C2D_DrawImage(lt->img, &p, NULL);
-            /* citro2d re-inits the texenv on the first draw of a scene. */
-            if (i == 0) ConfigureAtlasTextureEnv();
-        }
-        C2D_Flush();
-        sLayerComposed[li] = true;
-        sLayerNeedsCompose[li] = false;
-        ++sLastLayerComposes;
-    }
-    if (sLastLayerComposes && !lmSplit) {
-        /* The eye passes SAMPLE what was just rendered, in the same C3D
-         * frame. Without a split that is a render-to-texture read-after-
-         * write race -- the same one the haze pass documents having hit on
-         * hardware (one eye came back as 8x8-block garbage).
-         *
-         * The haze answers it by double buffering and sampling last frame's
-         * result. A layer cache cannot: a layer is re-composed precisely
-         * BECAUSE its content changed, so showing the previous buffer would
-         * lag the layer by a frame every time the scroll crosses a tile --
-         * visible as the layer stuttering against everything else. Splitting
-         * costs a GPU sync, but only on the frames that compose, which the
-         * cache exists to make rare. */
-        C3D_FrameSplit(0);
-    }
 
 #ifdef PORT_DEBUG_TOOLS_ACTIVE
     {
@@ -5349,7 +5309,16 @@ void Port_GpuRenderer_DrawFrame(void) {
          * priority, not always win. */
         int drawCount = 0;
         bool reassertedTexEnv = false;
-        bool plainEnvActive = false;
+        /* Texenv the items are being drawn with: bit 0 plainEnv, bits 1-2
+         * gpuFx. Re-applied after anything citro2d may have reset. */
+        int envActive = 0;
+#define ITEM_ENV_KEY(ITEM) (((ITEM)->plainEnv ? 1 : 0) | ((int)(ITEM)->gpuFx << 1))
+#define APPLY_ITEM_ENV(KEY)                                                         \
+        do {                                                                        \
+            if ((KEY) >> 1) ConfigureFxTextureEnv((KEY) >> 1);                      \
+            else if ((KEY) & 1) ConfigurePlainTextureEnv();                         \
+            else ConfigureAtlasTextureEnv();                                        \
+        } while (0)
         int scissorPasses = sWindowActive ? 2 : 1;
         bool blendModeActive = false;
         /* Items go through the batch (see BatchQuad) unless it could not be
@@ -5412,13 +5381,13 @@ void Port_GpuRenderer_DrawFrame(void) {
                  * any: what it had was per-tile rounding noise that read as
                  * shimmer. */
                 float eyeOffset = floorf(eyeSign * slider3d * PortStereoDepth_TierPx(item->depthTier) + 0.5f);
-                /* A cached layer's quad samples a render target, whose
-                 * texels need no unswizzle; the atlas does. */
-                if (item->plainEnv != plainEnvActive) {
+                /* Render target or atlas, and the fades applied at draw
+                 * time (see ConfigureFxTextureEnv). */
+                const int envKey = ITEM_ENV_KEY(item);
+                if (envKey != envActive) {
                     FLUSH_ITEMS();
-                    if (item->plainEnv) ConfigurePlainTextureEnv();
-                    else ConfigureAtlasTextureEnv();
-                    plainEnvActive = item->plainEnv;
+                    APPLY_ITEM_ENV(envKey);
+                    envActive = envKey;
                     reassertedTexEnv = true;
                 }
                 C2D_DrawParams params = BuildDrawParams(item,
@@ -5430,7 +5399,7 @@ void Port_GpuRenderer_DrawFrame(void) {
                     if (batched) { BatchFlush(); C2D_Prepare(); C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_ALL); }
                     C2D_DrawImage(item->img, &params, NULL);
                     C2D_Flush();
-                    ConfigureAtlasTextureEnv();
+                    APPLY_ITEM_ENV(envActive);
                     if (batched) BatchBegin();
                 }
                 ++drawCount;
@@ -5447,17 +5416,19 @@ void Port_GpuRenderer_DrawFrame(void) {
                  * the fix is to remove overdraw, not quads. */
                 sLastDrawnPixels += (uint32_t)(params.pos.w * params.pos.h);
                 if (!reassertedTexEnv) {
-                    ConfigureAtlasTextureEnv();
+                    APPLY_ITEM_ENV(envActive);
                     reassertedTexEnv = true;
                 }
             }
         }
         if (batched) BatchEnd();
 #undef FLUSH_ITEMS
-        if (plainEnvActive) {
+#undef APPLY_ITEM_ENV
+#undef ITEM_ENV_KEY
+        if (envActive) {
             C2D_Flush();
             ConfigureAtlasTextureEnv();
-            plainEnvActive = false;
+            envActive = 0;
         }
 
         /* Depth-tint debug view: re-draw every item's silhouette in its stereo
