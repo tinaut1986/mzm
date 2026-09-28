@@ -340,20 +340,8 @@ extern void PortPpuMzm_DebugKillSamus(void);
 extern void Port_GpuRenderer_DumpAtlas(const char* ppmPath, const char* csvPath);
 extern bool Port_GpuRenderer_IsActive(void);
 extern void Port_GpuRenderer_SetActive(bool active);
-extern void Port_GpuRenderer_SetBlockPass(bool on);
-extern bool Port_GpuRenderer_BlockPassEnabled(void);
-extern void Port_GpuRenderer_SetBlockDebugTint(bool on);
-extern bool Port_GpuRenderer_BlockDebugTintEnabled(void);
 extern void Port_GpuRenderer_SetDepthTint(bool on);
 extern bool Port_GpuRenderer_DepthTintEnabled(void);
-extern void Port_GpuRenderer_SetAffineBg(bool on);
-extern bool Port_GpuRenderer_AffineBgEnabled(void);
-extern void Port_GpuRenderer_SetBlock32Pass(bool on);
-extern bool Port_GpuRenderer_Block32PassEnabled(void);
-extern void Port_GpuRenderer_SetLayerCache(bool on);
-extern bool Port_GpuRenderer_LayerCacheEnabled(void);
-extern void Port_GpuRenderer_CycleHazeMode(void);
-extern int Port_GpuRenderer_HazeMode(void);
 extern void Port_DebugLog(const char* msg);
 extern bool Port_DebugLog_IsEnabled(void);
 extern void Port_DebugLog_SetBuffered(bool buffered);
@@ -4348,11 +4336,11 @@ static void RenderOptionsView(void) {
 #define DBGTOOL_GRID_Y0   42   /* clears the modal title at y=32..39 */
 #define DBGTOOL_GRID_PITCH 20
 #define DBGTOOL_CELL_H    19
-/* Cells 9..13 (RENDERER, BLOQUES, CAPAS/HAZE, PERFIL 3DS, PROFUNDIDAD) only
- * exist when the GPU tile renderer is compiled in -- a RENDERER=cpu build has
- * nothing to switch to and neither pass to switch off. */
+/* Cells 9..11 (RENDERER, PERFIL 3DS, PROFUNDIDAD) only exist when the GPU
+ * tile renderer is compiled in -- a RENDERER=cpu build has nothing to switch
+ * to. */
 #ifdef PORT_GPU_TILE_RENDERER
-#define DBGTOOL_COUNT     16
+#define DBGTOOL_COUNT     13
 #else
 #define DBGTOOL_COUNT     10
 #endif
@@ -4563,37 +4551,7 @@ static void RenderDebugToolsModal(int lang) {
                            skipOn ? "SKIP" : "skip",
                            skipOn ? C2D_Color32(140, 235, 150, 255) : C2D_Color32(120, 135, 160, 255));
     }
-    /* Step A (one quad per 16x16 tilemap-aligned block instead of four).
-     * A switch rather than a build flag because it is a PERFORMANCE change
-     * and the only place its cost can be read is a console: same scene, one
-     * press, compare the FPS overlay. Off falls through to the untouched
-     * per-tile loop. */
     {
-        const bool blocks = Port_GpuRenderer_BlockPassEnabled();
-        const bool blocks32 = Port_GpuRenderer_Block32PassEnabled();
-        const bool blockGrid = Port_GpuRenderer_BlockDebugTintEnabled();
-        /* Tap cycles OFF -> 16 -> 16+32 -> OFF; right edge toggles the debug
-         * outline (16x16 magenta, 32x32 cyan). */
-        const char* bTxt = blocks ? (blocks32 ? "16+32" : "16") : offTxt;
-        /* Left: cycle OFF -> 16 -> 16+32. Right: debug outline (16 magenta,
-         * 32 cyan). */
-        DrawDebugCellSplit(10, (lang == 6) ? "BLOQUES" : "BLOCKS",
-                           bTxt, blocks ? C2D_Color32(120, 230, 140, 255) : C2D_Color32(150, 170, 200, 255),
-                           blockGrid ? "REJ" : "rej",
-                           blockGrid ? C2D_Color32(230, 120, 230, 255) : C2D_Color32(120, 135, 160, 255));
-        /* Two renderer experiments share this cell, because the grid has no
-         * room for a fifteenth two-line row without running into the status
-         * line and the CLOSE button (see DBGTOOL_GRID_ROWS). Tapping the
-         * cell toggles the layer cache; tapping its right edge toggles the
-         * BG3 haze pass. */
-        const bool layers = Port_GpuRenderer_LayerCacheEnabled();
-        static const char* const hazeTxt[4] = { "FULL", "NC", "OFF", "RT" };
-        const int haze = Port_GpuRenderer_HazeMode();
-        /* Left: layer cache on/off. Right: cycle the BG3 haze mode. */
-        DrawDebugCellSplit(11, (lang == 6) ? "CAPAS/HAZE" : "LAYERS/HAZE",
-                           layers ? "CACHE ON" : "cache --",
-                           layers ? C2D_Color32(230, 200, 120, 255) : C2D_Color32(150, 170, 200, 255),
-                           hazeTxt[haze & 3], haze ? C2D_Color32(230, 200, 120, 255) : C2D_Color32(120, 135, 160, 255));
         /* Run the Old3DS profile on New3DS hardware without a FORCE_OLD3DS
          * rebuild. Locked on a real Old3DS (nothing to force). */
         {
@@ -4602,7 +4560,7 @@ static void RenderDebugToolsModal(int lang) {
             const bool hwNew = Platform3DS_HardwareIsNew3DS();
             const bool forced = Platform3DS_ForcedOld3DSProfile();
             const char* st = !hwNew ? "OLD (hw)" : (forced ? "OLD (forz.)" : "NEW");
-            DrawDebugCell(12, "PERFIL 3DS", st,
+            DrawDebugCell(10, "PERFIL 3DS", st,
                           !hwNew ? C2D_Color32(120, 135, 160, 255)
                                  : (forced ? C2D_Color32(230, 200, 120, 255)
                                            : C2D_Color32(120, 230, 140, 255)));
@@ -4611,17 +4569,9 @@ static void RenderDebugToolsModal(int lang) {
          * wrongly-placed cutscene layer stands out at a glance. */
         {
             const bool dt = Port_GpuRenderer_DepthTintEnabled();
-            DrawDebugCell(13, (lang == 6) ? "PROFUNDIDAD" : "DEPTH TINT",
+            DrawDebugCell(11, (lang == 6) ? "PROFUNDIDAD" : "DEPTH TINT",
                           dt ? onTxt : offTxt,
                           dt ? colOn : colAct);
-        }
-        /* Mode-1 affine BG2 on the GPU (Tourian escape). Off = that scene
-         * falls back to the flat CPU renderer. */
-        {
-            const bool ab = Port_GpuRenderer_AffineBgEnabled();
-            DrawDebugCell(14, (lang == 6) ? "BG AFIN" : "AFFINE BG",
-                          ab ? onTxt : offTxt,
-                          ab ? colOn : colAct);
         }
     }
 #endif
@@ -4677,44 +4627,6 @@ static bool HandleDebugToolsModalTouch(int x, int y) {
                          : (last && last[0]) ? last : "REC OFF");
         return true;
     }
-#ifdef PORT_GPU_TILE_RENDERER
-    if (cell == 10) {
-        if (DebugCellRightZoneHit(x, 10)) {
-            const bool on = !Port_GpuRenderer_BlockDebugTintEnabled();
-            Port_GpuRenderer_SetBlockDebugTint(on);
-            DebugToolsSetMsg(on ? "REJILLA BLOQUES: ON" : "REJILLA BLOQUES: OFF");
-        } else {
-            /* Cycle OFF -> 16 -> 16+32 -> OFF. */
-            const bool b16 = Port_GpuRenderer_BlockPassEnabled();
-            const bool b32 = Port_GpuRenderer_Block32PassEnabled();
-            if (!b16) {
-                Port_GpuRenderer_SetBlockPass(true);
-                DebugToolsSetMsg("BLOQUES: 16x16");
-            } else if (!b32) {
-                Port_GpuRenderer_SetBlock32Pass(true);
-                DebugToolsSetMsg("BLOQUES: 16x16 + 32x32");
-            } else {
-                Port_GpuRenderer_SetBlock32Pass(false);
-                Port_GpuRenderer_SetBlockPass(false);
-                DebugToolsSetMsg("BLOQUES: OFF");
-            }
-        }
-        return true;
-    }
-    if (cell == 11) {
-        if (DebugCellRightZoneHit(x, 11)) {
-            static const char* const msg[4] = { "HAZE: COMPLETA", "HAZE: SIN COMPONER",
-                                                "HAZE: APAGADA", "HAZE: A TARGET (RT)" };
-            Port_GpuRenderer_CycleHazeMode();
-            DebugToolsSetMsg(msg[Port_GpuRenderer_HazeMode() & 3]);
-        } else {
-            const bool on = !Port_GpuRenderer_LayerCacheEnabled();
-            Port_GpuRenderer_SetLayerCache(on);
-            DebugToolsSetMsg(on ? "CACHE CAPAS: ON" : "CACHE CAPAS: OFF");
-        }
-        return true;
-    }
-#endif
     if (cell == 7 && DebugCellRightZoneHit(x, 7)) {
         /* Side button: start/stop logging on the selected stream. */
         if (Port_DebugLog_IsEnabled()) {
@@ -4795,7 +4707,7 @@ static bool HandleDebugToolsModalTouch(int x, int y) {
             }
             break;
         }
-        case 12: {
+        case 10: {
             extern bool Platform3DS_HardwareIsNew3DS(void);
             extern bool Platform3DS_ForcedOld3DSProfile(void);
             extern void Platform3DS_SetForcedOld3DSProfile(bool forced);
@@ -4809,17 +4721,11 @@ static bool HandleDebugToolsModalTouch(int x, int y) {
             }
             break;
         }
-        case 13: {
+        case 11: {
             const bool on = !Port_GpuRenderer_DepthTintEnabled();
             Port_GpuRenderer_SetDepthTint(on);
             DebugToolsSetMsg(on ? "TINTE DE PROFUNDIDAD: ON"
                                 : "TINTE DE PROFUNDIDAD: OFF");
-            break;
-        }
-        case 14: {
-            const bool on = !Port_GpuRenderer_AffineBgEnabled();
-            Port_GpuRenderer_SetAffineBg(on);
-            DebugToolsSetMsg(on ? "BG AFIN (GPU): ON" : "BG AFIN (GPU): OFF");
             break;
         }
 #endif

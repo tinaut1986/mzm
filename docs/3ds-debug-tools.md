@@ -454,8 +454,10 @@ struct PerfSample {      // 148 bytes, sampleCount of them back to back
                                  // 7 C3D_FrameSync, waiting for the display
                                  // 8-10 ('MZP7') phase 3 split: 32x32 block
                                  //   pass, 16x16 block pass, per-tile pass
+                                 //   (the block passes are gone: 8-9 are 0)
     uint32_t counts[8];          // 'MZP7': work over this frame -- 32x32 block
-                                 // lookups, decodes; 16x16 lookups, decodes;
+                                 // lookups, decodes; 16x16 lookups, decodes
+                                 // (0 since the block passes were removed);
                                  // tile lookups, decodes; positions the
                                  // per-tile pass examined; WIDE entries rebuilt
                                  // from the room's block map

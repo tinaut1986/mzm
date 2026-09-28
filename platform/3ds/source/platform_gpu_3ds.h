@@ -73,8 +73,8 @@ typedef enum {
     PERF_PHASE_FRAME_END,     /* screen FX + C3D_FrameEnd submission */
     PERF_PHASE_VSYNC,         /* C3D_FrameSync: waiting for the display */
     /* Breakdown of PERF_PHASE_BG (not in addition to it): */
-    PERF_PHASE_BG_B32,        /* the 32x32 block pass, every layer */
-    PERF_PHASE_BG_B16,        /* the 16x16 block pass */
+    PERF_PHASE_BG_B32,        /* the 32x32 block pass (removed: always 0, */
+    PERF_PHASE_BG_B16,        /* the 16x16 block pass  kept for the MZP7 layout) */
     PERF_PHASE_BG_TILES,      /* the per-tile pass */
     PERF_PHASE_COUNT
 } PerfPhase;
@@ -82,6 +82,7 @@ void PlatformGpu3DS_PerfPhaseAdd(PerfPhase phase, unsigned long long ticks);
 
 /* Work counts over the same frame, 'MZP7'. */
 typedef enum {
+    /* The four block-pass counts stay 0 since the block passes were removed. */
     PERF_COUNT_B32_LOOKUPS = 0, PERF_COUNT_B32_DECODES,
     PERF_COUNT_B16_LOOKUPS, PERF_COUNT_B16_DECODES,
     PERF_COUNT_TILE_LOOKUPS, PERF_COUNT_TILE_DECODES,

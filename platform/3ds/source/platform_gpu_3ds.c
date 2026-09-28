@@ -1068,7 +1068,8 @@ static void OamCensus(unsigned* outTotal, unsigned* outVisible, unsigned* outAff
  *              in which case the draw-call census describes a stale frame)
  *   bits 19-21 GBA screen-FX LCD grid level (0 = off)
  *   bits 22-24 GBA screen-FX vignette level (0 = off)
- *   bits 25-26 block pass mode (0 per-tile, 1 = 16x16, 2 = 16x16 + 32x32)
+ *   bits 25-26 block pass mode (0 per-tile, 1 = 16x16, 2 = 16x16 + 32x32);
+ *              always 0 since the block passes were removed
  *
  * The grid and vignette levels are here because they share the grade's cost
  * model -- all three bake into one mask drawn as a single alpha-blended quad
@@ -1087,17 +1088,10 @@ static uint32_t PackCaptureFlags(void) {
     extern int Port_Config_GetGbaFxVignette(void);
     extern bool Port_PPU_3DS_LastFrameUsedGpu(void);
     extern bool Platform3DS_IsNew3DS(void);
-    extern bool Port_GpuRenderer_BlockPassEnabled(void);
-    extern bool Port_GpuRenderer_Block32PassEnabled(void);
 
     const float slider = PlatformGpu3DS_Get3DSlider();
     uint32_t sliderX100 = (uint32_t)(slider * 100.0f + 0.5f);
     if (sliderX100 > 100u) sliderX100 = 100u;
-
-    /* 0 = per-tile only, 1 = 16x16 block pass, 2 = 16x16 + 32x32. */
-    uint32_t blockMode = Port_GpuRenderer_BlockPassEnabled()
-                             ? (Port_GpuRenderer_Block32PassEnabled() ? 2u : 1u)
-                             : 0u;
 
     return ((uint32_t)Port_Config_Get3DSDisplayStyle() & 3u)
          | (((uint32_t)Port_Config_Get3DSAspectRatio() & 3u) << 2)
@@ -1109,8 +1103,9 @@ static uint32_t PackCaptureFlags(void) {
          | ((uint32_t)(Platform3DS_IsNew3DS() ? 0u : 1u) << 17)
          | ((uint32_t)(Port_PPU_3DS_LastFrameUsedGpu() ? 1u : 0u) << 18)
          | (((uint32_t)Port_Config_GetGbaFxGrid() & 7u) << 19)
-         | (((uint32_t)Port_Config_GetGbaFxVignette() & 7u) << 22)
-         | ((blockMode & 3u) << 25);
+         | (((uint32_t)Port_Config_GetGbaFxVignette() & 7u) << 22);
+         /* bits 25-26: the block pass mode, always 0 since the block passes
+          * were removed (the layer maps replaced them). */
 }
 
 /* Packs Port_GpuRenderer_GetLastFrameDrawStats' flags into one word for the

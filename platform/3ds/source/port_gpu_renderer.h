@@ -24,16 +24,6 @@ void Port_GpuRenderer_CollectFrame(void);
 void Port_GpuRenderer_DrawFrame(void);
 bool Port_GpuRenderer_CollectNeedsIdleGpu(void);
 void Port_GpuRenderer_Shutdown(void);
-/* Step A: one quad per tilemap-aligned 16x16 block instead of four. Off
- * falls back to the per-tile loop, for measuring the change on hardware. */
-void Port_GpuRenderer_SetBlockPass(bool on);
-bool Port_GpuRenderer_BlockPassEnabled(void);
-/* Debug: outline every 16x16 group the block pass composes, drawn into its
- * atlas cell so each block-drawn screen region gets a magenta border and
- * per-tile regions do not. Lets a misaligned or stale block be spotted by
- * eye. Toggling clears the block cache. No cost when off. */
-void Port_GpuRenderer_SetBlockDebugTint(bool on);
-bool Port_GpuRenderer_BlockDebugTintEnabled(void);
 /* Debug: flat-colour every drawn BG layer and sprite by its resolved stereo
  * tier (the same palette the layer workbench uses), so on a fast cutscene you
  * can see at a glance which depth plane each layer landed on. Alpha is kept,
@@ -41,33 +31,9 @@ bool Port_GpuRenderer_BlockDebugTintEnabled(void);
  * No cache reset, no cost when off. */
 void Port_GpuRenderer_SetDepthTint(bool on);
 bool Port_GpuRenderer_DepthTintEnabled(void);
-/* GBA mode 1 affine BG2 on the GPU. The only frame class MZM renders in
- * mode 1 is the Tourian-escape "Samus surrounded" sub-scene (a 256x256,
- * overflow-transparent, pure-scale BG2 -- no rotation). On: that scene
- * renders through this renderer (and gets stereo depth) instead of falling
- * back to the flat CPU scanline renderer. Any other mode != 0 frame still
- * falls back. Default on; toggle off to A/B against the CPU version. */
-void Port_GpuRenderer_SetAffineBg(bool on);
-bool Port_GpuRenderer_AffineBgEnabled(void);
-/* One quad per tilemap-aligned 4x4 group -- tried before the 16x16 pass,
- * the rest falls through to it. Opt-in, off by default; needs the 16x16
- * pass on. See the Block32 cache in port_gpu_renderer.c. */
-void Port_GpuRenderer_SetBlock32Pass(bool on);
-bool Port_GpuRenderer_Block32PassEnabled(void);
-/* Layer maps: each text BG layer kept in a wrapping render target, only its
- * stale cells redrawn, drawn as ONE quad per eye. On by default; off falls
- * back to the block and per-tile passes. See LayerMapInit. */
-void Port_GpuRenderer_SetLayerCache(bool on);
-bool Port_GpuRenderer_LayerCacheEnabled(void);
-/* BG3 ripple pass: 0 full, 1 blit without re-composing, 2 off. A measurement
- * aid -- it is half the frame and the two halves need different fixes. See
- * the definition. */
-void Port_GpuRenderer_CycleHazeMode(void);
-int Port_GpuRenderer_HazeMode(void);
-bool Port_GpuRenderer_HazeRippleActive(void);
 bool Port_GpuRenderer_IsActive(void);
 void Port_GpuRenderer_SetActive(bool active);
-/* Drop every tile/block/layer cache and re-decode from VRAM over the next
+/* Drop every tile/layer cache and re-decode from VRAM over the next
  * couple dozen frames. Called after a save-state load (port_save_state.c)
  * replaces VRAM/palettes/tilemaps wholesale. */
 void Port_GpuRenderer_InvalidateAll(void);
@@ -101,7 +67,7 @@ typedef struct {
     uint8_t scissorPasses;     /* 1, or 2 while a GBA window splits the draw order */
     bool windowActive;
     bool hazeActive;
-    uint8_t hazeMode;          /* 0 full, 1 blit-without-compose, 2 off */
+    uint8_t hazeMode;          /* 3 ripple target (RT), 0 its per-tile fallback (FULL) */
 } PortGpuRendererDrawStats;
 void Port_GpuRenderer_GetLastFrameDrawStats(PortGpuRendererDrawStats* out);
 /* CPU time (ms) spent in the most recent Port_GpuRenderer_RenderFrame call:
