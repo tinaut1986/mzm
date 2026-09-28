@@ -28,6 +28,7 @@
 #include <3ds.h>
 #include <citro2d.h>
 #include <citro3d.h>
+#include "tilequad_shbin.h" /* generated from source/tilequad.v.pica */
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -69,59 +70,33 @@ extern uint16_t gBg1YPosition;
 static bool sGpuRendererActive = false;
 static bool sInitialized = false;
 
-/* Same 3-stage RGB reconstruction as PlatformGpu3DS_ConfigureAbgrTextureEnv
- * (the PICA200 samples a GPU_RGBA8 texture with components in the reverse
- * of memory byte order -- see that function's doc comment in
- * platform_gpu_3ds.h), but that shared version hardcodes output alpha to
- * opaque (255), correct for its own use case (compositing one always-opaque
- * full-screen background quad) but wrong here: tile/sprite quads need real
- * per-pixel transparency (index-0 palette entries) so background layers and
- * other sprites show through. Without this, every "transparent" pixel drew
- * as an opaque black square -- a real contributor to the black-patch/
- * corruption reports, not just the RGB channel-order bug. Stage 0's alpha
- * output is sourced from the texture's sampled-R component here instead of
- * a constant, which -- per the same reversed-component mapping -- is this
- * project's stored alpha byte (Bgr555ToRgba8's memory byte 3). */
+/* The atlas (and the affine BG2 texture) are GPU_RGBA5551, packed by
+ * Bgr555ToRgba5551 in the order the PICA200 reads that format, so they sample
+ * straight: colour and alpha pass through from texture 0. (They used to be
+ * RGBA8 with the channels in reverse byte order, which took a three-stage
+ * TEV to put back together.) Index-0 palette entries carry alpha 0 and are
+ * dropped by the alpha test. */
 static void ConfigureAtlasTextureEnv(void) {
     C3D_TexEnv* env = C3D_GetTexEnv(0);
     C3D_TexEnvInit(env);
-    C3D_TexEnvSrc(env, C3D_RGB, GPU_TEXTURE0, GPU_CONSTANT, GPU_PREVIOUS);
-    C3D_TexEnvOpRgb(env, GPU_TEVOP_RGB_SRC_ALPHA, GPU_TEVOP_RGB_SRC_COLOR, GPU_TEVOP_RGB_SRC_COLOR);
-    C3D_TexEnvFunc(env, C3D_RGB, GPU_MODULATE);
-    C3D_TexEnvSrc(env, C3D_Alpha, GPU_TEXTURE0, GPU_TEXTURE0, GPU_TEXTURE0);
-    C3D_TexEnvOpAlpha(env, GPU_TEVOP_A_SRC_R, GPU_TEVOP_A_SRC_R, GPU_TEVOP_A_SRC_R);
-    C3D_TexEnvFunc(env, C3D_Alpha, GPU_REPLACE);
-    C3D_TexEnvColor(env, C2D_Color32(255, 0, 0, 255));
-
-    env = C3D_GetTexEnv(1);
-    C3D_TexEnvInit(env);
-    C3D_TexEnvSrc(env, C3D_RGB, GPU_TEXTURE0, GPU_CONSTANT, GPU_PREVIOUS);
-    C3D_TexEnvOpRgb(env, GPU_TEVOP_RGB_SRC_B, GPU_TEVOP_RGB_SRC_COLOR, GPU_TEVOP_RGB_SRC_COLOR);
-    C3D_TexEnvFunc(env, C3D_RGB, GPU_MULTIPLY_ADD);
-    C3D_TexEnvColor(env, C2D_Color32(0, 255, 0, 255));
-
-    env = C3D_GetTexEnv(2);
-    C3D_TexEnvInit(env);
-    C3D_TexEnvSrc(env, C3D_RGB, GPU_TEXTURE0, GPU_CONSTANT, GPU_PREVIOUS);
-    C3D_TexEnvOpRgb(env, GPU_TEVOP_RGB_SRC_G, GPU_TEVOP_RGB_SRC_COLOR, GPU_TEVOP_RGB_SRC_COLOR);
-    C3D_TexEnvFunc(env, C3D_RGB, GPU_MULTIPLY_ADD);
-    C3D_TexEnvColor(env, C2D_Color32(0, 0, 255, 255));
+    C3D_TexEnvSrc(env, C3D_Both, GPU_TEXTURE0, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR);
+    C3D_TexEnvFunc(env, C3D_Both, GPU_REPLACE);
+    C3D_TexEnvInit(C3D_GetTexEnv(1));
+    C3D_TexEnvInit(C3D_GetTexEnv(2));
 }
 
 /* Debug: flat-colour every layer/sprite by its stereo tier (see sDepthTint /
  * Port_GpuRenderer_SetDepthTint). RGB comes straight from the TEV constant,
  * which the draw loop sets per tier; alpha still comes from the source so a
  * layer keeps its silhouette and transparent pixels are AlphaTest'd away.
- * One variant per source: the atlas keeps opacity in the red byte (same as
- * ConfigureAtlasTextureEnv's alpha path), a cached-layer RT has straight
- * alpha (like ConfigurePlainTextureEnv). */
+ * Both sources now carry straight alpha (the atlas is RGBA5551); the two
+ * functions stay separate so the draw loop's per-source switch is unchanged. */
 static void ConfigureDepthTintAtlasTexEnv(void) {
     C3D_TexEnv* env = C3D_GetTexEnv(0);
     C3D_TexEnvInit(env);
     C3D_TexEnvSrc(env, C3D_RGB, GPU_CONSTANT, GPU_CONSTANT, GPU_CONSTANT);
     C3D_TexEnvFunc(env, C3D_RGB, GPU_REPLACE);
     C3D_TexEnvSrc(env, C3D_Alpha, GPU_TEXTURE0, GPU_TEXTURE0, GPU_TEXTURE0);
-    C3D_TexEnvOpAlpha(env, GPU_TEVOP_A_SRC_R, GPU_TEVOP_A_SRC_R, GPU_TEVOP_A_SRC_R);
     C3D_TexEnvFunc(env, C3D_Alpha, GPU_REPLACE);
     C3D_TexEnvColor(env, C2D_Color32(255, 0, 255, 255)); /* draw loop overrides per tier */
     C3D_TexEnvInit(C3D_GetTexEnv(1));
@@ -156,10 +131,8 @@ static const u32 kDepthTintColor[PORT_TIER_COUNT] = {
 /* Plain pass-through texenv: output = texture0, verbatim, single stage.
  * Used by the issue #29 strip blit. sHazeTex is a GPU render target: the
  * rasterizer writes GPU_RGBA8 in the byte order that re-samples straight
- * (unlike the CPU-decoded atlas, which needs ConfigureAtlasTextureEnv's
- * 3-stage channel-unswizzle -- see that function). If BG3 still comes out
- * with permuted channels on hardware, the round-trip assumption is wrong:
- * call ConfigureAtlasTextureEnv() from HazeBlitStrips instead of this. */
+ * (the RGBA5551 atlas now samples straight too -- see
+ * ConfigureAtlasTextureEnv, which is the same pass-through). */
 static void ConfigurePlainTextureEnv(void) {
     C3D_TexEnv* env = C3D_GetTexEnv(0);
     C3D_TexEnvInit(env);
@@ -167,6 +140,140 @@ static void ConfigurePlainTextureEnv(void) {
     C3D_TexEnvFunc(env, C3D_Both, GPU_REPLACE);
     C3D_TexEnvInit(C3D_GetTexEnv(1));
     C3D_TexEnvInit(C3D_GetTexEnv(2));
+}
+
+/* ---- Batched quads -------------------------------------------------------
+ * The scene's items used to go through C2D_DrawImage one by one, which works
+ * out rotation, per-corner tints and texture state for every call: measured
+ * on an Old 3DS at ~6 us a quad, 5-8 ms a frame in WIDE. The items need none
+ * of that -- straight quads (or plainly rotated ones), no tint, a texenv set
+ * by the caller -- so they are written here as four vertices each into one
+ * buffer and drawn with a minimal shader (tilequad.v.pica), one draw call per
+ * run of the same texture / blend / texenv state.
+ *
+ * Mirrors C2D_DrawImage's geometry exactly (see BatchQuad) so nothing moves.
+ * Used only for the main item loop; everything else keeps using citro2d, and
+ * BatchEnd hands the GPU state back to it with C2D_Prepare. */
+typedef struct { float x, y, u, v; } BatchVertex;
+enum { BATCH_MAX_QUADS = 12288 }; /* both eyes of a full item table */
+static BatchVertex* sBatchVerts;  /* linear, 4 per quad, rewritten every frame */
+static u16* sBatchIndices;        /* linear, 6 per quad, fixed */
+static DVLB_s* sBatchDvlb;
+static shaderProgram_s sBatchProgram;
+static int sBatchProjectionLoc;
+static C3D_AttrInfo sBatchAttr;
+static C3D_BufInfo sBatchBuf;
+static bool sBatchReady;
+static int sBatchUsed;            /* quads written this frame */
+static int sBatchDrawn;           /* quads already submitted */
+static const C3D_Tex* sBatchTex;
+
+static bool BatchInit(void) {
+    sBatchVerts = (BatchVertex*)linearAlloc(BATCH_MAX_QUADS * 4 * sizeof(BatchVertex));
+    sBatchIndices = (u16*)linearAlloc(BATCH_MAX_QUADS * 6 * sizeof(u16));
+    if (!sBatchVerts || !sBatchIndices) return false;
+    for (int q = 0; q < BATCH_MAX_QUADS; ++q) {
+        u16* i = sBatchIndices + q * 6;
+        const u16 v = (u16)(q * 4);
+        i[0] = v; i[1] = (u16)(v + 1); i[2] = (u16)(v + 2);
+        i[3] = v; i[4] = (u16)(v + 2); i[5] = (u16)(v + 3);
+    }
+    GSPGPU_FlushDataCache(sBatchIndices, BATCH_MAX_QUADS * 6 * sizeof(u16));
+
+    sBatchDvlb = DVLB_ParseFile((u32*)tilequad_shbin, tilequad_shbin_size);
+    if (!sBatchDvlb) return false;
+    shaderProgramInit(&sBatchProgram);
+    shaderProgramSetVsh(&sBatchProgram, &sBatchDvlb->DVLE[0]);
+    sBatchProjectionLoc = shaderInstanceGetUniformLocation(sBatchProgram.vertexShader, "projection");
+
+    AttrInfo_Init(&sBatchAttr);
+    AttrInfo_AddLoader(&sBatchAttr, 0, GPU_FLOAT, 2); /* v0: position */
+    AttrInfo_AddLoader(&sBatchAttr, 1, GPU_FLOAT, 2); /* v1: texcoord */
+    BufInfo_Init(&sBatchBuf);
+    BufInfo_Add(&sBatchBuf, sBatchVerts, sizeof(BatchVertex), 2, 0x10);
+    return true;
+}
+
+/* Start of a frame's drawing: the GPU has finished the previous frame
+ * (C3D_FrameBegin waited for it), so the vertex buffer is free to reuse. */
+static void BatchNewFrame(void) {
+    sBatchUsed = 0;
+    sBatchDrawn = 0;
+}
+
+/* Switch the GPU over from citro2d to the batch for a run of items drawn
+ * into the top-screen target the current scene is on. */
+static void BatchBegin(void) {
+    C2D_Flush();
+    C3D_BindProgram(&sBatchProgram);
+    C3D_SetAttrInfo(&sBatchAttr);
+    C3D_SetBufInfo(&sBatchBuf);
+    /* The top targets are the 400x240 screen stored rotated; the same
+     * projection citro2d builds for them. */
+    C3D_Mtx projection;
+    Mtx_OrthoTilt(&projection, 0.0f, 400.0f, 240.0f, 0.0f, 1.0f, -1.0f, true);
+    C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, sBatchProjectionLoc, &projection);
+    C3D_CullFace(GPU_CULL_NONE);
+    sBatchTex = NULL;
+    sBatchDrawn = sBatchUsed;
+}
+
+/* Submit the quads written since the last flush. Call before any GPU state
+ * change (blend, texenv) so the change applies to the right quads. */
+static void BatchFlush(void) {
+    if (sBatchUsed > sBatchDrawn) {
+        C3D_DrawElements(GPU_TRIANGLES, (sBatchUsed - sBatchDrawn) * 6, C3D_UNSIGNED_SHORT,
+                         sBatchIndices + sBatchDrawn * 6);
+        sBatchDrawn = sBatchUsed;
+    }
+}
+
+/* One item, with C2D_DrawImage's own geometry: the rectangle offset by
+ * -center, rotated by angle about the origin, then moved to pos; texture
+ * corners from the (non-rotated) subtexture. False when the buffer is full. */
+static bool BatchQuad(const C3D_Tex* tex, const Tex3DS_SubTexture* st, const C2D_DrawParams* p) {
+    if (sBatchUsed >= BATCH_MAX_QUADS) return false;
+    if (tex != sBatchTex) {
+        BatchFlush();
+        C3D_TexBind(0, (C3D_Tex*)tex);
+        sBatchTex = tex;
+    }
+    const float x0 = -p->center.x, y0 = -p->center.y;
+    const float x1 = x0 + p->pos.w, y1 = y0 + p->pos.h;
+    float px[4] = { x0, x0, x1, x1 }; /* TL, BL, BR, TR */
+    float py[4] = { y0, y1, y1, y0 };
+    if (p->angle != 0.0f) {
+        const float s = sinf(p->angle), c = cosf(p->angle);
+        for (int k = 0; k < 4; ++k) {
+            const float rx = px[k] * c - py[k] * s;
+            const float ry = py[k] * c + px[k] * s;
+            px[k] = rx;
+            py[k] = ry;
+        }
+    }
+    BatchVertex* v = sBatchVerts + sBatchUsed * 4;
+    v[0] = (BatchVertex){ p->pos.x + px[0], p->pos.y + py[0], st->left, st->top };
+    v[1] = (BatchVertex){ p->pos.x + px[1], p->pos.y + py[1], st->left, st->bottom };
+    v[2] = (BatchVertex){ p->pos.x + px[2], p->pos.y + py[2], st->right, st->bottom };
+    v[3] = (BatchVertex){ p->pos.x + px[3], p->pos.y + py[3], st->right, st->top };
+    ++sBatchUsed;
+    return true;
+}
+
+/* Back to citro2d for whatever the scene draws next. C2D_Prepare rebinds its
+ * shader and buffers and resets texenv and depth test; the depth test is put
+ * back the way the eye pass runs (off). */
+static void BatchEnd(void) {
+    BatchFlush();
+    C2D_Prepare();
+    C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_ALL);
+}
+
+/* The CPU wrote this frame's vertices through the data cache; the GPU reads
+ * memory. Once, after the last eye. */
+static void BatchFrameDone(void) {
+    if (sBatchUsed > 0)
+        GSPGPU_FlushDataCache(sBatchVerts, (u32)sBatchUsed * 4u * sizeof(BatchVertex));
 }
 
 /* Tile atlas: every unique (source tile bytes + palette bank + hflip/vflip)
@@ -316,6 +423,8 @@ typedef struct DrawItem {
 } DrawItem;
 
 static C3D_Tex sAtlasTexture;
+/* One atlas texel: GPU_RGBA5551 (see Bgr555ToRgba5551). */
+typedef uint16_t AtlasTexel;
 static TileCacheKey sCacheKeys[ATLAS_MAX_SLOTS];
 static int sCacheCount;
 static DrawItem sDrawItems[MAX_DRAW_ITEMS];
@@ -375,7 +484,7 @@ static bool sHazeBufReady[2];
  * (docs/3ds-gpu-affine-bg-and-obj-seams-feasibility-2026-09-09.md): a 256x256
  * BG2, overflow-transparent, PURE SCALE (PB=PC=0), zoom only, no rotation,
  * matrix written once per VBlank. So: CPU-decode the 256x256 8bpp affine
- * tilemap into one texture (same Bgr555ToRgba8 + swizzle path the atlas
+ * tilemap into one texture (same Bgr555ToRgba5551 + swizzle path the atlas
  * uses), draw it as ONE scaled quad at BG2's priority, with the usual
  * per-tier stereo eye offset. DetectAffineBg2() gates on exactly that
  * config; anything else in mode 1+ still falls back to the CPU renderer. */
@@ -578,12 +687,58 @@ static int sHazeTileCount;
 enum { HASH_BUCKETS = 8192, HASH_MASK = HASH_BUCKETS - 1 };
 static int32_t sHashBucketHead[HASH_BUCKETS];
 static int32_t sHashChainNext[ATLAS_MAX_SLOTS];
-/* Raw source bytes (up to 64 for 8bpp) as of each slot's last decode --
- * compared via memcmp on a cache hit to detect whether the underlying VRAM
- * tile actually changed (animated tiles: water, lava, etc.) since the slot
- * was last decoded. A memcmp of <=64 bytes is far cheaper than a full
- * decode (palette lookup + optional brighten/darken per pixel). */
-static uint8_t sCacheSourceBytes[ATLAS_MAX_SLOTS][64];
+/* ---- VRAM change stamps -------------------------------------------------
+ * Whether a cached slot still matches VRAM used to be a memcmp of the tile's
+ * bytes against a copy kept per slot, on every tile REFERENCE -- thousands a
+ * frame, each touching two cold 32-byte lines (the tile and the copy), and
+ * TileHasOpaquePixel read the tile a third time. On an Old 3DS, with no L2
+ * cache, that memory traffic was most of the collection time.
+ *
+ * Now VRAM is compared against a shadow copy ONCE per frame, 32 bytes (one
+ * 4bpp tile) at a time, in one linear pass. Each 32-byte chunk records the
+ * frame it last changed in and whether it has any non-zero byte; a slot
+ * records the frame it was decoded in. "Unchanged since decode" is then two
+ * integer reads from small, hot arrays. Exactly as strict as the memcmp was:
+ * a chunk's stamp moves whenever any of its bytes differ from the last frame,
+ * and collection never runs while game code is writing VRAM. */
+enum { VRAM_BYTES = 0x18000, VRAM_CHUNK_BYTES = 32, VRAM_CHUNKS = VRAM_BYTES / VRAM_CHUNK_BYTES };
+static uint32_t sVramShadow[VRAM_BYTES / 4];
+static uint32_t sChunkStamp[VRAM_CHUNKS];   /* frame the chunk last changed in */
+static uint8_t sChunkOpaque[VRAM_CHUNKS];   /* any non-zero byte (colour index) */
+static uint32_t sFrameStamp;                /* current frame; 0 = never diffed */
+
+static void VramDiffBeginFrame(void) {
+    const bool first = (sFrameStamp == 0);
+    ++sFrameStamp;
+    const uint32_t* cur = (const uint32_t*)gVram;
+    uint32_t* old = sVramShadow;
+    for (int c = 0; c < VRAM_CHUNKS; ++c, cur += 8, old += 8) {
+        /* Ask for the lines a few chunks ahead: a straight 192KB read is what
+         * this pass is, and without a hint the Old 3DS (no L2) stalls on
+         * every line in turn. */
+        __builtin_prefetch(cur + 32);
+        __builtin_prefetch(old + 32);
+        const uint32_t diff = (cur[0] ^ old[0]) | (cur[1] ^ old[1]) | (cur[2] ^ old[2]) | (cur[3] ^ old[3]) |
+                              (cur[4] ^ old[4]) | (cur[5] ^ old[5]) | (cur[6] ^ old[6]) | (cur[7] ^ old[7]);
+        if (diff == 0 && !first) continue;
+        memcpy(old, cur, VRAM_CHUNK_BYTES);
+        sChunkStamp[c] = sFrameStamp;
+        sChunkOpaque[c] = (cur[0] | cur[1] | cur[2] | cur[3] | cur[4] | cur[5] | cur[6] | cur[7]) != 0;
+    }
+}
+
+/* Latest change stamp over the chunks a tile at byteOffset spans (two for an
+ * 8bpp tile). Offsets past VRAM (an 8bpp tile index running off the end)
+ * read as never changed. */
+static inline uint32_t TileChangeStamp(uint32_t byteOffset, bool bpp8) {
+    const uint32_t c = byteOffset / VRAM_CHUNK_BYTES;
+    uint32_t stamp = (c < VRAM_CHUNKS) ? sChunkStamp[c] : 0u;
+    if (bpp8 && c + 1 < VRAM_CHUNKS && sChunkStamp[c + 1] > stamp) stamp = sChunkStamp[c + 1];
+    return stamp;
+}
+
+/* Frame each tile slot was last decoded in (see VramDiffBeginFrame). */
+static uint32_t sCacheDecodeStamp[ATLAS_MAX_SLOTS];
 /* Hash of the palette bytes actually sampled for this slot's last decode --
  * the bank's 32 bytes (16 colors) for a 4bpp tile, or the full 512-byte
  * palette (256 colors) for an 8bpp tile (which indexes the whole palette
@@ -668,7 +823,7 @@ typedef struct BlockCacheKey {
 } BlockCacheKey;
 
 static BlockCacheKey sBlockKeys[ATLAS_MAX_BLOCKS];
-static uint8_t sBlockSourceBytes[ATLAS_MAX_BLOCKS][4 * 32]; /* 4bpp: 32B/tile */
+static uint32_t sBlockDecodeStamp[ATLAS_MAX_BLOCKS]; /* see VramDiffBeginFrame */
 static uint32_t sBlockPalHash[ATLAS_MAX_BLOCKS];
 static uint8_t sBlockEvy[ATLAS_MAX_BLOCKS];
 static int sBlockCount;
@@ -682,8 +837,8 @@ static bool sBlockCacheResetPending;
 /* ---- 32x32 block cache -------------------------------------------------
  * Exactly the 16x16 cache one size up: an aligned 4x4 tilemap group into a
  * 4x4 slot region of the atlas, one quad instead of sixteen. Same rules --
- * 4bpp only, wholly-in-frame groups only, staleness by source-byte memcmp
- * plus palette hash and evy, overflow degrades to the 16x16 / per-tile
+ * 4bpp only, wholly-in-frame groups only, staleness by the VRAM change
+ * stamps plus palette hash and evy, overflow degrades to the 16x16 / per-tile
  * paths. Off by default (sBlock32PassEnabled): it is a perf change and the
  * only place its cost can be read is a console. */
 typedef struct Block32CacheKey {
@@ -694,7 +849,7 @@ typedef struct Block32CacheKey {
 } Block32CacheKey;
 
 static Block32CacheKey sB32Keys[ATLAS_MAX_B32];
-static uint8_t sB32SourceBytes[ATLAS_MAX_B32][16 * 32]; /* 4bpp: 32B/tile */
+static uint32_t sB32DecodeStamp[ATLAS_MAX_B32]; /* see VramDiffBeginFrame */
 static uint32_t sB32PalHash[ATLAS_MAX_B32];
 static uint8_t sB32Evy[ATLAS_MAX_B32];
 static int sB32Count;
@@ -702,6 +857,9 @@ static int32_t sB32HashHead[HASH_BUCKETS];
 static int32_t sB32HashNext[ATLAS_MAX_B32];
 static int sB32ItemsThisFrame;
 static int sB32OverflowThisFrame;
+/* Work counters for the perf recorder (PERF_COUNT_*, platform_gpu_3ds.h),
+ * handed over once per frame at the end of Port_GpuRenderer_CollectFrame. */
+static uint32_t sPerfCount[8];
 static bool sB32CacheResetPending;
 
 /* Called once per frame before any collection: empties the block caches if
@@ -1211,9 +1369,14 @@ bool Port_GpuRenderer_Init(void) {
      * CPU-writability for a separate memory bus (less FCRAM/GPU
      * contention), not worth it here given the transfer step's cost
      * dwarfed any bandwidth benefit. */
-    if (!C3D_TexInit(&sAtlasTexture, ATLAS_W, ATLAS_H, GPU_RGBA8)) return false;
-    memset(sAtlasTexture.data, 0, (size_t)ATLAS_W * ATLAS_H * sizeof(u32));
-    FlushAtlasRange(sAtlasTexture.data, (size_t)ATLAS_W * ATLAS_H * sizeof(u32));
+    /* RGBA5551: a GBA colour is 15 bits plus "transparent", so this holds
+     * exactly what RGBA8 did at half the bytes -- and the GPU reads every
+     * texel of every quad from here, in FCRAM. Measured on an Old 3DS, the
+     * GPU's frame time tracks the pixels drawn (~94 ns each), i.e. it is
+     * bound by these texture reads. */
+    if (!C3D_TexInit(&sAtlasTexture, ATLAS_W, ATLAS_H, GPU_RGBA5551)) return false;
+    memset(sAtlasTexture.data, 0, (size_t)ATLAS_W * ATLAS_H * sizeof(AtlasTexel));
+    FlushAtlasRange(sAtlasTexture.data, (size_t)ATLAS_W * ATLAS_H * sizeof(AtlasTexel));
     C3D_TexSetFilter(&sAtlasTexture, GPU_NEAREST, GPU_NEAREST);
 
     /* Affine BG2 compose target -- CPU-written like the atlas (not a GPU
@@ -1221,9 +1384,9 @@ bool Port_GpuRenderer_Init(void) {
      * DetectAffineBg2 checks sAffineBg2TexReady and the scene just keeps
      * falling back to the CPU renderer. */
     sAffineBg2TexReady = false;
-    if (C3D_TexInit(&sAffineBg2Tex, AFF_BG2_DIM, AFF_BG2_DIM, GPU_RGBA8)) {
-        memset(sAffineBg2Tex.data, 0, (size_t)AFF_BG2_DIM * AFF_BG2_DIM * sizeof(u32));
-        FlushAtlasRange(sAffineBg2Tex.data, (size_t)AFF_BG2_DIM * AFF_BG2_DIM * sizeof(u32));
+    if (C3D_TexInit(&sAffineBg2Tex, AFF_BG2_DIM, AFF_BG2_DIM, GPU_RGBA5551)) {
+        memset(sAffineBg2Tex.data, 0, (size_t)AFF_BG2_DIM * AFF_BG2_DIM * sizeof(AtlasTexel));
+        FlushAtlasRange(sAffineBg2Tex.data, (size_t)AFF_BG2_DIM * AFF_BG2_DIM * sizeof(AtlasTexel));
         C3D_TexSetFilter(&sAffineBg2Tex, GPU_NEAREST, GPU_NEAREST);
         C3D_TexSetWrap(&sAffineBg2Tex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
         sAffineBg2TexReady = true;
@@ -1267,6 +1430,8 @@ bool Port_GpuRenderer_Init(void) {
     }
 
     InitSlotSubtexTable();
+    /* Not fatal: without it the items go through citro2d as before. */
+    sBatchReady = BatchInit();
 
     {
         char msg[96];
@@ -1303,22 +1468,17 @@ void Port_GpuRenderer_Shutdown(void) {
     sGpuRendererActive = false;
 }
 
-static inline u32 Bgr555ToRgba8(uint16_t color, bool transparent) {
+static inline AtlasTexel Bgr555ToRgba5551(uint16_t color, bool transparent) {
     if (transparent) return 0u;
-    u32 r = (color & 0x1Fu);
-    u32 g = ((color >> 5) & 0x1Fu);
-    u32 b = ((color >> 10) & 0x1Fu);
-    r = (r << 3) | (r >> 2);
-    g = (g << 3) | (g >> 2);
-    b = (b << 3) | (b >> 2);
-    /* Byte order r,g,b,a in memory -- matches GPU_RGBA8's expected layout
-     * directly, no texenv swizzle hack needed at draw time (unlike the
-     * CPU-composited buffer's ABGR quirk in platform_gpu_3ds.c). */
-    return (255u << 24) | (b << 16) | (g << 8) | r;
+    const unsigned r = color & 0x1Fu;
+    const unsigned g = (color >> 5) & 0x1Fu;
+    const unsigned b = (color >> 10) & 0x1Fu;
+    /* GPU_RGBA5551: RRRRRGGGGGBBBBBA, most significant bit first. */
+    return (AtlasTexel)((r << 11) | (g << 6) | (b << 1) | 1u);
 }
 
 /* The GBA backdrop (BG palette entry 0) as a C2D clear colour. C2D_Color32
- * takes r,g,b,a as arguments, so unlike Bgr555ToRgba8 -- which packs bytes
+ * takes r,g,b,a as arguments, so unlike Bgr555ToRgba5551 -- which packs bits
  * for the atlas texture's own layout -- the channels go in straight. Same
  * 5->8 bit expansion, so a backdrop-coloured clear and a backdrop-coloured
  * tile match to the byte. */
@@ -1331,39 +1491,33 @@ static inline u32 BackdropClearColor(void) {
     return C2D_Color32((u8)r, (u8)g, (u8)b, 255);
 }
 
-/* GBA brightness increase/decrease on 5-bit channels, byte-for-byte the same
- * formula as port/ppu/src/mode1.c's mode1_brighten/mode1_darken (GBATEK:
- * I = I +- I(or 31-I)*evy/16, truncating; evy pre-clamped 0..16). Operates
- * directly on our packed R,G,B,A-in-memory u32 (same convention mode1.c
- * calls "ABGR8888" -- see Bgr555ToRgba8's comment), so the bit shifts match
- * theirs exactly (byte0=R at shift 0, byte1=G at shift 8, byte2=B at shift
- * 16). */
-static inline u32 ApplyBrighten(u32 color, int evy) {
-    if ((color >> 24) == 0u) return color; /* transparent stays transparent */
-    int r = (int)(color & 0xFFu) >> 3;
-    int g = (int)((color >> 8) & 0xFFu) >> 3;
-    int b = (int)((color >> 16) & 0xFFu) >> 3;
+/* GBA brightness increase/decrease on 5-bit channels, the same formula as
+ * port/ppu/src/mode1.c's mode1_brighten/mode1_darken (GBATEK:
+ * I = I +- I(or 31-I)*evy/16, truncating; evy pre-clamped 0..16). The atlas
+ * texel already holds 5-bit channels, so this is the hardware's own
+ * arithmetic with nothing to convert. */
+static inline AtlasTexel ApplyBrighten(AtlasTexel color, int evy) {
+    if ((color & 1u) == 0u) return color; /* transparent stays transparent */
+    int r = (color >> 11) & 0x1F, g = (color >> 6) & 0x1F, b = (color >> 1) & 0x1F;
     r += ((31 - r) * evy) >> 4;
     g += ((31 - g) * evy) >> 4;
     b += ((31 - b) * evy) >> 4;
     if (r > 31) r = 31;
     if (g > 31) g = 31;
     if (b > 31) b = 31;
-    return (255u << 24) | ((u32)(b << 3) << 16) | ((u32)(g << 3) << 8) | (u32)(r << 3);
+    return (AtlasTexel)((r << 11) | (g << 6) | (b << 1) | 1);
 }
 
-static inline u32 ApplyDarken(u32 color, int evy) {
-    if ((color >> 24) == 0u) return color;
-    int r = (int)(color & 0xFFu) >> 3;
-    int g = (int)((color >> 8) & 0xFFu) >> 3;
-    int b = (int)((color >> 16) & 0xFFu) >> 3;
+static inline AtlasTexel ApplyDarken(AtlasTexel color, int evy) {
+    if ((color & 1u) == 0u) return color;
+    int r = (color >> 11) & 0x1F, g = (color >> 6) & 0x1F, b = (color >> 1) & 0x1F;
     r -= (r * evy) >> 4;
     g -= (g * evy) >> 4;
     b -= (b * evy) >> 4;
     if (r < 0) r = 0;
     if (g < 0) g = 0;
     if (b < 0) b = 0;
-    return (255u << 24) | ((u32)(b << 3) << 16) | ((u32)(g << 3) << 8) | (u32)(r << 3);
+    return (AtlasTexel)((r << 11) | (g << 6) | (b << 1) | 1);
 }
 
 /* Frame-global BLDCNT/BLDALPHA/BLDY state, computed once per frame in
@@ -1464,14 +1618,13 @@ static inline WindowVis ComputeLayerWinVis(uint8_t insideMask, uint8_t outsideMa
  * GetOrDecodeTileSlot's full decode (palette lookup, brighten/darken,
  * atlas write, caching): a mask tile's actual COLOR never matters, only
  * whether it has any opaque texel at all. */
+/* From the per-frame VRAM pass (VramDiffBeginFrame) rather than the tile's
+ * bytes. Past the end of VRAM counts as transparent. */
 static inline bool TileHasOpaquePixel(uint32_t byteOffset, bool bpp8) {
-    const uint32_t* src = (const uint32_t*)(gVram + byteOffset);
-    if (!bpp8) {
-        return (src[0] | src[1] | src[2] | src[3] | src[4] | src[5] | src[6] | src[7]) != 0;
-    } else {
-        return (src[0] | src[1] | src[2] | src[3] | src[4] | src[5] | src[6] | src[7] |
-                src[8] | src[9] | src[10] | src[11] | src[12] | src[13] | src[14] | src[15]) != 0;
-    }
+    const uint32_t c = byteOffset / VRAM_CHUNK_BYTES;
+    if (c >= VRAM_CHUNKS) return false;
+    if (sChunkOpaque[c]) return true;
+    return bpp8 && c + 1 < VRAM_CHUNKS && sChunkOpaque[c + 1];
 }
 
 /* Rasterizes every live OBJWIN sprite (attr0 objMode==2) into
@@ -1612,10 +1765,10 @@ static const uint8_t kSwizzleLUT[64] = {
  * this slot's swizzled position in sAtlasTexture.data (see kSwizzleLUT),
  * applying `pal`/`palBank`, flips, and (when this tile's layer is a
  * BLDCNT first-target and the active effect is brighten/darken) the
- * brightness adjustment. Records the raw source bytes into
- * sCacheSourceBytes so a future call can detect via memcmp whether the
- * underlying VRAM tile changed (see GetOrDecodeTileSlot) without
- * redecoding pixel-by-pixel, and sets this slot's row bit in
+ * brightness adjustment. Records the frame it was decoded in, so a future
+ * call can tell from the VRAM change stamps whether the underlying tile
+ * changed (see GetOrDecodeTileSlot) without redecoding pixel-by-pixel, and
+ * sets this slot's row bit in
  * sDirtyRowMask so the end-of-frame cache flush only covers the atlas
  * rows actually touched this frame. */
 /* Writes one 8x8 tile's texels into one atlas slot, and nothing else -- no
@@ -1630,25 +1783,25 @@ static const uint8_t kSwizzleLUT[64] = {
  * on exactly this ordering. */
 static void DecodeTileTexels(int slot, const uint8_t* src, bool bpp8, const uint16_t* pal, int palBank,
                              bool hflip, bool vflip, BrightAdjust brightAdjust) {
-    u32* blockBase = (u32*)sAtlasTexture.data + (size_t)slot * 64;
+    AtlasTexel* blockBase = (AtlasTexel*)sAtlasTexture.data + (size_t)slot * 64;
 
     for (int row = 0; row < 8; ++row) {
         int srcRow = vflip ? (7 - row) : row;
-        u32 pixels[8];
+        AtlasTexel pixels[8];
         if (!bpp8) {
             const uint8_t* rowSrc = src + srcRow * 4;
             for (int col = 0; col < 8; ++col) {
                 int srcCol = hflip ? (7 - col) : col;
                 uint8_t byte = rowSrc[srcCol / 2];
                 uint8_t idx = (srcCol & 1) ? (byte >> 4) & 0x0Fu : byte & 0x0Fu;
-                pixels[col] = Bgr555ToRgba8(pal[palBank * 16 + idx], idx == 0);
+                pixels[col] = Bgr555ToRgba5551(pal[palBank * 16 + idx], idx == 0);
             }
         } else {
             const uint8_t* rowSrc = src + srcRow * 8;
             for (int col = 0; col < 8; ++col) {
                 int srcCol = hflip ? (7 - col) : col;
                 uint8_t idx = rowSrc[srcCol];
-                pixels[col] = Bgr555ToRgba8(pal[idx], idx == 0);
+                pixels[col] = Bgr555ToRgba5551(pal[idx], idx == 0);
             }
         }
         if (brightAdjust == BRIGHT_ADJUST_BRIGHTEN) {
@@ -1663,7 +1816,8 @@ static void DecodeTileTexels(int slot, const uint8_t* src, bool bpp8, const uint
 static void DecodeTileIntoSlot(int slot, const uint8_t* src, bool bpp8, const uint16_t* pal, int palBank,
                                bool hflip, bool vflip, BrightAdjust brightAdjust, uint32_t palHash) {
     DecodeTileTexels(slot, src, bpp8, pal, palBank, hflip, vflip, brightAdjust);
-    memcpy(sCacheSourceBytes[slot], src, bpp8 ? 64u : 32u);
+    sCacheDecodeStamp[slot] = sFrameStamp;
+    ++sPerfCount[PERF_COUNT_TILE_DECODES];
     sCachePalHash[slot] = palHash;
     sCacheEvy[slot] = (brightAdjust != BRIGHT_ADJUST_NONE) ? (uint8_t)sBldEvy : 0;
 
@@ -1672,11 +1826,21 @@ static void DecodeTileIntoSlot(int slot, const uint8_t* src, bool bpp8, const ui
     ++sDecodeSeq;
 }
 
-static inline uint32_t BlockKeyHash(const BlockCacheKey* k) {
+/* Hashes a zero-padded key a word at a time (the keys are memset before
+ * being filled, so the padding is deterministic). Byte-at-a-time FNV cost a
+ * multiply per byte on every block reference, every frame. */
+static inline uint32_t HashKeyWords(const void* key, size_t size) {
+    const uint32_t* w = (const uint32_t*)key;
     uint32_t h = 2166136261u;
-    const uint8_t* b = (const uint8_t*)k;
-    for (size_t i = 0; i < sizeof(*k); ++i) h = (h ^ b[i]) * 16777619u;
+    for (size_t i = 0; i < size / 4; ++i) h = (h ^ w[i]) * 16777619u;
+    h ^= h >> 15;
     return h & HASH_MASK;
+}
+_Static_assert(sizeof(BlockCacheKey) % 4 == 0, "BlockCacheKey hashed by words");
+_Static_assert(sizeof(Block32CacheKey) % 4 == 0, "Block32CacheKey hashed by words");
+
+static inline uint32_t BlockKeyHash(const BlockCacheKey* k) {
+    return HashKeyWords(k, sizeof(*k));
 }
 
 static inline bool BlockKeyEqual(const BlockCacheKey* a, const BlockCacheKey* b) {
@@ -1697,16 +1861,17 @@ static void DecodeBlockIntoSlot(int block, const uint8_t* src[4], const uint16_t
         DecodeTileTexels(quadSlot[q], src[q], false, pal, (entry >> 12) & 0x0Fu,
                          (entry & 0x0400u) != 0u, (entry & 0x0800u) != 0u,
                          (BrightAdjust)key->brightAdjust);
-        memcpy(&sBlockSourceBytes[block][q * 32], src[q], 32u);
     }
+    sBlockDecodeStamp[block] = sFrameStamp;
+    ++sPerfCount[PERF_COUNT_B16_DECODES];
     sBlockPalHash[block] = palHash;
     sBlockEvy[block] = (key->brightAdjust != BRIGHT_ADJUST_NONE) ? (uint8_t)sBldEvy : 0;
     if (sBlockDebugTint) {
         /* Outline the 16x16 region on the four quadrant slots' perimeter
          * edges -- see Port_GpuRenderer_SetBlockDebugTint. */
         const int q[4] = { base, base + 1, base + ATLAS_TILES_PER_ROW, base + ATLAS_TILES_PER_ROW + 1 };
-        const u32 c = (255u << 24) | (255u << 16) | (0u << 8) | 255u; /* opaque magenta */
-        u32* atlasWords = (u32*)sAtlasTexture.data;
+        const AtlasTexel c = Bgr555ToRgba5551(0x7C1F, false); /* opaque magenta */
+        AtlasTexel* atlasWords = (AtlasTexel*)sAtlasTexture.data;
         for (int i = 0; i < 8; ++i) {
             atlasWords[(size_t)q[0] * 64 + kSwizzleLUT[0 * 8 + i]] = c;
             atlasWords[(size_t)q[0] * 64 + kSwizzleLUT[i * 8 + 0]] = c;
@@ -1728,8 +1893,8 @@ static void DecodeBlockIntoSlot(int block, const uint8_t* src[4], const uint16_t
 /* Atlas block index for this 2x2 tilemap group, decoding only if needed;
  * -1 when the block region is full, which the caller answers by drawing the
  * four tiles individually. Staleness is checked exactly as for tiles: a key
- * hit still has to pass a memcmp of the source bytes (animated tiles) plus
- * the palette hash and evy. */
+ * hit still has to pass the VRAM change stamps (animated tiles) plus the
+ * palette hash and evy. */
 static int GetOrDecodeBlockSlot(const uint16_t entry[4], uint32_t charBase, const uint16_t* pal,
                                 uint32_t palHash, BrightAdjust brightAdjust, const uint8_t* src[4]) {
     BlockCacheKey key;
@@ -1743,13 +1908,14 @@ static int GetOrDecodeBlockSlot(const uint16_t entry[4], uint32_t charBase, cons
      * clarity, mirroring TileCacheKey carrying palBank explicitly. */
     key.palBankHint = (uint8_t)((entry[0] >> 12) & 0x0Fu);
 
+    ++sPerfCount[PERF_COUNT_B16_LOOKUPS];
     const uint32_t h = BlockKeyHash(&key);
     const uint8_t curEvy = (brightAdjust != BRIGHT_ADJUST_NONE) ? (uint8_t)sBldEvy : 0;
     for (int32_t i = sBlockHashHead[h]; i >= 0; i = sBlockHashNext[i]) {
         if (!BlockKeyEqual(&sBlockKeys[i], &key)) continue;
         bool fresh = sBlockPalHash[i] == palHash && sBlockEvy[i] == curEvy;
         for (int q = 0; fresh && q < 4; ++q) {
-            if (memcmp(&sBlockSourceBytes[i][q * 32], src[q], 32u) != 0) fresh = false;
+            if (TileChangeStamp((uint32_t)(src[q] - gVram), false) > sBlockDecodeStamp[i]) fresh = false;
         }
         if (fresh) return i;
         DecodeBlockIntoSlot(i, src, pal, &key, palHash); /* redecode in place */
@@ -1778,10 +1944,7 @@ static int GetOrDecodeBlockSlot(const uint16_t entry[4], uint32_t charBase, cons
 /* ---- 32x32 block: the 16x16 path one size up (4x4 tiles / slots) ---- */
 
 static inline uint32_t Block32KeyHash(const Block32CacheKey* k) {
-    uint32_t h = 2166136261u;
-    const uint8_t* b = (const uint8_t*)k;
-    for (size_t i = 0; i < sizeof(*k); ++i) h = (h ^ b[i]) * 16777619u;
-    return h & HASH_MASK;
+    return HashKeyWords(k, sizeof(*k));
 }
 
 static inline bool Block32KeyEqual(const Block32CacheKey* a, const Block32CacheKey* b) {
@@ -1803,16 +1966,17 @@ static void DecodeBlock32IntoSlot(int b32, const uint8_t* src[16], const uint16_
         DecodeTileTexels(slot, src[q], false, pal, (entry >> 12) & 0x0Fu,
                          (entry & 0x0400u) != 0u, (entry & 0x0800u) != 0u,
                          (BrightAdjust)key->brightAdjust);
-        memcpy(&sB32SourceBytes[b32][q * 32], src[q], 32u);
     }
+    sB32DecodeStamp[b32] = sFrameStamp;
+    ++sPerfCount[PERF_COUNT_B32_DECODES];
     sB32PalHash[b32] = palHash;
     sB32Evy[b32] = (key->brightAdjust != BRIGHT_ADJUST_NONE) ? (uint8_t)sBldEvy : 0;
     if (sBlockDebugTint) {
         /* Outline the 32x32 region: top/bottom edge on the top/bottom slot
          * row, left/right edge on the left/right slot column. Cyan, so a
          * 32x32 group reads differently from a 16x16 (magenta) one. */
-        const u32 c = (255u << 24) | (255u << 16) | (255u << 8) | 0u; /* opaque cyan */
-        u32* atlasWords = (u32*)sAtlasTexture.data;
+        const AtlasTexel c = Bgr555ToRgba5551(0x7FE0, false); /* opaque cyan */
+        AtlasTexel* atlasWords = (AtlasTexel*)sAtlasTexture.data;
         for (int k = 0; k < 4; ++k) {
             const int topSlot = base + k;
             const int botSlot = base + 3 * ATLAS_TILES_PER_ROW + k;
@@ -1842,13 +2006,14 @@ static int GetOrDecodeBlock32Slot(const uint16_t entry[16], uint32_t charBase, c
     key.brightAdjust = (uint8_t)brightAdjust;
     key.palBankHint = (uint8_t)((entry[0] >> 12) & 0x0Fu);
 
+    ++sPerfCount[PERF_COUNT_B32_LOOKUPS];
     const uint32_t h = Block32KeyHash(&key);
     const uint8_t curEvy = (brightAdjust != BRIGHT_ADJUST_NONE) ? (uint8_t)sBldEvy : 0;
     for (int32_t i = sB32HashHead[h]; i >= 0; i = sB32HashNext[i]) {
         if (!Block32KeyEqual(&sB32Keys[i], &key)) continue;
         bool fresh = sB32PalHash[i] == palHash && sB32Evy[i] == curEvy;
         for (int q = 0; fresh && q < 16; ++q) {
-            if (memcmp(&sB32SourceBytes[i][q * 32], src[q], 32u) != 0) fresh = false;
+            if (TileChangeStamp((uint32_t)(src[q] - gVram), false) > sB32DecodeStamp[i]) fresh = false;
         }
         if (fresh) return i;
         DecodeBlock32IntoSlot(i, src, pal, &key, palHash);
@@ -1873,11 +2038,9 @@ static int GetOrDecodeBlock32Slot(const uint16_t entry[16], uint32_t charBase, c
  * comment on sHashBucketHead above) -- a hash hit means this exact (offset,
  * bpp, palette bank, flip, brightness) combination was decoded on some
  * earlier frame, but the underlying VRAM bytes might have changed since
- * (animated tiles: water, lava, etc.), so a memcmp against the bytes
- * captured at that decode is still needed before trusting the cached
- * pixels. That memcmp (<=64 bytes) is far cheaper than a full redecode
- * (palette lookup + branches over 64 pixels), which is why this still wins
- * even though every reference (not just every unique tile) pays it. */
+ * (animated tiles: water, lava, etc.), so the tile's VRAM change stamp is
+ * checked against the frame the slot was decoded in before trusting the
+ * cached pixels (see VramDiffBeginFrame). */
 static int GetOrDecodeTileSlot(uint32_t byteOffset, bool bpp8, const uint16_t* pal, int palBank, bool hflip,
                                bool vflip, bool isObj, BrightAdjust brightAdjust) {
     TileCacheKey key = {
@@ -1885,13 +2048,13 @@ static int GetOrDecodeTileSlot(uint32_t byteOffset, bool bpp8, const uint16_t* p
         (uint8_t)vflip,   (uint8_t)isObj,  (uint8_t)brightAdjust,
     };
     const uint8_t* src = gVram + byteOffset;
-    const size_t tileBytes = bpp8 ? 64u : 32u;
     /* Precomputed once per frame (see sBgPalBankHash/sBgPalFullHash/
      * sObjPalBankHash/sObjPalFullHash) instead of hashing/comparing
      * palette bytes per reference -- see sCachePalHash's comment. */
     const uint32_t palHash =
         isObj ? (bpp8 ? sObjPalFullHash : sObjPalBankHash[palBank]) : (bpp8 ? sBgPalFullHash : sBgPalBankHash[palBank]);
     const uint8_t curEvy = (brightAdjust != BRIGHT_ADJUST_NONE) ? (uint8_t)sBldEvy : 0;
+    ++sPerfCount[PERF_COUNT_TILE_LOOKUPS];
     uint32_t h = HashTileCacheKey(&key);
     for (int32_t i = sHashBucketHead[h]; i >= 0; i = sHashChainNext[i]) {
         if (!TileCacheKeyEqual(&sCacheKeys[i], &key)) continue;
@@ -1904,7 +2067,8 @@ static int GetOrDecodeTileSlot(uint32_t byteOffset, bool bpp8, const uint16_t* p
          * three redecodes IN PLACE (same slot) rather than minting a new
          * one -- see TileCacheKey's comment for why the latter must never
          * allocate a fresh slot. */
-        if (memcmp(sCacheSourceBytes[i], src, tileBytes) == 0 && sCachePalHash[i] == palHash && sCacheEvy[i] == curEvy) {
+        if (sCacheDecodeStamp[i] >= TileChangeStamp(byteOffset, bpp8) && sCachePalHash[i] == palHash &&
+            sCacheEvy[i] == curEvy) {
             return i;
         }
         DecodeTileIntoSlot(i, src, bpp8, pal, palBank, hflip, vflip, brightAdjust, palHash);
@@ -2093,7 +2257,7 @@ static void ComposeAffineBg2(void) {
     const uint16_t* pal = (const uint16_t*)gBgPltt;      /* 256 entries (8bpp) */
     const uint8_t* map  = gVram + sAffineBg2ScreenBase;   /* 32*32 index bytes */
     const uint8_t* chr  = gVram + sAffineBg2CharBase;
-    u32* dst = (u32*)sAffineBg2Tex.data;
+    AtlasTexel* dst = (AtlasTexel*)sAffineBg2Tex.data;
     for (int cy = 0; cy < 32; ++cy) {
         for (int cx = 0; cx < 32; ++cx) {
             const uint8_t* g = chr + (uint32_t)map[cy * 32 + cx] * 64u;
@@ -2104,12 +2268,12 @@ static void ComposeAffineBg2(void) {
                     int tx = bx + px, ty = by + py;
                     u32 tile = (uint32_t)(ty / 8) * (AFF_BG2_DIM / 8) + (uint32_t)(tx / 8);
                     dst[tile * 64u + kSwizzleLUT[(ty % 8) * 8 + (tx % 8)]] =
-                        Bgr555ToRgba8(pal[idx], idx == 0);
+                        Bgr555ToRgba5551(pal[idx], idx == 0);
                 }
             }
         }
     }
-    FlushAtlasRange(sAffineBg2Tex.data, (size_t)AFF_BG2_DIM * AFF_BG2_DIM * sizeof(u32));
+    FlushAtlasRange(sAffineBg2Tex.data, (size_t)AFF_BG2_DIM * AFF_BG2_DIM * sizeof(AtlasTexel));
 }
 
 /* Push the affine BG2 as one scaled quad at BG2's priority. Screen rect: the
@@ -2137,7 +2301,7 @@ static void CollectAffineBg2(void) {
     item->affBleedEdges = 0;
     item->winVis = WIN_VIS_ALWAYS;
     item->isHud = false;
-    item->plainEnv = false;   /* atlas texenv: Bgr555ToRgba8 byte order + alpha */
+    item->plainEnv = false;   /* atlas texenv: RGBA5551, like the atlas */
 }
 
 /* Text-mode BG tilemap addressing, byte-identical to the formula validated
@@ -2232,6 +2396,7 @@ static WideBgSource WideBgSourceFor(int bgIndex, int scrollX, int scrollY) {
 /* The tilemap entry the game would have put in VRAM for screen tile (tx,ty).
  * Outside the room's block map it is 0, like the cleared VRAM there. */
 static inline uint16_t WideBgEntry(const WideBgSource* src, int tx, int ty) {
+    ++sPerfCount[PERF_COUNT_WIDE_REBUILT];
     const int ax = src->originTileX + tx;
     const int ay = src->originTileY + ty;
     const int bx = ax >> 1, by = ay >> 1;
@@ -2417,16 +2582,48 @@ static void CollectBgLayer(int bgIndex) {
         fixOriginTileX = originX >> 3;
         fixOriginTileY = originY >> 3;
     }
+    /* Which corrections touch each 16x16 room block in view, looked up once
+     * per block per frame: CORR_LAYER_FIX / CORR_TANK / CORR_DOOR. The
+     * passes below used to ask the three lists again for every TILE of every
+     * group they examined -- sixteen linear scans per 32x32 group, in almost
+     * every room (any door on screen counts). */
+    enum { CORR_LAYER_FIX = 1, CORR_TANK = 2, CORR_DOOR = 4, CORR_GRID_W = 40, CORR_GRID_H = 24 };
+    uint8_t corrGrid[CORR_GRID_H][CORR_GRID_W];
+    const int corrBX0 = (fixOriginTileX + txMin) >> 1; /* arithmetic shift: floor */
+    const int corrBY0 = (fixOriginTileY + tyMin) >> 1;
+    const int corrW = ((fixOriginTileX + txMax) >> 1) - corrBX0 + 1;
+    const int corrH = ((fixOriginTileY + tyMax) >> 1) - corrBY0 + 1;
+    const bool corrGridOk = corrW <= CORR_GRID_W && corrH <= CORR_GRID_H;
+    if (roomHasBlockCorrections && corrGridOk) {
+        extern int PortLayerFix_DestFor(int bg, int blockX, int blockY);
+        extern bool PortPpuMzm_IsVisibleTankBlock(int blockX, int blockY);
+        extern bool PortPpuMzm_IsDoorDepthBlock(int blockX, int blockY);
+        for (int gy = 0; gy < corrH; ++gy) {
+            for (int gx = 0; gx < corrW; ++gx) {
+                const int bx = corrBX0 + gx, by = corrBY0 + gy;
+                uint8_t m = 0;
+                if (sHasLayerFix && PortLayerFix_DestFor(bgIndex, bx, by) >= 0) m |= CORR_LAYER_FIX;
+                if (roomHasTankOnThisBg && PortPpuMzm_IsVisibleTankBlock(bx, by)) m |= CORR_TANK;
+                if (roomHasDoorDepth && PortPpuMzm_IsDoorDepthBlock(bx, by)) m |= CORR_DOOR;
+                corrGrid[gy][gx] = m;
+            }
+        }
+    }
+    /* The corrections touching screen tile (tx,ty)'s 16x16 room block. */
+    #define TILE_CORR_MASK(TX, TY)                                                          \
+        (!roomHasBlockCorrections ? 0u                                                     \
+         : corrGridOk ? (unsigned)corrGrid[((fixOriginTileY + (TY)) >> 1) - corrBY0]        \
+                                          [((fixOriginTileX + (TX)) >> 1) - corrBX0]        \
+         : (BlockGroupNeedsPerTile(bgIndex, (fixOriginTileX + (TX)) >> 1,                   \
+                                   (fixOriginTileY + (TY)) >> 1, sHasLayerFix,              \
+                                   roomHasTankOnThisBg, roomHasDoorDepth)                   \
+                ? (unsigned)(CORR_LAYER_FIX | CORR_TANK | CORR_DOOR) : 0u))
     /* True when the 16x16 tilemap group whose top-left screen tile is
      * (tx,ty) carries a per-tile correction -- a layer-fix dest, a
      * visible-tank tile or a door-depth tile -- so it must stay per-tile
      * rather than merge into one block quad. Corrections are already keyed
-     * on 16x16 room blocks, so this is exact. Cheap no-op when the room has
-     * none. */
-    #define TILE_CORRECTED(TX, TY)                                            \
-        BlockGroupNeedsPerTile(bgIndex, (fixOriginTileX + (TX)) >> 1,         \
-                               (fixOriginTileY + (TY)) >> 1,                  \
-                               sHasLayerFix, roomHasTankOnThisBg, roomHasDoorDepth)
+     * on 16x16 room blocks, so this is exact. */
+    #define TILE_CORRECTED(TX, TY) (TILE_CORR_MASK(TX, TY) != 0u)
     /* Any tile of the WxH-tile group at (TX,TY) touched by a correction. The
      * >>1 room-block lattice can straddle the tilemap-aligned group, so
      * every tile is checked, not just the corner. No-op when the room has
@@ -2471,6 +2668,7 @@ static void CollectBgLayer(int bgIndex) {
      * whatever it declines falls through to the 16x16 pass unchanged. */
     const int sk = (3 - priority) * 10 + (3 - bgIndex);
     const int depthTierBg = PortStereoDepth_BgTier(&sDepthState, bgIndex);
+    u64 tPass = svcGetSystemTick();
     if (blocksEligible && sBlock32PassEnabled) {
         const int ty0 = tyMin + ((-(startTileY + tyMin)) & 3);
         const int tx0 = txMin + ((-(startTileX + txMin)) & 3);
@@ -2515,8 +2713,7 @@ static void CollectBgLayer(int bgIndex) {
                 uint32_t palHash = 2166136261u;
                 for (int q = 0; q < 16; ++q) {
                     const uint32_t bankHash = sBgPalBankHash[(entry[q] >> 12) & 0x0Fu];
-                    for (int b = 0; b < 4; ++b)
-                        palHash = (palHash ^ ((bankHash >> (b * 8)) & 0xFFu)) * 16777619u;
+                    palHash = (palHash ^ bankHash) * 16777619u;
                 }
                 const int b32 =
                     GetOrDecodeBlock32Slot(entry, charBase, pal, palHash, brightAdjust, src);
@@ -2529,6 +2726,11 @@ static void CollectBgLayer(int bgIndex) {
         }
     }
 
+    {
+        const u64 now = svcGetSystemTick();
+        PlatformGpu3DS_PerfPhaseAdd(PERF_PHASE_BG_B32, now - tPass);
+        tPass = now;
+    }
     if (blocksEligible) {
         for (int ty = tyMin + ((startTileY + tyMin) & 1); ty + 1 <= tyMax; ty += 2) {
             const float drawY = (float)(ty * 8 - fineY);
@@ -2577,8 +2779,7 @@ static void CollectBgLayer(int bgIndex) {
                 uint32_t palHash = 2166136261u;
                 for (int q = 0; q < 4; ++q) {
                     const uint32_t bankHash = sBgPalBankHash[(entry[q] >> 12) & 0x0Fu];
-                    for (int b = 0; b < 4; ++b)
-                        palHash = (palHash ^ ((bankHash >> (b * 8)) & 0xFFu)) * 16777619u;
+                    palHash = (palHash ^ bankHash) * 16777619u;
                 }
                 const int block =
                     GetOrDecodeBlockSlot(entry, charBase, pal, palHash, brightAdjust, src);
@@ -2595,12 +2796,18 @@ static void CollectBgLayer(int bgIndex) {
         }
     }
 
+    {
+        const u64 now = svcGetSystemTick();
+        PlatformGpu3DS_PerfPhaseAdd(PERF_PHASE_BG_B16, now - tPass);
+        tPass = now;
+    }
     for (int ty = tyMin; ty <= tyMax; ++ty) {
         int tileRow = (startTileY + ty) & (mapHeightTiles - 1);
         int screenBlockY = tileRow / 32;
         int localRow = tileRow % 32;
         for (int tx = txMin; tx <= txMax; ++tx) {
             if (covered[ty + covY] & (1ull << (tx + covX))) continue;
+            ++sPerfCount[PERF_COUNT_TILE_POSITIONS];
             int tileCol = (startTileX + tx) & (mapWidthTiles - 1);
             int screenBlockX = tileCol / 32;
             int localCol = tileCol % 32;
@@ -2667,7 +2874,8 @@ static void CollectBgLayer(int bgIndex) {
              * stayed on screen. These entries exist precisely because the
              * room's own layering is wrong for a stereo image, so honouring
              * half of it fixes nothing. */
-            if (PortLayerFix_ActiveCount() > 0) {
+            const unsigned corr = TILE_CORR_MASK(tx, ty);
+            if (corr & CORR_LAYER_FIX) {
                 int dest = PortLayerFix_DestFor(bgIndex, (fixOriginTileX + tx) >> 1,
                                                 (fixOriginTileY + ty) >> 1);
                 if (dest >= 0) {
@@ -2690,9 +2898,7 @@ static void CollectBgLayer(int bgIndex) {
              * front of Samus. Move ONLY its depth to Samus's OBJ plane; the
              * 2D draw order (sortKey) is left alone, so occlusion against the
              * scenery is unchanged. */
-            if (roomHasTankOnThisBg &&
-                PortPpuMzm_IsVisibleTankBlock((fixOriginTileX + tx) >> 1,
-                                              (fixOriginTileY + ty) >> 1)) {
+            if (corr & CORR_TANK) {
                 depthTier = PortStereoDepth_ObjTier(&sDepthState, 1);
             }
             /* Door footprint (per-row spans from port_ppu_mzm.c: the door
@@ -2706,14 +2912,13 @@ static void CollectBgLayer(int bgIndex) {
              * sinking away from the frame. BG3 is excluded (roomHasDoorDepth
              * is false for it). TileHasOpaquePixel above already skipped
              * blank tiles, so the open doorway itself is never touched. */
-            if (roomHasDoorDepth &&
-                PortPpuMzm_IsDoorDepthBlock((fixOriginTileX + tx) >> 1,
-                                            (fixOriginTileY + ty) >> 1)) {
+            if (corr & CORR_DOOR) {
                 depthTier = PORT_TIER_BG_PLAY;
             }
             PushItem(slot, drawX, drawY, sortKey, depthTier, blendAlpha, rectWinVis, false);
         }
     }
+    PlatformGpu3DS_PerfPhaseAdd(PERF_PHASE_BG_TILES, svcGetSystemTick() - tPass);
 
     if (sCaptureLayer == bgIndex) {
         sCaptureLayer = -1;
@@ -3740,9 +3945,31 @@ static void DrawWideRoomMasks(float baseX, float baseY, float scaleX, float scal
     if (y1 < 240.0f) C2D_DrawRectSolid(0.0f, y1, 0.6f, 400.0f, 240.0f - y1, black);
 }
 
-void Port_GpuRenderer_RenderFrame(void) {
+/* The frame is split in two so the CPU half can run while the GPU is still
+ * drawing the previous frame (see Port_GpuRenderer_CollectFrame). */
+static bool sFrameCollected;
+static bool sAtlasRebindPending;
+
+bool Port_GpuRenderer_CollectNeedsIdleGpu(void) {
+    /* Each of these reassigns atlas slots the previous frame may still be
+     * sampling (see the resets at the top of Port_GpuRenderer_CollectFrame
+     * and BlockCacheBeginFrame). An in-place redecode is not on this list:
+     * it only changes what a slot shows to what it is about to show anyway. */
+    return sCacheCount >= ATLAS_MAX_SLOTS / 2 || sBlockCacheResetPending || sB32CacheResetPending;
+}
+
+/* CPU half: walk VRAM/OAM, decode into the atlas, build the sorted item list.
+ * Touches no GPU state, so it can run before C3D_FrameBegin -- which blocks
+ * until the GPU has finished the previous frame. Running it there overlaps
+ * this frame's collection with that frame's drawing instead of queueing one
+ * behind the other. The atlas is the one thing both touch; see
+ * Port_GpuRenderer_CollectNeedsIdleGpu for when that is not safe. */
+void Port_GpuRenderer_CollectFrame(void) {
     if (!sInitialized) return;
     u64 tStart = svcGetSystemTick();
+    VramDiffBeginFrame();
+    u64 tPhase = svcGetSystemTick();
+    PlatformGpu3DS_PerfPhaseAdd(PERF_PHASE_VRAM_DIFF, tPhase - tStart);
 
     /* The tile cache (sCacheKeys/sCacheCount/hash table) intentionally does
      * NOT reset here -- see the comment on sHashBucketHead. Only reclaim it
@@ -3938,6 +4165,11 @@ void Port_GpuRenderer_RenderFrame(void) {
     sExtT = sWideMarginY - sWideView.shiftY;
     sExtB = sWideMarginY + sWideView.shiftY;
 
+    {
+        const u64 now = svcGetSystemTick();
+        PlatformGpu3DS_PerfPhaseAdd(PERF_PHASE_COLLECT_REST, now - tPhase);
+        tPhase = now;
+    }
     if (sHazeActive) CollectHazeBg3();
 
     /* Any layer NOT collected as a cached layer this frame has a stale
@@ -3964,8 +4196,18 @@ void Port_GpuRenderer_RenderFrame(void) {
      * collected last is what gets dropped, and a missing enemy is far worse
      * than a missing patch of far-off scenery. Draw order comes from the sort
      * keys, not from collection order, so this changes nothing else. */
+    {
+        const u64 now = svcGetSystemTick();
+        PlatformGpu3DS_PerfPhaseAdd(PERF_PHASE_BG, now - tPhase); /* the haze BG3 */
+        tPhase = now;
+    }
     if (dispcnt & (1u << 12)) {
         for (int i = 127; i >= 0; --i) CollectSprite(i, obj1D);
+    }
+    {
+        const u64 now = svcGetSystemTick();
+        PlatformGpu3DS_PerfPhaseAdd(PERF_PHASE_SPRITES, now - tPhase);
+        tPhase = now;
     }
     sCollectOffX = sCollectOffY = 0.0f;
     for (int bg = 3; bg >= 0; --bg) {
@@ -3976,6 +4218,11 @@ void Port_GpuRenderer_RenderFrame(void) {
         CollectBgLayer(bg);
     }
     sCollectOffX = sCollectOffY = 0.0f; /* sprites, next frame, take no layer offset */
+    {
+        const u64 now = svcGetSystemTick();
+        PlatformGpu3DS_PerfPhaseAdd(PERF_PHASE_BG, now - tPhase);
+        tPhase = now;
+    }
     sOpaqueCount = 0;
     sBlendCount = 0;
     sDrawOrderCount = 0;
@@ -4077,7 +4324,7 @@ void Port_GpuRenderer_RenderFrame(void) {
          * flushing each dirty row-run separately (same byte-offset math as
          * the old transfer-based version) rather than the whole atlas is
          * still worth doing, just far cheaper to begin with now. */
-        size_t rowBytes = (size_t)ATLAS_W * sizeof(u32);
+        size_t rowBytes = (size_t)ATLAS_W * sizeof(AtlasTexel);
         /* One word per 64 slot rows since the atlas grew past 64 rows tall
          * (see the ATLAS_* enum). Runs are found per word, so a run that
          * spans a word boundary is flushed as two, which costs one extra
@@ -4095,7 +4342,7 @@ void Port_GpuRenderer_RenderFrame(void) {
                  * never 0 for any startRow > 0. For startRow == 0 and all
                  * 64 bits dirty, runLength = 64 directly. */
                 int runLength = (~shifted == 0) ? 64 : __builtin_ctzll(~shifted);
-                u32* flushStart = (u32*)sAtlasTexture.data + (size_t)(rowBase + startRow) * 8 * ATLAS_W;
+                AtlasTexel* flushStart = (AtlasTexel*)sAtlasTexture.data + (size_t)(rowBase + startRow) * 8 * ATLAS_W;
                 size_t flushBytes = (size_t)runLength * 8 * rowBytes;
                 FlushAtlasRange(flushStart, flushBytes);
                 mask &= ~(((1ull << runLength) - 1ull) << startRow);
@@ -4135,13 +4382,35 @@ void Port_GpuRenderer_RenderFrame(void) {
          * per-unit dirty flag, and the next draw re-emits the texture-unit
          * config -- cache-clear bit included -- before anything samples the
          * atlas this frame. Once per frame, and only on frames that
-         * actually rewrote a slot. */
-        C3D_TexBind(0, &sAtlasTexture);
+         * actually rewrote a slot. Done in the draw half, inside the frame. */
+        sAtlasRebindPending = true;
     }
 
     u64 tAfterCollect = svcGetSystemTick();
+    PlatformGpu3DS_PerfPhaseAdd(PERF_PHASE_COLLECT_REST, tAfterCollect - tPhase);
+    for (int c = 0; c < PERF_COUNT_COUNT; ++c) {
+        PlatformGpu3DS_PerfCountAdd((PerfCounter)c, sPerfCount[c]);
+        sPerfCount[c] = 0;
+    }
     sLastCollectMs = (float)((double)(tAfterCollect - tStart) / PORT_GPU_RENDERER_CPU_TICKS_PER_MSEC);
     sLastAtlasUploadMs = (float)((double)(tAfterCollect - tBeforeUpload) / PORT_GPU_RENDERER_CPU_TICKS_PER_MSEC);
+    sFrameCollected = true;
+}
+
+/* GPU half: everything from here on records GPU commands, so it must run
+ * between C3D_FrameBegin and C3D_FrameEnd. */
+void Port_GpuRenderer_DrawFrame(void) {
+    if (!sInitialized) return;
+    if (!sFrameCollected) Port_GpuRenderer_CollectFrame();
+    sFrameCollected = false;
+    const u64 tAfterCollect = svcGetSystemTick();
+    if (sAtlasRebindPending) {
+        C3D_TexBind(0, &sAtlasTexture);
+        sAtlasRebindPending = false;
+    }
+    BatchNewFrame();
+    const uint16_t dispcnt = (uint16_t)(gIoMem[0] | (gIoMem[1] << 8));
+    (void)dispcnt;
 
     float slider3d = PlatformGpu3DS_Get3DSlider();
     int style = Port_Config_Get3DSDisplayStyle();
@@ -4367,6 +4636,11 @@ void Port_GpuRenderer_RenderFrame(void) {
         bool plainEnvActive = false;
         int scissorPasses = sWindowActive ? 2 : 1;
         bool blendModeActive = false;
+        /* Items go through the batch (see BatchQuad) unless it could not be
+         * set up; either way the state changes below flush what came first. */
+        const bool batched = sBatchReady;
+        if (batched) BatchBegin();
+#define FLUSH_ITEMS() do { if (batched) BatchFlush(); else C2D_Flush(); } while (0)
         for (int sp = 0; sp < scissorPasses; ++sp) {
             bool insidePass = (sp == 0);
             for (int oi = 0; oi < sDrawOrderCount; ++oi) {
@@ -4381,7 +4655,7 @@ void Port_GpuRenderer_RenderFrame(void) {
                 bool wantBlend = item->blendAlpha;
                 if (wantBlend != blendModeActive) {
                     ++sLastBlendTransitions; /* each one is a batch break */
-                    C2D_Flush();
+                    FLUSH_ITEMS();
                     if (wantBlend) {
                         /* GBA alpha blend (GBATEK): out = min(31, src*EVA/16 + dst*EVB/16),
                          * with EVA and EVB independent. Pack EVA/16 into the blend
@@ -4425,7 +4699,7 @@ void Port_GpuRenderer_RenderFrame(void) {
                 /* A cached layer's quad samples a render target, whose
                  * texels need no unswizzle; the atlas does. */
                 if (item->plainEnv != plainEnvActive) {
-                    C2D_Flush();
+                    FLUSH_ITEMS();
                     if (item->plainEnv) ConfigurePlainTextureEnv();
                     else ConfigureAtlasTextureEnv();
                     plainEnvActive = item->plainEnv;
@@ -4435,7 +4709,14 @@ void Port_GpuRenderer_RenderFrame(void) {
                     item->screenFixed ? screenBaseX : worldBaseX,
                     item->screenFixed ? (item->isHud ? hudBaseY : screenBaseY) : worldBaseY,
                     eyeOffset, scaleX, scaleY, false);
-                C2D_DrawImage(item->img, &params, NULL);
+                if (!batched || !BatchQuad(item->img.tex, item->img.subtex, &params)) {
+                    /* Batch full (or unavailable): citro2d for this one. */
+                    if (batched) { BatchFlush(); C2D_Prepare(); C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_ALL); }
+                    C2D_DrawImage(item->img, &params, NULL);
+                    C2D_Flush();
+                    ConfigureAtlasTextureEnv();
+                    if (batched) BatchBegin();
+                }
                 ++drawCount;
 #ifdef PORT_DEBUG_TOOLS_ACTIVE
                 if (item->affine)      ++sDiagAffineDrawn[eye & 1];
@@ -4455,6 +4736,8 @@ void Port_GpuRenderer_RenderFrame(void) {
                 }
             }
         }
+        if (batched) BatchEnd();
+#undef FLUSH_ITEMS
         if (plainEnvActive) {
             C2D_Flush();
             ConfigureAtlasTextureEnv();
@@ -4724,6 +5007,7 @@ void Port_GpuRenderer_RenderFrame(void) {
      * flushed it. */
     if (sHazeActive && sHazeMode != HAZE_NOCOMPOSE) sHazeCur = sHazeBack;
 
+    BatchFrameDone();
     u64 tEnd = svcGetSystemTick();
     sLastDrawMs = (float)((double)(tEnd - tAfterCollect) / PORT_GPU_RENDERER_CPU_TICKS_PER_MSEC);
 
@@ -4749,6 +5033,11 @@ void Port_GpuRenderer_RenderFrame(void) {
         }
     }
 #endif
+}
+
+void Port_GpuRenderer_RenderFrame(void) {
+    Port_GpuRenderer_CollectFrame();
+    Port_GpuRenderer_DrawFrame();
 }
 
 /* Snapshot of the most recently rendered frame's item counts, for the
@@ -4810,16 +5099,17 @@ void Port_GpuRenderer_DumpAtlas(const char* ppmPath, const char* csvPath) {
         /* Whole atlas, both regions: the 8x8 tile slots on top and the
          * 16x16 block slots below them (see the ATLAS_* enum). */
         fprintf(f, "P6\n%d %d\n255\n", ATLAS_W, ATLAS_H);
-        const u32* px = (const u32*)sAtlasTexture.data;
+        const AtlasTexel* px = (const AtlasTexel*)sAtlasTexture.data;
         for (int y = 0; y < ATLAS_H; ++y) {
             for (int x = 0; x < ATLAS_W; ++x) {
                 int tileCol = x / 8, tileRow = y / 8;
                 int slot = tileRow * ATLAS_TILES_PER_ROW + tileCol;
                 int localX = x % 8, localY = y % 8;
-                u32 texel = px[(size_t)slot * 64 + kSwizzleLUT[localY * 8 + localX]];
-                uint8_t r = (uint8_t)(texel & 0xFFu);
-                uint8_t g = (uint8_t)((texel >> 8) & 0xFFu);
-                uint8_t b = (uint8_t)((texel >> 16) & 0xFFu);
+                const AtlasTexel texel = px[(size_t)slot * 64 + kSwizzleLUT[localY * 8 + localX]];
+                const unsigned r5 = (texel >> 11) & 0x1Fu, g5 = (texel >> 6) & 0x1Fu, b5 = (texel >> 1) & 0x1Fu;
+                uint8_t r = (uint8_t)((r5 << 3) | (r5 >> 2));
+                uint8_t g = (uint8_t)((g5 << 3) | (g5 >> 2));
+                uint8_t b = (uint8_t)((b5 << 3) | (b5 >> 2));
                 uint8_t rgb[3] = { r, g, b };
                 fwrite(rgb, 1, 3, f);
             }

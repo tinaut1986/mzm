@@ -16,6 +16,13 @@ bool Port_GpuRenderer_Init(void);
  * fall back to the CPU renderer when false. */
 bool Port_GpuRenderer_CanRenderFrame(void);
 void Port_GpuRenderer_RenderFrame(void);
+/* The two halves of RenderFrame. CollectFrame is CPU-only and may run before
+ * C3D_FrameBegin, overlapping the GPU's work on the previous frame, unless
+ * CollectNeedsIdleGpu says it is about to reassign atlas slots that frame may
+ * still be sampling. DrawFrame must run inside the frame. */
+void Port_GpuRenderer_CollectFrame(void);
+void Port_GpuRenderer_DrawFrame(void);
+bool Port_GpuRenderer_CollectNeedsIdleGpu(void);
 void Port_GpuRenderer_Shutdown(void);
 /* Step A: one quad per tilemap-aligned 16x16 block instead of four. Off
  * falls back to the per-tile loop, for measuring the change on hardware. */

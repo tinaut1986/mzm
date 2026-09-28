@@ -383,12 +383,12 @@ Toggled from the tools menu. ~1 minute of capacity (3600 frames at 60 FPS,
 
 ```
 struct PerfFileHeader {  // 16 bytes, at offset 0
-    uint32_t magic;       // 'MZP3' = 0x33505A4D little-endian
+    uint32_t magic;       // 'MZP7' = 0x37505A4D little-endian
     uint32_t sampleSize;  // sizeof(PerfSample) -- stride from this, don't hardcode
     uint32_t sampleCount;
     uint32_t reserved;    // zero
 };
-struct PerfSample {      // 64 bytes, sampleCount of them back to back
+struct PerfSample {      // 148 bytes, sampleCount of them back to back
     uint32_t frameCounter;
     uint32_t durationUs;         // wall clock of the frame that just ended.
                                  // ~16675 = on budget; ~33350 = one vblank missed
@@ -429,6 +429,29 @@ struct PerfSample {      // 64 bytes, sampleCount of them back to back
                                  // bit  18    frame drawn by the GPU renderer
                                  //            (clear = CPU fallback, so the
                                  //            draw-call census is stale)
+    uint32_t drawnPixels;        // 'MZP4'+: device pixels the quads covered, all eyes
+    uint32_t gpuWaitX100;        // 'MZP5'+: CPU time C3D_FrameBegin waited for the
+                                 // GPU to finish the previous frame. The renderer
+                                 // collects before that wait (it overlaps the GPU),
+                                 // so this is the GPU work the CPU could not hide.
+    uint32_t phaseX100[11];      // 'MZP6'+ (8 entries in 'MZP6'): CPU time per phase over this frame,
+                                 // 1/100 ms (PerfPhase, platform_gpu_3ds.h):
+                                 // 0 game logic (every tick since the last
+                                 //   presented frame, VBlank callback included)
+                                 // 1 renderer VRAM change-stamp pass
+                                 // 2 renderer OAM walk
+                                 // 3 renderer BG layers (+ haze BG3)
+                                 // 4 renderer sort, diagnostics, atlas flush
+                                 // 5 bottom screen tick + redraw
+                                 // 6 screen FX + C3D_FrameEnd
+                                 // 7 C3D_FrameSync, waiting for the display
+                                 // 8-10 ('MZP7') phase 3 split: 32x32 block
+                                 //   pass, 16x16 block pass, per-tile pass
+    uint32_t counts[8];          // 'MZP7': work over this frame -- 32x32 block
+                                 // lookups, decodes; 16x16 lookups, decodes;
+                                 // tile lookups, decodes; positions the
+                                 // per-tile pass examined; WIDE entries rebuilt
+                                 // from the room's block map
 };
 ```
 
@@ -440,7 +463,8 @@ that this was happening, in the first capture: 2-vblank frames reported
 lower GPU times than 1-vblank ones. A frame that is sampled but never
 presented keeps zeros in those fields.
 
-'MZP2' was this without `captureFlags`, which made a set of captures
+'MZP6' has 8 phases and no `counts`, 'MZP5' lacks `phaseX100`, 'MZP4' also `gpuWaitX100` and 'MZP3' also `drawnPixels`; the fields before
+them are unchanged. 'MZP2' was this without `captureFlags`, which made a set of captures
 impossible to tell apart afterwards: the 2026-09-04 round taking four of
 them (3D on/off against display style) to ask whether cost scales with
 pixels or with quads could not say which capture used which style, and
@@ -455,15 +479,15 @@ samples with no magic at all. Check the magic, and stride by `sampleSize`.
 import struct
 d = open('mzm-perf.bin', 'rb').read()
 magic, size, count, _ = struct.unpack_from('<4I', d, 0)
-assert magic == 0x33505A4D, 'not an MZP3 perf capture'
+assert magic == 0x37505A4D, 'not an MZP7 perf capture'
 for i in range(count):
     (frame, us, spr, vis, aff, drawX, procX, tileX, upX, cpuDrawX,
-     quads, bg, obj, flushes, flags, cap) = struct.unpack_from('<16I', d, 16 + i * size)
+     quads, bg, obj, flushes, flags, cap, pixels, waitX) = struct.unpack_from('<18I', d, 16 + i * size)
     print(f"{frame} {us:6d}us gpu={drawX/100:5.2f}+{procX/100:5.2f} "
           f"cpu={tileX/100:5.2f}+{upX/100:5.2f}+{cpuDrawX/100:5.2f}ms "
           f"quads={quads:4d} (bg={bg} obj={obj}) eyes={(flags >> 10) & 3} "
           f"flushes={flushes:3d} spr={vis:3d} passes={flags & 0xFF} "
-          f"style={cap & 3} slider={(cap >> 4) & 0x7F}")
+          f"style={cap & 3} slider={(cap >> 4) & 0x7F} gpuWait={waitX/100:5.2f}ms")
 ```
 
 ### Reading the numbers

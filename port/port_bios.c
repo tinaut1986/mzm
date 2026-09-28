@@ -398,10 +398,20 @@ static void Port_Bios_PaceFrame(void) {
 }
 #endif
 
+#if defined(MZM_3DS) && !defined(PLATFORM_LINUX)
+/* When the previous Port_Bios_Halt handed control back to the game: the time
+ * from there to the next Halt is game logic (perf recorder, PERF_PHASE_LOGIC). */
+static u64 sHaltExitTick;
+extern void PlatformGpu3DS_PerfPhaseAdd(int phase, unsigned long long ticks);
+enum { PERF_PHASE_LOGIC_ID = 0 }; /* PERF_PHASE_LOGIC, platform_gpu_3ds.h */
+#endif
+
 void Port_Bios_Halt(void) {
 #if defined(PLATFORM_LINUX)
     Platform_Linux_VBlank();
 #elif defined(MZM_3DS)
+    if (sHaltExitTick != 0)
+        PlatformGpu3DS_PerfPhaseAdd(PERF_PHASE_LOGIC_ID, Platform3DS_SystemTick() - sHaltExitTick);
 #ifdef PORT_VERBOSE_FRAME_LOG
     Port_DebugLog("Port_Bios_Halt: before aptMainLoop");
 #endif
@@ -431,7 +441,13 @@ void Port_Bios_Halt(void) {
 #if defined(MZM_3DS) && !defined(PLATFORM_LINUX)
     Port_AudioStateLock_Release();
 #endif
+#if defined(MZM_3DS) && !defined(PLATFORM_LINUX)
+    const u64 vblankStart = Platform3DS_SystemTick();
+#endif
     CallbackCallVblank();
+#if defined(MZM_3DS) && !defined(PLATFORM_LINUX)
+    PlatformGpu3DS_PerfPhaseAdd(PERF_PHASE_LOGIC_ID, Platform3DS_SystemTick() - vblankStart);
+#endif
 
 extern bool Port_PPU_3DS_LastFrameUsedGpu(void);
 
@@ -477,6 +493,7 @@ extern bool Port_PPU_3DS_LastFrameUsedGpu(void);
         }
     }
     Port_AudioStateLock_Acquire();
+    sHaltExitTick = Platform3DS_SystemTick();
 #endif
 }
 

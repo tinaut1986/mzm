@@ -631,8 +631,28 @@ void PlatformGpu3DS_BeginTopStereo(const uint32_t* leftPixels, const uint32_t* r
     ++sStats.topTransfers;
 }
 
+/* CPU time the last C3D_FrameBegin spent waiting for the GPU to finish the
+ * previous frame -- the part of a frame where the CPU does nothing. */
+static float sLastGpuWaitMs;
+float PlatformGpu3DS_LastGpuWaitMs(void) { return sLastGpuWaitMs; }
+
+/* Accumulated per phase over the frame in flight; handed to the perf sample
+ * and cleared at the end of PlatformGpu3DS_EndBottom. */
+static u64 sPhaseTicks[PERF_PHASE_COUNT];
+void PlatformGpu3DS_PerfPhaseAdd(PerfPhase phase, unsigned long long ticks) {
+    if ((unsigned)phase < PERF_PHASE_COUNT) sPhaseTicks[phase] += ticks;
+}
+static uint32_t sPerfCounts[PERF_COUNT_COUNT];
+void PlatformGpu3DS_PerfCountAdd(PerfCounter counter, unsigned count) {
+    if ((unsigned)counter < PERF_COUNT_COUNT) sPerfCounts[counter] += count;
+}
+
 bool PlatformGpu3DS_BeginTopSceneGpu(void) {
     if (!sReady) return false;
+    /* Already begun this frame (the renderer can begin early when its
+     * collection has to wait for an idle GPU, see port_ppu_mzm.c). */
+    if (sFrameActive) return true;
+    const u64 waitStart = svcGetSystemTick();
     /* Issue #17: tested C3D_FRAME_SYNCDRAW here (forces the CPU to wait for
      * the GPU to finish the previous frame before this frame's CPU-side
      * atlas decode writes start) as a test for a CPU/GPU frame-overlap race
@@ -645,6 +665,7 @@ bool PlatformGpu3DS_BeginTopSceneGpu(void) {
         ++sStats.frameBeginFailures;
         return false;
     }
+    sLastGpuWaitMs = (float)((double)(svcGetSystemTick() - waitStart) / CPU_TICKS_PER_MSEC);
     sFrameActive = true;
     ++sStats.topTransfers;
     return true;
@@ -721,6 +742,7 @@ bool PlatformGpu3DS_EndBottom(const uint32_t* pixels, bool changed) {
      * here because both present paths (CPU scanline via DrawTopImageStereo,
      * PICA tiler via Port_GpuRenderer_RenderFrame) converge on EndBottom with
      * the frame still open and the bottom scene not yet bound. */
+    const u64 fxStart = svcGetSystemTick();
     if (PortGbaScreenFx_Active()) {
         C3D_RenderTarget* fxRight =
             (PlatformGpu3DS_Get3DSlider() > 0.01f) ? sTopRightTarget : NULL;
@@ -729,6 +751,8 @@ bool PlatformGpu3DS_EndBottom(const uint32_t* pixels, bool changed) {
 
     extern void Port_BottomUI_FrameTick(void);
     extern bool Port_BottomUI_WantsRedraw(void);
+    const u64 bottomStart = svcGetSystemTick();
+    PlatformGpu3DS_PerfPhaseAdd(PERF_PHASE_FRAME_END, bottomStart - fxStart);
     Port_BottomUI_FrameTick();
     const bool redrawBottom = Port_BottomUI_WantsRedraw();
 
@@ -761,17 +785,24 @@ bool PlatformGpu3DS_EndBottom(const uint32_t* pixels, bool changed) {
         }
     }
 #endif
+    const u64 frameEndStart = svcGetSystemTick();
+    PlatformGpu3DS_PerfPhaseAdd(PERF_PHASE_BOTTOM_UI, frameEndStart - bottomStart);
     C3D_FrameEnd(0);
+    const u64 syncStart = svcGetSystemTick();
+    PlatformGpu3DS_PerfPhaseAdd(PERF_PHASE_FRAME_END, syncStart - frameEndStart);
     /* Cap presentation to the LCD refresh rate. Without this, nothing paces
      * the main loop to VBlank and it free-runs as fast as the CPU/GPU allow
      * (60-120+ FPS depending on scene load), speeding up game logic and
      * audio with it. Regressed by 1dae106c, which dropped this call thinking
      * it was redundant with C3D_FrameEnd's flags. */
     C3D_FrameSync();
+    PlatformGpu3DS_PerfPhaseAdd(PERF_PHASE_VSYNC, svcGetSystemTick() - syncStart);
     ++sStats.frames;
     sStats.drawingTime = C3D_GetDrawingTime();
     sStats.processingTime = C3D_GetProcessingTime();
     PerfBackfillPresentedFrame();
+    memset(sPhaseTicks, 0, sizeof(sPhaseTicks));
+    memset(sPerfCounts, 0, sizeof(sPerfCounts));
     sFrameActive = false;
     return true;
 
@@ -1117,7 +1148,7 @@ static uint32_t PackRendererFlags(const PortGpuRendererDrawStats* st) {
  * as a PerfFileHeader followed by a flat little-endian array of PerfSample.
  * 60 samples/sec * 40s capacity = 2400 entries * 64B = ~154KB linear. ---- */
 typedef struct {
-    uint32_t magic;       /* 'MZP4'; 'MZP3' is the same layout without drawnPixels */
+    uint32_t magic;       /* 'MZP7'; 'MZP6' has 8 phases and no counts, 'MZP5' no phases */
     uint32_t sampleSize;  /* sizeof(PerfSample), so a parser can stride safely */
     uint32_t sampleCount;
     uint32_t reserved;
@@ -1149,6 +1180,16 @@ typedef struct {
      * pixels explain it instead. Parsers stride by the header's sampleSize,
      * so an older file still reads -- it just has no such column. */
     uint32_t drawnPixels;
+    /* Added with magic 'MZP5': CPU time C3D_FrameBegin spent waiting for the
+     * GPU to finish the previous frame, 1/100 ms. The renderer collects
+     * before that wait, so this is the GPU work the CPU could not hide. */
+    uint32_t gpuWaitX100;
+    /* Added with magic 'MZP6': CPU time per PerfPhase (platform_gpu_3ds.h),
+     * 1/100 ms, over the frame this sample describes. */
+    uint32_t phaseX100[PERF_PHASE_COUNT];
+    /* 'MZP7': PerfCounter work counts (platform_gpu_3ds.h); phaseX100 also
+     * grew from 8 to 11 entries with the BG breakdown. */
+    uint32_t counts[PERF_COUNT_COUNT];
 } PerfSample;
 /* 40 seconds is far longer than any hitch hunt needs and keeps the linear
  * allocation in the same ballpark as the earlier, smaller samples. */
@@ -1184,7 +1225,7 @@ void PlatformGpu3DS_TogglePerfRecording(void) {
         FILE* f = fopen(perfPath, "wb");
         if (f) {
             const PerfFileHeader fh = {
-                .magic = 0x3450 << 16 | 0x5A4D, /* 'MZP4' */
+                .magic = 0x3750 << 16 | 0x5A4D, /* 'MZP7' */
                 .sampleSize = (uint32_t)sizeof(PerfSample),
                 .sampleCount = sPerfCount,
                 .reserved = 0,
@@ -1272,6 +1313,10 @@ static void PerfBackfillPresentedFrame(void) {
     sample->objItems = draw.objItems;
     sample->blendTransitions = draw.blendTransitions;
     sample->drawnPixels = draw.drawnPixels;
+    sample->gpuWaitX100 = (uint32_t)(sLastGpuWaitMs * 100.0f);
+    for (int p = 0; p < PERF_PHASE_COUNT; ++p)
+        sample->phaseX100[p] = (uint32_t)((double)sPhaseTicks[p] * 100.0 / CPU_TICKS_PER_MSEC);
+    for (int c = 0; c < PERF_COUNT_COUNT; ++c) sample->counts[c] = sPerfCounts[c];
     sample->rendererFlags = PackRendererFlags(&draw);
     sample->captureFlags = PackCaptureFlags();
 }

@@ -58,6 +58,38 @@ bool PlatformGpu3DS_EndBottom(const uint32_t* pixels, bool changed);
  * would double VRAM usage and race over which one actually reaches the
  * screen. */
 bool PlatformGpu3DS_BeginTopSceneGpu(void);
+
+/* Per-phase CPU time for the perf recorder (mzm-perf-NN.bin, 'MZP6'): each
+ * phase accumulates over one presented frame -- game logic over every logic
+ * tick since the last one, so a frame-skipped pair counts both. Ticks come
+ * from svcGetSystemTick. Cheap enough to leave on; only the recorder reads it. */
+typedef enum {
+    PERF_PHASE_LOGIC = 0,     /* game code between two Port_Bios_Halt calls */
+    PERF_PHASE_VRAM_DIFF,     /* renderer: VRAM change-stamp pass */
+    PERF_PHASE_SPRITES,       /* renderer: OAM walk */
+    PERF_PHASE_BG,            /* renderer: BG layers (and the haze BG3) */
+    PERF_PHASE_COLLECT_REST,  /* renderer: sort, diagnostics, atlas flush */
+    PERF_PHASE_BOTTOM_UI,     /* bottom screen tick + (throttled) redraw */
+    PERF_PHASE_FRAME_END,     /* screen FX + C3D_FrameEnd submission */
+    PERF_PHASE_VSYNC,         /* C3D_FrameSync: waiting for the display */
+    /* Breakdown of PERF_PHASE_BG (not in addition to it): */
+    PERF_PHASE_BG_B32,        /* the 32x32 block pass, every layer */
+    PERF_PHASE_BG_B16,        /* the 16x16 block pass */
+    PERF_PHASE_BG_TILES,      /* the per-tile pass */
+    PERF_PHASE_COUNT
+} PerfPhase;
+void PlatformGpu3DS_PerfPhaseAdd(PerfPhase phase, unsigned long long ticks);
+
+/* Work counts over the same frame, 'MZP7'. */
+typedef enum {
+    PERF_COUNT_B32_LOOKUPS = 0, PERF_COUNT_B32_DECODES,
+    PERF_COUNT_B16_LOOKUPS, PERF_COUNT_B16_DECODES,
+    PERF_COUNT_TILE_LOOKUPS, PERF_COUNT_TILE_DECODES,
+    PERF_COUNT_TILE_POSITIONS, /* positions the per-tile pass examined */
+    PERF_COUNT_WIDE_REBUILT,   /* tilemap entries rebuilt from the room's block map */
+    PERF_COUNT_COUNT
+} PerfCounter;
+void PlatformGpu3DS_PerfCountAdd(PerfCounter counter, unsigned count);
 struct C3D_RenderTarget_tag* PlatformGpu3DS_GetTopLeftTarget(void);
 struct C3D_RenderTarget_tag* PlatformGpu3DS_GetTopRightTarget(void);
 

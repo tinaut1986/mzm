@@ -881,11 +881,30 @@ void Port_PPU_RenderFrame(void) {
      * game-logic thread -- must not run concurrently with the present
      * thread's own submission in Port_PPU_GpuPresentPump below. See
      * platform_gpu_3ds.c's sGpuSubmitLock doc comment. */
-    PlatformGpu3DS_SubmitLock_Acquire();
+#ifdef PORT_GPU_TILE_RENDERER
+    /* Collect BEFORE C3D_FrameBegin: FrameBegin blocks until the GPU has
+     * finished the previous frame, and the collection is pure CPU work, so
+     * doing it first lets the two overlap instead of queueing. The exception
+     * is a frame that is about to reassign atlas slots -- that one waits for
+     * the GPU first, since the previous frame may still be sampling them. */
+    if (useGpuRenderer) {
+        if (Port_GpuRenderer_CollectNeedsIdleGpu()) {
+            PlatformGpu3DS_SubmitLock_Acquire();
+            PlatformGpu3DS_BeginTopSceneGpu();
+            Port_GpuRenderer_CollectFrame();
+        } else {
+            Port_GpuRenderer_CollectFrame();
+            PlatformGpu3DS_SubmitLock_Acquire();
+        }
+    } else
+#endif
+    {
+        PlatformGpu3DS_SubmitLock_Acquire();
+    }
 #ifdef PORT_GPU_TILE_RENDERER
     if (useGpuRenderer) {
         if (PlatformGpu3DS_BeginTopSceneGpu()) {
-            Port_GpuRenderer_RenderFrame();
+            Port_GpuRenderer_DrawFrame();
             sLastFrameUsedGpu = true;
         } else {
             /* Frame-begin failed (GPU busy/queue full) -- nothing was drawn
