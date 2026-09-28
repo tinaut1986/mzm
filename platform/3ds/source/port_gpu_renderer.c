@@ -487,6 +487,7 @@ static bool sHazeBufReady[2];
 static C3D_Tex  sAffineBg2Tex;
 static bool     sAffineBg2TexReady;
 static bool     sAffineBg2Active;         /* this frame is the supported case */
+static bool     sAffineBg2ComposePending; /* ComposeAffineBg2 due in the draw half */
 static float    sAffineBg2InvScale;       /* screen px per texture px (256/PA) */
 static float    sAffineBg2RefX, sAffineBg2RefY;      /* BG2X/BG2Y, texture px */
 static uint32_t sAffineBg2CharBase, sAffineBg2ScreenBase; /* gVram byte offsets */
@@ -869,6 +870,29 @@ static uint64_t sDirtyRowMask[(ATLAS_SLOT_ROWS + 63) / 64];
 
 static inline void MarkAtlasRowDirty(int row) {
     sDirtyRowMask[row >> 6] |= (1ull << (row & 63));
+}
+
+/* Tiles decoded during collection are staged here, not written to the atlas:
+ * collection runs before C3D_FrameBegin, overlapping the GPU still drawing
+ * the previous frame, and a slot redecoded in place (an OBJ tile the game
+ * reloaded with other graphics, an animated tile) would change under that
+ * frame's feet. The right eye is drawn last, so it was the one that showed
+ * the next frame's -- or another sprite's -- graphics for a frame: the 3D
+ * "flashes". AtlasApplyStaged copies them in once the GPU is done. One entry
+ * per slot (a slot decoded twice keeps the last), so it never overflows. */
+static AtlasTexel sStageTexels[ATLAS_MAX_SLOTS][64];
+static int16_t sStageSlot[ATLAS_MAX_SLOTS];
+static int16_t sStageIndex[ATLAS_MAX_SLOTS]; /* per slot: its entry, or -1 */
+static int sStageCount;
+
+static inline AtlasTexel* StageSlot(int slot) {
+    int i = sStageIndex[slot];
+    if (i < 0) {
+        i = sStageCount++;
+        sStageIndex[slot] = (int16_t)i;
+        sStageSlot[i] = (int16_t)slot;
+    }
+    return sStageTexels[i];
 }
 
 
@@ -1347,6 +1371,8 @@ bool Port_GpuRenderer_Init(void) {
 
     for (int i = 0; i < HASH_BUCKETS; ++i) sHashBucketHead[i] = -1;
     sCacheCount = 0;
+    memset(sStageIndex, 0xFF, sizeof(sStageIndex));
+    sStageCount = 0;
 
     sInitialized = true;
     return true;
@@ -1859,7 +1885,7 @@ static const uint8_t kSwizzleLUT[64] = {
  * on exactly this ordering. */
 static uint16_t DecodeTileTexels(int slot, const uint8_t* src, bool bpp8, const uint16_t* pal, int palBank,
                              bool hflip, bool vflip, BrightAdjust brightAdjust) {
-    AtlasTexel* blockBase = (AtlasTexel*)sAtlasTexture.data + (size_t)slot * 64;
+    AtlasTexel* blockBase = StageSlot(slot);
 
     if (!bpp8) {
         /* 4bpp: the 16 colours this tile can use, converted (and brightened /
@@ -2127,7 +2153,9 @@ static void ComposeAffineBg2(void) {
  * 256*invScale px; overflow is transparent so nothing outside that rect is
  * drawn. Stereo comes from BG2's tier like any other BG layer. */
 static void CollectAffineBg2(void) {
-    ComposeAffineBg2();
+    /* Composed in the draw half (AtlasApplyStaged): the texture may still be
+     * sampled by the previous frame while this one is collected. */
+    sAffineBg2ComposePending = true;
     static Tex3DS_SubTexture full;
     full = (Tex3DS_SubTexture){ AFF_BG2_DIM, AFF_BG2_DIM, 0.0f, 1.0f, 1.0f, 0.0f };
     int priority = sDepthState.priority[2];
@@ -4167,8 +4195,9 @@ void Port_GpuRenderer_CollectFrame(void) {
     }
     sDrawItemCount = 0;
     sLastLayerComposes = 0;
-    sAnyDirtySlot = false;
-    memset(sDirtyRowMask, 0, sizeof(sDirtyRowMask));
+    /* sAnyDirtySlot / sDirtyRowMask are cleared by AtlasApplyStaged once the
+     * rows are flushed: a frame that is collected but never drawn keeps its
+     * staged tiles, and their rows, for the next one. */
     for (int i = 0; i < SORT_KEY_BUCKETS; ++i) sBucketHead[i] = -1;
 
     /* Palette hashes computed ONCE per frame here rather than per tile
@@ -4487,9 +4516,30 @@ void Port_GpuRenderer_CollectFrame(void) {
     u64 tBeforeUpload = svcGetSystemTick();
     sLastTileCollectMs = (float)((double)(tBeforeUpload - tStart) / PORT_GPU_RENDERER_CPU_TICKS_PER_MSEC);
 
+
+    u64 tAfterCollect = svcGetSystemTick();
+    PlatformGpu3DS_PerfPhaseAdd(PERF_PHASE_COLLECT_REST, tAfterCollect - tPhase);
+    for (int c = 0; c < PERF_COUNT_COUNT; ++c) {
+        PlatformGpu3DS_PerfCountAdd((PerfCounter)c, sPerfCount[c]);
+        sPerfCount[c] = 0;
+    }
+    sLastCollectMs = (float)((double)(tAfterCollect - tStart) / PORT_GPU_RENDERER_CPU_TICKS_PER_MSEC);
+    sLastAtlasUploadMs = (float)((double)(tAfterCollect - tBeforeUpload) / PORT_GPU_RENDERER_CPU_TICKS_PER_MSEC);
+    sFrameCollected = true;
+}
+
+/* Draw half, after C3D_FrameBegin (the GPU has finished the previous frame,
+ * which may have been sampling these slots): copy the tiles collection
+ * staged into the atlas (see sStageTexels), then flush the rows they touched. */
+static void AtlasApplyStaged(void) {
+    for (int i = 0; i < sStageCount; ++i) {
+        const int slot = sStageSlot[i];
+        memcpy((AtlasTexel*)sAtlasTexture.data + (size_t)slot * 64, sStageTexels[i], sizeof(sStageTexels[i]));
+        sStageIndex[slot] = -1;
+    }
+    sStageCount = 0;
     if (sAnyDirtySlot) {
-        /* DecodeTileIntoSlot now writes swizzled texels straight into
-         * sAtlasTexture.data (see its comment and kSwizzleLUT) -- no GX
+        /* The staged texels are now in sAtlasTexture.data (see kSwizzleLUT) -- no GX
          * transfer needed at all, just make sure the GPU sees the CPU's
          * writes via a plain cache flush. This is what actually removes
          * the ~19-20ms/frame blocking cost that C3D_SyncDisplayTransfer
@@ -4558,17 +4608,12 @@ void Port_GpuRenderer_CollectFrame(void) {
          * atlas this frame. Once per frame, and only on frames that
          * actually rewrote a slot. Done in the draw half, inside the frame. */
         sAtlasRebindPending = true;
+        sAnyDirtySlot = false;
     }
-
-    u64 tAfterCollect = svcGetSystemTick();
-    PlatformGpu3DS_PerfPhaseAdd(PERF_PHASE_COLLECT_REST, tAfterCollect - tPhase);
-    for (int c = 0; c < PERF_COUNT_COUNT; ++c) {
-        PlatformGpu3DS_PerfCountAdd((PerfCounter)c, sPerfCount[c]);
-        sPerfCount[c] = 0;
+    if (sAffineBg2ComposePending) {
+        ComposeAffineBg2();
+        sAffineBg2ComposePending = false;
     }
-    sLastCollectMs = (float)((double)(tAfterCollect - tStart) / PORT_GPU_RENDERER_CPU_TICKS_PER_MSEC);
-    sLastAtlasUploadMs = (float)((double)(tAfterCollect - tBeforeUpload) / PORT_GPU_RENDERER_CPU_TICKS_PER_MSEC);
-    sFrameCollected = true;
 }
 
 /* GPU half: everything from here on records GPU commands, so it must run
@@ -4577,6 +4622,7 @@ void Port_GpuRenderer_DrawFrame(void) {
     if (!sInitialized) return;
     if (!sFrameCollected) Port_GpuRenderer_CollectFrame();
     sFrameCollected = false;
+    AtlasApplyStaged();
     const u64 tAfterCollect = svcGetSystemTick();
     if (sAtlasRebindPending) {
         C3D_TexBind(0, &sAtlasTexture);
