@@ -276,24 +276,6 @@ void UpdateMusic(void)
         pChannel->unk_11 = var_2 * pChannel->unk_4 >> 8;
         pChannel->unk_12 = var_2 * pChannel->unk_5 >> 8;
 
-#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
-        {
-            extern void Port_DebugLog_Audio(const char* msg);
-            static unsigned int sChanDiagCount;
-            if (i == 0 && (++sChanDiagCount & 0x1F) == 0) {
-                char msg[200];
-                __builtin_snprintf(msg, sizeof(msg),
-                    "chan0: unk_0=%u var_1=%d var_2=%d unk_4=%u unk_5=%u unk_11=%u unk_12=%u vol=%u pSample=%p unk_F=%u",
-                    (unsigned)pChannel->unk_0, (int)var_1, (int)var_2,
-                    (unsigned)pChannel->unk_4, (unsigned)pChannel->unk_5,
-                    (unsigned)pChannel->unk_11, (unsigned)pChannel->unk_12,
-                    (unsigned)gMusicInfo.volume, (void*)pChannel->pSample,
-                    (unsigned)pChannel->unk_F);
-                Port_DebugLog_Audio(msg);
-            }
-        }
-#endif
-
         tmp = gMusicInfo.musicRawData;
 #if defined(MZM_3DS) || defined(PORT_NATIVE)
         /* [PORT] SoundCodeA (asm/soundcode.s) dereferences pChannel->pSample
@@ -306,24 +288,6 @@ void UpdateMusic(void)
 #endif
         gSoundCodeAPointer(pChannel, tmp, (var_6 + var_3) * 4);
     }
-
-#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
-    {
-        extern void Port_DebugLog_Audio(const char* msg);
-        static unsigned int sChDiagCount;
-        if ((++sChDiagCount & 0x1F) == 0) {
-            char msg[160];
-            __builtin_snprintf(msg, sizeof(msg),
-                "UpdateMusic: activeCh=%u ch0.unk_0=%u ch0.pVariables=%p track0.flags=%u track0.pVoice=%p",
-                (unsigned)gMusicInfo.currentSoundChannel,
-                (unsigned)gMusicInfo.soundChannels[0].unk_0,
-                (void*)gMusicInfo.soundChannels[0].pVariables,
-                (unsigned)sMusicTrackDataRom[0].pTrack->flags,
-                (void*)sMusicTrackDataRom[0].pTrack->pVoice);
-            Port_DebugLog_Audio(msg);
-        }
-    }
-#endif
 
     buffer2 = &gMusicInfo.soundRawData[var_4];
     tmp = gMusicInfo.musicRawData;

@@ -470,25 +470,11 @@ void unk_39c8(void)
  * @param musicTrack Music track
  * @param priority Priority
  */
-#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
-extern void Port_DebugLog_Audio(const char* msg);
-#endif
 
 void PlayMusic(Sound musicTrack, u8 priority)
 {
     const u8* pHeader;
     struct TrackData* pTrack;
-
-#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
-    {
-        char msg[160];
-        __builtin_snprintf(msg, sizeof(msg),
-            "PlayMusic: track=%u prio=%u occupied=%u gPriority=%u",
-            (unsigned)musicTrack, (unsigned)priority,
-            (unsigned)gMusicInfo.occupied, (unsigned)gMusicInfo.priority);
-        Port_DebugLog_Audio(msg);
-    }
-#endif
 
     if (gMusicInfo.occupied)
         return;
@@ -502,40 +488,14 @@ void PlayMusic(Sound musicTrack, u8 priority)
         pHeader = sSoundDataEntries[musicTrack].pHeader;
         pTrack = sMusicTrackDataRom[0].pTrack;
 
-#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
-        {
-            char msg[160];
-            __builtin_snprintf(msg, sizeof(msg),
-                "PlayMusic: pHeader=%p pTrack->pHeader=%p pTrack->flags=%u willInit=%u",
-                (void*)pHeader, (void*)pTrack->pHeader, (unsigned)pTrack->flags,
-                (unsigned)(pHeader != pTrack->pHeader || !(pTrack->flags & 2)));
-            Port_DebugLog_Audio(msg);
-        }
-#endif
-
         if (pHeader != pTrack->pHeader || !(pTrack->flags & 2))
         {
             gMusicInfo.unk_20 = 0;
             gMusicInfo.musicTrack = musicTrack;
             gMusicInfo.occupied = FALSE;
             InitTrack(pTrack, pHeader);
-#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
-            {
-                char msg[160];
-                __builtin_snprintf(msg, sizeof(msg),
-                    "PlayMusic: after InitTrack pTrack->flags=%u pTrack->pVoice=%p pTrack->pHeader=%p",
-                    (unsigned)pTrack->flags, (void*)pTrack->pVoice, (void*)pTrack->pHeader);
-                Port_DebugLog_Audio(msg);
-            }
-#endif
         }
     }
-#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
-    else
-    {
-        Port_DebugLog_Audio("PlayMusic: BLOCKED by priority mask (gMusicInfo.priority & 0x84)");
-    }
-#endif
 
     gMusicInfo.occupied = FALSE;
 }
