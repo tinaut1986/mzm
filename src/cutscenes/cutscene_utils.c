@@ -263,14 +263,6 @@ u8 CutsceneHandler(void)
     switch (gSubGameModeStage)
     {
         case CUTSCENE_STAGE_STARTING:
-#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
-            {
-                extern void Port_DebugLog(const char* msg);
-                char _msg[96];
-                __builtin_snprintf(_msg, sizeof(_msg), "CutsceneHandler STARTING: gCurrentCutscene=%u", (unsigned)gCurrentCutscene);
-                Port_DebugLog(_msg);
-            }
-#endif // MZM_3DS && PORT_DEBUG_TOOLS
             // Set dummy empty vblank
             CallbackSetVblank(CutsceneLoadingVBlank);
 
@@ -453,15 +445,6 @@ void CutsceneInit(void)
 #ifdef DEBUG
     u8 temp;
 #endif // DEBUG
-
-#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
-    {
-        extern void Port_DebugLog(const char* msg);
-        char _msg[128];
-        __builtin_snprintf(_msg, sizeof(_msg), "CutsceneInit: gCurrentCutscene=%u", (unsigned)gCurrentCutscene);
-        Port_DebugLog(_msg);
-    }
-#endif // MZM_3DS && PORT_DEBUG_TOOLS
 
     CallbackSetVblank(CutsceneLoadingVBlank);
     BitFill(3, 0, &gNonGameplayRam, sizeof(union NonGameplayRam), 32);
