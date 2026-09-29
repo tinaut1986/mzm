@@ -16,7 +16,11 @@
 #include "gba/memory.h"      /* REG_BASE, EWRAM_BASE */
 #include "macros.h"          /* CAST_TO_ARRAY (gHazeValues macro) */
 #include "port_gba_mem.h"    /* gIoMem, gba_MemPtr (used by the gHazeValues macro) */
-#include "structs/haze.h"    /* gHazeInfo, gHazeValues */
+#include "structs/haze.h"    /* gHazeInfo, gHazeValues, gCurrentHazeValue, gUnk_300572x */
+#include "structs/room.h"    /* gBackgroundPositions */
+#include "structs/bg_clip.h" /* gBg1YPosition */
+#include "structs/clipdata.h" /* gEffectYPosition */
+#include "data/haze_data.h"  /* the ripple LUTs */
 
 /* Byte offset of REG_BG3HOFS within the IO file (REG_BASE + 0x1C). */
 #define HAZE_BG3HOFS_OFF 0x1Cu
@@ -110,51 +114,82 @@ bool PortHaze_Bg3RowScroll(int16_t rowDelta[160], int16_t *bakeHofs)
 /* ---- The wave past the GBA frame (WIDE view) ------------------------------
  * The game only computes its 160 scanlines. Every BG3 ripple routine is one
  * formula per line, though -- a LUT indexed by the BG3 row, one table above
- * the surface line and another below -- so the routines hand their inputs
- * over (PortHaze_NoteBg3Wave, called from src/haze.c right after they fill
- * the table) and any line can be computed exactly as the game would. */
-static struct {
-    bool valid;
+ * the surface line and another below -- so any line can be computed exactly
+ * as the game would from the same inputs. Those are all globals the routine
+ * leaves behind (the phases it advanced, the BG3 position, the surface) plus
+ * fixed tables, and HazeProcess runs near the end of the frame (RoomUpdate),
+ * after everything that moves them, so they are read here instead of being
+ * handed over from src/haze.c: the decompilation stays untouched, which keeps
+ * its code layout -- and with it the save-state fingerprint -- unchanged. */
+struct PortHazeWave {
     const s8 *above, *below;  /* NULL above = no ripple there */
     int aboveMask, belowMask;
     int abovePhase, belowPhase;
     int surfaceLine;          /* camera line of the surface; above it = "above" */
-    uint16_t bg3X, bg3Y;
-} sWave;
+};
 
-void PortHaze_NoteBg3Wave(const s8 *above, s32 aboveMask, s32 abovePhase,
-                          const s8 *below, s32 belowMask, s32 belowPhase,
-                          s32 surfaceLine, u16 bg3X, u16 bg3Y)
+/* A LUT's address as the game's code resolves it (GBA_RESOLVE takes a
+ * pointer, not an array). */
+static const s8 *PortHaze_Lut(const s8 *lut)
 {
-    sWave.above = above;
-    sWave.aboveMask = aboveMask;
-    sWave.abovePhase = abovePhase;
-    sWave.below = below;
-    sWave.belowMask = belowMask;
-    sWave.belowPhase = belowPhase;
-    sWave.surfaceLine = surfaceLine;
-    sWave.bg3X = bg3X;
-    sWave.bg3Y = bg3Y;
-    sWave.valid = true;
+    return GBA_RESOLVE(lut);
+}
+
+/* The inputs of the BG3 ripple routine gCurrentHazeValue selected, as that
+ * routine uses them (src/haze.c: Haze_Bg3, Haze_Bg3StrongWeak,
+ * Haze_Bg3NoneWeak). False for anything else. */
+static bool PortHaze_CurrentWave(struct PortHazeWave *w)
+{
+    const int surface = SUB_PIXEL_TO_PIXEL(gEffectYPosition) - SUB_PIXEL_TO_PIXEL(gBg1YPosition) - 1;
+    switch (gCurrentHazeValue) {
+        case HAZE_VALUE_BG3: /* flat above the surface, strong below */
+            w->above = NULL;
+            w->aboveMask = 0;
+            w->abovePhase = 0;
+            w->below = PortHaze_Lut(sHaze_Bg3_StrongEffect);
+            w->belowMask = ARRAY_SIZE(sHaze_Bg3_StrongEffect) / 3 - 1;
+            w->belowPhase = gUnk_3005728;
+            w->surfaceLine = surface;
+            return true;
+        case HAZE_VALUE_BG3_STRONG_WEAK: /* weak above the surface, strong below */
+            w->above = PortHaze_Lut(sHaze_Bg3_WeakOutside);
+            w->aboveMask = 0xF;
+            w->abovePhase = gUnk_3005729;
+            w->below = PortHaze_Lut(sHaze_Bg3_StrongEffect);
+            w->belowMask = 0xF;
+            w->belowPhase = gUnk_3005728;
+            w->surfaceLine = surface;
+            return true;
+        case HAZE_VALUE_BG3_NONE_WEAK: /* weak everywhere, no surface */
+            w->above = w->below = PortHaze_Lut(sHaze_Bg_WeakOutside);
+            w->aboveMask = w->belowMask = ARRAY_SIZE(sHaze_Bg_WeakOutside) - 1;
+            w->abovePhase = w->belowPhase = gUnk_3005728;
+            w->surfaceLine = -0x8000;
+            return true;
+        default:
+            return false;
+    }
 }
 
 bool PortHaze_Bg3WaveRows(int16_t *rowDelta, int rows, int firstLayerLine, int cameraOffset,
                           int16_t *bakeHofs)
 {
     const struct Haze *h = &gHazeInfo;
-    if (!sWave.valid || !h->active || h->size != 2 || PortHaze_IoOffset() != HAZE_BG3HOFS_OFF)
+    struct PortHazeWave wave;
+    if (!h->active || h->size != 2 || PortHaze_IoOffset() != HAZE_BG3HOFS_OFF || !PortHaze_CurrentWave(&wave))
         return false;
 
+    const int bg3X = gBackgroundPositions.bg[3].x, bg3Y = gBackgroundPositions.bg[3].y;
     for (int r = 0; r < rows; ++r) {
         const int layerLine = firstLayerLine + r;
-        const bool isAbove = layerLine + cameraOffset < sWave.surfaceLine;
-        const s8 *lut = isAbove ? sWave.above : sWave.below;
-        const int mask = isAbove ? sWave.aboveMask : sWave.belowMask;
-        const int phase = isAbove ? sWave.abovePhase : sWave.belowPhase;
+        const bool isAbove = layerLine + cameraOffset < wave.surfaceLine;
+        const s8 *lut = isAbove ? wave.above : wave.below;
+        const int mask = isAbove ? wave.aboveMask : wave.belowMask;
+        const int phase = isAbove ? wave.abovePhase : wave.belowPhase;
         /* Same index as the game's (bg[3].y + i + phase) & mask; the value it
          * stores is lut[] + bg[3].x, so relative to bg[3].x it is lut[] alone. */
-        rowDelta[r] = lut ? (int16_t)lut[((int)sWave.bg3Y + layerLine + phase) & mask] : 0;
+        rowDelta[r] = lut ? (int16_t)lut[(bg3Y + layerLine + phase) & mask] : 0;
     }
-    *bakeHofs = (int16_t)(sWave.bg3X & 0x1FFu);
+    *bakeHofs = (int16_t)(bg3X & 0x1FF);
     return true;
 }
