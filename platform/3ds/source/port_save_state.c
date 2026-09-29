@@ -321,6 +321,29 @@ static void SsDoLoad(int slot) {
 }
 
 void Port_SaveState_ServicePending(void) {
+#ifdef PORT_DEBUG_TOOLS
+    /* Called at the top of the game's main loop, between frames, in every
+     * build. The DEBUG_TOOLS-only work that has to happen there used to sit
+     * in src/agbmain.c behind #ifdef PORT_DEBUG_TOOLS, which laid the
+     * decompilation out differently in debug and release builds, so a save
+     * state from one was refused by the other. It lives here instead. */
+    {
+        extern void Port_DebugLog(const char* msg);
+        extern void PortPpuMzm_DebugApplyPendingWarp(void);
+        static u8 sLastGM = 0xFF, sLastSub1 = 0xFF;
+        if (gMainGameMode != sLastGM || gSubGameMode1 != sLastSub1) {
+            char dbg[64];
+            snprintf(dbg, sizeof(dbg), "ModeChange -> GM: 0x%02X, Sub1: 0x%02X", gMainGameMode, gSubGameMode1);
+            Port_DebugLog(dbg);
+            sLastGM = gMainGameMode;
+            sLastSub1 = gSubGameMode1;
+        }
+        /* Debug warp point (DEBUG -> HERRAMIENTAS), applied between frames
+         * rather than from the touch handler, which runs mid-frame. See
+         * PortPpuMzm_DebugApplyPendingWarp in port_ppu_mzm.c. */
+        PortPpuMzm_DebugApplyPendingWarp();
+    }
+#endif
     if (sMsgTtl > 0) --sMsgTtl;
 
     /* Debounce the "in gameplay" gate. Port_SaveState_Available() only checks

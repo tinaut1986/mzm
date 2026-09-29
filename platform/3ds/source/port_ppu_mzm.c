@@ -1274,7 +1274,7 @@ void PortPpuMzm_DebugStepWarpDoor(int delta) {
     sWarpSelDoor = (u8)d;
 }
 
-/* Requests a warp; the jump itself happens in src/agbmain.c's loop. */
+/* Requests a warp; the jump itself happens between frames (Port_SaveState_ServicePending, called from src/agbmain.c's loop). */
 static bool PortPpuMzm_RequestWarpTo(u8 area, u8 door) {
     if (PortPpuMzm_DebugGetDoorRoom(area, door) < 0) return false;
     sWarpArea = area;
@@ -1292,7 +1292,7 @@ bool PortPpuMzm_DebugRequestWarpToSelection(void) {
     return PortPpuMzm_RequestWarpTo(sWarpSelArea, sWarpSelDoor);
 }
 
-/* Called once per main-loop iteration from src/agbmain.c. Only fires while
+/* Called once per main-loop iteration (from Port_SaveState_ServicePending). Only fires while
  * really in gameplay (GM_INGAME / SUB_GAME_MODE_PLAYING): applying it during
  * a menu, a cutscene or a door transition would fight whatever state machine
  * owns gSubGameMode1 at that moment. The request stays pending until

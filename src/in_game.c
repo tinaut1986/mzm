@@ -457,10 +457,6 @@ void VBlankInGame_Empty(void)
  */
 void InitAndLoadGenerics(void)
 {
-#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
-    extern void Port_DebugLog(const char* msg);
-    Port_DebugLog("InGame: InitAndLoadGenerics start");
-#endif // MZM_3DS && PORT_DEBUG_TOOLS
     WRITE_16(REG_IME, FALSE);
     WRITE_16(REG_DISPSTAT, READ_16(REG_DISPSTAT) & ~DSTAT_IF_HBLANK);
 
@@ -487,21 +483,12 @@ void InitAndLoadGenerics(void)
     gDebugMode = FALSE;
 #endif // !DEBUG
     DMA3_COPY_16(sCommonSpritesPal, PALRAM_BASE + 0x240, sizeof(sCommonSpritesPal) / 2);
-#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
-    Port_DebugLog("InGame: before SamusInit");
-#endif // MZM_3DS && PORT_DEBUG_TOOLS
     SamusInit();
-#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
-    Port_DebugLog("InGame: SamusInit done, before RoomLoad");
-#endif // MZM_3DS && PORT_DEBUG_TOOLS
 
     do {
     } while ((u16)(READ_16(REG_VCOUNT) - 21) < 140); // READ_16(REG_VCOUNT) <= SCREEN_SIZE_Y
 
     RoomLoad();
-#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
-    Port_DebugLog("InGame: RoomLoad done");
-#endif // MZM_3DS && PORT_DEBUG_TOOLS
 
     do {
     } while ((u16)(READ_16(REG_VCOUNT) - 21) < 140); // READ_16(REG_VCOUNT) <= SCREEN_SIZE_Y
@@ -515,25 +502,13 @@ void InitAndLoadGenerics(void)
     SamusCallGfxFunctions();
     DMA3_COPY_16(gSamusPalette, PALRAM_OBJ, gSamusPaletteSize / sizeof(u16));
 
-#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
-    Port_DebugLog("InGame: before TransferSamusAndBgGraphics");
-#endif // MZM_3DS && PORT_DEBUG_TOOLS
     TransferSamusAndBgGraphics();
-#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
-    Port_DebugLog("InGame: TransferSamusAndBgGraphics done");
-#endif // MZM_3DS && PORT_DEBUG_TOOLS
 
     do {
     } while ((u16)(READ_16(REG_VCOUNT) - 21) < 140); // READ_16(REG_VCOUNT) <= SCREEN_SIZE_Y
 
     HudGenericResetHudData();
-#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
-    Port_DebugLog("InGame: before SpriteLoadAllData");
-#endif // MZM_3DS && PORT_DEBUG_TOOLS
     SpriteLoadAllData();
-#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
-    Port_DebugLog("InGame: SpriteLoadAllData done");
-#endif // MZM_3DS && PORT_DEBUG_TOOLS
     ProjectileCallLoadGraphicsAndClearProjectiles();
 
     if (gPauseScreenFlag != PAUSE_SCREEN_NONE)
@@ -556,10 +531,6 @@ void InitAndLoadGenerics(void)
 
     do {
     } while ((u16)(READ_16(REG_VCOUNT) - 21) < 140); // READ_16(REG_VCOUNT) <= SCREEN_SIZE_Y
-
-#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
-    Port_DebugLog("InGame: InitAndLoadGenerics finished");
-#endif // MZM_3DS && PORT_DEBUG_TOOLS
 
 
 #ifdef REGION_EU_BETA

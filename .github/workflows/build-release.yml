@@ -13,7 +13,10 @@ jobs:
   build-3ds:
     runs-on: ubuntu-latest
     container:
-      image: devkitpro/devkitarm:latest
+      # Pinned, not :latest: a new compiler can lay the decompilation out
+      # differently, and every save state from the previous release would
+      # then be refused ("SLOT DE OTRA BUILD"). Bump deliberately.
+      image: devkitpro/devkitarm:20260610
 
     steps:
       - name: Checkout repository

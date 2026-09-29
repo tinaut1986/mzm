@@ -5724,19 +5724,6 @@ static u8 FileSelectProcessFileSelection(void)
     leaving = FALSE;
     FILE_SELECT_DATA.subMenuTimer++;
 
-#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
-    {
-        static u8 sLastStage = 0xFF;
-        if (FILE_SELECT_DATA.subMenuStage != sLastStage) {
-            char dbg[64];
-            __builtin_snprintf(dbg, sizeof(dbg), "FileSelect subMenuStage: %d", FILE_SELECT_DATA.subMenuStage);
-            extern void Port_DebugLog(const char* msg);
-            Port_DebugLog(dbg);
-            sLastStage = FILE_SELECT_DATA.subMenuStage;
-        }
-    }
-#endif // MZM_3DS && PORT_DEBUG_TOOLS
-
     switch (FILE_SELECT_DATA.subMenuStage)
     {
         case 0: // Initialize file sub menu

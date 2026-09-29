@@ -138,39 +138,15 @@ void agbmain(void)
         APPLY_DELTA_TIME_INC(gFrameCounter8Bit);
         APPLY_DELTA_TIME_INC(gFrameCounter16Bit);
 
-#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
-        {
-            static u8 sLastGM = 0xFF;
-            static u8 sLastSub1 = 0xFF;
-            if (gMainGameMode != sLastGM || gSubGameMode1 != sLastSub1) {
-                char dbg[64];
-                __builtin_snprintf(dbg, sizeof(dbg), "ModeChange -> GM: 0x%02X, Sub1: 0x%02X", gMainGameMode, gSubGameMode1);
-                Port_DebugLog(dbg);
-                sLastGM = gMainGameMode;
-                sLastSub1 = gSubGameMode1;
-            }
-        }
-#endif // MZM_3DS && PORT_DEBUG_TOOLS
-
-#if defined(MZM_3DS) && defined(PORT_DEBUG_TOOLS)
-        /* Debug warp point, requested from the bottom screen's DEBUG ->
-         * HERRAMIENTAS menu. Applied HERE, at the top of the main loop
-         * between frames, and not from the touch handler itself: that runs
-         * inside Port_Bios_Halt, which src/transfer.c also calls mid-frame,
-         * so resetting gSubGameMode1 from there could land in the middle of
-         * a room's own update. See PortPpuMzm_DebugApplyPendingWarp in
-         * platform/3ds/source/port_ppu_mzm.c. */
-        {
-            extern void PortPpuMzm_DebugApplyPendingWarp(void);
-            PortPpuMzm_DebugApplyPendingWarp();
-        }
-#endif
-
 #if defined(MZM_3DS)
         /* Whole-machine save/load state, requested from the bottom screen's
-         * ESTADO tab. Applied HERE for the same reason as the warp above:
-         * the touch handler runs mid-frame inside Port_Bios_Halt. No-op
-         * unless a slot is pending and the game is really in gameplay. */
+         * ESTADO tab (and, in DEBUG_TOOLS builds, the debug warp point).
+         * Applied HERE, at the top of the main loop between frames: the
+         * touch handler runs mid-frame inside Port_Bios_Halt. No-op unless
+         * a slot is pending and the game is really in gameplay. Debug-only
+         * work lives on the port side of this call, not in src/, so debug
+         * and release builds lay the decompilation out identically -- save
+         * states then load in either (see port_save_state.c). */
         {
             extern void Port_SaveState_ServicePending(void);
             Port_SaveState_ServicePending();
