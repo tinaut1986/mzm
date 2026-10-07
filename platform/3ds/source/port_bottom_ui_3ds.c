@@ -221,6 +221,9 @@ static int BottomTabLayout(BottomTabSlot slots[BOTTOM_TAB_SLOT_MAX]);
 #define UPD_YES_X1 148
 #define UPD_NO_X0 172
 #define UPD_NO_X1 276
+/* "What's new" button of the install prompt, below YES/NO. */
+#define UPD_NOTES_Y0 174
+#define UPD_NOTES_Y1 198
 
 /* Called once per frame (even on frames the UI is not redrawn) so time-based
  * state keeps advancing: the blink counter and the RA session pump. */
@@ -1283,13 +1286,23 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
     if (Port_SaveState_IsBusy() && Port_SaveState_CurrentJob() != PORT_SS_JOB_THUMB) return;
 
     /* The update prompt is modal over every tab: it swallows all touches. */
-    if (Port_Updater_GetPrompt() != UPDATER_PROMPT_NONE) {
+    if (Port_Updater_GetPrompt() != UPDATER_PROMPT_NONE && !sShowNotesModal) {
         if (isNewTap) {
             const bool isError = (Port_Updater_GetPrompt() == UPDATER_PROMPT_ERROR);
             const bool yes = (y >= UPD_BTN_Y0 && y <= UPD_BTN_Y1) &&
                              (isError ? (x >= 116 && x <= 204) : (x >= UPD_YES_X0 && x <= UPD_YES_X1));
             const bool no = (x >= UPD_NO_X0 && x <= UPD_NO_X1 && y >= UPD_BTN_Y0 && y <= UPD_BTN_Y1);
             if (yes || no) Port_Updater_AnswerPrompt(yes);
+            else if (Port_Updater_GetPrompt() == UPDATER_PROMPT_ASK_INSTALL &&
+                     x >= UPD_YES_X0 && x <= UPD_NO_X1 && y >= UPD_NOTES_Y0 && y <= UPD_NOTES_Y1) {
+                char probe[2];
+                if (Port_Updater_CopyNotes(probe, sizeof(probe)) > 0) {
+                    /* The viewer lives on the OPTIONS tab; the prompt steps
+                     * aside while it is open and comes back on CLOSE. */
+                    sCurrentTab = BOTTOM_TAB_OPTIONS;
+                    OpenNotesModal();
+                }
+            }
         }
         return;
     }
@@ -3537,11 +3550,15 @@ static void RenderUpdatePrompt(int lang) {
     const char* question = "";
     char line[64];
 
-    if (pr == UPDATER_PROMPT_NONE) return;
+    if (pr == UPDATER_PROMPT_NONE || sShowNotesModal) return;
+
+    char probe[2];
+    const bool hasNotes = (pr == UPDATER_PROMPT_ASK_INSTALL && Port_Updater_CopyNotes(probe, sizeof(probe)) > 0);
+    const float extra = hasNotes ? 28.0f : 0.0f;
 
     C2D_DrawRectSolid(0.0f, 0.0f, 0.97f, 320.0f, 240.0f, C2D_Color32(0, 0, 0, 170));
-    C2D_DrawRectSolid(20.0f, 58.0f, 0.98f, 280.0f, 122.0f, C2D_Color32(40, 70, 120, 255));
-    C2D_DrawRectSolid(22.0f, 60.0f, 0.99f, 276.0f, 118.0f, C2D_Color32(10, 14, 24, 255));
+    C2D_DrawRectSolid(20.0f, 58.0f, 0.98f, 280.0f, 122.0f + extra, C2D_Color32(40, 70, 120, 255));
+    C2D_DrawRectSolid(22.0f, 60.0f, 0.99f, 276.0f, 118.0f + extra, C2D_Color32(10, 14, 24, 255));
 
     switch (pr) {
         case UPDATER_PROMPT_ASK_INSTALL:
@@ -3582,6 +3599,11 @@ static void RenderUpdatePrompt(int lang) {
                    es ? "SI" : "YES", white, C2D_Color32(16, 60, 32, 255), C2D_Color32(55, 150, 95, 255));
         DrawButton((float)UPD_NO_X0, (float)UPD_BTN_Y0, (float)(UPD_NO_X1 - UPD_NO_X0), 28.0f,
                    "NO", white, C2D_Color32(64, 22, 22, 255), C2D_Color32(180, 60, 60, 255));
+        if (hasNotes) {
+            DrawButton((float)UPD_YES_X0, (float)UPD_NOTES_Y0, (float)(UPD_NO_X1 - UPD_YES_X0),
+                       (float)(UPD_NOTES_Y1 - UPD_NOTES_Y0), es ? "NOVEDADES" : "WHAT'S NEW",
+                       C2D_Color32(255, 225, 120, 255), C2D_Color32(46, 36, 12, 255), C2D_Color32(170, 130, 60, 255));
+        }
     }
 }
 
