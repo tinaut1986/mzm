@@ -10,6 +10,7 @@
 #include "port_debug_tools.h"
 #include "port_debug_log.h"
 #include "port_save_state.h"
+#include "port_state_thumb.h"
 #include "port_updater_3ds.h"
 
 /* GBA & MZM minimap and state globals */
@@ -169,6 +170,7 @@ extern bool Port_PPU_3DS_LastFrameUsedGpu(void);
 extern void Port_GpuRenderer_GetLastFrameStats(int* outItems, int* outObjItems, int* outCacheSlots);
 
 static PortBottomTab sCurrentTab = BOTTOM_TAB_MAP;
+static uint32_t sStateModalId = 0;   /* open save-state detail modal (0 = none); see the ESTADO tab */
 static uint32_t sFrameCounter = 0;
 
 /* Bottom-screen redraw throttle.
@@ -219,6 +221,9 @@ static int BottomTabLayout(BottomTabSlot slots[BOTTOM_TAB_SLOT_MAX]);
 #define UPD_YES_X1 148
 #define UPD_NO_X0 172
 #define UPD_NO_X1 276
+/* "What's new" button of the install prompt, below YES/NO. */
+#define UPD_NOTES_Y0 174
+#define UPD_NOTES_Y1 198
 
 /* Called once per frame (even on frames the UI is not redrawn) so time-based
  * state keeps advancing: the blink counter and the RA session pump. */
@@ -250,6 +255,25 @@ void Port_BottomUI_FrameTick(void) {
             if (R_SUCCEEDED(PTMU_GetBatteryLevel(&lvl))) sBattLevel = lvl > 5 ? 5 : lvl;
             if (R_SUCCEEDED(PTMU_GetBatteryChargeState(&chg))) sBattCharging = (chg != 0);
         }
+    }
+    /* Save state jobs: redraw when one starts or ends (the "wait" message),
+     * hand a freshly read screenshot to the modal that asked for it, and read
+     * the state list the first time the tab is looked at. */
+    {
+        static PortSaveStateJob sLastJob = PORT_SS_JOB_NONE;
+        const PortSaveStateJob job = Port_SaveState_CurrentJob();
+        if (job != sLastJob) {
+            sLastJob = job;
+            sBottomUiDirty = true;
+        }
+        uint32_t thumbId = 0;
+        const uint16_t* thumb = Port_SaveState_TakeThumb(&thumbId);
+        if (thumb && thumbId == sStateModalId) {
+            PortStateThumb_Set(thumb);
+            sBottomUiDirty = true;
+        }
+        if (sCurrentTab == BOTTOM_TAB_STATE && !Port_SaveState_Scanned() && job == PORT_SS_JOB_NONE)
+            Port_SaveState_RequestScan();
     }
 #ifdef PORT_DEBUG_TOOLS_ACTIVE
     { extern void PortPpuMzm_DebugCheatTick(void); PortPpuMzm_DebugCheatTick(); }
@@ -304,6 +328,73 @@ static bool sAchFromPacks = false;
 static bool sShowRASettingsModal = false;
 static bool sShowDisplayModal = false;
 static bool sShowUpdateModal = false;
+
+/* "What's new" viewer, opened from the UPDATES modal while an update is
+ * waiting. The text comes from Port_Updater_CopyNotes (every release newer
+ * than this build); it is word-wrapped once, on open, into sNotesLines. */
+#define NOTES_WRAP_COLS   44
+#define NOTES_MAX_LINES   200
+#define NOTES_LINE_H      10.0f
+#define NOTES_VIEW_Y0     46.0f
+#define NOTES_VIEW_Y1     200.0f
+static bool sShowNotesModal = false;
+static char sNotesBuf[6144 + 2048];
+static const char* sNotesLines[NOTES_MAX_LINES];
+static int sNotesLineCount = 0;
+static float sNotesScrollY = 0.0f;
+
+static float NotesMaxScroll(void) {
+    float content = (float)sNotesLineCount * NOTES_LINE_H;
+    float view = NOTES_VIEW_Y1 - NOTES_VIEW_Y0;
+    return content > view ? content - view : 0.0f;
+}
+
+static void OpenNotesModal(void) {
+    char raw[6144];
+    char* w = sNotesBuf;
+    char* end = sNotesBuf + sizeof(sNotesBuf) - 1;
+    const char* line = raw;
+
+    Port_Updater_CopyNotes(raw, sizeof(raw));
+    sNotesLineCount = 0;
+    while (*line && sNotesLineCount < NOTES_MAX_LINES) {
+        const char* nl = strchr(line, '\n');
+        size_t len = nl ? (size_t)(nl - line) : strlen(line);
+        const char* seg = line;
+        bool first = true;
+
+        if (len == 0) { /* blank line between releases */
+            if (w < end && sNotesLineCount < NOTES_MAX_LINES) {
+                sNotesLines[sNotesLineCount++] = w;
+                *w++ = '\0';
+            }
+        }
+        while (len > 0 && sNotesLineCount < NOTES_MAX_LINES && w + NOTES_WRAP_COLS + 4 < end) {
+            size_t room = first ? NOTES_WRAP_COLS : NOTES_WRAP_COLS - 2;
+            size_t take = len;
+            size_t k;
+
+            if (take > room) {
+                take = room;
+                for (k = take; k > 0 && seg[k] != ' '; --k) {}
+                if (k > 0) take = k;
+            }
+            sNotesLines[sNotesLineCount++] = w;
+            if (!first) { *w++ = ' '; *w++ = ' '; }
+            memcpy(w, seg, take);
+            w += take;
+            *w++ = '\0';
+            seg += take;
+            len -= take;
+            while (len > 0 && *seg == ' ') { seg++; len--; }
+            first = false;
+        }
+        if (!nl) break;
+        line = nl + 1;
+    }
+    sNotesScrollY = 0.0f;
+    sShowNotesModal = true;
+}
 
 #ifdef PORT_DEBUG_TOOLS_ACTIVE
 /* DEBUG tab -> [HERRAMIENTAS] modal. Touchable equivalent of the L+R+<btn>
@@ -487,6 +578,9 @@ static bool sAchScrollbarDrag = false;
 #define ACH_LIST_CLIP_Y0 48.0f
 #define ACH_LIST_CLIP_Y1 200.0f
 #define ACH_CARD_H 34.0f
+#define ACH_SETTINGS_BTN_X 16
+#define ACH_SETTINGS_BTN_W 92
+#define ACH_SETTINGS_BTN_HIT(x, y) ((x) >= ACH_SETTINGS_BTN_X && (x) <= ACH_SETTINGS_BTN_X + ACH_SETTINGS_BTN_W && (y) >= 204 && (y) <= 230)
 
 static float AchievementsContentHeight(void) {
     return (float)Port_RA_GetViewCount() * ACH_CARD_H;
@@ -552,9 +646,11 @@ static void OpenAchievementsUi(void) {
 /* BACK from the achievement list: to the pack chooser when we came in through
  * it, otherwise straight out of the modal. */
 static void AchievementsBack(void) {
-    sShowAchievementsModal = false;
     sShowAchDetailModal = false;
+    /* The tab is the achievements' home, so there is nothing to go back to
+     * unless the list was reached through the pack chooser. */
     if (sAchFromPacks) {
+        sShowAchievementsModal = false;
         sShowAchPacksModal = true;
         Port_RA_SetListSubset(0);
     }
@@ -584,8 +680,8 @@ static void HandleAchPacksTouch(int x, int y, bool isNewTap) {
     float maxScroll = AchPacksMaxScroll();
 
     if (isNewTap) {
-        if (x >= 100 && x <= 220 && y >= 204 && y <= 230) {
-            sShowAchPacksModal = false;
+        if (ACH_SETTINGS_BTN_HIT(x, y)) {
+            sShowRASettingsModal = true;
             sLastTouchX = -1;
             sLastTouchY = -1;
             return;
@@ -1172,6 +1268,8 @@ static void DrawStatusDebugButtons(void) {
 #endif /* PORT_DEBUG_TOOLS_ACTIVE */
 
 static void HandleStateTouch(int x, int y, bool isNewTap);
+static void StateTapReleased(void);
+static void CloseStateModal(void);
 
 void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
     /* Any stylus contact can move something (pan, button, modal); redraw the
@@ -1183,14 +1281,28 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
      * unchanged. */
     if (isNewTap) Port_BottomUI_NoteTap(x, y);
 
+    /* While the SD card is being read or written the "wait" message is up and
+     * nothing else can be touched (a thumbnail read is too short to matter). */
+    if (Port_SaveState_IsBusy() && Port_SaveState_CurrentJob() != PORT_SS_JOB_THUMB) return;
+
     /* The update prompt is modal over every tab: it swallows all touches. */
-    if (Port_Updater_GetPrompt() != UPDATER_PROMPT_NONE) {
+    if (Port_Updater_GetPrompt() != UPDATER_PROMPT_NONE && !sShowNotesModal) {
         if (isNewTap) {
             const bool isError = (Port_Updater_GetPrompt() == UPDATER_PROMPT_ERROR);
             const bool yes = (y >= UPD_BTN_Y0 && y <= UPD_BTN_Y1) &&
                              (isError ? (x >= 116 && x <= 204) : (x >= UPD_YES_X0 && x <= UPD_YES_X1));
             const bool no = (x >= UPD_NO_X0 && x <= UPD_NO_X1 && y >= UPD_BTN_Y0 && y <= UPD_BTN_Y1);
             if (yes || no) Port_Updater_AnswerPrompt(yes);
+            else if (Port_Updater_GetPrompt() == UPDATER_PROMPT_ASK_INSTALL &&
+                     x >= UPD_YES_X0 && x <= UPD_NO_X1 && y >= UPD_NOTES_Y0 && y <= UPD_NOTES_Y1) {
+                char probe[2];
+                if (Port_Updater_CopyNotes(probe, sizeof(probe)) > 0) {
+                    /* The viewer lives on the OPTIONS tab; the prompt steps
+                     * aside while it is open and comes back on CLOSE. */
+                    sCurrentTab = BOTTOM_TAB_OPTIONS;
+                    OpenNotesModal();
+                }
+            }
         }
         return;
     }
@@ -1208,8 +1320,8 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
                 }
             }
             if (sCurrentTab != prevTab) Port_Config_Save();
-            if (sCurrentTab == BOTTOM_TAB_STATE && prevTab != BOTTOM_TAB_STATE)
-                Port_SaveState_RefreshSlots();
+            if (sCurrentTab != prevTab) CloseStateModal();
+            if (sCurrentTab != prevTab) sShowRASettingsModal = false;
         }
         sLastTouchX = -1;
         sLastTouchY = -1;
@@ -1496,10 +1608,49 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
         }
     }
 
+    /* RA settings: a full view of the ACHIEVEMENTS tab (opened by the SETTINGS
+     * button on the list / set chooser footer). */
+    if (sCurrentTab == BOTTOM_TAB_ACHIEVEMENTS && sShowRASettingsModal) {
+        if (isNewTap) {
+            if (x >= 100 && x <= 220 && y >= 204 && y <= 230) {
+                sShowRASettingsModal = false;
+            } else if (x >= 10 && x <= 308) {
+                if (y >= 56 && y <= 80) {
+                    /* Login prompt via swkbd */
+                    Port_RA_PromptLogin();
+                    Port_Config_Save();
+                } else if (y >= 84 && y <= 108) {
+                    /* Enable / Disable toggle */
+                    bool cur = Port_RA_IsEnabled();
+                    Port_RA_SetEnabled(!cur);
+                    Port_Config_Save();
+                } else if (y >= 112 && y <= 136) {
+                    /* Notification screen row: PREVIEW button on the
+                     * right (fires a sample toast + jingle), rest of the
+                     * row toggles bottom <-> top. (Slot was the Hardcore
+                     * Mode toggle; hardcore is force-off now -- see
+                     * Port_RA_HardcoreAllowed.) */
+                    if (x >= 272) {
+                        Port_RA_ShowPreviewToast();
+                    } else {
+                        Port_RA_SetNotifyOnTopScreen(!Port_RA_GetNotifyOnTopScreen());
+                        Port_Config_Save();
+                    }
+                } else if (y >= 140 && y <= 164) {
+                    /* Sound Notification toggle */
+                    bool snd = Port_RA_GetNotificationSound();
+                    Port_RA_SetNotificationSound(!snd);
+                    Port_Config_Save();
+                }
+            }
+        }
+        return;
+    }
+
     /* Modal: achievement detail popup. Sits on top of the list; only its BACK
      * button is interactive, everything else is swallowed so the list behind
      * it cannot scroll. */
-    if (sCurrentTab == BOTTOM_TAB_OPTIONS && sShowAchDetailModal) {
+    if (sCurrentTab == BOTTOM_TAB_ACHIEVEMENTS && sShowAchDetailModal) {
         if (isNewTap && x >= 100 && x <= 220 && y >= 206 && y <= 230) {
             sShowAchDetailModal = false;
         }
@@ -1507,17 +1658,23 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
     }
 
     /* Modal: pack chooser (only reachable when the game has >1 set) */
-    if (sCurrentTab == BOTTOM_TAB_OPTIONS && sShowAchPacksModal) {
+    if (sCurrentTab == BOTTOM_TAB_ACHIEVEMENTS && sShowAchPacksModal) {
         HandleAchPacksTouch(x, y, isNewTap);
         return;
     }
 
     /* Modal: Achievements View Scrolling & Close */
-    if (sCurrentTab == BOTTOM_TAB_OPTIONS && sShowAchievementsModal) {
+    if (sCurrentTab == BOTTOM_TAB_ACHIEVEMENTS && sShowAchievementsModal) {
         float maxAchScroll = AchievementsMaxScroll();
 
         if (isNewTap) {
-            if (x >= 100 && x <= 202 && y >= 204 && y <= 230) {
+            if (ACH_SETTINGS_BTN_HIT(x, y)) {
+                sShowRASettingsModal = true;
+                sLastTouchX = -1;
+                sLastTouchY = -1;
+                return;
+            }
+            if (x >= 112 && x <= 204 && y >= 204 && y <= 230 && sAchFromPacks) {
                 AchievementsBack();
                 sLastTouchX = -1;
                 sLastTouchY = -1;
@@ -1593,12 +1750,6 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
                 } else if (x >= 170 && x <= 280 && y >= 140 && y <= 168) {
                     /* CANCEL */
                     sShowConfirmModal = false;
-                    /* A hardcore-enable confirm was opened from the RA
-                     * settings modal; go back to it rather than the bare
-                     * options list. */
-                    if (!sConfirmIsRestart) {
-                        sShowRASettingsModal = true;
-                    }
                 }
             }
             return;
@@ -1686,6 +1837,24 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
             return;
         }
 
+        if (sShowNotesModal) {
+            if (isNewTap) {
+                if (x >= 100 && x <= 220 && y >= 204 && y <= 230) {
+                    sShowNotesModal = false;
+                } else {
+                    sLastTouchX = x;
+                    sLastTouchY = y;
+                }
+            } else if (sLastTouchY >= 0) {
+                sNotesScrollY += (float)(sLastTouchY - y);
+                if (sNotesScrollY < 0.0f) sNotesScrollY = 0.0f;
+                if (sNotesScrollY > NotesMaxScroll()) sNotesScrollY = NotesMaxScroll();
+                sLastTouchX = x;
+                sLastTouchY = y;
+            }
+            return;
+        }
+
         if (sShowUpdateModal) {
             if (isNewTap) {
                 UpdaterState us = Port_Updater_GetState();
@@ -1698,6 +1867,9 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
                     } else if (y >= 84 && y <= 108) {
                         Port_Updater_SetBeta(!Port_Updater_GetBeta());
                         Port_Config_Save();
+                    } else if (y >= 176 && y <= 200 && us == UPDATER_AVAILABLE) {
+                        char probe[2];
+                        if (Port_Updater_CopyNotes(probe, sizeof(probe)) > 0) OpenNotesModal();
                     } else if (y >= 140 && y <= 172) {
                         if (us == UPDATER_AVAILABLE) {
                             Port_Updater_Install();
@@ -1706,43 +1878,6 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
                         } else if (us != UPDATER_CHECKING && us != UPDATER_DOWNLOADING) {
                             Port_Updater_CheckNow();
                         }
-                    }
-                }
-            }
-            return;
-        }
-
-        if (sShowRASettingsModal) {
-            if (isNewTap) {
-                if (x >= 100 && x <= 220 && y >= 204 && y <= 230) {
-                    sShowRASettingsModal = false;
-                } else if (x >= 10 && x <= 308) {
-                    if (y >= 56 && y <= 80) {
-                        /* Login prompt via swkbd */
-                        Port_RA_PromptLogin();
-                        Port_Config_Save();
-                    } else if (y >= 84 && y <= 108) {
-                        /* Enable / Disable toggle */
-                        bool cur = Port_RA_IsEnabled();
-                        Port_RA_SetEnabled(!cur);
-                        Port_Config_Save();
-                    } else if (y >= 112 && y <= 136) {
-                        /* Notification screen row: PREVIEW button on the
-                         * right (fires a sample toast + jingle), rest of the
-                         * row toggles bottom <-> top. (Slot was the Hardcore
-                         * Mode toggle; hardcore is force-off now -- see
-                         * Port_RA_HardcoreAllowed.) */
-                        if (x >= 272) {
-                            Port_RA_ShowPreviewToast();
-                        } else {
-                            Port_RA_SetNotifyOnTopScreen(!Port_RA_GetNotifyOnTopScreen());
-                            Port_Config_Save();
-                        }
-                    } else if (y >= 140 && y <= 164) {
-                        /* Sound Notification toggle */
-                        bool snd = Port_RA_GetNotificationSound();
-                        Port_RA_SetNotificationSound(!snd);
-                        Port_Config_Save();
                     }
                 }
             }
@@ -1785,73 +1920,19 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
             return;
         }
 
-        if (sShowAchPacksModal) {
-            HandleAchPacksTouch(x, y, isNewTap);
-            return;
-        }
-
-        if (sShowAchievementsModal) {
-            /* Achievements modal scrolling */
-            float maxAchScroll = AchievementsMaxScroll();
-
-            if (isNewTap) {
-                if (x >= 100 && x <= 202 && y >= 204 && y <= 230) {
-                    AchievementsBack();
-                    sLastTouchX = -1; sLastTouchY = -1;
-                    return;
-                }
-                if (x >= 206 && x <= 286 && y >= 204 && y <= 230) {
-                    CycleAchievementsSort();
-                    sLastTouchX = -1; sLastTouchY = -1;
-                    return;
-                }
-                if (x >= 288 && x <= 306 && y >= 204 && y <= 230) {
-                    ToggleAchievementsSortDir();
-                    sLastTouchX = -1; sLastTouchY = -1;
-                    return;
-                }
-                if (x >= 300 && (float)y >= ACH_LIST_CLIP_Y0 && (float)y < ACH_LIST_CLIP_Y1 &&
-                    maxAchScroll > 0.0f) {
-                    sAchScrollbarDrag = true;
-                    sAchievementsScrollY = AchScrollbarValue(y, maxAchScroll);
-                    sIsTouchDragging = true;
-                } else {
-                    sTouchStartX = x; sTouchStartY = y;
-                    sLastTouchX = x; sLastTouchY = y;
-                    sIsTouchDragging = false;
-                }
-            } else if (sAchScrollbarDrag && maxAchScroll > 0.0f) {
-                sAchievementsScrollY = AchScrollbarValue(y, maxAchScroll);
-                sIsTouchDragging = true;
-            } else if (!sAchScrollbarDrag && sLastTouchX >= 0 && sLastTouchY >= 0) {
-                float dy = (float)(sLastTouchY - y);
-                sAchievementsScrollY += dy;
-                if (sAchievementsScrollY < 0.0f) sAchievementsScrollY = 0.0f;
-                if (sAchievementsScrollY > maxAchScroll) sAchievementsScrollY = maxAchScroll;
-                sLastTouchX = x; sLastTouchY = y;
-                sIsTouchDragging = true;
-            }
-            return;
-        }
 
         /* Main options buttons (no scrolling needed) */
         if (isNewTap) {
             if (x >= 16 && x <= 304 && y >= 48 && y <= 76) {
                 sShowDisplayModal = true;
-            } else if (y >= 82 && y <= 118) {
-                if (x >= 16 && x <= 156) {
-                    sShowRASettingsModal = true;
-                } else if (x >= 164 && x <= 304) {
-                    OpenAchievementsUi();
-                }
-            } else if (x >= 16 && x <= 304 && y >= 124 && y <= 156) {
+            } else if (x >= 16 && x <= 304 && y >= 82 && y <= 114) {
                 sShowRemapModal = true;
                 sRemapScrollY = 0.0f;
                 sRemapSelectButtonIdx = -1;
-            } else if (x >= 16 && x <= 156 && y >= 164 && y <= 192) {
+            } else if (x >= 16 && x <= 156 && y >= 122 && y <= 150) {
                 sConfirmIsRestart = true;
                 sShowConfirmModal = true;
-            } else if (x >= 164 && x <= 304 && y >= 164 && y <= 192) {
+            } else if (x >= 164 && x <= 304 && y >= 122 && y <= 150) {
                 sShowUpdateModal = true;
             }
         }
@@ -1884,7 +1965,7 @@ void Port_BottomUI_TouchReleased(void) {
 
     /* Pack chooser: a release that never became a drag opens that set. Row 0
      * is the "all sets" entry, so subsets start at row 1. */
-    if (sCurrentTab == BOTTOM_TAB_OPTIONS && sShowAchPacksModal) {
+    if (sCurrentTab == BOTTOM_TAB_ACHIEVEMENTS && sShowAchPacksModal) {
         if (!sIsTouchDragging && sTouchStartX >= 16 && sTouchStartX <= 300 &&
             (float)sTouchStartY >= ACH_LIST_CLIP_Y0 && (float)sTouchStartY < ACH_LIST_CLIP_Y1) {
             float local = (float)sTouchStartY - ACH_LIST_CLIP_Y0 + sAchPacksScrollY;
@@ -1910,7 +1991,7 @@ void Port_BottomUI_TouchReleased(void) {
 
     /* Achievement list: a tap that never became a drag opens the detail popup
      * for that card, same release-based shape as the pack chooser above. */
-    if (sCurrentTab == BOTTOM_TAB_OPTIONS && sShowAchievementsModal && !sShowAchDetailModal) {
+    if (sCurrentTab == BOTTOM_TAB_ACHIEVEMENTS && sShowAchievementsModal && !sShowAchDetailModal) {
         if (!sIsTouchDragging && sTouchStartX >= 16 && sTouchStartX <= 300 &&
             (float)sTouchStartY >= ACH_LIST_CLIP_Y0 && (float)sTouchStartY < ACH_LIST_CLIP_Y1) {
             float local = (float)sTouchStartY - ACH_LIST_CLIP_Y0 + sAchievementsScrollY;
@@ -1944,6 +2025,8 @@ void Port_BottomUI_TouchReleased(void) {
         }
     }
 
+    if (sCurrentTab == BOTTOM_TAB_STATE) StateTapReleased();
+
     sLastTouchX = -1;
     sLastTouchY = -1;
     sTouchStartX = -1;
@@ -1971,12 +2054,14 @@ static int BottomTabLayout(BottomTabSlot slots[BOTTOM_TAB_SLOT_MAX]) {
         slots[n].x = x; slots[n].w = TAB_ICON_W; slots[n].tab = BOTTOM_TAB_DEBUG; slots[n].icon = 2; n++; x += TAB_ICON_PITCH;
     }
     slots[n].x = x; slots[n].w = TAB_ICON_W; slots[n].tab = BOTTOM_TAB_STATE;   slots[n].icon = 4; n++; x += TAB_ICON_PITCH;
+    slots[n].x = x; slots[n].w = TAB_ICON_W; slots[n].tab = BOTTOM_TAB_ACHIEVEMENTS; slots[n].icon = 5; n++; x += TAB_ICON_PITCH;
     slots[n].x = x; slots[n].w = TAB_ICON_W; slots[n].tab = BOTTOM_TAB_OPTIONS; slots[n].icon = 3; n++;
     return n;
 }
 
 /* One 14x14-ish glyph, all whole pixels, centred at (cx,cy).
- * 0 map (room grid), 1 status (stat bars), 2 debug (bug), 3 options (sliders). */
+ * 0 map (room grid), 1 status (stat bars), 2 debug (bug), 3 options (sliders),
+ * 4 save states (floppy), 5 achievements (trophy). */
 static void DrawTabIcon(int icon, float cx, float cy, uint32_t col, uint32_t bg) {
     const float x = floorf(cx), y = floorf(cy);
     (void)bg;
@@ -2009,6 +2094,14 @@ static void DrawTabIcon(int icon, float cx, float cy, uint32_t col, uint32_t bg)
         R( 3.0f, -6.0f, 3.0f, 3.0f);    /* clipped top-right corner */
         R(-3.0f, -6.0f, 5.0f, 4.0f);    /* metal shutter */
         R(-4.0f,  1.0f, 8.0f, 4.0f);    /* label area */
+        break;
+    case 5: /* achievements: trophy cup, handles, stem, base */
+        R(-4.0f, -6.0f, 8.0f, 5.0f);
+        R(-3.0f, -1.0f, 6.0f, 2.0f);
+        R(-6.0f, -5.0f, 2.0f, 3.0f);
+        R( 4.0f, -5.0f, 2.0f, 3.0f);
+        R(-1.0f,  1.0f, 2.0f, 3.0f);
+        R(-4.0f,  4.0f, 8.0f, 2.0f);
         break;
     default: /* sliders (nudged 1px low to read centred in the tab) */
         R(-6.0f, -4.0f, 12.0f, 1.0f);
@@ -2572,6 +2665,18 @@ static const char* AchSortLabel(int lang) {
     return labels[sort][lang];
 }
 
+/* Footer button, bottom-left, shared by the list and the set chooser: that
+ * strip is free in both, so the settings need no room from the list itself.
+ * ACH_SETTINGS_BTN_* (above) is also the touch hit box. */
+static void DrawAchSettingsButton(int lang) {
+    static const char* const labels[7] = {
+        "SETTINGS", "SETTINGS", "SETTINGS",
+        "OPTIONEN", "REGLAGES", "OPZIONI", "AJUSTES"
+    };
+    DrawButton((float)ACH_SETTINGS_BTN_X, 204.0f, (float)ACH_SETTINGS_BTN_W, 20.0f, labels[lang],
+               C2D_Color32(120, 255, 175, 255), C2D_Color32(16, 50, 32, 255), C2D_Color32(55, 150, 95, 255));
+}
+
 /* Pack chooser: one card per set plus an "all sets" entry at the top. */
 static void RenderAchPacksModal(int lang) {
     const float mX = 10.0f;
@@ -2649,11 +2754,7 @@ static void RenderAchPacksModal(int lang) {
         C2D_DrawRectSolid(306.0f, thumbY, 0.94f, 2.0f, thumbH, C2D_Color32(80, 160, 240, 255));
     }
 
-    static const char* backLabels[7] = {
-        "BACK", "BACK", "BACK", "ZURUECK", "RETOUR", "INDIETRO", "VOLVER"
-    };
-    DrawButton(116.0f, 204.0f, 88.0f, 20.0f, backLabels[lang],
-               C2D_Color32(255, 255, 255, 255), BTN_BLUE_BODY, BTN_BLUE_BORDER);
+    DrawAchSettingsButton(lang);
 }
 
 /* Colour RA uses for each special achievement type. */
@@ -2904,12 +3005,16 @@ static void RenderAchievementsModal(int lang) {
         C2D_DrawRectSolid(306.0f, thumbY, 0.94f, 2.0f, thumbH, C2D_Color32(80, 160, 240, 255));
     }
 
-    const char* backLabels[7] = {
-        "BACK", "BACK", "BACK",
-        "ZURUECK", "RETOUR", "INDIETRO", "VOLVER"
-    };
-    DrawButton(116.0f, 204.0f, 88.0f, 20.0f, backLabels[lang],
-               C2D_Color32(255, 255, 255, 255), BTN_BLUE_BODY, BTN_BLUE_BORDER);
+    DrawAchSettingsButton(lang);
+
+    if (sAchFromPacks) {
+        const char* backLabels[7] = {
+            "BACK", "BACK", "BACK",
+            "ZURUECK", "RETOUR", "INDIETRO", "VOLVER"
+        };
+        DrawButton(116.0f, 204.0f, 88.0f, 20.0f, backLabels[lang],
+                   C2D_Color32(255, 255, 255, 255), BTN_BLUE_BODY, BTN_BLUE_BORDER);
+    }
 
     /* Sort cycler plus its direction arrow, on the footer bar beside BACK so
      * neither can collide with the scrolling card band above them. */
@@ -3323,6 +3428,48 @@ static void RenderRASettingsModal(int lang) {
                C2D_Color32(255, 255, 255, 255), BTN_BLUE_BODY, BTN_BLUE_BORDER);
 }
 
+/* "What's new" viewer: plain wrapped text, "== vX.Y.Z ==" lines drawn as
+ * gold headers, the rest as the list the release author wrote. */
+static void RenderNotesModal(int lang) {
+    const bool es = (lang == 6);
+    const float maxScroll = NotesMaxScroll();
+
+    C2D_DrawRectSolid(10.0f, 26.0f, 0.85f, 300.0f, 206.0f, C2D_Color32(10, 14, 24, 250));
+    C2D_DrawRectSolid(10.0f, 26.0f, 0.84f, 300.0f, 206.0f, C2D_Color32(40, 70, 120, 255));
+    DrawText(20.0f, 32.0f, 1.0f, es ? "NOVEDADES" : "WHAT'S NEW", C2D_Color32(255, 215, 0, 255));
+    DrawText(170.0f, 32.0f, 1.0f, Port_Updater_GetRemoteTag(), C2D_Color32(140, 160, 190, 255));
+
+    if (sNotesScrollY > maxScroll) sNotesScrollY = maxScroll;
+    for (int i = 0; i < sNotesLineCount; ++i) {
+        float y = NOTES_VIEW_Y0 - sNotesScrollY + (float)i * NOTES_LINE_H;
+        const char* t = sNotesLines[i];
+        if (y + NOTES_LINE_H <= NOTES_VIEW_Y0 || y >= NOTES_VIEW_Y1 || !t[0]) continue;
+        if (t[0] == '=' && t[1] == '=') {
+            char head[40];
+            snprintf(head, sizeof(head), "%s", t + 3);
+            size_t n = strlen(head);
+            if (n >= 3) head[n - 3] = '\0'; /* trailing " ==" */
+            DrawTextClipped(18.0f, y, 1.0f, head, C2D_Color32(255, 215, 0, 255), NOTES_VIEW_Y0, NOTES_VIEW_Y1);
+        } else {
+            DrawTextClipped(18.0f, y, 1.0f, t, C2D_Color32(220, 235, 255, 255), NOTES_VIEW_Y0, NOTES_VIEW_Y1);
+        }
+    }
+    if (sNotesLineCount == 0) {
+        DrawText(18.0f, NOTES_VIEW_Y0, 1.0f, es ? "SIN NOTAS" : "NO NOTES", C2D_Color32(140, 160, 190, 255));
+    }
+
+    if (maxScroll > 0.0f) {
+        float trackH = NOTES_VIEW_Y1 - NOTES_VIEW_Y0;
+        float thumbH = 30.0f;
+        float thumbY = NOTES_VIEW_Y0 + (sNotesScrollY / maxScroll) * (trackH - thumbH);
+        C2D_DrawRectSolid(306.0f, NOTES_VIEW_Y0, 0.92f, 2.0f, trackH, C2D_Color32(255, 35, 55, 255));
+        C2D_DrawRectSolid(306.0f, thumbY, 0.94f, 2.0f, thumbH, C2D_Color32(80, 160, 240, 255));
+    }
+
+    DrawButton(116.0f, 206.0f, 88.0f, 22.0f, es ? "CERRAR" : "CLOSE",
+               C2D_Color32(255, 255, 255, 255), BTN_BLUE_BODY, BTN_BLUE_BORDER);
+}
+
 /* Self-update modal: auto-update + channel toggles, a status line and one
  * context-sensitive action button (check / install / restart). */
 static void RenderUpdateModal(int lang) {
@@ -3381,6 +3528,15 @@ static void RenderUpdateModal(int lang) {
     }
     DrawButton(16.0f, 142.0f, 288.0f, 28.0f, actionLabel, white, actionBody, actionBorder);
 
+    /* Only while an update waits, and only if the release carried notes. */
+    {
+        char probe[2];
+        if (us == UPDATER_AVAILABLE && Port_Updater_CopyNotes(probe, sizeof(probe)) > 0) {
+            DrawButton(16.0f, 176.0f, 288.0f, 24.0f, es ? "NOVEDADES" : "WHAT'S NEW",
+                       C2D_Color32(255, 225, 120, 255), C2D_Color32(46, 36, 12, 255), C2D_Color32(170, 130, 60, 255));
+        }
+    }
+
     DrawButton(116.0f, 206.0f, 88.0f, 22.0f, es ? "CERRAR" : "CLOSE", white, BTN_BLUE_BODY, BTN_BLUE_BORDER);
 }
 
@@ -3394,11 +3550,15 @@ static void RenderUpdatePrompt(int lang) {
     const char* question = "";
     char line[64];
 
-    if (pr == UPDATER_PROMPT_NONE) return;
+    if (pr == UPDATER_PROMPT_NONE || sShowNotesModal) return;
+
+    char probe[2];
+    const bool hasNotes = (pr == UPDATER_PROMPT_ASK_INSTALL && Port_Updater_CopyNotes(probe, sizeof(probe)) > 0);
+    const float extra = hasNotes ? 28.0f : 0.0f;
 
     C2D_DrawRectSolid(0.0f, 0.0f, 0.97f, 320.0f, 240.0f, C2D_Color32(0, 0, 0, 170));
-    C2D_DrawRectSolid(20.0f, 58.0f, 0.98f, 280.0f, 122.0f, C2D_Color32(40, 70, 120, 255));
-    C2D_DrawRectSolid(22.0f, 60.0f, 0.99f, 276.0f, 118.0f, C2D_Color32(10, 14, 24, 255));
+    C2D_DrawRectSolid(20.0f, 58.0f, 0.98f, 280.0f, 122.0f + extra, C2D_Color32(40, 70, 120, 255));
+    C2D_DrawRectSolid(22.0f, 60.0f, 0.99f, 276.0f, 118.0f + extra, C2D_Color32(10, 14, 24, 255));
 
     switch (pr) {
         case UPDATER_PROMPT_ASK_INSTALL:
@@ -3439,6 +3599,11 @@ static void RenderUpdatePrompt(int lang) {
                    es ? "SI" : "YES", white, C2D_Color32(16, 60, 32, 255), C2D_Color32(55, 150, 95, 255));
         DrawButton((float)UPD_NO_X0, (float)UPD_BTN_Y0, (float)(UPD_NO_X1 - UPD_NO_X0), 28.0f,
                    "NO", white, C2D_Color32(64, 22, 22, 255), C2D_Color32(180, 60, 60, 255));
+        if (hasNotes) {
+            DrawButton((float)UPD_YES_X0, (float)UPD_NOTES_Y0, (float)(UPD_NO_X1 - UPD_YES_X0),
+                       (float)(UPD_NOTES_Y1 - UPD_NOTES_Y0), es ? "NOVEDADES" : "WHAT'S NEW",
+                       C2D_Color32(255, 225, 120, 255), C2D_Color32(46, 36, 12, 255), C2D_Color32(170, 130, 60, 255));
+        }
     }
 }
 
@@ -4243,47 +4408,8 @@ static void RenderOptionsView(void) {
     DrawTextCentered(160.0f, 53.0f + (p1 ? 1.0f : 0.0f), 1.0f, displayBtnTitles[lang], C2D_Color32(120, 210, 255, 255));
     DrawTextCentered(160.0f, 64.0f + (p1 ? 1.0f : 0.0f), 1.0f, displayBtnSubs[lang], C2D_Color32(150, 170, 200, 255));
 
-    /* Button 2 & 3: RetroAchievements Split into 2 side-by-side buttons (Y: 82 to 118, H: 36) */
-    /* 2A: RA Settings / Login (Left: X 16 to 156, W: 140) */
-    bool p2a = DrawButtonBox(16.0f, 82.0f, 140.0f, 36.0f,
-                             C2D_Color32(16, 50, 32, 255), C2D_Color32(55, 150, 95, 255));
-    static const char* const raSettingsTitles[7] = {
-        "RA SETTINGS", "RA SETTINGS", "RA SETTINGS",
-        "RA-EINSTELL.", "PARAMETRES RA", "IMPOSTAZIONI RA", "AJUSTES RA"
-    };
-    DrawTextCentered(86.0f, 91.0f + (p2a ? 1.0f : 0.0f), 1.0f, raSettingsTitles[lang], C2D_Color32(120, 255, 175, 255));
-    uint32_t raStatusCol = C2D_Color32(140, 160, 190, 255);
-    switch (Port_RA_GetStatus()) {
-        case RA_STATUS_CONNECTED: raStatusCol = C2D_Color32(80, 255, 120, 255); break;
-        case RA_STATUS_CONNECTING: raStatusCol = C2D_Color32(255, 220, 80, 255); break;
-        case RA_STATUS_ERROR: raStatusCol = C2D_Color32(255, 90, 90, 255); break;
-        default: break;
-    }
-    DrawTextCentered(86.0f, 103.0f + (p2a ? 1.0f : 0.0f), 1.0f, Port_RA_GetStatusString(lang), raStatusCol);
-
-    /* 2B: RA Achievement List & Progress (Right: X 164 to 304, W: 140) */
-    bool p2b = DrawButtonBox(164.0f, 82.0f, 140.0f, 36.0f,
-                             C2D_Color32(16, 50, 32, 255), C2D_Color32(55, 150, 95, 255));
-    static const char* const viewAchTitles[7] = {
-        "VIEW ACHIEVEMENTS", "VIEW ACHIEVEMENTS", "VIEW ACHIEVEMENTS",
-        "ERFOLGE", "VOIR SUCCES", "VEDI OBIETTIVI", "VER LOGROS"
-    };
-    DrawTextCentered(234.0f, 91.0f + (p2b ? 1.0f : 0.0f), 1.0f, viewAchTitles[lang], C2D_Color32(120, 255, 175, 255));
-    uint32_t count = Port_RA_GetAchievementCount();
-    uint32_t unlocked = Port_RA_GetUnlockedCount();
-    char achSummary[32];
-    if (count > 0) snprintf(achSummary, sizeof(achSummary), "%lu/%lu", (unsigned long)unlocked, (unsigned long)count);
-    else {
-        static const char* const achEmptyLabels[7] = {
-            "LIST", "LIST", "LIST",
-            "LISTE", "LISTE", "LISTA", "LISTA LOGROS"
-        };
-        snprintf(achSummary, sizeof(achSummary), "%s", achEmptyLabels[lang]);
-    }
-    DrawTextCentered(234.0f, 103.0f + (p2b ? 1.0f : 0.0f), 1.0f, achSummary, C2D_Color32(140, 240, 180, 255));
-
-    /* Button 4: Controls remapping (Y: 124 to 156, H: 32) */
-    bool p4 = DrawButtonBox(16.0f, 124.0f, 288.0f, 32.0f,
+    /* Controls remapping (Y: 82 to 114, H: 32) */
+    bool p4 = DrawButtonBox(16.0f, 82.0f, 288.0f, 32.0f,
                             C2D_Color32(46, 32, 12, 255), C2D_Color32(170, 130, 60, 255));
     static const char* const ctrlTitles[7] = {
         "CONTROLS", "CONTROLS", "CONTROLS",
@@ -4293,19 +4419,19 @@ static void RenderOptionsView(void) {
         "REMAPPABLE BUTTONS & C-STICK", "REMAPPABLE BUTTONS & C-STICK", "REMAPPABLE BUTTONS & C-STICK",
         "TASTEN & C-STICK BELEGEN", "TOUCHES ET C-STICK", "RIMAPPA TASTI E C-STICK", "MAPEAR BOTONES Y C-STICK"
     };
-    DrawTextCentered(160.0f, 131.0f + (p4 ? 1.0f : 0.0f), 1.0f, ctrlTitles[lang], C2D_Color32(255, 215, 90, 255));
-    DrawTextCentered(160.0f, 142.0f + (p4 ? 1.0f : 0.0f), 1.0f, ctrlSubs[lang], C2D_Color32(190, 170, 120, 255));
+    DrawTextCentered(160.0f, 89.0f + (p4 ? 1.0f : 0.0f), 1.0f, ctrlTitles[lang], C2D_Color32(255, 215, 90, 255));
+    DrawTextCentered(160.0f, 100.0f + (p4 ? 1.0f : 0.0f), 1.0f, ctrlSubs[lang], C2D_Color32(190, 170, 120, 255));
 
-    /* Restart button (Y: 164 to 192, H: 28) */
+    /* Restart button (Y: 122 to 150, H: 28) */
     static const char* const restartBtnTitles[7] = {
         "RESTART GAME", "RESTART GAME", "RESTART GAME",
         "SPIEL NEUSTARTEN", "RECOMMENCER PARTIE", "RIAVVIA PARTITA", "REINICIAR PARTIDA"
     };
-    DrawButton(16.0f, 164.0f, 140.0f, 28.0f, restartBtnTitles[lang],
+    DrawButton(16.0f, 122.0f, 140.0f, 28.0f, restartBtnTitles[lang],
                C2D_Color32(255, 150, 150, 255), C2D_Color32(64, 22, 22, 255), C2D_Color32(180, 60, 60, 255));
 
     /* Updates button, right half of the restart row */
-    DrawButton(164.0f, 164.0f, 140.0f, 28.0f, (lang == 6) ? "ACTUALIZAR" : "UPDATES",
+    DrawButton(164.0f, 122.0f, 140.0f, 28.0f, (lang == 6) ? "ACTUALIZAR" : "UPDATES",
                C2D_Color32(150, 230, 255, 255), C2D_Color32(16, 44, 64, 255), C2D_Color32(60, 130, 180, 255));
 
     /* Footer */
@@ -4313,13 +4439,8 @@ static void RenderOptionsView(void) {
 
     /* Render active modal on top */
     if (sShowDisplayModal) RenderDisplayModal(lang);
-    else if (sShowRASettingsModal) RenderRASettingsModal(lang);
+    else if (sShowNotesModal) RenderNotesModal(lang);
     else if (sShowUpdateModal) RenderUpdateModal(lang);
-    else if (sShowAchPacksModal) RenderAchPacksModal(lang);
-    else if (sShowAchievementsModal) {
-        RenderAchievementsModal(lang);
-        if (sShowAchDetailModal) RenderAchievementDetailModal(lang);
-    }
     else if (sShowRemapModal) RenderRemapModal(lang);
     else if (sShowConfirmModal) RenderConfirmModal(lang);
 }
@@ -5193,24 +5314,93 @@ static void RenderDebugView(void) {
 }
 
 /* ===================================================================== */
+/*  ACHIEVEMENTS tab                                                      */
+/* ===================================================================== */
+
+/* The list, the pack chooser and the detail popup keep the layout they had
+ * as OPTIONS modals; the tab just hosts them. The first look opens the
+ * chooser (more than one set) or the flat list. */
+static void RenderAchievementsView(void) {
+    const int lang = GetLang();
+    if (!sShowAchPacksModal && !sShowAchievementsModal) OpenAchievementsUi();
+    if (sShowRASettingsModal) {
+        RenderRASettingsModal(lang);
+    } else if (sShowAchPacksModal) {
+        RenderAchPacksModal(lang);
+    } else {
+        RenderAchievementsModal(lang);
+        if (sShowAchDetailModal) RenderAchievementDetailModal(lang);
+    }
+}
+
+/* ===================================================================== */
 /*  ESTADO tab: whole-machine save states (port_save_state.c)             */
 /* ===================================================================== */
 
-/* Two-tap confirm, shared by both actions. Armed while
- * sFrameCounter - sStateArmFrame < STATE_ARM_FRAMES. sStateArmAction:
- * 1 = save, 2 = load. */
+/* The list is open-ended: a button saves a new state, a tap on a row opens a
+ * modal with the state's screenshot and data and the actions that apply to it
+ * (load, overwrite, delete). Those three ask for a second tap, armed for
+ * STATE_ARM_FRAMES. Everything that touches the SD card is queued in
+ * port_save_state.c and shows RenderBusyOverlay while it runs. */
 #define STATE_ARM_FRAMES 120
-static int      sStateArmSlot   = -1;
+#define STATE_ARM_LOAD      1
+#define STATE_ARM_OVERWRITE 2
+#define STATE_ARM_DELETE    3
 static int      sStateArmAction = 0;
 static uint32_t sStateArmFrame  = 0;
 
-#define STATE_ROW_Y0    42.0f
-#define STATE_ROW_PITCH 29.0f
-#define STATE_ROW_H     25.0f
-#define STATE_BTN_SAVE_X 252.0f
-#define STATE_BTN_LOAD_X 282.0f
-#define STATE_BTN_W      26.0f
-#define STATE_TEXT_RIGHT 246.0f   /* right edge of the slot's text area */
+#define STATE_NEW_X     16.0f
+#define STATE_NEW_Y     30.0f
+#define STATE_NEW_W     288.0f
+#define STATE_NEW_H     22.0f
+#define STATE_LIST_Y0   58.0f
+#define STATE_LIST_Y1   206.0f
+#define STATE_ROW_PITCH 30.0f
+#define STATE_ROW_H     28.0f
+#define STATE_TEXT_RIGHT 298.0f   /* right edge of a row's text */
+
+/* Detail modal geometry, shared by the renderer and the touch handler. */
+#define SMODAL_X 10.0f
+#define SMODAL_Y 26.0f
+#define SMODAL_W 300.0f
+#define SMODAL_H 206.0f
+#define SMODAL_BTN_Y 158.0f
+#define SMODAL_BTN_H 22.0f
+#define SMODAL_BTN_W 92.0f
+static const float kStateBtnX[3] = { 18.0f, 114.0f, 210.0f };   /* load, overwrite, delete */
+#define SMODAL_CLOSE_X 116.0f
+#define SMODAL_CLOSE_Y 208.0f
+#define SMODAL_CLOSE_W 88.0f
+#define SMODAL_CLOSE_H 20.0f
+
+static float sStateScrollY = 0.0f;
+static PortSaveStateInfo sStateModalInfo;
+static unsigned sStateModalNumber;   /* position in the list, from 1: what the player sees */
+
+static bool StateArmed(int action) {
+    return sStateArmAction == action && (sFrameCounter - sStateArmFrame) < STATE_ARM_FRAMES;
+}
+
+static float StateMaxScroll(void) {
+    const float content = (float)Port_SaveState_Count() * STATE_ROW_PITCH;
+    const float view = STATE_LIST_Y1 - STATE_LIST_Y0;
+    return content > view ? content - view : 0.0f;
+}
+
+static void CloseStateModal(void) {
+    sStateModalId = 0;
+    sStateArmAction = 0;
+    PortStateThumb_Set(NULL);
+}
+
+static void OpenStateModal(const PortSaveStateInfo* info, unsigned number) {
+    sStateModalInfo = *info;
+    sStateModalNumber = number;
+    sStateModalId = info->id;
+    sStateArmAction = 0;
+    PortStateThumb_Set(NULL);
+    if (info->hasThumb) Port_SaveState_RequestThumb(info->id);
+}
 
 /* 12x12 floppy disk centred on (cx, cy): body, metal shutter at the top,
  * label at the bottom. `bg` is the button colour, used for the notch. */
@@ -5224,170 +5414,332 @@ static void DrawFloppyIcon(float cx, float cy, uint32_t ink, uint32_t bg) {
     C2D_DrawRectSolid(x + 3.0f, y + 10.0f, 0.97f, 6.0f, 1.0f, ink);
 }
 
-/* 14x11 open folder centred on (cx, cy): back tab plus a slanted front. */
-static void DrawFolderIcon(float cx, float cy, uint32_t ink, uint32_t bg) {
-    const float x = floorf(cx) - 7.0f, y = floorf(cy) - 5.0f;
-    C2D_DrawRectSolid(x, y, 0.95f, 6.0f, 2.0f, ink);                 /* tab */
-    C2D_DrawRectSolid(x, y + 2.0f, 0.95f, 12.0f, 9.0f, ink);         /* back */
-    C2D_DrawRectSolid(x + 1.0f, y + 4.0f, 0.96f, 10.0f, 6.0f, bg);   /* inside */
-    C2D_DrawTriangle(x + 2.0f, y + 10.0f, ink, x + 4.0f, y + 5.0f, ink,
-                     x + 4.0f, y + 10.0f, ink, 0.97f);
-    C2D_DrawRectSolid(x + 4.0f, y + 5.0f, 0.97f, 10.0f, 6.0f, ink);  /* front flap */
-    C2D_DrawRectSolid(x + 5.0f, y + 6.0f, 0.98f, 8.0f, 4.0f, bg);
+static void FormatSavedAt(uint32_t savedAt, char* out, size_t n) {
+    out[0] = '\0';
+    if (savedAt == 0) return;
+    time_t t = (time_t)savedAt;   /* the console clock is local time */
+    struct tm* tm = gmtime(&t);
+    if (tm) snprintf(out, n, "%04d-%02d-%02d %02d:%02d", tm->tm_year + 1900, tm->tm_mon + 1,
+                     tm->tm_mday, tm->tm_hour, tm->tm_min);
 }
 
-static bool StateArmed(int slot, int action) {
-    return sStateArmSlot == slot && sStateArmAction == action &&
-           (sFrameCounter - sStateArmFrame) < STATE_ARM_FRAMES;
+/* "E99/99 M5/10 S2/5 P1/3": ammo the save had not found yet (max 0) is left
+ * out. Returns the pixel width drawn. */
+static void DrawStateStats(float x, float y, const PortSaveStateInfo* info, float clipY0, float clipY1) {
+    char seg[20];
+    snprintf(seg, sizeof(seg), "E%u/%u", (unsigned)info->energy, (unsigned)info->maxEnergy);
+    DrawTextClipped(x, y, 1.0f, seg, C2D_Color32(255, 215, 90, 255), clipY0, clipY1);
+    x += ((float)Utf8CharCount(seg) + 1.0f) * 6.0f;
+    if (info->maxMissiles > 0) {
+        snprintf(seg, sizeof(seg), "M%u/%u", (unsigned)info->missiles, (unsigned)info->maxMissiles);
+        DrawTextClipped(x, y, 1.0f, seg, C2D_Color32(255, 130, 110, 255), clipY0, clipY1);
+        x += ((float)Utf8CharCount(seg) + 1.0f) * 6.0f;
+    }
+    if (info->maxSuperMissiles > 0) {
+        snprintf(seg, sizeof(seg), "S%u/%u", (unsigned)info->superMissiles, (unsigned)info->maxSuperMissiles);
+        DrawTextClipped(x, y, 1.0f, seg, C2D_Color32(120, 220, 130, 255), clipY0, clipY1);
+        x += ((float)Utf8CharCount(seg) + 1.0f) * 6.0f;
+    }
+    if (info->maxPowerBombs > 0) {
+        snprintf(seg, sizeof(seg), "P%u/%u", (unsigned)info->powerBombs, (unsigned)info->maxPowerBombs);
+        DrawTextClipped(x, y, 1.0f, seg, C2D_Color32(255, 170, 70, 255), clipY0, clipY1);
+    }
+}
+
+static void RenderStateRow(float y, const PortSaveStateInfo* info, unsigned number, bool es) {
+    const float c0 = STATE_LIST_Y0, c1 = STATE_LIST_Y1;
+    DrawRectClipped(8.0f, y, 0.5f, 296.0f, STATE_ROW_H, C2D_Color32(14, 22, 34, 255), c0, c1);
+    DrawRectClipped(8.0f, y, 0.51f, 296.0f, 1.0f, C2D_Color32(60, 80, 110, 255), c0, c1);
+
+    char head[48];
+    snprintf(head, sizeof(head), es ? "#%u  %s  SALA %u" : "#%u  %s  ROOM %u",
+             number, Port_SaveState_AreaName(info->area), (unsigned)info->room);
+    DrawTextClipped(14.0f, y + 4.0f, 1.0f, head, C2D_Color32(170, 210, 245, 255), c0, c1);
+
+    char when[40];
+    FormatSavedAt(info->savedAt, when, sizeof(when));
+    if (when[0])
+        DrawTextClipped(STATE_TEXT_RIGHT - (float)Utf8CharCount(when) * 6.0f, y + 4.0f, 1.0f, when,
+                        C2D_Color32(120, 140, 170, 255), c0, c1);
+
+    if (info->hasStats)
+        DrawStateStats(14.0f, y + 15.0f, info, c0, c1);
+    else
+        DrawTextClipped(14.0f, y + 15.0f, 1.0f, es ? "sin datos (guardado antiguo)" : "no stats (older save)",
+                        C2D_Color32(110, 125, 150, 255), c0, c1);
+
+    if (!info->compatible) {
+        const char* tag = es ? "OTRA BUILD" : "OTHER BUILD";
+        DrawTextClipped(STATE_TEXT_RIGHT - (float)Utf8CharCount(tag) * 6.0f, y + 15.0f, 1.0f, tag,
+                        C2D_Color32(235, 110, 90, 255), c0, c1);
+    } else if (info->hasPlayTime) {
+        char play[16];
+        snprintf(play, sizeof(play), "%u:%02u:%02u", (unsigned)info->playHours, (unsigned)info->playMinutes,
+                 (unsigned)info->playSeconds);
+        DrawTextClipped(STATE_TEXT_RIGHT - (float)Utf8CharCount(play) * 6.0f, y + 15.0f, 1.0f, play,
+                        C2D_Color32(150, 170, 200, 255), c0, c1);
+    }
+}
+
+static void RenderStateModal(bool es, bool avail) {
+    const PortSaveStateInfo* info = &sStateModalInfo;
+    C2D_DrawRectSolid(SMODAL_X, SMODAL_Y, 0.85f, SMODAL_W, SMODAL_H, C2D_Color32(10, 14, 24, 250));
+    C2D_DrawRectSolid(SMODAL_X, SMODAL_Y, 0.84f, SMODAL_W, SMODAL_H, C2D_Color32(40, 70, 120, 255));
+
+    char title[32];
+    snprintf(title, sizeof(title), es ? "ESTADO #%u" : "SAVE STATE #%u", sStateModalNumber);
+    DrawText(20.0f, 32.0f, 1.0f, title, C2D_Color32(255, 215, 0, 255));
+
+    /* Screenshot, 160x96 inside a frame. */
+    C2D_DrawRectSolid(18.0f, 46.0f, 0.86f, 164.0f, 100.0f, C2D_Color32(4, 6, 12, 255));
+    if (PortStateThumb_HasImage()) {
+        PortStateThumb_Draw(20.0f, 48.0f, 160.0f, 96.0f, 0.9f);
+    } else {
+        const char* t = info->hasThumb ? "..." : (es ? "SIN IMAGEN" : "NO IMAGE");
+        DrawTextCentered(100.0f, 92.0f, 1.0f, t, C2D_Color32(110, 125, 150, 255));
+    }
+
+    /* Data. */
+    const float tx = 190.0f;
+    char line[40];
+    snprintf(line, sizeof(line), "%s", Port_SaveState_AreaName(info->area));
+    DrawText(tx, 46.0f, 1.0f, line, C2D_Color32(170, 210, 245, 255));
+    snprintf(line, sizeof(line), es ? "SALA %u" : "ROOM %u", (unsigned)info->room);
+    DrawText(tx, 56.0f, 1.0f, line, C2D_Color32(170, 210, 245, 255));
+    if (info->savedAt) {
+        char when[40];
+        FormatSavedAt(info->savedAt, when, sizeof(when));
+        char* sp = strchr(when, ' ');
+        if (sp) {
+            *sp = '\0';
+            DrawText(tx, 69.0f, 1.0f, when, C2D_Color32(120, 140, 170, 255));
+            DrawText(tx, 79.0f, 1.0f, sp + 1, C2D_Color32(120, 140, 170, 255));
+        }
+    }
+    if (info->hasPlayTime) {
+        snprintf(line, sizeof(line), es ? "JUEGO %u:%02u:%02u" : "TIME %u:%02u:%02u", (unsigned)info->playHours,
+                 (unsigned)info->playMinutes, (unsigned)info->playSeconds);
+        DrawText(tx, 92.0f, 1.0f, line, C2D_Color32(150, 170, 200, 255));
+    }
+    if (info->hasStats) {
+        snprintf(line, sizeof(line), "E %u/%u", (unsigned)info->energy, (unsigned)info->maxEnergy);
+        DrawText(tx, 106.0f, 1.0f, line, C2D_Color32(255, 215, 90, 255));
+        if (info->maxMissiles > 0) {
+            snprintf(line, sizeof(line), "M %u/%u", (unsigned)info->missiles, (unsigned)info->maxMissiles);
+            DrawText(tx, 116.0f, 1.0f, line, C2D_Color32(255, 130, 110, 255));
+        }
+        if (info->maxSuperMissiles > 0) {
+            snprintf(line, sizeof(line), "S %u/%u", (unsigned)info->superMissiles, (unsigned)info->maxSuperMissiles);
+            DrawText(tx, 126.0f, 1.0f, line, C2D_Color32(120, 220, 130, 255));
+        }
+        if (info->maxPowerBombs > 0) {
+            snprintf(line, sizeof(line), "P %u/%u", (unsigned)info->powerBombs, (unsigned)info->maxPowerBombs);
+            DrawText(tx, 136.0f, 1.0f, line, C2D_Color32(255, 170, 70, 255));
+        }
+    } else {
+        DrawText(tx, 106.0f, 1.0f, es ? "SIN DATOS" : "NO STATS", C2D_Color32(110, 125, 150, 255));
+    }
+
+    /* Actions. */
+    const bool canLoad = info->compatible;   /* loading works anywhere; saving needs gameplay */
+    const bool canOverwrite = avail;
+    static const char* const labelsEs[3] = { "CARGAR", "SOBRESCRIBIR", "BORRAR" };
+    static const char* const labelsEn[3] = { "LOAD", "OVERWRITE", "DELETE" };
+    const char* const* labels = es ? labelsEs : labelsEn;
+    const bool enabled[3] = { canLoad, canOverwrite, true };
+    const int actions[3] = { STATE_ARM_LOAD, STATE_ARM_OVERWRITE, STATE_ARM_DELETE };
+    for (int i = 0; i < 3; ++i) {
+        const bool armed = enabled[i] && StateArmed(actions[i]);
+        uint32_t body, edge, ink;
+        if (!enabled[i]) {
+            body = C2D_Color32(30, 34, 40, 255); edge = C2D_Color32(60, 66, 78, 255); ink = C2D_Color32(90, 100, 115, 255);
+        } else if (armed) {
+            body = C2D_Color32(120, 90, 20, 255); edge = C2D_Color32(220, 180, 70, 255); ink = C2D_Color32(255, 235, 150, 255);
+        } else if (i == 2) {
+            body = C2D_Color32(64, 22, 22, 255); edge = C2D_Color32(180, 60, 60, 255); ink = C2D_Color32(255, 170, 170, 255);
+        } else if (i == 1) {
+            body = C2D_Color32(24, 60, 34, 255); edge = C2D_Color32(70, 150, 90, 255); ink = C2D_Color32(200, 240, 205, 255);
+        } else {
+            body = C2D_Color32(24, 46, 70, 255); edge = C2D_Color32(80, 140, 200, 255); ink = C2D_Color32(200, 225, 245, 255);
+        }
+        DrawButton(kStateBtnX[i], SMODAL_BTN_Y, SMODAL_BTN_W, SMODAL_BTN_H, armed ? "OK?" : labels[i], ink, body, edge);
+    }
+
+    const char* hint = NULL;
+    if (!info->compatible) hint = es ? "GUARDADO CON OTRA BUILD: NO SE PUEDE CARGAR" : "SAVED BY ANOTHER BUILD: CANNOT LOAD";
+    else if (!avail) hint = es ? "SOBRESCRIBIR: SOLO EN PARTIDA" : "OVERWRITE: IN GAMEPLAY ONLY";
+    else hint = es ? "PULSA DOS VECES PARA CONFIRMAR" : "TAP TWICE TO CONFIRM";
+    DrawTextCentered(160.0f, 188.0f, 1.0f, hint,
+                     info->compatible ? C2D_Color32(120, 140, 170, 255) : C2D_Color32(235, 110, 90, 255));
+
+    DrawButton(SMODAL_CLOSE_X, SMODAL_CLOSE_Y, SMODAL_CLOSE_W, SMODAL_CLOSE_H, es ? "VOLVER" : "BACK",
+               C2D_Color32(255, 255, 255, 255), BTN_BLUE_BODY, BTN_BLUE_BORDER);
 }
 
 static void RenderStateView(void) {
-    const int lang = GetLang();
-    const bool es = (lang == 6);
+    const bool es = (GetLang() == 6);
     const bool avail = Port_SaveState_Available();
 
-    DrawTextCentered(160.0f, 28.0f, 1.0f,
-        es ? "ESTADOS DE PARTIDA" : "SAVE STATES",
-        C2D_Color32(255, 215, 0, 255));
+    if (sStateModalId) {
+        RenderStateModal(es, avail);
+        return;
+    }
 
-    for (int s = 0; s < PORT_SAVE_STATE_SLOTS; ++s) {
-        float y = STATE_ROW_Y0 + (float)s * STATE_ROW_PITCH;
-        bool used = Port_SaveState_SlotUsed(s);
+    /* New state. */
+    const uint32_t newBody = avail ? C2D_Color32(24, 60, 34, 255) : C2D_Color32(30, 34, 40, 255);
+    const uint32_t newInk = avail ? C2D_Color32(200, 240, 205, 255) : C2D_Color32(90, 100, 115, 255);
+    DrawButton(STATE_NEW_X, STATE_NEW_Y, STATE_NEW_W, STATE_NEW_H, es ? "NUEVO GUARDADO" : "NEW SAVE STATE",
+               newInk, newBody, avail ? C2D_Color32(70, 150, 90, 255) : C2D_Color32(60, 66, 78, 255));
+    DrawFloppyIcon(STATE_NEW_X + 16.0f, STATE_NEW_Y + STATE_NEW_H * 0.5f, newInk, newBody);
 
-        C2D_DrawRectSolid(8.0f, y, 0.5f, 304.0f, STATE_ROW_H,
-                          C2D_Color32(14, 22, 34, 255));
-        C2D_DrawRectSolid(8.0f, y, 0.5f, 304.0f, 1.0f,
-                          C2D_Color32(60, 80, 110, 255));
+    /* The list, newest first. */
+    const int count = Port_SaveState_Count();
+    const float maxScroll = StateMaxScroll();
+    if (sStateScrollY > maxScroll) sStateScrollY = maxScroll;
+    if (sStateScrollY < 0.0f) sStateScrollY = 0.0f;
 
-        char num[12];
-        snprintf(num, sizeof(num), "%d", s + 1);
-        DrawTextCentered(20.0f, y + 9.0f, 1.0f, num, C2D_Color32(255, 255, 255, 255));
-
-        PortSaveStateInfo info;
-        if (used && Port_SaveState_GetInfo(s, &info)) {
-            char head[40];
-            snprintf(head, sizeof(head), es ? "%s  SALA %u" : "%s  ROOM %u",
-                     Port_SaveState_AreaName(info.area), (unsigned)info.room);
-            DrawText(34.0f, y + 4.0f, 1.0f, head, C2D_Color32(170, 210, 245, 255));
-
-            if (info.savedAt != 0) {
-                time_t t = (time_t)info.savedAt;   /* the console clock is local time */
-                struct tm* tm = gmtime(&t);
-                if (tm) {
-                    char when[40];
-                    snprintf(when, sizeof(when), "%04d-%02d-%02d %02d:%02d",
-                             tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday,
-                             tm->tm_hour, tm->tm_min);
-                    DrawText(STATE_TEXT_RIGHT - (float)Utf8CharCount(when) * 6.0f,
-                             y + 4.0f, 1.0f, when, C2D_Color32(120, 140, 170, 255));
-                }
-            }
-
-            if (info.hasStats) {
-                /* E = energy, M = missiles, S = super missiles, P = power
-                 * bombs. Ammo the save had not found yet (max 0) is left out. */
-                char seg[20];
-                float x = 34.0f;
-                snprintf(seg, sizeof(seg), "E%u/%u", (unsigned)info.energy, (unsigned)info.maxEnergy);
-                DrawText(x, y + 14.0f, 1.0f, seg, C2D_Color32(255, 215, 90, 255));
-                x += ((float)Utf8CharCount(seg) + 1.0f) * 6.0f;
-                if (info.maxMissiles > 0) {
-                    snprintf(seg, sizeof(seg), "M%u/%u", (unsigned)info.missiles, (unsigned)info.maxMissiles);
-                    DrawText(x, y + 14.0f, 1.0f, seg, C2D_Color32(255, 130, 110, 255));
-                    x += ((float)Utf8CharCount(seg) + 1.0f) * 6.0f;
-                }
-                if (info.maxSuperMissiles > 0) {
-                    snprintf(seg, sizeof(seg), "S%u/%u", (unsigned)info.superMissiles, (unsigned)info.maxSuperMissiles);
-                    DrawText(x, y + 14.0f, 1.0f, seg, C2D_Color32(120, 220, 130, 255));
-                    x += ((float)Utf8CharCount(seg) + 1.0f) * 6.0f;
-                }
-                if (info.maxPowerBombs > 0) {
-                    snprintf(seg, sizeof(seg), "P%u/%u", (unsigned)info.powerBombs, (unsigned)info.maxPowerBombs);
-                    DrawText(x, y + 14.0f, 1.0f, seg, C2D_Color32(255, 170, 70, 255));
-                }
-            } else {
-                DrawText(34.0f, y + 14.0f, 1.0f, es ? "sin datos (guardado antiguo)" : "no stats (older save)",
+    if (count == 0) {
+        DrawTextCentered(160.0f, 120.0f, 1.0f,
+                         Port_SaveState_Scanned() ? (es ? "NO HAY ESTADOS GUARDADOS" : "NO SAVE STATES YET") : "",
                          C2D_Color32(110, 125, 150, 255));
-            }
-        } else {
-            DrawText(34.0f, y + 9.0f, 1.0f, es ? "- vacio -" : "- empty -",
-                     C2D_Color32(110, 125, 150, 255));
-        }
-
-        /* SAVE: floppy disk icon (text only while waiting for the 2nd tap) */
-        bool saveArmed = StateArmed(s, 1);
-        uint32_t saveBody = !avail ? C2D_Color32(30, 34, 40, 255)
-                          : saveArmed ? C2D_Color32(120, 90, 20, 255)
-                                      : C2D_Color32(24, 60, 34, 255);
-        const uint32_t saveInk = avail ? C2D_Color32(200, 240, 205, 255)
-                                       : C2D_Color32(90, 100, 115, 255);
-        DrawButton(STATE_BTN_SAVE_X, y + 1.0f, STATE_BTN_W, STATE_ROW_H - 2.0f,
-                   saveArmed ? "OK?" : NULL, saveInk, saveBody, C2D_Color32(70, 150, 90, 255));
-        if (!saveArmed)
-            DrawFloppyIcon(STATE_BTN_SAVE_X + STATE_BTN_W * 0.5f, y + STATE_ROW_H * 0.5f, saveInk, saveBody);
-
-        /* LOAD: open folder icon */
-        bool canLoad = used && avail;
-        bool loadArmed = StateArmed(s, 2);
-        uint32_t loadBody = !canLoad ? C2D_Color32(30, 34, 40, 255)
-                          : loadArmed ? C2D_Color32(120, 90, 20, 255)
-                                      : C2D_Color32(24, 46, 70, 255);
-        const uint32_t loadInk = canLoad ? C2D_Color32(200, 225, 245, 255)
-                                         : C2D_Color32(90, 100, 115, 255);
-        DrawButton(STATE_BTN_LOAD_X, y + 1.0f, STATE_BTN_W, STATE_ROW_H - 2.0f,
-                   loadArmed ? "OK?" : NULL, loadInk, loadBody, C2D_Color32(80, 140, 200, 255));
-        if (!loadArmed)
-            DrawFolderIcon(STATE_BTN_LOAD_X + STATE_BTN_W * 0.5f, y + STATE_ROW_H * 0.5f, loadInk, loadBody);
+    }
+    for (int i = 0; i < count; ++i) {
+        const float y = STATE_LIST_Y0 + (float)i * STATE_ROW_PITCH - sStateScrollY;
+        if (y + STATE_ROW_H <= STATE_LIST_Y0) continue;
+        if (y >= STATE_LIST_Y1) break;
+        PortSaveStateInfo info;
+        if (Port_SaveState_GetInfoAt(i, &info)) RenderStateRow(y, &info, (unsigned)i + 1u, es);
+    }
+    if (maxScroll > 0.0f) {
+        const float trackH = STATE_LIST_Y1 - STATE_LIST_Y0;
+        const float thumbH = 24.0f;
+        const float thumbY = STATE_LIST_Y0 + (sStateScrollY / maxScroll) * (trackH - thumbH);
+        C2D_DrawRectSolid(310.0f, STATE_LIST_Y0, 0.9f, 2.0f, trackH, C2D_Color32(40, 50, 70, 255));
+        C2D_DrawRectSolid(310.0f, thumbY, 0.92f, 2.0f, thumbH, C2D_Color32(80, 160, 240, 255));
     }
 
     const char* msg = Port_SaveState_LastMessage();
     if (msg && msg[0] && Port_SaveState_MessageTtl() > 0) {
-        DrawTextCentered(160.0f, 220.0f, 1.0f, msg, C2D_Color32(255, 235, 150, 255));
+        DrawTextCentered(160.0f, 216.0f, 1.0f, msg, C2D_Color32(255, 235, 150, 255));
     } else if (!avail) {
-        DrawTextCentered(160.0f, 220.0f, 1.0f,
-            es ? "SOLO DURANTE LA PARTIDA" : "ONLY DURING GAMEPLAY",
-            C2D_Color32(150, 165, 190, 255));
+        DrawTextCentered(160.0f, 216.0f, 1.0f, es ? "GUARDAR: SOLO DURANTE LA PARTIDA" : "SAVING: ONLY DURING GAMEPLAY",
+                         C2D_Color32(150, 165, 190, 255));
     } else {
-        DrawTextCentered(160.0f, 220.0f, 1.0f,
-            es ? "PULSA DOS VECES PARA CONFIRMAR" : "TAP TWICE TO CONFIRM",
-            C2D_Color32(120, 140, 170, 255));
+        DrawTextCentered(160.0f, 216.0f, 1.0f, es ? "TOCA UN ESTADO PARA VER SUS DATOS" : "TAP A STATE FOR ITS DETAILS",
+                         C2D_Color32(120, 140, 170, 255));
     }
 }
 
-static void HandleStateTouch(int x, int y, bool isNewTap) {
-    if (!isNewTap) return;
+static bool StateInRect(int x, int y, float rx, float ry, float rw, float rh) {
+    return (float)x >= rx && (float)x <= rx + rw && (float)y >= ry && (float)y <= ry + rh;
+}
 
-    for (int s = 0; s < PORT_SAVE_STATE_SLOTS; ++s) {
-        float ry = STATE_ROW_Y0 + (float)s * STATE_ROW_PITCH;
-        if ((float)y < ry || (float)y > ry + STATE_ROW_H) continue;
+static void HandleStateModalTouch(int x, int y) {
+    const bool avail = Port_SaveState_Available();
+    const PortSaveStateInfo* info = &sStateModalInfo;
 
-        int action = 0;
-        if ((float)x >= STATE_BTN_SAVE_X && (float)x < STATE_BTN_SAVE_X + STATE_BTN_W)
-            action = 1;
-        else if ((float)x >= STATE_BTN_LOAD_X && (float)x < STATE_BTN_LOAD_X + STATE_BTN_W)
-            action = 2;
-        if (action == 0) return;
+    if (StateInRect(x, y, SMODAL_CLOSE_X, SMODAL_CLOSE_Y, SMODAL_CLOSE_W, SMODAL_CLOSE_H)) {
+        CloseStateModal();
+        return;
+    }
 
-        if (action == 1 && !Port_SaveState_Available()) return;
-        if (action == 2 && (!Port_SaveState_SlotUsed(s) || !Port_SaveState_Available())) return;
-
-        if (StateArmed(s, action)) {
-            if (action == 1) Port_SaveState_RequestSave(s);
-            else             Port_SaveState_RequestLoad(s);
-            sStateArmSlot = -1;
-            sStateArmAction = 0;
-        } else {
-            sStateArmSlot = s;
-            sStateArmAction = action;
+    const bool enabled[3] = { info->compatible, avail, true };
+    const int actions[3] = { STATE_ARM_LOAD, STATE_ARM_OVERWRITE, STATE_ARM_DELETE };
+    for (int i = 0; i < 3; ++i) {
+        if (!StateInRect(x, y, kStateBtnX[i], SMODAL_BTN_Y, SMODAL_BTN_W, SMODAL_BTN_H)) continue;
+        if (!enabled[i]) return;
+        if (!StateArmed(actions[i])) {
+            sStateArmAction = actions[i];
             sStateArmFrame = sFrameCounter;
+            return;
         }
+        const uint32_t id = info->id;
+        CloseStateModal();
+        if (actions[i] == STATE_ARM_LOAD) Port_SaveState_RequestLoad(id);
+        else if (actions[i] == STATE_ARM_OVERWRITE) Port_SaveState_RequestOverwrite(id);
+        else Port_SaveState_RequestDelete(id);
+        return;
+    }
+    sStateArmAction = 0;   /* a tap anywhere else disarms */
+}
+
+static void HandleStateTouch(int x, int y, bool isNewTap) {
+    if (sStateModalId) {
+        if (isNewTap) HandleStateModalTouch(x, y);
         Port_BottomUI_MarkDirty();
         return;
     }
 
-    /* Tap outside any button disarms. */
-    sStateArmSlot = -1;
-    sStateArmAction = 0;
+    if (isNewTap) {
+        if (StateInRect(x, y, STATE_NEW_X, STATE_NEW_Y, STATE_NEW_W, STATE_NEW_H)) {
+            if (Port_SaveState_Available()) Port_SaveState_RequestSaveNew();
+            return;
+        }
+        if ((float)y >= STATE_LIST_Y0 && (float)y < STATE_LIST_Y1) {
+            sTouchStartX = x;
+            sTouchStartY = y;
+            sLastTouchX = x;
+            sLastTouchY = y;
+            sIsTouchDragging = false;
+        }
+        return;
+    }
+
+    /* Drag the list. A press wobbles a few pixels before it lifts, so
+     * scrolling only starts once the finger has travelled past a small
+     * threshold; below it the release still counts as a tap on the row. */
+    if (sLastTouchY < 0 || sTouchStartY < 0) return;
+    const float DRAG_SLOP = 6.0f;
+    const float total = (float)(y - sTouchStartY);
+    if (!sIsTouchDragging && total > -DRAG_SLOP && total < DRAG_SLOP) {
+        sLastTouchX = x;
+        sLastTouchY = y;
+        return;
+    }
+    sStateScrollY += (float)(sLastTouchY - y);
+    const float maxScroll = StateMaxScroll();
+    if (sStateScrollY < 0.0f) sStateScrollY = 0.0f;
+    if (sStateScrollY > maxScroll) sStateScrollY = maxScroll;
+    sLastTouchX = x;
+    sLastTouchY = y;
+    sIsTouchDragging = true;
+}
+
+/* A release that never became a drag opens the row it started on. */
+static void StateTapReleased(void) {
+    if (sStateModalId || Port_SaveState_IsBusy()) return;
+    if (sIsTouchDragging || sTouchStartY < 0) return;
+    if ((float)sTouchStartY < STATE_LIST_Y0 || (float)sTouchStartY >= STATE_LIST_Y1) return;
+    const float local = (float)sTouchStartY - STATE_LIST_Y0 + sStateScrollY;
+    const int idx = (int)(local / STATE_ROW_PITCH);
+    if (local - (float)idx * STATE_ROW_PITCH >= STATE_ROW_H) return;   /* the gap between rows */
+    PortSaveStateInfo info;
+    if (Port_SaveState_GetInfoAt(idx, &info)) {
+        OpenStateModal(&info, (unsigned)idx + 1u);
+        Port_BottomUI_MarkDirty();
+    }
+}
+
+/* "Wait" message over whatever tab is showing while the SD card is read or
+ * written. The thumbnail read is too short to deserve it. */
+static void RenderBusyOverlay(void) {
+    const PortSaveStateJob job = Port_SaveState_CurrentJob();
+    if (job == PORT_SS_JOB_NONE || job == PORT_SS_JOB_THUMB) return;
+    const bool es = (GetLang() == 6);
+    const char* what = "";
+    switch (job) {
+    case PORT_SS_JOB_SCAN:      what = es ? "LEYENDO LA TARJETA SD" : "READING THE SD CARD"; break;
+    case PORT_SS_JOB_SAVE:
+    case PORT_SS_JOB_OVERWRITE: what = es ? "GUARDANDO EN LA TARJETA SD" : "SAVING TO THE SD CARD"; break;
+    case PORT_SS_JOB_LOAD:      what = es ? "CARGANDO DESDE LA TARJETA SD" : "LOADING FROM THE SD CARD"; break;
+    case PORT_SS_JOB_DELETE:    what = es ? "BORRANDO DE LA TARJETA SD" : "DELETING FROM THE SD CARD"; break;
+    default: break;
+    }
+    C2D_DrawRectSolid(0.0f, 0.0f, 0.985f, 320.0f, 240.0f, C2D_Color32(0, 0, 0, 150));
+    C2D_DrawRectSolid(30.0f, 84.0f, 0.99f, 260.0f, 72.0f, C2D_Color32(120, 150, 210, 255));
+    C2D_DrawRectSolid(31.0f, 85.0f, 0.995f, 258.0f, 70.0f, C2D_Color32(10, 14, 24, 255));
+    DrawTextCentered(160.0f, 104.0f, 1.0f, es ? "ESPERA..." : "PLEASE WAIT...", C2D_Color32(255, 215, 0, 255));
+    DrawTextCentered(160.0f, 124.0f, 1.0f, what, C2D_Color32(190, 210, 240, 255));
 }
 
 void Port_BottomUI_Render(void) {
@@ -5434,6 +5786,9 @@ void Port_BottomUI_Render(void) {
         case BOTTOM_TAB_STATE:
             RenderStateView();
             break;
+        case BOTTOM_TAB_ACHIEVEMENTS:
+            RenderAchievementsView();
+            break;
         default:
             RenderMapView();
             break;
@@ -5443,6 +5798,7 @@ void Port_BottomUI_Render(void) {
      * only draw the toast (if one is active) onto this frame's target. */
     Port_RA_RenderToastOverlay();
     RenderUpdatePrompt(GetLang());
+    RenderBusyOverlay();
 
     /* L+R+START scene recorder indicator (platform_gpu_3ds.c) -- drawn last,
      * on top of whichever tab is active, so it's never hidden by one. Blinks

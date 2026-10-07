@@ -13,7 +13,10 @@ themselves, so the console can be pointed at this machine instead of GitHub.
   #    then UPDATES > CHECK NOW (or relaunch with auto update on).
 
 Add --beta-tag v9.9.10 to also publish a newer prerelease and exercise the
-"releases + betas" channel. Plain HTTP on purpose: it needs no certificate.
+"releases + betas" channel. Every release carries a release body with a
+"what's new" block between the same markers the real workflow writes, so the
+UPDATES > WHAT'S NEW viewer can be tried too (--notes-file replaces the sample
+text). Plain HTTP on purpose: it needs no certificate.
 """
 
 import argparse
@@ -34,12 +37,31 @@ def lan_ip():
         s.close()
 
 
-def make_handler(base, cia_path, releases):
+SAMPLE_NOTES = """- **Sample** first change, long enough that it has to wrap onto a second line of the viewer
+- Second change with `code` and an accent: caf\u00e9
+- Third change
+- Fourth change
+- Fifth change
+- Sixth change
+- Seventh change, so the list scrolls
+- Eighth change"""
+
+
+def release_body(tag, notes):
+    """The same shape build-release.yml produces: notes block, then changelog."""
+    return (
+        "<!-- mzm-notes -->\n## What's new\n\n" + notes.replace("Sample", "Sample " + tag) +
+        "\n<!-- /mzm-notes -->\n\n## Changelog\n\n- something (abc1234)\n"
+    )
+
+
+def make_handler(base, cia_path, releases, notes):
     body = json.dumps(
         [
             {
                 "tag_name": tag,
                 "prerelease": pre,
+                "body": release_body(tag, notes),
                 "assets": [
                     {
                         "name": "mzm-3ds.cia",
@@ -87,9 +109,14 @@ def main():
     ap.add_argument("--cia", required=True, help="CIA to serve for every release")
     ap.add_argument("--tag", default="v9.9.9", help="stable release tag to publish")
     ap.add_argument("--beta-tag", help="also publish this tag as a prerelease (listed first)")
+    ap.add_argument("--notes-file", help="text for the notes block of every release (default: a sample)")
     ap.add_argument("--port", type=int, default=8000)
     args = ap.parse_args()
 
+    notes = SAMPLE_NOTES
+    if args.notes_file:
+        with open(args.notes_file, encoding="utf-8") as f:
+            notes = f.read().strip()
     base = f"http://{lan_ip()}:{args.port}"
     releases = []
     if args.beta_tag:
@@ -98,7 +125,7 @@ def main():
 
     print(f"Serving {args.cia} as {[t for t, _ in releases]}")
     print(f"Set on the 3DS:  update_url={base}/releases.json")
-    ThreadingHTTPServer(("0.0.0.0", args.port), make_handler(base, args.cia, releases)).serve_forever()
+    ThreadingHTTPServer(("0.0.0.0", args.port), make_handler(base, args.cia, releases, notes)).serve_forever()
 
 
 if __name__ == "__main__":

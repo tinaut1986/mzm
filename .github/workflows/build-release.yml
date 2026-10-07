@@ -103,6 +103,23 @@ jobs:
               echo "> been merged into \`main\` yet, so it is not a stable version."
               echo
             fi
+            # Player-facing notes, written by hand per release in
+            # docs/release-notes/<tag>.md. The console's updater reads the
+            # block between the two markers (platform/3ds/source/
+            # port_updater_parse.c, Updater_CollectNotes) and shows it before
+            # the player installs; keep the markers exactly as they are.
+            NOTES_FILE="docs/release-notes/${TAG}.md"
+            if [ -f "$NOTES_FILE" ]; then
+              echo "<!-- mzm-notes -->"
+              echo "## What's new"
+              echo
+              cat "$NOTES_FILE"
+              echo
+              echo "<!-- /mzm-notes -->"
+              echo
+            else
+              echo "::warning file=${NOTES_FILE}::no release notes for ${TAG}; the in-game What's New will say so"
+            fi
             echo "![QR code for the ${TAG} CIA](${BASE}/QR-${TAG}.png)"
             echo
             echo "## Downloads"

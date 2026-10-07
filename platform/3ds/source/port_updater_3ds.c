@@ -40,6 +40,8 @@ static bool sAuto = true;
 static bool sBeta = false;
 static char sUrlOverride[UPDATER_URL_MAX] = "";
 static char sRemoteTag[32] = "";
+#define UPDATER_NOTES_MAX 6144
+static char sNotes[UPDATER_NOTES_MAX] = ""; /* what's new since this build; under sTextLock */
 static char sMessage[96] = "";
 static UpdaterRelease sRelease;
 static LightLock sTextLock;
@@ -354,6 +356,7 @@ static bool DoCheck(void) {
     JsonSink js;
     HttpSink sink = { NULL, JsonData, &js };
     UpdaterRelease rel;
+    char* notes;
 
     js.buf = (char*)malloc(UPDATER_JSON_MAX);
     js.len = 0;
@@ -374,12 +377,18 @@ static bool DoCheck(void) {
         Fail("NO RELEASE FOUND", 0);
         return false;
     }
+    /* The notes of every release between this build and the one found, read
+     * from the same response, so showing them costs no second request. */
+    notes = (char*)malloc(UPDATER_NOTES_MAX);
+    if (notes) Updater_CollectNotes(js.buf, sBeta, MZM_PORT_VERSION, notes, UPDATER_NOTES_MAX);
     free(js.buf);
 
     EnsureLock();
     LightLock_Lock(&sTextLock);
     snprintf(sRemoteTag, sizeof(sRemoteTag), "%s", rel.tag);
+    snprintf(sNotes, sizeof(sNotes), "%s", notes ? notes : "");
     LightLock_Unlock(&sTextLock);
+    free(notes);
 
     if (!Updater_IsNewer(MZM_PORT_VERSION, rel.tag)) {
         sState = UPDATER_UP_TO_DATE;
@@ -518,6 +527,18 @@ int Port_Updater_GetProgress(void) { return sProgress; }
 
 const char* Port_Updater_GetRemoteTag(void) { return sRemoteTag; }
 const char* Port_Updater_GetMessage(void) { return sMessage; }
+
+size_t Port_Updater_CopyNotes(char* out, size_t cap) {
+    size_t n;
+
+    if (!out || cap == 0) return 0;
+    EnsureLock();
+    LightLock_Lock(&sTextLock);
+    snprintf(out, cap, "%s", sNotes);
+    LightLock_Unlock(&sTextLock);
+    n = strlen(out);
+    return n;
+}
 
 bool Port_Updater_GetAuto(void) { return sAuto; }
 void Port_Updater_SetAuto(bool enabled) { sAuto = enabled; }

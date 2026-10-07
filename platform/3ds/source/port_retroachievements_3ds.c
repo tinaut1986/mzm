@@ -28,6 +28,14 @@
 #include <strings.h> /* strcasecmp, for the title sort */
 
 #include "md5.h"
+#include <sys/stat.h>
+
+#define STB_IMAGE_IMPLEMENTATION
+#define STBI_ONLY_PNG
+#define STBI_NO_STDIO
+#define STBI_NO_LINEAR
+#define STBI_NO_HDR
+#include "stb_image.h"
 #include "port_paths.h"
 
 /* The whole ROM is already in memory; the RA hash for a GBA game is just its
@@ -402,6 +410,208 @@ static Thread sWorkerThread = NULL;
 static bool sWorkerRunning = false;
 static volatile bool sWorkerStop = false;
 
+/* ========================================================================= */
+/* Achievement badges                                                        */
+/* ========================================================================= */
+
+/* The compiled-in badges only cover the base set, so the rest come from RA's
+ * media server: a 64x64 PNG per badge, fetched by the worker thread whenever
+ * it has no server call to make, kept in PORT_APP_DIR/badges/<name>.png so it
+ * downloads once, then reduced to the 20x20 the UI draws. The main thread
+ * only adds entries and reads finished ones; the worker publishes a badge by
+ * setting `state` after its pixels are written. */
+#define BADGE_PX      20
+#define BADGE_MAX     320
+#define BADGE_DIR     PORT_APP_DIR "/badges"
+#define BADGE_PNG_MAX (128 * 1024)
+#define BADGE_TRIES   2
+
+enum { BADGE_QUEUED, BADGE_LOADING, BADGE_READY, BADGE_FAILED };
+
+typedef struct {
+    char name[16];
+    volatile int state;
+    volatile u64 wanted; /* when the UI last asked for it: the newest goes first */
+    int tries;
+    uint32_t* pixels;
+} RaBadge;
+
+static RaBadge sBadges[BADGE_MAX];
+static int sBadgeCount = 0;
+
+/* Badge names are numeric ids. They end up in a file path, so anything else
+ * is refused rather than trusted. */
+static bool BadgeNameValid(const char* name) {
+    size_t n = name ? strlen(name) : 0;
+    if (n == 0 || n >= sizeof(sBadges[0].name)) return false;
+    for (size_t i = 0; i < n; ++i) {
+        if (name[i] < '0' || name[i] > '9') return false;
+    }
+    return true;
+}
+
+/* Main thread. Returns the entry for `name`, adding it to the download queue
+ * if it is new. NULL when the table is full or the worker is not running
+ * (the lock is only initialised with it). */
+static RaBadge* BadgeFindOrQueue(const char* name) {
+    RaBadge* found = NULL;
+
+    if (!sWorkerRunning || !BadgeNameValid(name)) return NULL;
+
+    LightLock_Lock(&sQueueLock);
+    for (int i = 0; i < sBadgeCount; ++i) {
+        if (strcmp(sBadges[i].name, name) == 0) { found = &sBadges[i]; break; }
+    }
+    if (!found && sBadgeCount < BADGE_MAX) {
+        found = &sBadges[sBadgeCount++];
+        memset((void*)found, 0, sizeof(*found));
+        snprintf(found->name, sizeof(found->name), "%s", name);
+        found->state = BADGE_QUEUED;
+    }
+    LightLock_Unlock(&sQueueLock);
+    return found;
+}
+
+const uint32_t* Port_RA_GetBadgePixels(const char* badgeName) {
+    const uint32_t* bundled = Port_RA_GetBundledBadge(badgeName);
+    RaBadge* b;
+
+    if (bundled) return bundled;
+    b = BadgeFindOrQueue(badgeName);
+    if (!b) return NULL;
+    if (b->state == BADGE_READY) return b->pixels;
+    if (b->state == BADGE_QUEUED) b->wanted = osGetTime();
+    return NULL;
+}
+
+/* src (sw x sh RGBA) -> 20x20, averaging the source pixels each target pixel
+ * covers and flattening any transparency onto the UI's dark card colour. */
+static uint32_t* BadgeScale(const uint8_t* src, int sw, int sh) {
+    uint32_t* out = (uint32_t*)malloc(BADGE_PX * BADGE_PX * sizeof(uint32_t));
+    static const uint8_t kBack[3] = { 12, 16, 24 };
+
+    if (!out) return NULL;
+    for (int y = 0; y < BADGE_PX; ++y) {
+        int y0 = y * sh / BADGE_PX;
+        int y1 = (y + 1) * sh / BADGE_PX;
+        if (y1 <= y0) y1 = y0 + 1;
+        for (int x = 0; x < BADGE_PX; ++x) {
+            int x0 = x * sw / BADGE_PX;
+            int x1 = (x + 1) * sw / BADGE_PX;
+            uint32_t sum[3] = { 0, 0, 0 };
+            uint32_t n = 0;
+            if (x1 <= x0) x1 = x0 + 1;
+            for (int yy = y0; yy < y1; ++yy) {
+                for (int xx = x0; xx < x1; ++xx, ++n) {
+                    const uint8_t* p = src + ((size_t)yy * (size_t)sw + (size_t)xx) * 4u;
+                    for (int c = 0; c < 3; ++c) {
+                        sum[c] += ((uint32_t)p[c] * p[3] + (uint32_t)kBack[c] * (255u - p[3])) / 255u;
+                    }
+                }
+            }
+            out[y * BADGE_PX + x] = C2D_Color32((uint8_t)(sum[0] / n), (uint8_t)(sum[1] / n),
+                                                (uint8_t)(sum[2] / n), 255);
+        }
+    }
+    return out;
+}
+
+/* The PNG bytes for a badge: from the SD cache when present, otherwise
+ * downloaded (and cached). Heap buffer the caller frees, or NULL. */
+static uint8_t* BadgePng(const RaBadge* b, int* outLen) {
+    char path[160];
+    char url[96];
+    int status = 0;
+    int n;
+    uint8_t* buf;
+    FILE* f;
+
+    snprintf(path, sizeof(path), BADGE_DIR "/%s.png", b->name);
+    f = fopen(path, "rb");
+    if (f) {
+        long size;
+        fseek(f, 0, SEEK_END);
+        size = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        buf = (size > 8 && size < BADGE_PNG_MAX) ? (uint8_t*)malloc((size_t)size) : NULL;
+        if (buf && fread(buf, 1, (size_t)size, f) == (size_t)size) {
+            fclose(f);
+            *outLen = (int)size;
+            return buf;
+        }
+        fclose(f);
+        free(buf);
+    }
+
+    snprintf(url, sizeof(url), "https://media.retroachievements.org/Badge/%s.png", b->name);
+    n = HttpPerform(url, NULL, NULL, sResponseBuf, sizeof(sResponseBuf), &status);
+    if (n < 8 || status != 200 || memcmp(sResponseBuf, "\x89PNG", 4) != 0) {
+        LogLine("badge %s: http %d, %d bytes", b->name, status, n);
+        return NULL;
+    }
+    buf = (uint8_t*)malloc((size_t)n);
+    if (!buf) return NULL;
+    memcpy(buf, sResponseBuf, (size_t)n);
+
+    mkdir(BADGE_DIR, 0777);
+    f = fopen(path, "wb");
+    if (f) {
+        bool ok = (fwrite(buf, 1, (size_t)n, f) == (size_t)n);
+        fclose(f);
+        if (!ok) remove(path); /* a cut file would be read back as a broken badge */
+    }
+    *outLen = n;
+    return buf;
+}
+
+/* Worker thread, only while no server call is waiting (sResponseBuf is free
+ * then). Loads the most recently wanted queued badge; false if none. */
+static bool LoadNextBadge(void) {
+    RaBadge* b = NULL;
+    uint8_t* png;
+    uint8_t* rgba = NULL;
+    uint32_t* pixels = NULL;
+    int len = 0, w = 0, h = 0, comp = 0;
+
+    LightLock_Lock(&sQueueLock);
+    for (int i = 0; i < sBadgeCount; ++i) {
+        RaBadge* c = &sBadges[i];
+        if (c->state == BADGE_QUEUED && (!b || c->wanted > b->wanted)) b = c;
+    }
+    if (b) b->state = BADGE_LOADING;
+    LightLock_Unlock(&sQueueLock);
+    if (!b) return false;
+
+    png = BadgePng(b, &len);
+    if (png) {
+        rgba = stbi_load_from_memory(png, len, &w, &h, &comp, 4);
+        free(png);
+    }
+    if (rgba) {
+        pixels = BadgeScale(rgba, w, h);
+        stbi_image_free(rgba);
+    }
+
+    if (pixels) {
+        b->pixels = pixels;
+        __sync_synchronize(); /* the pixels before the state that publishes them */
+        b->state = BADGE_READY;
+    } else if (++b->tries < BADGE_TRIES) {
+        b->state = BADGE_QUEUED;
+    } else {
+        b->state = BADGE_FAILED;
+    }
+    return true;
+}
+
+static void FreeBadges(void) {
+    for (int i = 0; i < sBadgeCount; ++i) {
+        free(sBadges[i].pixels);
+        sBadges[i].pixels = NULL;
+    }
+    sBadgeCount = 0;
+}
+
 static void ServerCallWorker(void* arg) {
     (void)arg;
 
@@ -419,7 +629,10 @@ static void ServerCallWorker(void* arg) {
         LightLock_Unlock(&sQueueLock);
 
         if (!have) {
-            svcSleepThread(20000000ULL); /* 20ms */
+            /* Idle: use the time for a badge download, else nap. */
+            if (!LoadNextBadge()) {
+                svcSleepThread(20000000ULL); /* 20ms */
+            }
             continue;
         }
 
@@ -478,7 +691,7 @@ static void EnsureWorkerThread(void) {
     }
     LightLock_Init(&sQueueLock);
     sWorkerStop = false;
-    sWorkerThread = threadCreate(ServerCallWorker, NULL, 32 * 1024, 0x31, -1, false);
+    sWorkerThread = threadCreate(ServerCallWorker, NULL, 64 * 1024, 0x31, -1, false);
     sWorkerRunning = (sWorkerThread != NULL);
 }
 
@@ -758,6 +971,9 @@ static void RefreshAchievementList(void) {
             snprintf(item->description, sizeof(item->description), "%s",
                      source->description ? source->description : "");
             snprintf(item->badgeName, sizeof(item->badgeName), "%s", source->badge_name);
+            /* Queue the download now rather than when its card first scrolls
+             * into view, so unlock toasts find the badge already cached. */
+            (void)Port_RA_GetBadgePixels(item->badgeName);
             /* The trigger expression is rcheevos' business now; the UI only
              * ever displayed it, and nothing reads it. */
             item->memAddr[0] = '\0';
@@ -1055,6 +1271,7 @@ void Port_RA_Shutdown(void) {
         sWorkerThread = NULL;
         sWorkerRunning = false;
     }
+    FreeBadges();
 
     if (sClient) {
         rc_client_destroy(sClient);
