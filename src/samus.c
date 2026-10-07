@@ -31,6 +31,32 @@
 #define RESOLVE_SAMUS_PTR(p) (p)
 #endif
 
+#ifdef MZM_3DS
+#include <stdio.h>
+#include "port_rom.h"
+#include "port_debug_log.h"
+
+/* Environmental effect frames only ever live in the loaded ROM. A slot whose
+ * pOamFrame points anywhere else was corrupted (Luma dumps: 0x20001 in slot 3,
+ * 0xff687800 in slot 0, both dereferenced by SamusDraw at the intro demo). */
+static u32 SamusEnvFrameInRom(const void* p)
+{
+    return (const u8*)p >= gRomData && (const u8*)p < gRomData + gRomSize;
+}
+
+static void SamusEnvLogBad(const char* where, u32 slot)
+{
+    char msg[160];
+    const struct EnvironmentalEffect* pEnv = &gSamusEnvironmentalEffects[slot];
+
+    snprintf(msg, sizeof(msg), "[env] %s slot=%u type=%u frame=%u counter=%u pos=%u,%u ptr=%p",
+        where, (unsigned)slot, (unsigned)pEnv->type, (unsigned)pEnv->currentAnimationFrame,
+        (unsigned)pEnv->animationDurationCounter, (unsigned)pEnv->xPosition, (unsigned)pEnv->yPosition,
+        (const void*)pEnv->pOamFrame);
+    Port_DebugLog(msg);
+}
+#endif
+
 
 static SamusFunc_T sSamusPoseFunctionPointers[SPOSE_COUNT] = {
     [SPOSE_RUNNING] = SamusRunning,
@@ -1631,6 +1657,14 @@ void SamusUpdateEnvironmentalEffect(struct SamusData* pData)
         effect = pEnv->type;
         if (effect == ENV_EFFECT_NONE)
             continue;
+#ifdef MZM_3DS
+        if (effect >= ENV_EFFECT_COUNT)
+        {
+            SamusEnvLogBad("update: type out of range", i);
+            pEnv->type = ENV_EFFECT_NONE;
+            continue;
+        }
+#endif
 
         // Update animation
         pEnv->animationDurationCounter++;
@@ -8273,9 +8307,12 @@ void SamusDraw(void)
          * dump 49, ldrb at SamusDraw+0xd4 with the loaded pOamFrame = 0,
          * slot 0). Skipping the slot and clearing it drops one frame of an
          * effect that had no graphics to draw anyway. */
-        if (src == NULL)
+        if (src == NULL || !SamusEnvFrameInRom(src))
         {
+            if (src != NULL)
+                SamusEnvLogBad("draw: pOamFrame outside the ROM", (u32)j);
             gSamusEnvironmentalEffects[j].type = ENV_EFFECT_NONE;
+            gSamusEnvironmentalEffects[j].pOamFrame = NULL;
             continue;
         }
 #endif

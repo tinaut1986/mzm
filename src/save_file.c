@@ -59,6 +59,26 @@ static struct SaveFileInfo sSaveFileInfo_Empty = {
     .timeAttack = FALSE
 };
 
+#ifdef MZM_3DS
+/**
+ * The environmental effect slots hold pOamFrame, a pointer to the frame being
+ * drawn, and the copies loaded from the demo data (ROM) or a save file carry
+ * whatever that pointer was when they were recorded: a GBA address that means
+ * nothing here, or plain junk (a Luma dump showed 0x20001 in slot 3 when the
+ * intro demo entered a room, SamusDraw dereferenced it: data abort).
+ * SamusUpdateEnvironmentalEffect rewrites the pointer of every live effect on
+ * its next run, and SamusDraw drops a live slot whose pointer is still NULL,
+ * so clearing them here costs at most one frame of an effect.
+ */
+static void SamusEnvEffectsDropFramePointers(void)
+{
+    u32 i;
+
+    for (i = 0; i < ARRAY_SIZE(gSamusEnvironmentalEffects); i++)
+        gSamusEnvironmentalEffects[i].pOamFrame = NULL;
+}
+#endif
+
 /**
  * @brief 7329c | 64 | Fully reads the flash save into Ewram
  * 
@@ -858,6 +878,9 @@ void SramRead_FromEwram(void)
     gSamusEnvironmentalEffects[2] = pFile->environmentalEffects[2];
     gSamusEnvironmentalEffects[3] = pFile->environmentalEffects[3];
     gSamusEnvironmentalEffects[4] = pFile->environmentalEffects[4];
+#ifdef MZM_3DS
+    SamusEnvEffectsDropFramePointers();
+#endif
     gPreventMovementTimer = pFile->preventMovementTimer;
     gDisableDrawingSamusAndScrolling = pFile->disableDrawingSamusAndScrolling;
 
@@ -1886,6 +1909,9 @@ void SramLoad_DemoRamValues(u8 loadSamusData, u8 demoNumber)
         gSamusEnvironmentalEffects[2] = pDemo->environmentalEffects[2];
         gSamusEnvironmentalEffects[3] = pDemo->environmentalEffects[3];
         gSamusEnvironmentalEffects[4] = pDemo->environmentalEffects[4];
+#ifdef MZM_3DS
+        SamusEnvEffectsDropFramePointers();
+#endif
     }
 }
 
