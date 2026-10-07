@@ -2,6 +2,7 @@
 #define PORT_UPDATER_3DS_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 /* Self-updater for the installed CIA. Asks a GitHub-style releases endpoint
@@ -52,6 +53,10 @@ UpdaterState Port_Updater_GetState(void);
 int Port_Updater_GetProgress(void);           /* 0..100 while DOWNLOADING */
 const char* Port_Updater_GetRemoteTag(void);  /* "" until a check succeeded */
 const char* Port_Updater_GetMessage(void);    /* short status / error text */
+/* Copies the "what's new" text of the last successful check -- every release
+ * newer than this build, "== vX.Y.Z ==" headers over "- " lines -- into `out`
+ * and returns its length (0 = none known). Safe from the UI thread. */
+size_t Port_Updater_CopyNotes(char* out, size_t cap);
 
 bool Port_Updater_GetAuto(void);
 void Port_Updater_SetAuto(bool enabled);

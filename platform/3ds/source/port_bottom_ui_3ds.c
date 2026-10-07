@@ -326,6 +326,73 @@ static bool sShowRASettingsModal = false;
 static bool sShowDisplayModal = false;
 static bool sShowUpdateModal = false;
 
+/* "What's new" viewer, opened from the UPDATES modal while an update is
+ * waiting. The text comes from Port_Updater_CopyNotes (every release newer
+ * than this build); it is word-wrapped once, on open, into sNotesLines. */
+#define NOTES_WRAP_COLS   44
+#define NOTES_MAX_LINES   200
+#define NOTES_LINE_H      10.0f
+#define NOTES_VIEW_Y0     46.0f
+#define NOTES_VIEW_Y1     200.0f
+static bool sShowNotesModal = false;
+static char sNotesBuf[6144 + 2048];
+static const char* sNotesLines[NOTES_MAX_LINES];
+static int sNotesLineCount = 0;
+static float sNotesScrollY = 0.0f;
+
+static float NotesMaxScroll(void) {
+    float content = (float)sNotesLineCount * NOTES_LINE_H;
+    float view = NOTES_VIEW_Y1 - NOTES_VIEW_Y0;
+    return content > view ? content - view : 0.0f;
+}
+
+static void OpenNotesModal(void) {
+    char raw[6144];
+    char* w = sNotesBuf;
+    char* end = sNotesBuf + sizeof(sNotesBuf) - 1;
+    const char* line = raw;
+
+    Port_Updater_CopyNotes(raw, sizeof(raw));
+    sNotesLineCount = 0;
+    while (*line && sNotesLineCount < NOTES_MAX_LINES) {
+        const char* nl = strchr(line, '\n');
+        size_t len = nl ? (size_t)(nl - line) : strlen(line);
+        const char* seg = line;
+        bool first = true;
+
+        if (len == 0) { /* blank line between releases */
+            if (w < end && sNotesLineCount < NOTES_MAX_LINES) {
+                sNotesLines[sNotesLineCount++] = w;
+                *w++ = '\0';
+            }
+        }
+        while (len > 0 && sNotesLineCount < NOTES_MAX_LINES && w + NOTES_WRAP_COLS + 4 < end) {
+            size_t room = first ? NOTES_WRAP_COLS : NOTES_WRAP_COLS - 2;
+            size_t take = len;
+            size_t k;
+
+            if (take > room) {
+                take = room;
+                for (k = take; k > 0 && seg[k] != ' '; --k) {}
+                if (k > 0) take = k;
+            }
+            sNotesLines[sNotesLineCount++] = w;
+            if (!first) { *w++ = ' '; *w++ = ' '; }
+            memcpy(w, seg, take);
+            w += take;
+            *w++ = '\0';
+            seg += take;
+            len -= take;
+            while (len > 0 && *seg == ' ') { seg++; len--; }
+            first = false;
+        }
+        if (!nl) break;
+        line = nl + 1;
+    }
+    sNotesScrollY = 0.0f;
+    sShowNotesModal = true;
+}
+
 #ifdef PORT_DEBUG_TOOLS_ACTIVE
 /* DEBUG tab -> [HERRAMIENTAS] modal. Touchable equivalent of the L+R+<btn>
  * combos documented in docs/3ds-debug-tools.md: same entry points, just
@@ -508,6 +575,9 @@ static bool sAchScrollbarDrag = false;
 #define ACH_LIST_CLIP_Y0 48.0f
 #define ACH_LIST_CLIP_Y1 200.0f
 #define ACH_CARD_H 34.0f
+#define ACH_SETTINGS_BTN_X 16
+#define ACH_SETTINGS_BTN_W 92
+#define ACH_SETTINGS_BTN_HIT(x, y) ((x) >= ACH_SETTINGS_BTN_X && (x) <= ACH_SETTINGS_BTN_X + ACH_SETTINGS_BTN_W && (y) >= 204 && (y) <= 230)
 
 static float AchievementsContentHeight(void) {
     return (float)Port_RA_GetViewCount() * ACH_CARD_H;
@@ -607,6 +677,12 @@ static void HandleAchPacksTouch(int x, int y, bool isNewTap) {
     float maxScroll = AchPacksMaxScroll();
 
     if (isNewTap) {
+        if (ACH_SETTINGS_BTN_HIT(x, y)) {
+            sShowRASettingsModal = true;
+            sLastTouchX = -1;
+            sLastTouchY = -1;
+            return;
+        }
         if (x >= 300 && (float)y >= ACH_LIST_CLIP_Y0 && (float)y < ACH_LIST_CLIP_Y1 &&
             maxScroll > 0.0f) {
             sAchScrollbarDrag = true;
@@ -1232,6 +1308,7 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
             }
             if (sCurrentTab != prevTab) Port_Config_Save();
             if (sCurrentTab != prevTab) CloseStateModal();
+            if (sCurrentTab != prevTab) sShowRASettingsModal = false;
         }
         sLastTouchX = -1;
         sLastTouchY = -1;
@@ -1518,6 +1595,45 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
         }
     }
 
+    /* RA settings: a full view of the ACHIEVEMENTS tab (opened by the SETTINGS
+     * button on the list / set chooser footer). */
+    if (sCurrentTab == BOTTOM_TAB_ACHIEVEMENTS && sShowRASettingsModal) {
+        if (isNewTap) {
+            if (x >= 100 && x <= 220 && y >= 204 && y <= 230) {
+                sShowRASettingsModal = false;
+            } else if (x >= 10 && x <= 308) {
+                if (y >= 56 && y <= 80) {
+                    /* Login prompt via swkbd */
+                    Port_RA_PromptLogin();
+                    Port_Config_Save();
+                } else if (y >= 84 && y <= 108) {
+                    /* Enable / Disable toggle */
+                    bool cur = Port_RA_IsEnabled();
+                    Port_RA_SetEnabled(!cur);
+                    Port_Config_Save();
+                } else if (y >= 112 && y <= 136) {
+                    /* Notification screen row: PREVIEW button on the
+                     * right (fires a sample toast + jingle), rest of the
+                     * row toggles bottom <-> top. (Slot was the Hardcore
+                     * Mode toggle; hardcore is force-off now -- see
+                     * Port_RA_HardcoreAllowed.) */
+                    if (x >= 272) {
+                        Port_RA_ShowPreviewToast();
+                    } else {
+                        Port_RA_SetNotifyOnTopScreen(!Port_RA_GetNotifyOnTopScreen());
+                        Port_Config_Save();
+                    }
+                } else if (y >= 140 && y <= 164) {
+                    /* Sound Notification toggle */
+                    bool snd = Port_RA_GetNotificationSound();
+                    Port_RA_SetNotificationSound(!snd);
+                    Port_Config_Save();
+                }
+            }
+        }
+        return;
+    }
+
     /* Modal: achievement detail popup. Sits on top of the list; only its BACK
      * button is interactive, everything else is swallowed so the list behind
      * it cannot scroll. */
@@ -1539,7 +1655,13 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
         float maxAchScroll = AchievementsMaxScroll();
 
         if (isNewTap) {
-            if (x >= 100 && x <= 202 && y >= 204 && y <= 230) {
+            if (ACH_SETTINGS_BTN_HIT(x, y)) {
+                sShowRASettingsModal = true;
+                sLastTouchX = -1;
+                sLastTouchY = -1;
+                return;
+            }
+            if (x >= 112 && x <= 204 && y >= 204 && y <= 230 && sAchFromPacks) {
                 AchievementsBack();
                 sLastTouchX = -1;
                 sLastTouchY = -1;
@@ -1615,12 +1737,6 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
                 } else if (x >= 170 && x <= 280 && y >= 140 && y <= 168) {
                     /* CANCEL */
                     sShowConfirmModal = false;
-                    /* A hardcore-enable confirm was opened from the RA
-                     * settings modal; go back to it rather than the bare
-                     * options list. */
-                    if (!sConfirmIsRestart) {
-                        sShowRASettingsModal = true;
-                    }
                 }
             }
             return;
@@ -1708,6 +1824,24 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
             return;
         }
 
+        if (sShowNotesModal) {
+            if (isNewTap) {
+                if (x >= 100 && x <= 220 && y >= 204 && y <= 230) {
+                    sShowNotesModal = false;
+                } else {
+                    sLastTouchX = x;
+                    sLastTouchY = y;
+                }
+            } else if (sLastTouchY >= 0) {
+                sNotesScrollY += (float)(sLastTouchY - y);
+                if (sNotesScrollY < 0.0f) sNotesScrollY = 0.0f;
+                if (sNotesScrollY > NotesMaxScroll()) sNotesScrollY = NotesMaxScroll();
+                sLastTouchX = x;
+                sLastTouchY = y;
+            }
+            return;
+        }
+
         if (sShowUpdateModal) {
             if (isNewTap) {
                 UpdaterState us = Port_Updater_GetState();
@@ -1720,6 +1854,9 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
                     } else if (y >= 84 && y <= 108) {
                         Port_Updater_SetBeta(!Port_Updater_GetBeta());
                         Port_Config_Save();
+                    } else if (y >= 176 && y <= 200 && us == UPDATER_AVAILABLE) {
+                        char probe[2];
+                        if (Port_Updater_CopyNotes(probe, sizeof(probe)) > 0) OpenNotesModal();
                     } else if (y >= 140 && y <= 172) {
                         if (us == UPDATER_AVAILABLE) {
                             Port_Updater_Install();
@@ -1728,43 +1865,6 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
                         } else if (us != UPDATER_CHECKING && us != UPDATER_DOWNLOADING) {
                             Port_Updater_CheckNow();
                         }
-                    }
-                }
-            }
-            return;
-        }
-
-        if (sShowRASettingsModal) {
-            if (isNewTap) {
-                if (x >= 100 && x <= 220 && y >= 204 && y <= 230) {
-                    sShowRASettingsModal = false;
-                } else if (x >= 10 && x <= 308) {
-                    if (y >= 56 && y <= 80) {
-                        /* Login prompt via swkbd */
-                        Port_RA_PromptLogin();
-                        Port_Config_Save();
-                    } else if (y >= 84 && y <= 108) {
-                        /* Enable / Disable toggle */
-                        bool cur = Port_RA_IsEnabled();
-                        Port_RA_SetEnabled(!cur);
-                        Port_Config_Save();
-                    } else if (y >= 112 && y <= 136) {
-                        /* Notification screen row: PREVIEW button on the
-                         * right (fires a sample toast + jingle), rest of the
-                         * row toggles bottom <-> top. (Slot was the Hardcore
-                         * Mode toggle; hardcore is force-off now -- see
-                         * Port_RA_HardcoreAllowed.) */
-                        if (x >= 272) {
-                            Port_RA_ShowPreviewToast();
-                        } else {
-                            Port_RA_SetNotifyOnTopScreen(!Port_RA_GetNotifyOnTopScreen());
-                            Port_Config_Save();
-                        }
-                    } else if (y >= 140 && y <= 164) {
-                        /* Sound Notification toggle */
-                        bool snd = Port_RA_GetNotificationSound();
-                        Port_RA_SetNotificationSound(!snd);
-                        Port_Config_Save();
                     }
                 }
             }
@@ -1812,16 +1912,14 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
         if (isNewTap) {
             if (x >= 16 && x <= 304 && y >= 48 && y <= 76) {
                 sShowDisplayModal = true;
-            } else if (y >= 82 && y <= 118) {
-                if (x >= 16 && x <= 304) sShowRASettingsModal = true;
-            } else if (x >= 16 && x <= 304 && y >= 124 && y <= 156) {
+            } else if (x >= 16 && x <= 304 && y >= 82 && y <= 114) {
                 sShowRemapModal = true;
                 sRemapScrollY = 0.0f;
                 sRemapSelectButtonIdx = -1;
-            } else if (x >= 16 && x <= 156 && y >= 164 && y <= 192) {
+            } else if (x >= 16 && x <= 156 && y >= 122 && y <= 150) {
                 sConfirmIsRestart = true;
                 sShowConfirmModal = true;
-            } else if (x >= 164 && x <= 304 && y >= 164 && y <= 192) {
+            } else if (x >= 164 && x <= 304 && y >= 122 && y <= 150) {
                 sShowUpdateModal = true;
             }
         }
@@ -2554,6 +2652,18 @@ static const char* AchSortLabel(int lang) {
     return labels[sort][lang];
 }
 
+/* Footer button, bottom-left, shared by the list and the set chooser: that
+ * strip is free in both, so the settings need no room from the list itself.
+ * ACH_SETTINGS_BTN_* (above) is also the touch hit box. */
+static void DrawAchSettingsButton(int lang) {
+    static const char* const labels[7] = {
+        "SETTINGS", "SETTINGS", "SETTINGS",
+        "OPTIONEN", "REGLAGES", "OPZIONI", "AJUSTES"
+    };
+    DrawButton((float)ACH_SETTINGS_BTN_X, 204.0f, (float)ACH_SETTINGS_BTN_W, 20.0f, labels[lang],
+               C2D_Color32(120, 255, 175, 255), C2D_Color32(16, 50, 32, 255), C2D_Color32(55, 150, 95, 255));
+}
+
 /* Pack chooser: one card per set plus an "all sets" entry at the top. */
 static void RenderAchPacksModal(int lang) {
     const float mX = 10.0f;
@@ -2631,6 +2741,7 @@ static void RenderAchPacksModal(int lang) {
         C2D_DrawRectSolid(306.0f, thumbY, 0.94f, 2.0f, thumbH, C2D_Color32(80, 160, 240, 255));
     }
 
+    DrawAchSettingsButton(lang);
 }
 
 /* Colour RA uses for each special achievement type. */
@@ -2880,6 +2991,8 @@ static void RenderAchievementsModal(int lang) {
         C2D_DrawRectSolid(306.0f, clipY0, 0.92f, 2.0f, trackH, C2D_Color32(255, 35, 55, 255));
         C2D_DrawRectSolid(306.0f, thumbY, 0.94f, 2.0f, thumbH, C2D_Color32(80, 160, 240, 255));
     }
+
+    DrawAchSettingsButton(lang);
 
     if (sAchFromPacks) {
         const char* backLabels[7] = {
@@ -3302,6 +3415,48 @@ static void RenderRASettingsModal(int lang) {
                C2D_Color32(255, 255, 255, 255), BTN_BLUE_BODY, BTN_BLUE_BORDER);
 }
 
+/* "What's new" viewer: plain wrapped text, "== vX.Y.Z ==" lines drawn as
+ * gold headers, the rest as the list the release author wrote. */
+static void RenderNotesModal(int lang) {
+    const bool es = (lang == 6);
+    const float maxScroll = NotesMaxScroll();
+
+    C2D_DrawRectSolid(10.0f, 26.0f, 0.85f, 300.0f, 206.0f, C2D_Color32(10, 14, 24, 250));
+    C2D_DrawRectSolid(10.0f, 26.0f, 0.84f, 300.0f, 206.0f, C2D_Color32(40, 70, 120, 255));
+    DrawText(20.0f, 32.0f, 1.0f, es ? "NOVEDADES" : "WHAT'S NEW", C2D_Color32(255, 215, 0, 255));
+    DrawText(170.0f, 32.0f, 1.0f, Port_Updater_GetRemoteTag(), C2D_Color32(140, 160, 190, 255));
+
+    if (sNotesScrollY > maxScroll) sNotesScrollY = maxScroll;
+    for (int i = 0; i < sNotesLineCount; ++i) {
+        float y = NOTES_VIEW_Y0 - sNotesScrollY + (float)i * NOTES_LINE_H;
+        const char* t = sNotesLines[i];
+        if (y + NOTES_LINE_H <= NOTES_VIEW_Y0 || y >= NOTES_VIEW_Y1 || !t[0]) continue;
+        if (t[0] == '=' && t[1] == '=') {
+            char head[40];
+            snprintf(head, sizeof(head), "%s", t + 3);
+            size_t n = strlen(head);
+            if (n >= 3) head[n - 3] = '\0'; /* trailing " ==" */
+            DrawTextClipped(18.0f, y, 1.0f, head, C2D_Color32(255, 215, 0, 255), NOTES_VIEW_Y0, NOTES_VIEW_Y1);
+        } else {
+            DrawTextClipped(18.0f, y, 1.0f, t, C2D_Color32(220, 235, 255, 255), NOTES_VIEW_Y0, NOTES_VIEW_Y1);
+        }
+    }
+    if (sNotesLineCount == 0) {
+        DrawText(18.0f, NOTES_VIEW_Y0, 1.0f, es ? "SIN NOTAS" : "NO NOTES", C2D_Color32(140, 160, 190, 255));
+    }
+
+    if (maxScroll > 0.0f) {
+        float trackH = NOTES_VIEW_Y1 - NOTES_VIEW_Y0;
+        float thumbH = 30.0f;
+        float thumbY = NOTES_VIEW_Y0 + (sNotesScrollY / maxScroll) * (trackH - thumbH);
+        C2D_DrawRectSolid(306.0f, NOTES_VIEW_Y0, 0.92f, 2.0f, trackH, C2D_Color32(255, 35, 55, 255));
+        C2D_DrawRectSolid(306.0f, thumbY, 0.94f, 2.0f, thumbH, C2D_Color32(80, 160, 240, 255));
+    }
+
+    DrawButton(116.0f, 206.0f, 88.0f, 22.0f, es ? "CERRAR" : "CLOSE",
+               C2D_Color32(255, 255, 255, 255), BTN_BLUE_BODY, BTN_BLUE_BORDER);
+}
+
 /* Self-update modal: auto-update + channel toggles, a status line and one
  * context-sensitive action button (check / install / restart). */
 static void RenderUpdateModal(int lang) {
@@ -3359,6 +3514,15 @@ static void RenderUpdateModal(int lang) {
         default:                  actionLabel = es ? "BUSCAR ACTUALIZACION" : "CHECK NOW"; break;
     }
     DrawButton(16.0f, 142.0f, 288.0f, 28.0f, actionLabel, white, actionBody, actionBorder);
+
+    /* Only while an update waits, and only if the release carried notes. */
+    {
+        char probe[2];
+        if (us == UPDATER_AVAILABLE && Port_Updater_CopyNotes(probe, sizeof(probe)) > 0) {
+            DrawButton(16.0f, 176.0f, 288.0f, 24.0f, es ? "NOVEDADES" : "WHAT'S NEW",
+                       C2D_Color32(255, 225, 120, 255), C2D_Color32(46, 36, 12, 255), C2D_Color32(170, 130, 60, 255));
+        }
+    }
 
     DrawButton(116.0f, 206.0f, 88.0f, 22.0f, es ? "CERRAR" : "CLOSE", white, BTN_BLUE_BODY, BTN_BLUE_BORDER);
 }
@@ -4222,25 +4386,8 @@ static void RenderOptionsView(void) {
     DrawTextCentered(160.0f, 53.0f + (p1 ? 1.0f : 0.0f), 1.0f, displayBtnTitles[lang], C2D_Color32(120, 210, 255, 255));
     DrawTextCentered(160.0f, 64.0f + (p1 ? 1.0f : 0.0f), 1.0f, displayBtnSubs[lang], C2D_Color32(150, 170, 200, 255));
 
-    /* Button 2: RA settings / login (Y: 82 to 118, H: 36). The achievement list has its own tab. */
-    bool p2a = DrawButtonBox(16.0f, 82.0f, 288.0f, 36.0f,
-                             C2D_Color32(16, 50, 32, 255), C2D_Color32(55, 150, 95, 255));
-    static const char* const raSettingsTitles[7] = {
-        "RA SETTINGS", "RA SETTINGS", "RA SETTINGS",
-        "RA-EINSTELL.", "PARAMETRES RA", "IMPOSTAZIONI RA", "AJUSTES RA"
-    };
-    DrawTextCentered(160.0f, 91.0f + (p2a ? 1.0f : 0.0f), 1.0f, raSettingsTitles[lang], C2D_Color32(120, 255, 175, 255));
-    uint32_t raStatusCol = C2D_Color32(140, 160, 190, 255);
-    switch (Port_RA_GetStatus()) {
-        case RA_STATUS_CONNECTED: raStatusCol = C2D_Color32(80, 255, 120, 255); break;
-        case RA_STATUS_CONNECTING: raStatusCol = C2D_Color32(255, 220, 80, 255); break;
-        case RA_STATUS_ERROR: raStatusCol = C2D_Color32(255, 90, 90, 255); break;
-        default: break;
-    }
-    DrawTextCentered(160.0f, 103.0f + (p2a ? 1.0f : 0.0f), 1.0f, Port_RA_GetStatusString(lang), raStatusCol);
-
-    /* Button 4: Controls remapping (Y: 124 to 156, H: 32) */
-    bool p4 = DrawButtonBox(16.0f, 124.0f, 288.0f, 32.0f,
+    /* Controls remapping (Y: 82 to 114, H: 32) */
+    bool p4 = DrawButtonBox(16.0f, 82.0f, 288.0f, 32.0f,
                             C2D_Color32(46, 32, 12, 255), C2D_Color32(170, 130, 60, 255));
     static const char* const ctrlTitles[7] = {
         "CONTROLS", "CONTROLS", "CONTROLS",
@@ -4250,19 +4397,19 @@ static void RenderOptionsView(void) {
         "REMAPPABLE BUTTONS & C-STICK", "REMAPPABLE BUTTONS & C-STICK", "REMAPPABLE BUTTONS & C-STICK",
         "TASTEN & C-STICK BELEGEN", "TOUCHES ET C-STICK", "RIMAPPA TASTI E C-STICK", "MAPEAR BOTONES Y C-STICK"
     };
-    DrawTextCentered(160.0f, 131.0f + (p4 ? 1.0f : 0.0f), 1.0f, ctrlTitles[lang], C2D_Color32(255, 215, 90, 255));
-    DrawTextCentered(160.0f, 142.0f + (p4 ? 1.0f : 0.0f), 1.0f, ctrlSubs[lang], C2D_Color32(190, 170, 120, 255));
+    DrawTextCentered(160.0f, 89.0f + (p4 ? 1.0f : 0.0f), 1.0f, ctrlTitles[lang], C2D_Color32(255, 215, 90, 255));
+    DrawTextCentered(160.0f, 100.0f + (p4 ? 1.0f : 0.0f), 1.0f, ctrlSubs[lang], C2D_Color32(190, 170, 120, 255));
 
-    /* Restart button (Y: 164 to 192, H: 28) */
+    /* Restart button (Y: 122 to 150, H: 28) */
     static const char* const restartBtnTitles[7] = {
         "RESTART GAME", "RESTART GAME", "RESTART GAME",
         "SPIEL NEUSTARTEN", "RECOMMENCER PARTIE", "RIAVVIA PARTITA", "REINICIAR PARTIDA"
     };
-    DrawButton(16.0f, 164.0f, 140.0f, 28.0f, restartBtnTitles[lang],
+    DrawButton(16.0f, 122.0f, 140.0f, 28.0f, restartBtnTitles[lang],
                C2D_Color32(255, 150, 150, 255), C2D_Color32(64, 22, 22, 255), C2D_Color32(180, 60, 60, 255));
 
     /* Updates button, right half of the restart row */
-    DrawButton(164.0f, 164.0f, 140.0f, 28.0f, (lang == 6) ? "ACTUALIZAR" : "UPDATES",
+    DrawButton(164.0f, 122.0f, 140.0f, 28.0f, (lang == 6) ? "ACTUALIZAR" : "UPDATES",
                C2D_Color32(150, 230, 255, 255), C2D_Color32(16, 44, 64, 255), C2D_Color32(60, 130, 180, 255));
 
     /* Footer */
@@ -4270,7 +4417,7 @@ static void RenderOptionsView(void) {
 
     /* Render active modal on top */
     if (sShowDisplayModal) RenderDisplayModal(lang);
-    else if (sShowRASettingsModal) RenderRASettingsModal(lang);
+    else if (sShowNotesModal) RenderNotesModal(lang);
     else if (sShowUpdateModal) RenderUpdateModal(lang);
     else if (sShowRemapModal) RenderRemapModal(lang);
     else if (sShowConfirmModal) RenderConfirmModal(lang);
@@ -5154,7 +5301,9 @@ static void RenderDebugView(void) {
 static void RenderAchievementsView(void) {
     const int lang = GetLang();
     if (!sShowAchPacksModal && !sShowAchievementsModal) OpenAchievementsUi();
-    if (sShowAchPacksModal) {
+    if (sShowRASettingsModal) {
+        RenderRASettingsModal(lang);
+    } else if (sShowAchPacksModal) {
         RenderAchPacksModal(lang);
     } else {
         RenderAchievementsModal(lang);

@@ -118,7 +118,7 @@ static const RABadgeIcon sAllBadges[] = {
     { 255255, sBadgeData_255255 }
 };
 
-const uint32_t* Port_RA_GetBadgePixels(const char* badgeName) {
+const uint32_t* Port_RA_GetBundledBadge(const char* badgeName) {
     if (!badgeName || !*badgeName) return NULL;
     uint32_t bid = (uint32_t)strtoul(badgeName, NULL, 10);
     for (size_t i = 0; i < sizeof(sAllBadges)/sizeof(sAllBadges[0]); ++i) {

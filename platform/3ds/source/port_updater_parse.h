@@ -24,4 +24,16 @@ bool Updater_IsNewer(const char* current, const char* remote);
  * `allowBeta`, is not a prerelease. Tolerates a truncated body. */
 bool Updater_PickRelease(const char* json, bool allowBeta, UpdaterRelease* out);
 
+/* Builds the "what's new" text for a player on `current`: every release in the
+ * `GET .../releases` body that is newer than `current` (and not a prerelease
+ * unless `allowBeta`), newest first, each as a "== vX.Y.Z ==" header followed
+ * by the lines of its notes block. The block is whatever sits between
+ * "<!-- mzm-notes -->" and "<!-- /mzm-notes -->" in the release body; the
+ * markdown is flattened to plain "- " lines (headings, emphasis and code
+ * marks dropped) because the console draws it with a 5x7 bitmap font. A
+ * release without a block still gets its header, with a note saying so.
+ * Returns how many releases were written; `out` is always NUL-terminated. */
+int Updater_CollectNotes(const char* json, bool allowBeta, const char* current,
+                         char* out, size_t outSize);
+
 #endif
