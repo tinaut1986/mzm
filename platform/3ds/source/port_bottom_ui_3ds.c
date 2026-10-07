@@ -3485,7 +3485,7 @@ static void RenderUpdateModal(int lang) {
     C2D_DrawRectSolid(10.0f, 26.0f, 0.85f, 300.0f, 206.0f, C2D_Color32(10, 14, 24, 250));
     C2D_DrawRectSolid(10.0f, 26.0f, 0.84f, 300.0f, 206.0f, C2D_Color32(40, 70, 120, 255));
     DrawText(20.0f, 32.0f, 1.0f, es ? "ACTUALIZACIONES" : "UPDATES", C2D_Color32(255, 215, 0, 255));
-    DrawText(170.0f, 32.0f, 1.0f, MZM_PORT_VERSION, C2D_Color32(140, 160, 190, 255));
+    DrawText(170.0f, 32.0f, 1.0f, MZM_PORT_VERSION_LABEL, C2D_Color32(140, 160, 190, 255));
 
     DrawButtonBox(16.0f, 56.0f, 288.0f, 24.0f, rowBody, rowBorder);
     DrawText(24.0f, 65.0f, 1.0f, es ? "AUTOACTUALIZAR:" : "AUTO UPDATE:", white);
@@ -3564,7 +3564,7 @@ static void RenderUpdatePrompt(int lang) {
         case UPDATER_PROMPT_ASK_INSTALL:
             title = es ? "ACTUALIZACION DISPONIBLE" : "UPDATE AVAILABLE";
             question = es ? "INSTALAR AHORA?" : "INSTALL NOW?";
-            snprintf(line, sizeof(line), "%s -> %s", MZM_PORT_VERSION, Port_Updater_GetRemoteTag());
+            snprintf(line, sizeof(line), "%s -> %s", MZM_PORT_VERSION_LABEL, Port_Updater_GetRemoteTag());
             break;
         case UPDATER_PROMPT_PROGRESS:
             title = es ? "ACTUALIZANDO" : "UPDATING";
@@ -4435,7 +4435,7 @@ static void RenderOptionsView(void) {
                C2D_Color32(150, 230, 255, 255), C2D_Color32(16, 44, 64, 255), C2D_Color32(60, 130, 180, 255));
 
     /* Footer */
-    DrawTextCentered(160.0f, 212.0f, 1.0f, "METROID ZERO MISSION 3DS " MZM_PORT_VERSION, C2D_Color32(90, 115, 145, 255));
+    DrawTextCentered(160.0f, 212.0f, 1.0f, "METROID ZERO MISSION 3DS " MZM_PORT_VERSION_LABEL, C2D_Color32(90, 115, 145, 255));
 
     /* Render active modal on top */
     if (sShowDisplayModal) RenderDisplayModal(lang);

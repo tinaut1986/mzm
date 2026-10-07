@@ -186,6 +186,12 @@ endif
 endif
 VERSION ?= $(GIT_VERSION)
 
+# CHANNEL=beta marks the build as a beta (the console shows BETA, and the
+# updater offers the stable build of the same X.Y.Z once it exists). Only the CI
+# sets it, from whether main reaches the tagged commit; local builds are neither.
+# Like DEBUG_TOOLS it does not invalidate objects: `make clean` when changing it.
+CHANNEL ?=
+
 # Which retail region's code paths to compile in.
 #
 # REGION=any (the default) defines no REGION_* macro at all: every region's
@@ -210,7 +216,7 @@ endif
 
 ARCH    := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
 CFLAGS  := -O2 -fomit-frame-pointer -Wall -mword-relocations -ffunction-sections -fdata-sections \
-           $(REGION_DEFINE) -DMZM_PORT_VERSION=\"$(VERSION)\" -D__3DS__ -DMZM_3DS \
+           $(REGION_DEFINE) -DMZM_PORT_VERSION=\"$(VERSION)\" $(if $(filter beta,$(CHANNEL)),-DMZM_PORT_BETA=1) -D__3DS__ -DMZM_3DS \
            -DNON_MATCHING=1 \
            -Wno-implicit-function-declaration -Wno-implicit-int -Wno-builtin-declaration-mismatch \
            -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function \
