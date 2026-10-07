@@ -15,6 +15,7 @@
 
 #include "port_retroachievements_3ds.h"
 #include "port_ra_iwram_map.h"
+#include "port_updater_3ds.h" /* MZM_PORT_VERSION_LABEL */
 #include "port_debug_tools.h" /* PORT_DEBUG_TOOLS_ACTIVE */
 
 #include "rc_client.h"
@@ -1236,7 +1237,7 @@ void Port_RA_Init(void) {
     /* Stamped so the log identifies the build that wrote it: diagnosing this
      * module from the log is otherwise guesswork about whether the console is
      * even running the version being discussed. */
-    LogLine("--- Port_RA_Init, mzm 3DS %s ---", MZM_PORT_VERSION);
+    LogLine("--- Port_RA_Init, mzm 3DS %s ---", MZM_PORT_VERSION_LABEL);
 
     EnsureWorkerThread();
 

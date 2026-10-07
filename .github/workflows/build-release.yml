@@ -27,16 +27,6 @@ jobs:
       - name: Install 3DS portlibs
         run: dkp-pacman -S --noconfirm 3ds-curl 3ds-mbedtls 3ds-zlib
 
-      - name: Build 3DS Port (Release)
-        run: |
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          export DEVKITPRO=/opt/devkitpro
-          export DEVKITARM=/opt/devkitpro/devkitARM
-          chmod +x tools/bin/bannertool tools/bin/makerom
-          export PATH=$GITHUB_WORKSPACE/tools/bin:/opt/devkitpro/tools/bin:$PATH
-          make -C platform/3ds clean
-          make -C platform/3ds -j$(nproc) RENDERER=gpu BANNERTOOL=$GITHUB_WORKSPACE/tools/bin/bannertool MAKEROM=$GITHUB_WORKSPACE/tools/bin/makerom
-
       # NOTE: container default shell is dash/sh -- no [[ ]], use POSIX case
       - name: Determine release tag and channel
         id: vars
@@ -81,6 +71,18 @@ jobs:
             echo "prerelease=$PRERELEASE"
             echo "channel=$CHANNEL"
           } >> "$GITHUB_OUTPUT"
+
+      # CHANNEL is baked into the binary (shown as BETA on the console and used by
+      # the updater to offer the promoted stable build of the same X.Y.Z).
+      - name: Build 3DS Port (Release)
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          export DEVKITPRO=/opt/devkitpro
+          export DEVKITARM=/opt/devkitpro/devkitARM
+          chmod +x tools/bin/bannertool tools/bin/makerom
+          export PATH=$GITHUB_WORKSPACE/tools/bin:/opt/devkitpro/tools/bin:$PATH
+          make -C platform/3ds clean
+          make -C platform/3ds -j$(nproc) RENDERER=gpu CHANNEL=${{ steps.vars.outputs.prerelease == 'true' && 'beta' || 'release' }} BANNERTOOL=$GITHUB_WORKSPACE/tools/bin/bannertool MAKEROM=$GITHUB_WORKSPACE/tools/bin/makerom
 
       # Release notes: QR code (scannable with Universal-Updater / phone to get
       # the CIA download URL) plus an auto-generated changelog covering every

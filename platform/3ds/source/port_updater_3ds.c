@@ -380,7 +380,7 @@ static bool DoCheck(void) {
     /* The notes of every release between this build and the one found, read
      * from the same response, so showing them costs no second request. */
     notes = (char*)malloc(UPDATER_NOTES_MAX);
-    if (notes) Updater_CollectNotes(js.buf, sBeta, MZM_PORT_VERSION, notes, UPDATER_NOTES_MAX);
+    if (notes) Updater_CollectNotes(js.buf, sBeta, MZM_PORT_VERSION, MZM_PORT_IS_BETA, notes, UPDATER_NOTES_MAX);
     free(js.buf);
 
     EnsureLock();
@@ -390,7 +390,7 @@ static bool DoCheck(void) {
     LightLock_Unlock(&sTextLock);
     free(notes);
 
-    if (!Updater_IsNewer(MZM_PORT_VERSION, rel.tag)) {
+    if (!Updater_IsNewerBuild(MZM_PORT_VERSION, MZM_PORT_IS_BETA, rel.tag, rel.prerelease)) {
         sState = UPDATER_UP_TO_DATE;
         return false;
     }

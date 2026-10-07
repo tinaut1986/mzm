@@ -30,12 +30,35 @@ static const char kNotesJson[] =
     "{\"tag_name\":\"v0.7.0\",\"prerelease\":false,\"assets\":[],\"body\":\"no block here\"},"
     "{\"tag_name\":\"v0.6.9\",\"prerelease\":false,\"assets\":[],\"body\":null}]";
 
+static void TestChannels(void) {
+    char out[1024];
+
+    /* A beta of 0.7.2 sees the stable 0.7.2 as newer, but not a beta page of itself. */
+    CHECK(Updater_IsNewerBuild("v0.7.2", true, "v0.7.2", false));
+    CHECK(!Updater_IsNewerBuild("v0.7.2", true, "v0.7.2", true));
+    CHECK(Updater_IsNewerBuild("v0.7.2", true, "v0.7.3", true));
+    /* A stable build never moves to a same-number release, whatever its page says. */
+    CHECK(!Updater_IsNewerBuild("v0.7.2", false, "v0.7.2", false));
+    CHECK(!Updater_IsNewerBuild("v0.7.2", false, "v0.7.2", true));
+    CHECK(Updater_IsNewerBuild("v0.7.2", false, "v0.7.3", false));
+    /* Never goes backwards, and dev builds keep their own rule. */
+    CHECK(!Updater_IsNewerBuild("v0.7.2", true, "v0.7.1", false));
+    CHECK(Updater_IsNewerBuild("v0.7.2-dev.1+abc", false, "v0.7.2", false));
+    CHECK(Updater_IsNewerBuild("v0.7.2-dev.1+abc", false, "v0.7.2", true)); /* dev: any release of its number */
+    CHECK(!Updater_IsNewerBuild("garbage", true, "v0.7.2", false));
+
+    /* The notes of the promoted stable page reach a beta of the same number. */
+    CHECK(Updater_CollectNotes(kNotesJson, true, "v0.7.1", true, out, sizeof(out)) == 2);
+    CHECK(Updater_CollectNotes(kNotesJson, true, "v0.7.1", false, out, sizeof(out)) == 1);
+    CHECK(Updater_CollectNotes(kNotesJson, false, "v0.7.1", true, out, sizeof(out)) == 1);
+}
+
 static void TestNotes(void) {
     char out[1024];
     int n;
 
     /* From v0.7.0 with betas: the two newer releases, newest first. */
-    n = Updater_CollectNotes(kNotesJson, true, "v0.7.0", out, sizeof(out));
+    n = Updater_CollectNotes(kNotesJson, true, "v0.7.0", false, out, sizeof(out));
     CHECK(n == 2);
     CHECK(strncmp(out, "== v0.7.2 ==\n", 13) == 0);
     CHECK(strstr(out, "- Fixed the SETTINGS button\n") != NULL);
@@ -47,33 +70,33 @@ static void TestNotes(void) {
     CHECK(strstr(out, "v0.7.0") == NULL);            /* not newer than current */
 
     /* Stable channel skips the beta. */
-    n = Updater_CollectNotes(kNotesJson, false, "v0.7.0", out, sizeof(out));
+    n = Updater_CollectNotes(kNotesJson, false, "v0.7.0", false, out, sizeof(out));
     CHECK(n == 1);
     CHECK(strstr(out, "v0.7.2") == NULL);
 
     /* A far older install sees everything newer, and the releases without a
      * block say so instead of vanishing. */
-    n = Updater_CollectNotes(kNotesJson, true, "v0.6.4", out, sizeof(out));
+    n = Updater_CollectNotes(kNotesJson, true, "v0.6.4", false, out, sizeof(out));
     CHECK(n == 4);
     CHECK(strstr(out, "== v0.7.0 ==\n- (no notes for this version)\n") != NULL);
     CHECK(strstr(out, "== v0.6.9 ==\n- (no notes for this version)\n") != NULL);
 
     /* A -dev build sits before its own X.Y.Z. */
-    n = Updater_CollectNotes(kNotesJson, true, "v0.7.1-dev.3+abc", out, sizeof(out));
+    n = Updater_CollectNotes(kNotesJson, true, "v0.7.1-dev.3+abc", false, out, sizeof(out));
     CHECK(n == 2);
 
     /* Nothing newer, junk, empty. */
-    CHECK(Updater_CollectNotes(kNotesJson, true, "v0.7.2", out, sizeof(out)) == 0 && out[0] == '\0');
-    CHECK(Updater_CollectNotes("[]", true, "v0.1.0", out, sizeof(out)) == 0);
-    CHECK(Updater_CollectNotes("{\"message\":\"rate limited\"}", true, "v0.1.0", out, sizeof(out)) == 0);
+    CHECK(Updater_CollectNotes(kNotesJson, true, "v0.7.2", false, out, sizeof(out)) == 0 && out[0] == '\0');
+    CHECK(Updater_CollectNotes("[]", true, "v0.1.0", false, out, sizeof(out)) == 0);
+    CHECK(Updater_CollectNotes("{\"message\":\"rate limited\"}", true, "v0.1.0", false, out, sizeof(out)) == 0);
 
     /* Tiny buffer: truncated at a line boundary, still terminated. */
-    n = Updater_CollectNotes(kNotesJson, true, "v0.6.4", out, 40);
+    n = Updater_CollectNotes(kNotesJson, true, "v0.6.4", false, out, 40);
     CHECK(strlen(out) < 40);
-    CHECK(Updater_CollectNotes(kNotesJson, true, "v0.6.4", out, 0) == 0);
+    CHECK(Updater_CollectNotes(kNotesJson, true, "v0.6.4", false, out, 0) == 0);
 
     /* Truncated JSON mid-body: the block so far is still used. */
-    n = Updater_CollectNotes("[{\"tag_name\":\"v1.0.0\",\"body\":\"<!-- mzm-notes -->\\n- Part", true, "v0.9.0", out, sizeof(out));
+    n = Updater_CollectNotes("[{\"tag_name\":\"v1.0.0\",\"body\":\"<!-- mzm-notes -->\\n- Part", true, "v0.9.0", false, out, sizeof(out));
     CHECK(n == 1);
     CHECK(strstr(out, "- Part") != NULL);
 }
@@ -107,6 +130,7 @@ int main(void) {
     CHECK(!Updater_PickRelease("[{\"tag_name\":\"v1.0.0\",\"assets\":[{\"browser_download_url\":\"http://h/x.ci", true, &rel));
 
     TestNotes();
+    TestChannels();
 
     if (sFailures == 0) printf("updater_parse_test: OK\n");
     return sFailures ? 1 : 0;

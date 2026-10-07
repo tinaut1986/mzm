@@ -134,6 +134,14 @@ reach the built commit** — not by whether a tag was pushed:
 | Tag on `main`, or on a commit merged into `main` | `Release` |
 | Manual dispatch on any branch | `Beta` (pre-release) |
 
+**The channel is baked into the binary.** The workflow works the channel out
+*before* compiling and passes it as `make CHANNEL=beta|release`; a beta CIA
+shows `vX.Y.Z BETA` (Options footer, UPDATES, the update prompt) and a stable
+one shows plain `vX.Y.Z`. The updater treats a beta of `X.Y.Z` as older than the
+stable `X.Y.Z` (`Updater_IsNewerBuild`), so promoting a beta in place (see
+above) makes installed betas offer the stable build, while a beta never offers
+to install its own beta page. Builds from before v0.7.2 carry no marker.
+
 **Push `main` before the tag.** The tag build resolves the channel against
 `origin/main`, so a tag that arrives first cannot see the merge and publishes as
 a beta. Also note Actions uses the workflow file **at the tagged commit**, so a
