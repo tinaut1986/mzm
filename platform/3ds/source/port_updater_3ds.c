@@ -377,10 +377,16 @@ static bool DoCheck(void) {
         Fail("NO RELEASE FOUND", 0);
         return false;
     }
-    /* The notes of every release between this build and the one found, read
+    /* The notes of every release between this build and the one found (or the
+     * latest ones when there is none), read
      * from the same response, so showing them costs no second request. */
     notes = (char*)malloc(UPDATER_NOTES_MAX);
-    if (notes) Updater_CollectNotes(js.buf, sBeta, MZM_PORT_VERSION, MZM_PORT_IS_BETA, notes, UPDATER_NOTES_MAX);
+    if (notes) {
+        /* Up to date: nothing is newer than this build, so show the latest
+         * published releases instead (everything the response carries). */
+        if (Updater_CollectNotes(js.buf, sBeta, MZM_PORT_VERSION, MZM_PORT_IS_BETA, notes, UPDATER_NOTES_MAX) == 0)
+            Updater_CollectNotes(js.buf, sBeta, "v0.0.0", false, notes, UPDATER_NOTES_MAX);
+    }
     free(js.buf);
 
     EnsureLock();

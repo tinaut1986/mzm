@@ -1867,9 +1867,8 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
                     } else if (y >= 84 && y <= 108) {
                         Port_Updater_SetBeta(!Port_Updater_GetBeta());
                         Port_Config_Save();
-                    } else if (y >= 176 && y <= 200 && us == UPDATER_AVAILABLE) {
-                        char probe[2];
-                        if (Port_Updater_CopyNotes(probe, sizeof(probe)) > 0) OpenNotesModal();
+                    } else if (y >= 176 && y <= 200) {
+                        OpenNotesModal();
                     } else if (y >= 140 && y <= 172) {
                         if (us == UPDATER_AVAILABLE) {
                             Port_Updater_Install();
@@ -3455,7 +3454,7 @@ static void RenderNotesModal(int lang) {
         }
     }
     if (sNotesLineCount == 0) {
-        DrawText(18.0f, NOTES_VIEW_Y0, 1.0f, es ? "SIN NOTAS" : "NO NOTES", C2D_Color32(140, 160, 190, 255));
+        DrawText(18.0f, NOTES_VIEW_Y0, 1.0f, es ? "AUN SIN DATOS. BUSCA ACTUALIZACION." : "NOTHING YET. CHECK NOW FIRST.", C2D_Color32(140, 160, 190, 255));
     }
 
     if (maxScroll > 0.0f) {
@@ -3528,14 +3527,10 @@ static void RenderUpdateModal(int lang) {
     }
     DrawButton(16.0f, 142.0f, 288.0f, 28.0f, actionLabel, white, actionBody, actionBorder);
 
-    /* Only while an update waits, and only if the release carried notes. */
-    {
-        char probe[2];
-        if (us == UPDATER_AVAILABLE && Port_Updater_CopyNotes(probe, sizeof(probe)) > 0) {
-            DrawButton(16.0f, 176.0f, 288.0f, 24.0f, es ? "NOVEDADES" : "WHAT'S NEW",
-                       C2D_Color32(255, 225, 120, 255), C2D_Color32(46, 36, 12, 255), C2D_Color32(170, 130, 60, 255));
-        }
-    }
+    /* Always there: with an update waiting it lists what the update brings, and
+     * otherwise the latest published changes (empty until a check has run). */
+    DrawButton(16.0f, 176.0f, 288.0f, 24.0f, es ? "NOVEDADES" : "WHAT'S NEW",
+               C2D_Color32(255, 225, 120, 255), C2D_Color32(46, 36, 12, 255), C2D_Color32(170, 130, 60, 255));
 
     DrawButton(116.0f, 206.0f, 88.0f, 22.0f, es ? "CERRAR" : "CLOSE", white, BTN_BLUE_BODY, BTN_BLUE_BORDER);
 }
