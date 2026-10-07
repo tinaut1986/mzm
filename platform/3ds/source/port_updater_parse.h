@@ -19,6 +19,14 @@ typedef struct {
  * the plain X.Y.Z release counts as newer than it. Unparseable input -> false. */
 bool Updater_IsNewer(const char* current, const char* remote);
 
+/* Same, for a build that knows its channel. A beta of X.Y.Z is the same number
+ * as the stable X.Y.Z it later becomes, so on top of Updater_IsNewer a beta
+ * counts the *stable* release of its own version as newer: `remotePrerelease`
+ * false and equal numbers. (A beta page of the same tag is not newer, or a
+ * beta would keep offering to install itself.) */
+bool Updater_IsNewerBuild(const char* current, bool currentIsBeta,
+                          const char* remote, bool remotePrerelease);
+
 /* Scans a GitHub `GET /repos/{owner}/{repo}/releases` JSON body (newest
  * first) and picks the first release that has a .cia asset and, unless
  * `allowBeta`, is not a prerelease. Tolerates a truncated body. */
@@ -34,6 +42,6 @@ bool Updater_PickRelease(const char* json, bool allowBeta, UpdaterRelease* out);
  * release without a block still gets its header, with a note saying so.
  * Returns how many releases were written; `out` is always NUL-terminated. */
 int Updater_CollectNotes(const char* json, bool allowBeta, const char* current,
-                         char* out, size_t outSize);
+                         bool currentIsBeta, char* out, size_t outSize);
 
 #endif

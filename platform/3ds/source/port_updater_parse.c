@@ -36,6 +36,17 @@ bool Updater_IsNewer(const char* current, const char* remote) {
     return curDev && !remDev;
 }
 
+bool Updater_IsNewerBuild(const char* current, bool currentIsBeta,
+                          const char* remote, bool remotePrerelease) {
+    long cur[3], rem[3];
+    bool curDev, remDev;
+
+    if (Updater_IsNewer(current, remote)) return true;
+    if (!currentIsBeta || remotePrerelease) return false;
+    if (!ParseVersion(current, cur, &curDev) || !ParseVersion(remote, rem, &remDev)) return false;
+    return !curDev && !remDev && cur[0] == rem[0] && cur[1] == rem[1] && cur[2] == rem[2];
+}
+
 /* Copies the JSON string value that follows `"key":` inside [seg, segEnd). */
 static bool FindString(const char* seg, const char* segEnd, const char* key,
                        char* out, size_t outSize) {
@@ -214,7 +225,7 @@ static bool AppendBlock(char* blk, char* out, size_t outSize, size_t* len) {
 }
 
 int Updater_CollectNotes(const char* json, bool allowBeta, const char* current,
-                         char* out, size_t outSize) {
+                         bool currentIsBeta, char* out, size_t outSize) {
     static const char kTag[] = "\"tag_name\"";
     const char* p = json;
     size_t len = 0;
@@ -237,7 +248,7 @@ int Updater_CollectNotes(const char* json, bool allowBeta, const char* current,
                 while (pre < segEnd && (*pre == ' ' || *pre == ':')) pre++;
                 prerelease = (strncmp(pre, "true", 4) == 0);
             }
-            if ((allowBeta || !prerelease) && Updater_IsNewer(current, tag)) {
+            if ((allowBeta || !prerelease) && Updater_IsNewerBuild(current, currentIsBeta, tag, prerelease)) {
                 char head[48];
                 const char* body = strstr(p, "\"body\"");
                 const char* b0 = NULL;

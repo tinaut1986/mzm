@@ -69,8 +69,10 @@ about to be made; the steps below assume it is already in the branch.
 Two paths. Which one applies depends on whether the branch is ready to be called
 stable, so **ask** rather than assuming.
 
-**Beta** — tag the `release/*` branch without merging. Publishes a pre-release;
-work continues on the same branch.
+**Beta** — tag the `release/*` branch without merging. Publishes a pre-release.
+Rename the branch to the next patch right away (see "After tagging"): the tag
+fixes what that version contains, and anything done afterwards belongs to the
+next one.
 
 ```sh
 git tag -a v0.4.4 -m "v0.4.4"
@@ -134,6 +136,14 @@ reach the built commit** — not by whether a tag was pushed:
 | Tag on `main`, or on a commit merged into `main` | `Release` |
 | Manual dispatch on any branch | `Beta` (pre-release) |
 
+**The channel is baked into the binary.** The workflow works the channel out
+*before* compiling and passes it as `make CHANNEL=beta|release`; a beta CIA
+shows `vX.Y.Z BETA` (Options footer, UPDATES, the update prompt) and a stable
+one shows plain `vX.Y.Z`. The updater treats a beta of `X.Y.Z` as older than the
+stable `X.Y.Z` (`Updater_IsNewerBuild`), so promoting a beta in place (see
+above) makes installed betas offer the stable build, while a beta never offers
+to install its own beta page. Builds from before v0.7.2 carry no marker.
+
 **Push `main` before the tag.** The tag build resolves the channel against
 `origin/main`, so a tag that arrives first cannot see the merge and publishes as
 a beta. Also note Actions uses the workflow file **at the tagged commit**, so a
@@ -141,8 +151,9 @@ change to the workflow only takes effect for tags cut after it landed.
 
 ### After tagging
 
-Rename the release branch to the next patch version and delete the old remote
-branch — the tag identifies that line from then on:
+**After every tag, beta or stable, do this immediately — before any further
+work or build.** Rename the release branch to the next patch version and delete
+the old remote branch — the tag identifies that line from then on:
 
 ```sh
 git branch -m release/v0.4.4 release/v0.4.5
@@ -150,6 +161,16 @@ git branch --unset-upstream                  # the rename keeps the old tracking
 git push -u origin release/v0.4.5
 git push origin --delete release/v0.4.4
 ```
+
+Why it cannot wait: the build version comes from the branch name. Left on
+`release/v0.4.4` after tagging `v0.4.4`, every later dev build calls itself
+`v0.4.4-dev.N`, so the console keeps offering the already-published `v0.4.4` as
+an update. A new tag after the rename is the only way later work ships.
+
+**Promoting a beta in place is only valid if nothing was committed after its
+tag.** The promotion rebuilds *the tag's* commit; commits made since would be
+merged into `main` yet absent from the "stable" `vX.Y.Z`. If there are any,
+tag the next version instead (and write its notes).
 
 The version baked into the build (`make print-version`, and the FTP upload
 filename) is derived from git: an exact tag on `HEAD` gives `vX.Y.Z`, anything

@@ -10,6 +10,16 @@
  * system installer (am:net). Everything runs on a worker thread; the UI polls
  * Port_Updater_GetState(). */
 
+/* What the console shows for this build: the version, plus BETA when the CI
+ * built it from an unmerged release branch (make CHANNEL=beta). */
+#ifdef MZM_PORT_BETA
+#define MZM_PORT_IS_BETA 1
+#define MZM_PORT_VERSION_LABEL MZM_PORT_VERSION " BETA"
+#else
+#define MZM_PORT_IS_BETA 0
+#define MZM_PORT_VERSION_LABEL MZM_PORT_VERSION
+#endif
+
 typedef enum {
     UPDATER_IDLE = 0,
     UPDATER_CHECKING,

@@ -1867,9 +1867,8 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
                     } else if (y >= 84 && y <= 108) {
                         Port_Updater_SetBeta(!Port_Updater_GetBeta());
                         Port_Config_Save();
-                    } else if (y >= 176 && y <= 200 && us == UPDATER_AVAILABLE) {
-                        char probe[2];
-                        if (Port_Updater_CopyNotes(probe, sizeof(probe)) > 0) OpenNotesModal();
+                    } else if (y >= 176 && y <= 200) {
+                        OpenNotesModal();
                     } else if (y >= 140 && y <= 172) {
                         if (us == UPDATER_AVAILABLE) {
                             Port_Updater_Install();
@@ -3455,7 +3454,7 @@ static void RenderNotesModal(int lang) {
         }
     }
     if (sNotesLineCount == 0) {
-        DrawText(18.0f, NOTES_VIEW_Y0, 1.0f, es ? "SIN NOTAS" : "NO NOTES", C2D_Color32(140, 160, 190, 255));
+        DrawText(18.0f, NOTES_VIEW_Y0, 1.0f, es ? "AUN SIN DATOS. BUSCA ACTUALIZACION." : "NOTHING YET. CHECK NOW FIRST.", C2D_Color32(140, 160, 190, 255));
     }
 
     if (maxScroll > 0.0f) {
@@ -3485,7 +3484,7 @@ static void RenderUpdateModal(int lang) {
     C2D_DrawRectSolid(10.0f, 26.0f, 0.85f, 300.0f, 206.0f, C2D_Color32(10, 14, 24, 250));
     C2D_DrawRectSolid(10.0f, 26.0f, 0.84f, 300.0f, 206.0f, C2D_Color32(40, 70, 120, 255));
     DrawText(20.0f, 32.0f, 1.0f, es ? "ACTUALIZACIONES" : "UPDATES", C2D_Color32(255, 215, 0, 255));
-    DrawText(170.0f, 32.0f, 1.0f, MZM_PORT_VERSION, C2D_Color32(140, 160, 190, 255));
+    DrawText(170.0f, 32.0f, 1.0f, MZM_PORT_VERSION_LABEL, C2D_Color32(140, 160, 190, 255));
 
     DrawButtonBox(16.0f, 56.0f, 288.0f, 24.0f, rowBody, rowBorder);
     DrawText(24.0f, 65.0f, 1.0f, es ? "AUTOACTUALIZAR:" : "AUTO UPDATE:", white);
@@ -3528,14 +3527,10 @@ static void RenderUpdateModal(int lang) {
     }
     DrawButton(16.0f, 142.0f, 288.0f, 28.0f, actionLabel, white, actionBody, actionBorder);
 
-    /* Only while an update waits, and only if the release carried notes. */
-    {
-        char probe[2];
-        if (us == UPDATER_AVAILABLE && Port_Updater_CopyNotes(probe, sizeof(probe)) > 0) {
-            DrawButton(16.0f, 176.0f, 288.0f, 24.0f, es ? "NOVEDADES" : "WHAT'S NEW",
-                       C2D_Color32(255, 225, 120, 255), C2D_Color32(46, 36, 12, 255), C2D_Color32(170, 130, 60, 255));
-        }
-    }
+    /* Always there: with an update waiting it lists what the update brings, and
+     * otherwise the latest published changes (empty until a check has run). */
+    DrawButton(16.0f, 176.0f, 288.0f, 24.0f, es ? "NOVEDADES" : "WHAT'S NEW",
+               C2D_Color32(255, 225, 120, 255), C2D_Color32(46, 36, 12, 255), C2D_Color32(170, 130, 60, 255));
 
     DrawButton(116.0f, 206.0f, 88.0f, 22.0f, es ? "CERRAR" : "CLOSE", white, BTN_BLUE_BODY, BTN_BLUE_BORDER);
 }
@@ -3564,7 +3559,7 @@ static void RenderUpdatePrompt(int lang) {
         case UPDATER_PROMPT_ASK_INSTALL:
             title = es ? "ACTUALIZACION DISPONIBLE" : "UPDATE AVAILABLE";
             question = es ? "INSTALAR AHORA?" : "INSTALL NOW?";
-            snprintf(line, sizeof(line), "%s -> %s", MZM_PORT_VERSION, Port_Updater_GetRemoteTag());
+            snprintf(line, sizeof(line), "%s -> %s", MZM_PORT_VERSION_LABEL, Port_Updater_GetRemoteTag());
             break;
         case UPDATER_PROMPT_PROGRESS:
             title = es ? "ACTUALIZANDO" : "UPDATING";
@@ -4435,7 +4430,7 @@ static void RenderOptionsView(void) {
                C2D_Color32(150, 230, 255, 255), C2D_Color32(16, 44, 64, 255), C2D_Color32(60, 130, 180, 255));
 
     /* Footer */
-    DrawTextCentered(160.0f, 212.0f, 1.0f, "METROID ZERO MISSION 3DS " MZM_PORT_VERSION, C2D_Color32(90, 115, 145, 255));
+    DrawTextCentered(160.0f, 212.0f, 1.0f, "METROID ZERO MISSION 3DS " MZM_PORT_VERSION_LABEL, C2D_Color32(90, 115, 145, 255));
 
     /* Render active modal on top */
     if (sShowDisplayModal) RenderDisplayModal(lang);
