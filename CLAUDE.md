@@ -22,6 +22,14 @@ earlier convention. Convert a file's comments/identifiers to English **as you
 touch it** for other reasons, not as a standalone task. User-facing UI strings and
 prose docs can stay as they are until their file is otherwise being reworked.
 
+## Save states
+
+Before adding, renaming or changing a global in `src/` (or anything the save
+thread or audio touches), read `docs/3ds-save-states.md`: states are saved by
+variable name and their host pointers are rebuilt on load, so a global that
+holds a pointer or a runtime handle may need a rule in
+`platform/3ds/source/port_state_ptrs.c`.
+
 ## Git remotes: `origin` is the one that matters
 
 `origin` is `tinaut1986/mzm` (this project). `upstream` is `metroidret/mzm`, the

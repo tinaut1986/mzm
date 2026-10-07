@@ -14,6 +14,7 @@ typedef enum {
     BOTTOM_TAB_DEBUG,
     BOTTOM_TAB_OPTIONS,
     BOTTOM_TAB_STATE,
+    BOTTOM_TAB_ACHIEVEMENTS,   /* appended: the tab index is saved in the config */
     BOTTOM_TAB_COUNT
 } PortBottomTab;
 

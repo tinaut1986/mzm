@@ -16,6 +16,8 @@ CC        := $(DEVKITARM)/bin/arm-none-eabi-gcc
 CXX       := $(DEVKITARM)/bin/arm-none-eabi-g++
 LD        := $(DEVKITARM)/bin/arm-none-eabi-gcc
 NM        := $(DEVKITARM)/bin/arm-none-eabi-nm
+OBJCOPY   := $(DEVKITARM)/bin/arm-none-eabi-objcopy
+READELF   := $(DEVKITARM)/bin/arm-none-eabi-readelf
 SMDHTOOL  := $(DEVKITPRO)/tools/bin/smdhtool
 3DSXTOOL  := $(DEVKITPRO)/tools/bin/3dsxtool
 
@@ -117,6 +119,10 @@ SRCS_3DS := \
 	$(CURDIR)/source/port_gba_screen_fx.c \
 	$(CURDIR)/source/port_gba_bezel.c \
 	$(CURDIR)/source/port_gba_bezel_data.c \
+	$(CURDIR)/source/port_state_thumb.c \
+	$(CURDIR)/source/port_state_blob.c \
+	$(CURDIR)/source/port_state_vars.c \
+	$(CURDIR)/source/port_state_ptrs.c \
 	$(CURDIR)/source/port_wide_view.c
 
 # rcheevos: the official RetroAchievements library, vendored under
@@ -386,7 +392,7 @@ print-version:
 # bug so far has actually lived. Run them before deploying:
 #   make -C platform/3ds test
 TEST_CC ?= cc
-test:
+test: test-state
 	@$(TEST_CC) -std=c11 -O1 -Wall -Wextra -Werror -I$(CURDIR)/source \
 		-o $(BUILD)/stereo_depth_test \
 		$(CURDIR)/tests/stereo_depth_test.c $(CURDIR)/source/port_stereo_depth.c \
@@ -406,6 +412,18 @@ test:
 		-o $(BUILD)/updater_parse_test \
 		$(CURDIR)/tests/updater_parse_test.c $(CURDIR)/source/port_updater_parse.c
 	@$(BUILD)/updater_parse_test
+
+# Save state pointer relocation, on its own so it runs without the rest.
+.PHONY: test-state
+test-state:
+	@# The save state pointer codec stores 32-bit host pointers, so it is tested as a
+	@# 32-bit program (needs a 32-bit libc: gcc-multilib).
+	@$(TEST_CC) -m32 -std=gnu11 -O1 -Wall -Wno-pointer-to-int-cast -Wno-int-to-pointer-cast -DMZM_3DS \
+		-I$(ROOT)/include -I$(ROOT)/port -I$(ROOT) -I$(ROOT)/port/generated/shadow -I$(CURDIR)/source \
+		-Wl,--defsym,__ss_data_end=__ss_data_start+0x400 -Wl,--defsym,__ss_bss_end=__ss_bss_start+0x400 \
+		-o $(BUILD)/state_ptrs_test \
+		$(CURDIR)/tests/state_ptrs_test.c $(CURDIR)/source/port_state_ptrs.c $(CURDIR)/source/port_state_vars.c
+	@$(BUILD)/state_ptrs_test
 
 # Reference renderer for the GPU-renderer regression harness: renders the
 # PPU states in a fetched mzm-rec-NN.bin through the port's own CPU PPU and
@@ -459,6 +477,7 @@ $(TARGET).elf: $(C_OBJS)
 	@echo "Linking ELF: $(notdir $@)"
 	@for f in $(C_OBJS); do cygpath -m "$$f" 2>/dev/null || echo "$$f"; done > $(BUILD)/objects.rsp
 	@$(LD) $(LDFLAGS) @$(BUILD)/objects.rsp $(LIBS) -o $@
+	@python3 $(ROOT)/tools/gen_state_vars.py $@ --nm $(NM) --objcopy $(OBJCOPY) --readelf $(READELF)
 	@$(NM) -CSn $@ > $(BUILD)/mzm-3ds.lst
 	@echo "Build successful: $(TARGET).elf"
 

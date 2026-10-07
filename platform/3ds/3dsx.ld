@@ -77,7 +77,9 @@ SECTIONS
 	 * rebuild that does not touch the decomp keeps __ss_data_start (and the
 	 * fingerprint) put, so old slots still load. The ASSERT fires if .text +
 	 * .rodata ever reach the pinned base -- raise it then (that one rebuild
-	 * invalidates slots, as before). Headroom at time of writing: ~1 MiB. */
+	 * invalidates slots, as before). Headroom at time of writing: ~1 MiB.
+	 * Format 4 states (docs/3ds-save-states.md) do not depend on this; the pin
+	 * only keeps the older format 3 slots loadable. */
 	ASSERT(. <= 0x00500000, "3dsx.ld: .text/.rodata overflowed the pinned .data base (0x500000) -- raise it")
 	. = 0x00500000;
 
