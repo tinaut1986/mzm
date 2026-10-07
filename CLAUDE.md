@@ -60,6 +60,12 @@ on `release/*` is itself the statement "not stable yet".
 
 ### Publishing
 
+**First, for either path: write `docs/release-notes/<tag>.md`** (see "Release
+notes" below) on a topic branch, show it to the user, and merge it into the
+release branch *before* the tag is created. The tag must contain the file, and
+a notes file is never added after tagging. Do this unprompted whenever a tag is
+about to be made; the steps below assume it is already in the branch.
+
 Two paths. Which one applies depends on whether the branch is ready to be called
 stable, so **ask** rather than assuming.
 
