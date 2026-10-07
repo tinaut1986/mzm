@@ -54,3 +54,11 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 - **Repository**: <https://github.com/RetroAchievements/rcheevos>
 - **License**: MIT License
 - **Role**: RetroAchievements runtime library and parser.
+
+---
+
+## 6. stb_image (`nothings/stb`)
+
+- **Repository**: <https://github.com/nothings/stb>
+- **License**: MIT or Public Domain (dual-licensed; see the end of `third_party/stb/stb_image.h`)
+- **Role**: PNG decoding of RetroAchievements badges downloaded at runtime (`platform/3ds/source/port_retroachievements_3ds.c`).

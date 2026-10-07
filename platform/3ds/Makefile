@@ -316,6 +316,7 @@ INCLUDES := \
 	-I$(BUILD)/shaders \
 	-I$(ROOT)/third_party/rcheevos/include \
 	-I$(ROOT)/third_party/rcheevos/src/rhash \
+	-I$(ROOT)/third_party/stb \
 	-I$(CTRULIB)/include \
 	-I$(PORTLIBS)/include
 

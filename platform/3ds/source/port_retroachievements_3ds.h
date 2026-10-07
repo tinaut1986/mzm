@@ -135,7 +135,13 @@ void Port_RA_SetListDescending(bool descending);
 bool Port_RA_GetListDescending(void);
 uint32_t Port_RA_GetViewCount(void);
 const RetroAchievementItem* Port_RA_GetViewAchievement(uint32_t index);
+/* 20x20 C2D_Color32 pixels for a badge, or NULL while it is not available
+ * (the caller draws a placeholder). Bundled copies win; anything else is
+ * fetched from RA's media server on the worker thread the first time it is
+ * asked for and cached on the SD card, so a badge only ever downloads once. */
 const uint32_t* Port_RA_GetBadgePixels(const char* badgeName);
+/* The compiled-in subset only (port_ra_badges_data.c). */
+const uint32_t* Port_RA_GetBundledBadge(const char* badgeName);
 
 /* Unlock toast overlay. RenderToastOverlay draws it on the BOTTOM screen
  * (called from the bottom UI) and no-ops when the top-screen mode is on;

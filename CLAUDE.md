@@ -91,6 +91,31 @@ second, wrongly-named page instead of promoting the existing one. Dispatching on
 the tag gives the bare `vX.Y.Z`, and `main` now reaches it, so the same page
 flips to stable.
 
+### Release notes (shown in the 3DS updater)
+
+Every tag needs `docs/release-notes/vX.Y.Z.md`, written **before** tagging.
+The CI copies it into the release body between `<!-- mzm-notes -->` markers;
+the console's updater (UPDATES > WHAT'S NEW) reads that block from the GitHub
+releases response and shows the notes of every release newer than the build
+the player has installed. A missing file only raises a CI warning, and the
+console then shows "(no notes for this version)" for that release.
+
+How to write it:
+
+- **For the player, in English**, 3 to 6 short lines, each starting with `- `.
+  What changed in play, not how: no file names, no issue jargon. Draft it from
+  `git log <previous tag>..HEAD`, then condense. The user reviews it in the diff.
+- Plain text only: the console draws it with a 5x7 bitmap font, so no tables,
+  images or links; `**bold**` and backticks are stripped, `#` headings dropped.
+- **A stable release lists everything since the previous *stable* tag**,
+  including what already shipped in betas, because stable players never see the
+  beta pages. A beta lists only what is new since the previous tag.
+- Keep each file under ~2.5 KB (the updater reads at most 3 KB per release and
+  8 releases per check).
+
+`tools/update-mock-server.py` serves releases with such a block, to try the
+viewer on a console without publishing anything.
+
 ### How the CI picks the channel
 
 `.github/workflows/build-release.yml` runs on any `v*` tag push and on manual
