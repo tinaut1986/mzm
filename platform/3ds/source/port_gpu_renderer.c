@@ -5242,7 +5242,6 @@ void Port_GpuRenderer_DrawFrame(void) {
          * (untinted vertex colour == nothing) instead of the atlas env.
          * DrawFpsOverlay flushes first and resets the TEV itself. */
         PlatformGpu3DS_DrawFpsOverlay(floorf(eyeSign * slider3d * (+2.5f) + 0.5f));
-        PlatformGpu3DS_DrawNoticeOverlay(floorf(eyeSign * slider3d * (+2.5f) + 0.5f));
 
         /* RetroAchievements unlock toast, when the player put it on the top
          * screen. Same frontmost parallax as the FPS box so it floats in

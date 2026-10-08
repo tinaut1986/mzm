@@ -45,6 +45,17 @@ bool Port_BottomUI_WantsRedraw(void);
  * throttle -- call on any change the user should see immediately. */
 void Port_BottomUI_MarkDirty(void);
 
+/* A short message floating over the bottom screen for a few seconds, in the
+ * bottom UI's own style. Safe to call from the game-logic thread; a new one
+ * replaces the one showing. */
+void Port_BottomUI_ShowNotice(const char* title, const char* body);
+/* Options > NES Metroid: the GBA hands the machine to an emulator in the ROM
+ * that the port cannot run, so the option only says so. */
+void Port_NesMetroid_ShowUnavailable(void);
+/* Options > Metroid Fusion link, while the gallery is still locked: unlocking
+ * it takes a GBA link-cable session the 3DS cannot hold. */
+void Port_FusionLink_ShowUnavailable(void);
+
 /* Returns true if the Debug tab should be visible (debug builds only).
  * In production builds PORT_DEBUG_TOOLS_ACTIVE is not defined, so this
  * returns false and the tab is hidden from the tab bar. */

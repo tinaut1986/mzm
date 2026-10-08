@@ -3283,11 +3283,8 @@ static u8 OptionsNesMetroidHandler(void)
                  * Back out to the options list instead. */
 #ifdef MZM_3DS
                 {
-                    extern void Port_ShowNotice(const char* line1, const char* line2, unsigned durationMs);
-                    if (gLanguage == LANGUAGE_SPANISH)
-                        Port_ShowNotice("METROID DE NES NO ESTA", "DISPONIBLE EN ESTE PORT", 3000);
-                    else
-                        Port_ShowNotice("NES METROID IS NOT", "AVAILABLE IN THIS PORT", 3000);
+                    extern void Port_NesMetroid_ShowUnavailable(void);
+                    Port_NesMetroid_ShowUnavailable();
                 }
 #endif
                 FILE_SELECT_DATA.subMenuTimer = 0;
@@ -4167,6 +4164,18 @@ static u8 OptionsMetroidFusionLinkHandler(void)
             {
                 FILE_SELECT_DATA.subMenuStage = 1;
             }
+#ifdef MZM_3DS
+            else
+            {
+                /* Unlocking the gallery means a link-cable session with
+                 * Metroid Fusion (cable_link.c drives the GBA serial port
+                 * directly); a 3DS has no such port. Back out instead. */
+                extern void Port_FusionLink_ShowUnavailable(void);
+                Port_FusionLink_ShowUnavailable();
+                FILE_SELECT_DATA.subMenuTimer = 0;
+                return TRUE;
+            }
+#else
             else
             {
                 FILE_SELECT_DATA.optionsOam[OPTIONS_OAM_HUGE_PANEL].boundBackground = 1;
@@ -4197,6 +4206,7 @@ static u8 OptionsMetroidFusionLinkHandler(void)
 
                 FILE_SELECT_DATA.subMenuStage = 2;
             }
+#endif
 
             FILE_SELECT_DATA.subMenuTimer = 0;
             break;
