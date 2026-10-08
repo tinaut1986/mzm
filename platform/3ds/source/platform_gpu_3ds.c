@@ -218,50 +218,6 @@ void PlatformGpu3DS_DrawFpsOverlay(float eyeXOffset) {
     PlatformGpu3DS_DrawStatusText(boxX + 3.0f, boxY + 4.0f, 1.5f, label);
 }
 
-#define NOTICE_LINE_MAX 48
-static char sNoticeLines[2][NOTICE_LINE_MAX];
-static volatile u64 sNoticeUntilMs;
-
-void Port_ShowNotice(const char* line1, const char* line2, unsigned durationMs) {
-    snprintf(sNoticeLines[0], NOTICE_LINE_MAX, "%s", line1 ? line1 : "");
-    snprintf(sNoticeLines[1], NOTICE_LINE_MAX, "%s", line2 ? line2 : "");
-    /* Written last: the render thread only reads the lines while this is
-     * in the future. */
-    sNoticeUntilMs = osGetTime() + durationMs;
-}
-
-/* Same contract as PlatformGpu3DS_DrawFpsOverlay: inside an active C2D
- * scene, `eyeXOffset` being the per-eye parallax shift. */
-void PlatformGpu3DS_DrawNoticeOverlay(float eyeXOffset) {
-    if (osGetTime() >= sNoticeUntilMs) return;
-    C2D_Flush();
-    PlatformGpu3DS_ResetSolidTexEnv();
-
-    const float scale = 2.0f;
-    const float glyphW = 6.0f * scale;
-    const float lineH = 7.0f * scale;
-    const float pad = 8.0f;
-    const float gap = 6.0f;
-    const int lines = sNoticeLines[1][0] ? 2 : 1;
-
-    size_t widest = 0;
-    for (int i = 0; i < lines; ++i) {
-        size_t len = strlen(sNoticeLines[i]);
-        if (len > widest) widest = len;
-    }
-    const float boxW = (float)widest * glyphW - scale + 2.0f * pad;
-    const float boxH = lines * lineH + (lines - 1) * gap + 2.0f * pad;
-    const float boxX = (400.0f - boxW) / 2.0f + eyeXOffset;
-    const float boxY = (240.0f - boxH) / 2.0f;
-
-    C2D_DrawRectSolid(boxX, boxY, 0.7f, boxW, boxH, C2D_Color32(0, 0, 0, 220));
-    for (int i = 0; i < lines; ++i) {
-        const float lineW = (float)strlen(sNoticeLines[i]) * glyphW - scale;
-        PlatformGpu3DS_DrawStatusText(boxX + (boxW - lineW) / 2.0f,
-                                      boxY + pad + i * (lineH + gap), scale, sNoticeLines[i]);
-    }
-}
-
 void PlatformGpu3DS_DrawStatusText(float x, float y, float scale, const char* text) {
     const uint32_t color = C2D_Color32(255, 255, 255, 255);
     for (; *text; ++text, x += 6.0f * scale) {
@@ -646,7 +602,6 @@ static void DrawTopImageStereo(const uint32_t* leftPixels, const uint32_t* right
         PortGbaBezel_Draw(sTopTarget);
     }
     PlatformGpu3DS_DrawFpsOverlay(0.0f);
-    PlatformGpu3DS_DrawNoticeOverlay(0.0f);
 
     if (sTopRightTarget) {
         C2D_TargetClear(sTopRightTarget, C2D_Color32(0, 0, 0, 255));
@@ -658,7 +613,6 @@ static void DrawTopImageStereo(const uint32_t* leftPixels, const uint32_t* right
             PortGbaBezel_Draw(sTopRightTarget);
         }
         PlatformGpu3DS_DrawFpsOverlay(0.0f);
-        PlatformGpu3DS_DrawNoticeOverlay(0.0f);
     }
 }
 

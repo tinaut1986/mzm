@@ -3283,11 +3283,8 @@ static u8 OptionsNesMetroidHandler(void)
                  * Back out to the options list instead. */
 #ifdef MZM_3DS
                 {
-                    extern void Port_ShowNotice(const char* line1, const char* line2, unsigned durationMs);
-                    if (gLanguage == LANGUAGE_SPANISH)
-                        Port_ShowNotice("METROID DE NES NO ESTA", "DISPONIBLE EN ESTE PORT", 3000);
-                    else
-                        Port_ShowNotice("NES METROID IS NOT", "AVAILABLE IN THIS PORT", 3000);
+                    extern void Port_NesMetroid_ShowUnavailable(void);
+                    Port_NesMetroid_ShowUnavailable();
                 }
 #endif
                 FILE_SELECT_DATA.subMenuTimer = 0;

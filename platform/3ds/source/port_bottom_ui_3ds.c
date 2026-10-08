@@ -207,6 +207,50 @@ static uint32_t sStatusPollCtr = 0;
 
 void Port_BottomUI_MarkDirty(void) { sBottomUiDirty = true; }
 
+/* --- Notice toast ----------------------------------------------------------
+ * A short, non-blocking message floating over the bottom screen, e.g. for a
+ * game option the port cannot offer. Raised from the game-logic thread and
+ * drawn by the present thread: the text is copied first and the start time
+ * published last, so a half-written message is never drawn. It slides in,
+ * holds, then fades out; Port_BottomUI_FrameTick forces a redraw on every
+ * frame of those two animations and once more when it ends. */
+#define NOTICE_SHOW_MS 3500u
+#define NOTICE_ENTER_MS 180u
+#define NOTICE_FADE_MS 900u
+
+static char sNoticeTitle[40];
+static char sNoticeBody[64];
+static volatile uint64_t sNoticeStartMs; /* 0 = no notice */
+
+void Port_BottomUI_ShowNotice(const char* title, const char* body) {
+    snprintf(sNoticeTitle, sizeof(sNoticeTitle), "%s", title ? title : "");
+    snprintf(sNoticeBody, sizeof(sNoticeBody), "%s", body ? body : "");
+    __atomic_store_n(&sNoticeStartMs, osGetTime(), __ATOMIC_RELEASE);
+    sBottomUiDirty = true;
+}
+
+/* Milliseconds since the notice appeared, or -1 when none is showing. */
+static int NoticeElapsedMs(void) {
+    const uint64_t start = __atomic_load_n(&sNoticeStartMs, __ATOMIC_ACQUIRE);
+    if (start == 0) return -1;
+    const uint64_t elapsed = osGetTime() - start;
+    return elapsed < NOTICE_SHOW_MS ? (int)elapsed : -1;
+}
+
+static void NoticeTick(void) {
+    const uint64_t start = __atomic_load_n(&sNoticeStartMs, __ATOMIC_ACQUIRE);
+    if (start == 0) return;
+    const int elapsed = NoticeElapsedMs();
+    if (elapsed < 0) {
+        /* Clear it only if no newer notice replaced it meanwhile. */
+        uint64_t expected = start;
+        __atomic_compare_exchange_n(&sNoticeStartMs, &expected, 0, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE);
+        sBottomUiDirty = true; /* one last frame without it */
+    } else if (elapsed < (int)NOTICE_ENTER_MS || elapsed >= (int)(NOTICE_SHOW_MS - NOTICE_FADE_MS)) {
+        sBottomUiDirty = true;
+    }
+}
+
 /* Icon-tab layout, shared by the renderer and the touch handler (defined
  * lower, used by both). */
 typedef struct { float x, w; PortBottomTab tab; int icon; } BottomTabSlot;
@@ -231,6 +275,7 @@ void Port_BottomUI_FrameTick(void) {
     extern void Port_RA_Update(void); /* port_retroachievements_3ds.h, included below */
     ++sFrameCounter;
     Port_RA_Update();
+    NoticeTick();
 
     /* The prompt is raised by the updater's worker thread: redraw when it (or
      * the install progress it shows) changes instead of waiting for a tap. */
@@ -5717,6 +5762,62 @@ static void StateTapReleased(void) {
 
 /* "Wait" message over whatever tab is showing while the SD card is read or
  * written. The thumbnail read is too short to deserve it. */
+/* The notice raised by Port_BottomUI_ShowNotice: the same frame and text
+ * colours as the rest of the bottom screen's dialogs, an amber warning
+ * accent, centred and floating over whatever tab is showing. */
+static void RenderNoticeToast(void) {
+    const int elapsed = NoticeElapsedMs();
+    if (elapsed < 0) return;
+
+    float alpha = 1.0f;
+    float rise = 0.0f;
+    if (elapsed < (int)NOTICE_ENTER_MS) {
+        const float t = (float)elapsed / (float)NOTICE_ENTER_MS;
+        const float ease = 1.0f - (1.0f - t) * (1.0f - t); /* ease-out */
+        alpha = ease;
+        rise = (1.0f - ease) * 10.0f;
+    } else if (elapsed >= (int)(NOTICE_SHOW_MS - NOTICE_FADE_MS)) {
+        alpha = (float)(NOTICE_SHOW_MS - (unsigned)elapsed) / (float)NOTICE_FADE_MS;
+    }
+#define NOTICE_RGBA(r, g, b, a) C2D_Color32((r), (g), (b), (uint8_t)((float)(a) * alpha))
+
+    const float icon = 22.0f;
+    const float padX = 10.0f;
+    const float gap = 10.0f;
+    const float titleW = (float)Utf8CharCount(sNoticeTitle) * 6.0f - 1.0f;
+    const float bodyW = (float)Utf8CharCount(sNoticeBody) * 6.0f - 1.0f;
+    const float textW = titleW > bodyW ? titleW : bodyW;
+    const float boxW = (float)(int)(4.0f + padX + icon + gap + textW + padX);
+    const float boxH = 44.0f;
+    const float x = (float)(int)((320.0f - boxW) / 2.0f);
+    const float y = (float)(int)((240.0f - boxH) / 2.0f + rise);
+
+    C2D_DrawRectSolid(x + 3.0f, y + 3.0f, 0.97f, boxW, boxH, NOTICE_RGBA(0, 0, 0, 110));
+    C2D_DrawRectSolid(x, y, 0.97f, boxW, boxH, NOTICE_RGBA(120, 150, 210, 255));
+    C2D_DrawRectSolid(x + 1.0f, y + 1.0f, 0.97f, boxW - 2.0f, boxH - 2.0f, NOTICE_RGBA(10, 14, 24, 245));
+    C2D_DrawRectSolid(x + 1.0f, y + 1.0f, 0.97f, 3.0f, boxH - 2.0f, NOTICE_RGBA(245, 175, 45, 255));
+
+    /* Warning badge: an amber tile with clipped corners and a "!". */
+    const float ix = x + 4.0f + padX;
+    const float iy = y + (boxH - icon) / 2.0f;
+    C2D_DrawRectSolid(ix + 1.0f, iy, 0.97f, icon - 2.0f, icon, NOTICE_RGBA(245, 175, 45, 255));
+    C2D_DrawRectSolid(ix, iy + 1.0f, 0.97f, icon, icon - 2.0f, NOTICE_RGBA(245, 175, 45, 255));
+    DrawText(ix + (icon - 10.0f) / 2.0f, iy + (icon - 14.0f) / 2.0f, 2.0f, "!", NOTICE_RGBA(10, 14, 24, 255));
+
+    const float tx = ix + icon + gap;
+    DrawText(tx, y + 10.0f, 1.0f, sNoticeTitle, NOTICE_RGBA(255, 215, 0, 255));
+    DrawText(tx, y + 26.0f, 1.0f, sNoticeBody, NOTICE_RGBA(190, 210, 240, 255));
+#undef NOTICE_RGBA
+}
+
+void Port_NesMetroid_ShowUnavailable(void) {
+    if (GetLang() == 6) {
+        Port_BottomUI_ShowNotice("NO DISPONIBLE", "METROID DE NES NO ESTÁ EN ESTE PORT");
+    } else {
+        Port_BottomUI_ShowNotice("NOT AVAILABLE", "NES METROID IS NOT IN THIS PORT");
+    }
+}
+
 static void RenderBusyOverlay(void) {
     const PortSaveStateJob job = Port_SaveState_CurrentJob();
     if (job == PORT_SS_JOB_NONE || job == PORT_SS_JOB_THUMB) return;
@@ -5794,6 +5895,7 @@ void Port_BottomUI_Render(void) {
     Port_RA_RenderToastOverlay();
     RenderUpdatePrompt(GetLang());
     RenderBusyOverlay();
+    RenderNoticeToast();
 
     /* L+R+START scene recorder indicator (platform_gpu_3ds.c) -- drawn last,
      * on top of whichever tab is active, so it's never hidden by one. Blinks
