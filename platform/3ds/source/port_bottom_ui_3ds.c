@@ -5818,6 +5818,14 @@ void Port_NesMetroid_ShowUnavailable(void) {
     }
 }
 
+void Port_FusionLink_ShowUnavailable(void) {
+    if (GetLang() == 6) {
+        Port_BottomUI_ShowNotice("NO DISPONIBLE", "LA CONEXIÓN CON FUSION PIDE CABLE LINK");
+    } else {
+        Port_BottomUI_ShowNotice("NOT AVAILABLE", "FUSION LINK NEEDS A GBA LINK CABLE");
+    }
+}
+
 static void RenderBusyOverlay(void) {
     const PortSaveStateJob job = Port_SaveState_CurrentJob();
     if (job == PORT_SS_JOB_NONE || job == PORT_SS_JOB_THUMB) return;

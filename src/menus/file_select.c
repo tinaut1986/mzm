@@ -4164,6 +4164,18 @@ static u8 OptionsMetroidFusionLinkHandler(void)
             {
                 FILE_SELECT_DATA.subMenuStage = 1;
             }
+#ifdef MZM_3DS
+            else
+            {
+                /* Unlocking the gallery means a link-cable session with
+                 * Metroid Fusion (cable_link.c drives the GBA serial port
+                 * directly); a 3DS has no such port. Back out instead. */
+                extern void Port_FusionLink_ShowUnavailable(void);
+                Port_FusionLink_ShowUnavailable();
+                FILE_SELECT_DATA.subMenuTimer = 0;
+                return TRUE;
+            }
+#else
             else
             {
                 FILE_SELECT_DATA.optionsOam[OPTIONS_OAM_HUGE_PANEL].boundBackground = 1;
@@ -4194,6 +4206,7 @@ static u8 OptionsMetroidFusionLinkHandler(void)
 
                 FILE_SELECT_DATA.subMenuStage = 2;
             }
+#endif
 
             FILE_SELECT_DATA.subMenuTimer = 0;
             break;
