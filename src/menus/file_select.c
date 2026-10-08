@@ -3277,8 +3277,23 @@ static u8 OptionsNesMetroidHandler(void)
 
             if (FILE_SELECT_DATA.subMenuTimer > CONVERT_SECONDS(1.f / 6))
             {
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+                /* Stage 4 jumps into the Classic NES emulator, which is GBA
+                 * ARM code stored in the ROM; the port cannot execute it.
+                 * Back out to the options list instead. */
+#ifdef MZM_3DS
+                {
+                    extern void Port_NesMetroid_ShowUnavailable(void);
+                    Port_NesMetroid_ShowUnavailable();
+                }
+#endif
+                FILE_SELECT_DATA.subMenuTimer = 0;
+                FILE_SELECT_DATA.subMenuStage = 0;
+                return TRUE;
+#else
                 FILE_SELECT_DATA.subMenuStage++;
                 FILE_SELECT_DATA.subMenuTimer = 0;
+#endif
             }
             break;
 
@@ -4149,6 +4164,18 @@ static u8 OptionsMetroidFusionLinkHandler(void)
             {
                 FILE_SELECT_DATA.subMenuStage = 1;
             }
+#ifdef MZM_3DS
+            else
+            {
+                /* Unlocking the gallery means a link-cable session with
+                 * Metroid Fusion (cable_link.c drives the GBA serial port
+                 * directly); a 3DS has no such port. Back out instead. */
+                extern void Port_FusionLink_ShowUnavailable(void);
+                Port_FusionLink_ShowUnavailable();
+                FILE_SELECT_DATA.subMenuTimer = 0;
+                return TRUE;
+            }
+#else
             else
             {
                 FILE_SELECT_DATA.optionsOam[OPTIONS_OAM_HUGE_PANEL].boundBackground = 1;
@@ -4179,6 +4206,7 @@ static u8 OptionsMetroidFusionLinkHandler(void)
 
                 FILE_SELECT_DATA.subMenuStage = 2;
             }
+#endif
 
             FILE_SELECT_DATA.subMenuTimer = 0;
             break;
