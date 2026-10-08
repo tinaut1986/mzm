@@ -43,6 +43,12 @@ void PlatformGpu3DS_SubmitLock_Release(void);
 
 void PlatformGpu3DS_DrawStatusText(float x, float y, float scale, const char* text);
 void PlatformGpu3DS_DrawFpsOverlay(float eyeXOffset);
+/* A centred two-line notice on the top screen for `durationMs`. Callable
+ * from the game thread; drawn by PlatformGpu3DS_DrawNoticeOverlay, which
+ * every top-screen path calls after the FPS overlay. Only the glyphs of
+ * PlatformGpu3DS_DrawStatusText render (A-Z minus Q/Z, digits, :.-/%). */
+void Port_ShowNotice(const char* line1, const char* line2, unsigned durationMs);
+void PlatformGpu3DS_DrawNoticeOverlay(float eyeXOffset);
 void PlatformGpu3DS_BeginTopStereo(const uint32_t* leftPixels, const uint32_t* rightPixels, unsigned width);
 /* Returns true only when a Citro3D frame was active and submitted. */
 bool PlatformGpu3DS_EndBottom(const uint32_t* pixels, bool changed);
