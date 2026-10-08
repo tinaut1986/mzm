@@ -3277,8 +3277,26 @@ static u8 OptionsNesMetroidHandler(void)
 
             if (FILE_SELECT_DATA.subMenuTimer > CONVERT_SECONDS(1.f / 6))
             {
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+                /* Stage 4 jumps into the Classic NES emulator, which is GBA
+                 * ARM code stored in the ROM; the port cannot execute it.
+                 * Back out to the options list instead. */
+#ifdef MZM_3DS
+                {
+                    extern void Port_ShowNotice(const char* line1, const char* line2, unsigned durationMs);
+                    if (gLanguage == LANGUAGE_SPANISH)
+                        Port_ShowNotice("METROID DE NES NO ESTA", "DISPONIBLE EN ESTE PORT", 3000);
+                    else
+                        Port_ShowNotice("NES METROID IS NOT", "AVAILABLE IN THIS PORT", 3000);
+                }
+#endif
+                FILE_SELECT_DATA.subMenuTimer = 0;
+                FILE_SELECT_DATA.subMenuStage = 0;
+                return TRUE;
+#else
                 FILE_SELECT_DATA.subMenuStage++;
                 FILE_SELECT_DATA.subMenuTimer = 0;
+#endif
             }
             break;
 
