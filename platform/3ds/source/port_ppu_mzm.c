@@ -1377,20 +1377,51 @@ static bool PortPpuMzm_DoorMapTile(int area, int door, int* outX, int* outY) {
     return true;
 }
 
-/* Door whose map tile is nearest to (tileX, tileY), or -1 if the area has
- * none within `maxDist` tiles. Nearest-match rather than exact because a
- * room can span several map tiles while its doors only sit on the tiles at
- * its edges -- tapping the middle of a big room should still work. */
+/* The map rectangle a room covers, in map tiles: its map origin plus its size in screens (the
+ * clipdata's width and height in blocks, rounded up to whole screens). False for a room the
+ * ROM does not describe. */
+static bool PortPpuMzm_RoomMapRect(int area, int room, int* x0, int* y0, int* x1, int* y1) {
+    const struct RoomEntryRom* pRoom = &sAreaRoomEntryPointers[area][room];
+    const u8* clip = GBA_RESOLVE(pRoom->pClipData);
+    if (clip == NULL) return false;
+    const int widthBlocks = clip[0], heightBlocks = clip[1];
+    if (widthBlocks == 0 || heightBlocks == 0) return false;
+    *x0 = pRoom->mapX;
+    *y0 = pRoom->mapY;
+    *x1 = *x0 + (widthBlocks + SCREEN_SIZE_X_BLOCKS - 1) / SCREEN_SIZE_X_BLOCKS;
+    *y1 = *y0 + (heightBlocks + SCREEN_SIZE_Y_BLOCKS - 1) / SCREEN_SIZE_Y_BLOCKS;
+    return true;
+}
+
+/* The door to warp to for a tap on map tile (tileX, tileY): the nearest door of the room that
+ * covers that tile. The nearest door of ANY room, which this used to pick, sends a tap in a
+ * tall or wide room to a neighbour whose door happens to sit closer (a tap in the room above
+ * landed in the room below). Falls back to the nearest door within maxDist when no described
+ * room covers the tile. */
 int PortPpuMzm_DebugFindDoorNearMapTile(int area, int tileX, int tileY, int maxDist) {
-    int best = -1;
-    int bestDist = maxDist * maxDist + 1;
+    int best = -1, bestDist = 0x7FFFFFFF;
     int count = PortPpuMzm_DebugGetDoorCount(area);
+    for (int d = 0; d < count; ++d) {
+        int x0, y0, x1, y1, dx, dy;
+        if (!PortPpuMzm_DoorMapTile(area, d, &dx, &dy)) continue;
+        const int room = PortPpuMzm_DebugGetDoorRoom(area, d);
+        if (!PortPpuMzm_RoomMapRect(area, room, &x0, &y0, &x1, &y1)) continue;
+        if (tileX < x0 || tileX >= x1 || tileY < y0 || tileY >= y1) continue;
+        const int ddx = dx - tileX, ddy = dy - tileY;
+        const int dist = ddx * ddx + ddy * ddy;
+        if (dist < bestDist) {
+            bestDist = dist;
+            best = d;
+        }
+    }
+    if (best >= 0) return best;
+
+    bestDist = maxDist * maxDist + 1;
     for (int d = 0; d < count; ++d) {
         int dx, dy;
         if (!PortPpuMzm_DoorMapTile(area, d, &dx, &dy)) continue;
-        int ddx = dx - tileX;
-        int ddy = dy - tileY;
-        int dist = ddx * ddx + ddy * ddy;
+        const int ddx = dx - tileX, ddy = dy - tileY;
+        const int dist = ddx * ddx + ddy * ddy;
         if (dist < bestDist) {
             bestDist = dist;
             best = d;
@@ -1399,8 +1430,6 @@ int PortPpuMzm_DebugFindDoorNearMapTile(int area, int tileX, int tileY, int maxD
     return best;
 }
 
-/* Warps to whatever door is nearest the given map tile. Returns the door id
- * used, or -1 when the area has nothing close enough. */
 int PortPpuMzm_DebugRequestWarpToMapTile(int area, int tileX, int tileY) {
     int door = PortPpuMzm_DebugFindDoorNearMapTile(area, tileX, tileY, 6);
     if (door < 0) return -1;
