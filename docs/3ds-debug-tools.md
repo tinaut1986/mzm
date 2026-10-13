@@ -734,7 +734,8 @@ BUFFER on, and a thread busy in one command for 30 s
 ### Installing a build over FTP
 
 `SITE INSTALL <path>` installs a CIA of this game that is already on the SD card over the running
-game and relaunches into it (the FTP server comes back on with it). `python3 tools/build_3ds.py
+game and relaunches into it 10 s later through libctru's chainloader (jumping at once made the
+system loader crash out of memory); the FTP server comes back on with it. `python3 tools/build_3ds.py
 --install IP` builds, uploads to `/3ds/Metroid Zero Mission 3DS/update/dev.cia` and installs in
 one go; the interactive menu offers it as "Instalar sobre el juego en marcha". Unsaved progress is
 lost. While a `.cia` arrives and while it installs, the bottom screen shows a box in the middle
