@@ -1,6 +1,7 @@
 #pragma once
 // The socket service, shared by the updater and the debug FTP server. socInit can run only once
-// at a time, so both take it through this reference count; the last release shuts it down.
+// at a time, so both take it through this reference count. The first acquire starts the service
+// and nothing shuts it down (socExit could hang, see the .c); the process exit closes it.
 // Thread-safe.
 #include <stdbool.h>
 

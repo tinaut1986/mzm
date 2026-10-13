@@ -17,8 +17,9 @@
 //
 // Other SITE commands are the remote control, debug_link_3ds.h.
 //
-// Its thread runs at a lower priority than the game and blocks on the network, so it costs
-// nothing while idle.
+// Its thread runs at a lower priority than the game and, while idle, asks the network without
+// waiting and naps 10 ms between the asks: a blocking poll held up every other thread's socket
+// calls (libctru has one SOC session per process).
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -32,7 +33,15 @@ bool FtpServer_Start(void);
 bool FtpServer_StartInstallOnly(void);
 bool FtpServer_InstallOnly(void); /* serving in that mode right now */
 void FtpServer_Cancel(void);
+// Waits up to 3 s for the server thread. One that does not end is left running, and the server
+// stays off until the game restarts (status "STUCK, RESTART THE GAME"): freeing it, or the network
+// service under it, froze the game.
 void FtpServer_Stop(void);
+// Logic thread (FtpServer_Tick calls it): logs once to the SD log when the server thread has been
+// inside one command for 30 s.
+void FtpServer_WatchdogPoll(void);
+// "waiting for a command for 3.2 s", "command PEEK for 41.0 s", or "off".
+void FtpServer_DescribeStage(char *out, unsigned cap);
 bool FtpServer_Running(void);
 // "192.168.1.50:5000", or a short reason when it is not serving.
 void FtpServer_Address(char *out, unsigned cap);
