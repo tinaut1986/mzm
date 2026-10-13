@@ -10,6 +10,7 @@
 #include "platform_3ds.h"
 
 extern void Port_DebugLog(const char* msg);
+extern void Port_DebugLogFlush(void);
 #include <arpa/inet.h>
 #include <dirent.h>
 #include <errno.h>
@@ -30,7 +31,8 @@ enum {
     FTP_PATH_MAX = 512,
     FTP_LINE_MAX = 600,
     FTP_IO_SIZE = 64 * 1024,
-    FTP_POLL_MS = 250,
+    FTP_NAP_MS = 10,
+    FTP_SEND_CHUNK = 8 * 1024,
     FTP_DATA_ACCEPT_MS = 15000,
     FTP_IDLE_MS = 10 * 60 * 1000,
     FTP_PASV_FIRST = FTP_SERVER_PORT + 1,
@@ -39,6 +41,32 @@ enum {
 
 static Thread sThread;
 static volatile bool sRun;
+/* FtpServer_Stop gave up on a server thread that would not end: it is left running (freeing it
+ * or the network service under it froze the game) and no new server starts. */
+static bool sThreadStuck;
+
+/* What the server thread is doing and since when, for FtpServer_WatchdogPoll and the stop path:
+ * the game froze once on stopping a server whose thread no longer answered. sStageWaiting marks
+ * the idle waits (a client, a command), which may last as long as they like. */
+static const char* volatile sStage = "not started";
+static char sStageVerb[8];
+static volatile uint64_t sStageSince;
+static volatile bool sStageWaiting;
+static bool sStageReported;
+
+static void SetFtpStage(const char* stage, bool waiting) {
+    sStage = stage;
+    sStageWaiting = waiting;
+    sStageSince = svcGetSystemTick();
+    sStageReported = false;
+}
+
+static void DescribeStage(char* out, unsigned cap) {
+    const unsigned ms = (unsigned)((svcGetSystemTick() - sStageSince) / (SYSCLOCK_ARM11 / 1000));
+    snprintf(out, cap, "%s%s%s for %u.%u s", sStage, sStageVerb[0] && !sStageWaiting ? " " : "",
+             sStageWaiting ? "" : sStageVerb, ms / 1000, (ms % 1000) / 100);
+}
+
 static int sListen = -1;
 static volatile int sCtrl = -1;
 static volatile int sData = -1;
@@ -94,15 +122,20 @@ static void CloseSocket(int* fd) {
     }
 }
 
-/* Waits until fd is readable (or writable); false on timeout, error or stop. */
+/* Waits until fd is readable (or writable); false on timeout, error or stop.
+ * libctru sends every socket call of the process through one session with the
+ * SOC service, so a blocking poll() here held up every other thread's network
+ * call (updater, RetroAchievements) for its whole timeout. It asks without
+ * waiting and sleeps between the asks instead. */
 static bool WaitFd(int fd, short events, int timeoutMs) {
     int waited = 0;
     while (sRun) {
         struct pollfd p = { .fd = fd, .events = events, .revents = 0 };
-        int r = poll(&p, 1, FTP_POLL_MS);
+        int r = poll(&p, 1, 0);
         if (r > 0) return (p.revents & (events | POLLHUP | POLLERR)) != 0;
         if (r < 0) return false;
-        waited += FTP_POLL_MS;
+        svcSleepThread((s64)FTP_NAP_MS * 1000000);
+        waited += FTP_NAP_MS;
         if (timeoutMs > 0 && waited >= timeoutMs) return false;
     }
     return false;
@@ -111,7 +144,9 @@ static bool WaitFd(int fd, short events, int timeoutMs) {
 static bool SendAll(int fd, const char* data, size_t n) {
     while (n > 0) {
         if (!WaitFd(fd, POLLOUT, 30000)) return false;
-        ssize_t w = send(fd, data, n, 0);
+        /* A blocking send waits inside the SOC session until all of it is queued:
+         * small pieces keep that short (see WaitFd). */
+        ssize_t w = send(fd, data, n > FTP_SEND_CHUNK ? FTP_SEND_CHUNK : n, 0);
         if (w <= 0) return false;
         data += w;
         n -= (size_t)w;
@@ -390,12 +425,19 @@ static void HandleSession(int ctrl) {
     if (sRestricted) Reply(s, "220 Metroid Zero Mission 3DS FTP (install only: /3ds/Metroid Zero Mission 3DS/update).");
     else Reply(s, "220 Metroid Zero Mission 3DS debug FTP. SD card root; the game's files are in /3ds/Metroid Zero Mission 3DS/debug.");
     char line[FTP_LINE_MAX];
-    while (sRun && ReadLine(s, line, sizeof(line))) {
+    for (;;) {
+        SetFtpStage("waiting for a command", true);
+        if (!sRun || !ReadLine(s, line, sizeof(line))) break;
         char* arg = strchr(line, ' ');
         if (arg) *arg++ = 0;
         else arg = line + strlen(line);
         for (char* c = line; *c; c++)
             if (*c >= 'a' && *c <= 'z') *c = (char)(*c - 32);
+        /* SITE: name the sub-command, the part that can wait on the game. */
+        snprintf(sStageVerb, sizeof(sStageVerb), "%s", !strcmp(line, "SITE") && *arg ? arg : line);
+        for (char* c = sStageVerb; *c; c++)
+            if (*c == ' ') *c = 0;
+        SetFtpStage("command", false);
         char vpath[FTP_PATH_MAX], rpath[FTP_PATH_MAX + 8];
         struct stat st;
         if (!strcmp(line, "USER")) {
@@ -521,6 +563,7 @@ static void HandleSession(int ctrl) {
 static void FtpMain(void* argument) {
     (void)argument;
     while (sRun) {
+        SetFtpStage("waiting for a client", true);
         if (!WaitFd(sListen, POLLIN, 0)) continue;
         struct sockaddr_in peer;
         socklen_t len = sizeof(peer);
@@ -531,6 +574,7 @@ static void FtpMain(void* argument) {
         FtpLog("ftp: client %s connected", inet_ntoa(peer.sin_addr));
         HandleSession(fd);
         sConnected = false;
+        SetFtpStage("closing the client", false);
         int ctrl = fd;
         CloseSocket(&ctrl);
         sCtrl = -1;
@@ -540,6 +584,10 @@ static void FtpMain(void* argument) {
 
 static bool StartServer(bool restricted) {
     if (sRun) return true;
+    if (sThreadStuck) {
+        snprintf(sStatus, sizeof(sStatus), "STUCK, RESTART THE GAME");
+        return false;
+    }
     sRestricted = restricted;
     if (!Net3DS_Acquire()) {
         snprintf(sStatus, sizeof(sStatus), "NO NETWORK");
@@ -600,6 +648,7 @@ const char* FtpServer_Notice(void) {
 }
 
 void FtpServer_Tick(void) {
+    FtpServer_WatchdogPoll();
     while (sLogTail != __atomic_load_n(&sLogHead, __ATOMIC_ACQUIRE)) {
         Port_DebugLog(sLogRing[sLogTail % FTP_LOG_LINES]);
         __atomic_store_n(&sLogTail, sLogTail + 1, __ATOMIC_RELEASE);
@@ -626,25 +675,75 @@ void FtpServer_Cancel(void) {
     FtpServer_Stop();
 }
 
+/* Logic thread only (Port_DebugLog is not thread-safe). Flushed at once: a freeze right after a
+ * line would otherwise leave it in the RAM buffer. */
+static void LogNow(const char* line) {
+    Port_DebugLog(line);
+    Port_DebugLogFlush();
+}
+
 void FtpServer_Stop(void) {
+    /* A stop that gave up left the thread running on these sockets and the network: a
+     * second stop must not free them under it. */
+    if (sThreadStuck) return;
+    /* Each step goes to the SD log at once, so a freeze in here shows how far it got. */
+    char line[160], stage[64];
+    DescribeStage(stage, sizeof(stage));
+    snprintf(line, sizeof(line), "ftp stop: server thread %s", stage);
+    LogNow(line);
     sRun = false;
-    /* Wake anything blocked: the thread polls with a short timeout anyway. */
+    /* Wake anything blocked: the thread polls without waiting anyway. */
     int fd = sData;
     if (fd >= 0) shutdown(fd, SHUT_RDWR);
     fd = sCtrl;
     if (fd >= 0) shutdown(fd, SHUT_RDWR);
     if (sThread) {
-        threadJoin(sThread, 3000000000ULL);
+        /* A link request waiting for the logic thread (where this runs) gives up as soon as sRun
+         * is false (debug_link_3ds.c), so the thread ends within a poll nap or a transfer chunk. */
+        if (threadJoin(sThread, 3000000000ULL) != 0) {
+            /* Freeing a thread that still runs, or the network service under its call, froze
+             * the game: leave both as they are; a restart of the game clears them. */
+            DescribeStage(stage, sizeof(stage));
+            snprintf(line, sizeof(line), "ftp stop: thread did not end in 3 s (%s), left running", stage);
+            LogNow(line);
+            sThreadStuck = true;
+            sThread = NULL;
+            sConnected = false;
+            snprintf(sStatus, sizeof(sStatus), "STUCK, RESTART THE GAME");
+            return;
+        }
         threadFree(sThread);
         sThread = NULL;
     }
+    LogNow("ftp stop: thread ended");
     CloseSocket(&sListen);
     free(sIo);
     sIo = NULL;
     sConnected = false;
     if (sNetHeld) Net3DS_Release();
     sNetHeld = false;
+    LogNow("ftp stop: done");
     snprintf(sStatus, sizeof(sStatus), "STOPPED");
+}
+
+void FtpServer_WatchdogPoll(void) {
+    /* A command that runs for half a minute is stuck (the longest, a CIA install, takes a few
+     * seconds; link requests give up after their own wait). Reported once per stage. */
+    if (!sRun || sStageWaiting || sStageReported) return;
+    if (svcGetSystemTick() - sStageSince < 30ULL * SYSCLOCK_ARM11) return;
+    sStageReported = true;
+    char line[128], stage[64];
+    DescribeStage(stage, sizeof(stage));
+    snprintf(line, sizeof(line), "WATCHDOG: ftp server thread busy: %s", stage);
+    LogNow(line);
+}
+
+void FtpServer_DescribeStage(char* out, unsigned cap) {
+    if (!sRun && !sThreadStuck) {
+        snprintf(out, cap, "off");
+        return;
+    }
+    DescribeStage(out, cap);
 }
 
 bool FtpServer_Running(void) {

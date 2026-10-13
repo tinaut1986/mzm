@@ -715,9 +715,21 @@ get it back). Create the file once, while a debug build still has its FTP on:
 `curl -u mzm3ds:PASSWORD -T /dev/null ftp://<ip>:5000/3ds/Metroid%20Zero%20Mission%203DS/dev-ftp.txt`.
 Players never see it and it is not in the release notes. Delete the file to turn it off.
 
-The server thread runs on core 1 (when the app has a share of it) below the game's priority and
-sleeps on the network, so it costs nothing while idle. It shares the socket service with the
-updater (`net_3ds.c`). Its lines reach the SD log through the logic thread.
+The server thread runs on core 1 (when the app has a share of it) below the game's priority. It
+shares the socket service with the updater and RetroAchievements (`net_3ds.c`), and libctru sends
+every socket call of the process through one session, so the thread never blocks in it: it polls
+without waiting and naps 10 ms between polls, and sends in pieces of 8 KB (a 250 ms blocking poll
+made the updater's downloads crawl while the server ran). Its lines reach the SD log through the
+logic thread.
+
+Stopping it waits up to 3 s for the server thread (a remote-control request waiting for the game
+gives up at once). A thread that does not end is left running: the cell says
+`STUCK, RESTART THE GAME` and no server starts again until the game is restarted, because freeing
+it, or the network service under it, froze the game. With LOG A SD on, the SD log gets each stop
+(`ftp stop: server thread <what it was doing>`, `ftp stop: thread ended`, `ftp stop: done`, or
+`ftp stop: thread did not end in 3 s (...), left running`), flushed at once even with LOG EN
+BUFFER on, and a thread busy in one command for 30 s
+(`WATCHDOG: ftp server thread busy: command PEEK for 30.2 s`; for SITE it names the sub-command).
 
 ### Installing a build over FTP
 

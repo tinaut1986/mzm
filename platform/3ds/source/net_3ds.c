@@ -14,7 +14,7 @@ static bool g_ac_ready;
 bool Net3DS_Acquire(void) {
   LightLock_Lock(&g_lock);
   bool ok = true;
-  if (g_refs == 0) {
+  if (!g_soc_buffer) {
     // AC only tells whether Wi-Fi is up; the service works without it (WifiConnected then asks
     // the shared memory's signal strength).
     g_ac_ready = R_SUCCEEDED(acInit());
@@ -33,14 +33,12 @@ bool Net3DS_Acquire(void) {
 }
 
 void Net3DS_Release(void) {
+  // The service stays up once started (its buffer with it): in the Minish Cap port socExit froze
+  // the game when the FTP server stopped with a client still connected (the close of that
+  // connection never finished). The kernel closes the SOC and AC sessions when the process
+  // ends, so nothing is shut down here, not even at exit. The count only says who uses it.
   LightLock_Lock(&g_lock);
-  if (g_refs > 0 && --g_refs == 0) {
-    socExit();
-    free(g_soc_buffer);
-    g_soc_buffer = NULL;
-    if (g_ac_ready) acExit();
-    g_ac_ready = false;
-  }
+  if (g_refs > 0) g_refs--;
   LightLock_Unlock(&g_lock);
 }
 
