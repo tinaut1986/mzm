@@ -315,9 +315,12 @@ garbage.
 
 ## 10. Open decisions for the owner
 
-- **Ship the generated parts in the romfs?** Zelda decided yes (2026-10-13: only the
-  generated areas, the original left transparent, so players have them). Same here, or SD
-  only?
+- ~~Ship the generated parts in the romfs?~~ **Decided 2026-10-14 (owner): yes.** The
+  generated parts ship in the romfs so players get them with no setup, as the Zelda port
+  does (decision of 2026-10-13). Only the generated areas ship, with the game's original
+  area left transparent (no pixel of the game's art in the files); a file of the same name in
+  the SD data folder still overrides the shipped one. The dump, template, whole pictures and
+  the AI delivery folders stay out of the repository.
 - **Scaled style:** scenes only in PIXEL PERFECT, or also scaled (its WIDE margin is only 14 x 0 px)?
 - **Which cutscenes are worth an AI run** and which stay ORIGINAL (recipe E ones).
 - **Size budget:** a full 400x240 RGB565 picture is ~188 KB; strips are smaller. With ~20
