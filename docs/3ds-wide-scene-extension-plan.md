@@ -182,6 +182,9 @@ and adapt:
   same (text BG, 4bpp/8bpp, 32x32 screen blocks, sizes 256x256 / 512x256 / 256x512 /
   512x512, tile flip bits), so the decoder should carry over. Palette: BG palette RAM is
   `bgpltt.bin` (256 x BGR555).
+- `extract_bg.py` should also write the delivery package of section 8b in one go
+  (`--package`: template, original, composite, do-not-paint layer, `README-AI.md` filled
+  from the dump's numbers, palette count included).
 - `check_extension.py`: unchanged.
 - `to_console.py`: scene table for MZM (name -> picture size, columns kept, output file,
   mode: four-sided / strips / indexed). Output names `wide-scenes/<scene>.bin` in
@@ -214,6 +217,81 @@ Per scene add: which sides to fill, the picture's rectangle, and what must not b
 (logo, text, light effects, anything the game draws over the background). Ask for 2-3
 variants; the owner chooses. Keep the owner's raw material (dumps, templates, whole
 pictures with the game's art) **off the repository**; only generated parts ship.
+
+## 8b. The delivery package for the AI (one folder per scene)
+
+The AI tool is given **one folder** and must need nothing else. Zelda did this by hand
+(`~/Imágenes/<scene>/` with a `PLAN-antigravity.md` or `LEEME.txt`; see
+`~/Imágenes/elige-archivo/` and `~/Imágenes/intro-titulo/` for finished examples). For MZM the
+extract tool should write the whole package in one command, so nothing is assembled by hand.
+
+Folder `~/Imágenes/mzm-<scene>/` (outside the repository, always: it is the ROM's art):
+
+| File | Content | Why the AI needs it |
+|---|---|---|
+| `README-AI.md` | The task, the rules, the exact numbers (see template below) | The only document it has to read |
+| `1-template-WxH.png` | **The canvas to fill.** The original picture at its place, transparent everywhere else | What it edits; its size is the output's size |
+| `2-original-picture.png` | The game's background alone, 1:1, no scaling | Reference for style, palette, pixel scale |
+| `3-final-composite.png` | The screen as the player sees it (background + every layer and sprite, at that moment) | Context only: shows what the game draws *over* the background |
+| `4-do-not-paint.png` (optional) | The layers/sprites that go over it (logo, rays, text, characters), alone on transparent | Says exactly what must not end up in the background |
+
+Dump sources (`mzm-dump-NN-*`) can sit in a `source/` subfolder for Claude; the AI is told to
+ignore it.
+
+Rules that make the package work (all learned on the Zelda scenes):
+
+- **Original pixels exactly as the game has them**: no resampling, no colour conversion, no
+  JPEG, PNG only. Template and picture must be pixel-identical in the shared area.
+- **Fixed size and position, said in numbers** in `README-AI.md` (template WxH, original
+  rectangle x,y,w,h, how many pixels to add on each side). Never "make it bigger".
+- **Palette count** of the original, and a note of which area uses which colours when it
+  matters (dark edges vs bright centre).
+- **Transparent means "fill me"**; the output has no transparency left.
+- The composite (3) and the do-not-paint layer (4) are **context, not canvas**: the AI must not
+  copy sprites/logos from them into the background.
+- Ask for 2-3 variants; each returned as its own PNG, same size as the template.
+- The AI's output is **never trusted**: `check_extension.py` against `2-original-picture.png`
+  must report 0 changed pixels in the original area and 0 off-palette pixels before anything
+  is converted (if the original area changed, paste the original back over it).
+
+### `README-AI.md` template (fill the `<...>`, keep it in English)
+
+```markdown
+# Extend a Game Boy Advance background: <scene name>
+
+You get a pixel-art background from Metroid: Zero Mission (240x160, 1 pixel = 1 game
+pixel). It must be enlarged to <W>x<H> by generating the missing area around it.
+
+## Files
+- `1-template-<W>x<H>.png`: the canvas. The original is at x=<X>..<X+w-1>, y=<Y>..<Y+h-1>;
+  everything else is transparent and is what you must fill.
+- `2-original-picture.png`: the original alone, for reference.
+- `3-final-composite.png`: how the game shows it (background plus <logo / text / sprites>).
+  Context only.
+- `4-do-not-paint.png`: <what the game draws over the background>. Context only.
+
+## What to add
+<sides and sizes, e.g. 80 px left, 80 px right, 40 px above, 40 px below>.
+<What continues at each edge: a sentence per side, e.g. "left and right: more of the
+stone wall and the pipes; top: the ceiling beams; bottom: floor plating".>
+
+## Rules
+1. Do not change a single pixel inside the original rectangle. It is the game's own art and
+   is drawn over yours; any change shows as a seam.
+2. Use only colours that already appear in the original (<N> colours). No anti-aliasing,
+   gradients, blur, dithering the original does not use, or new hues.
+3. Same pixel scale and style: hard 1-pixel edges, the same outlines and shading steps.
+4. Continue what touches the original's edges so the seams are invisible. Add more of the
+   same kind of elements; no new objects, characters or text.
+5. Do not repeat or mirror the original.
+6. Do not paint anything listed as "do not paint": <list>. Background only.
+7. Output: a PNG exactly <W>x<H>, no transparency, no scaling, no smoothing.
+   Give <2-3> variants as separate files.
+```
+
+Fill the per-scene sentences from the dump (what the picture is, which sides need what).
+The scene-specific details are what made the Zelda variants usable; a generic prompt gives
+generic results.
 
 ## 9. Order of work
 
