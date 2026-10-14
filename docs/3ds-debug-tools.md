@@ -739,7 +739,10 @@ system loader crash out of memory); the FTP server comes back on with it. `pytho
 --install IP` builds, uploads to `/3ds/Metroid Zero Mission 3DS/update/dev.cia` and installs in
 one go; the interactive menu offers it as "Instalar sobre el juego en marcha". Unsaved progress is
 lost. While a `.cia` arrives and while it installs, the bottom screen shows a box in the middle
-(`NEW BUILD`: `RECEIVING THE INSTALLER...`, then `INSTALLING - THE GAME WILL RESTART`) on any tab.
+(`NEW BUILD`: `RECEIVING THE INSTALLER 42%`, then `INSTALLING 80%`, then `RESTARTING IN 7 S`, a bar
+under each; the game relaunches when the countdown ends) on any tab. The percentages need the
+client to announce the size with `ALLO` before the upload (`build_3ds.py --install` does; with plain
+curl add `-Q "+ALLO <bytes>"`); without it the box says `...` and shows no bar.
 A CIA of another title is refused. The first build with this feature has to arrive by FBI or
 ftpd as before.
 

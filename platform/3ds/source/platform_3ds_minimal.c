@@ -355,17 +355,12 @@ void Platform3DS_PollKeysIntoGba(void) {
         if (sMarker < 0) sMarker = access("dev-ftp.txt", F_OK) == 0;
 #endif
         FtpServer_Tick();
-        /* SITE INSTALL put a new build in place: relaunch into it 10 s later, through libctru's
-         * chainloader, closing as on HOME -> close. Jumping at once had the system load the title
-         * a second time while the new build ran, and the loader faulted out of memory (3 installs
-         * in 4 in ../legend-of-doom-3ds, none of 10 waiting 10 s). The notice stays up meanwhile. */
-        static u64 sRelaunchAt;
+        /* SITE INSTALL put a new build in place: FtpServer_TakeRelaunch is true 10 s later (the
+         * server counts it, and the bottom screen shows the countdown), and the game relaunches
+         * through libctru's chainloader, closing as on HOME -> close. Jumping at once had the
+         * system load the title a second time while the new build ran, and the loader faulted out
+         * of memory (3 installs in 4 in ../legend-of-doom-3ds, none of 10 waiting 10 s). */
         if (FtpServer_TakeRelaunch()) {
-            sRelaunchAt = osGetTime() + 10000u;
-            Port_DebugLog("new build installed: relaunching in 10 s");
-        }
-        if (sRelaunchAt != 0 && osGetTime() >= sRelaunchAt) {
-            sRelaunchAt = 0;
             Port_DebugLog("relaunching into the build just installed");
             CiaInstall_RelaunchOnExit();
             Platform3DS_RequestQuit();
