@@ -136,7 +136,8 @@ static void UpdateFpsWindow(void) {
 #include <stdio.h>
 
 static int sFpsPosition = 1; /* 0 = OFF, 1 = BOTTOM-LEFT, 2 = BOTTOM-RIGHT, 3 = TOP-LEFT, 4 = TOP-RIGHT */
-static int sAspectRatio = 1; /* 1 = ORIGINAL, 2 = STRETCH, 3 = WIDE (0 = the old retired WIDE, clamped to ORIGINAL on load) */
+static int sAspectRatio = 1; /* 1 = ORIGINAL, 3 = WIDE (0 = the old retired WIDE and 2 = the retired STRETCH,
+                              * both read back as ORIGINAL) */
 /* WIDE + AI: WIDE (sAspectRatio 3) that also draws the parts of scene pictures an image AI
  * generated (port_scene_pictures.h). Off by default: plain WIDE never shows generated art,
  * for players who do not want it. Kept apart from sAspectRatio so every "is it WIDE" check
@@ -353,7 +354,7 @@ void Port_Config_Load(void) {
             /* 0 was the old WIDE (a stretched 16:9 variant, retired), so an
              * old file holding it falls through to ORIGINAL; the new WIDE --
              * showing extra world around the GBA frame -- is 3. */
-            if (val >= 1 && val <= 3) sAspectRatio = val;
+            if (val == 1 || val == 3) sAspectRatio = val;
         } else if (strcmp(key, "wide_ai") == 0) {
             sWideAi = val != 0;
         } else if (strcmp(key, "wide_ai_asked") == 0) {
@@ -428,7 +429,7 @@ void Port_Config_SetDebugFtpOn(bool on) {
 }
 #endif
 
-void Port_Config_SetAspectRatio(int ratio) { if (ratio >= 0 && ratio < 4) { sAspectRatio = ratio; Port_Config_Save(); } }
+void Port_Config_SetAspectRatio(int ratio) { if (ratio == 1 || ratio == 3) { sAspectRatio = ratio; Port_Config_Save(); } }
 
 int Port_Config_GetDisplayStyle(void) { return sDisplayStyle; }
 void Port_Config_SetDisplayStyle(int style) { if (style >= 0 && style < 3) { sDisplayStyle = style; Port_Config_Save(); } }
@@ -654,7 +655,7 @@ void Port_GetAreaItemTypeCounts(int area, int* outEnergy, int* outMissile, int* 
 
 int Port_Config_Get3DSAspectRatio(void) { return sAspectRatio; }
 const char* Port_Config_Get3DSAspectRatioName(void) {
-    static const char* const names[] = { "ORIGINAL", "ORIGINAL", "STRETCH", "WIDE" };
+    static const char* const names[] = { "ORIGINAL", "ORIGINAL", "ORIGINAL", "WIDE" };
     if (sAspectRatio == 3 && sWideAi) return "WIDE + AI";
     return (sAspectRatio >= 0 && sAspectRatio < 4) ? names[sAspectRatio] : "ORIGINAL";
 }
@@ -667,17 +668,16 @@ void Port_Config_AnswerWideAi(bool yes) {
     Port_Config_Save();
 }
 void Port_Config_Cycle3DSAspectRatio(void) {
-    /* WIDE comes twice: plain, then WIDE + AI (sWideAi). */
+    /* ORIGINAL -> WIDE -> WIDE + AI (sWideAi) -> ORIGINAL, in both display
+     * styles. STRETCH (the 240x160 picture pulled to 400 px) was dropped on
+     * 2026-10-17: it distorted the pixel art and WIDE fills the screen. */
     if (sAspectRatio == 3 && !sWideAi) {
         sWideAi = true;
-    } else if (sDisplayStyle == 0) {
-        /* PIXEL PERFECT is 1:1, so STRETCH has no meaning there: the choice
-         * is the plain frame or the WIDE view around it. */
-        sAspectRatio = (sAspectRatio == 3) ? 1 : 3;
+    } else if (sAspectRatio == 3) {
+        sAspectRatio = 1;
         sWideAi = false;
     } else {
-        /* SCALED: ORIGINAL -> STRETCH -> WIDE -> WIDE + AI -> ORIGINAL. */
-        sAspectRatio = (sAspectRatio == 1) ? 2 : ((sAspectRatio == 2) ? 3 : 1);
+        sAspectRatio = 3;
         sWideAi = false;
     }
     Port_Config_Save();
