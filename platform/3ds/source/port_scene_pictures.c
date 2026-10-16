@@ -12,6 +12,9 @@ static bool sTexReady;
 static uint16_t sLut[256]; /* code -> RGBA5551, as painted last */
 static bool sLutValid;
 static bool sGameArt;
+static bool sWithAi; /* the loaded picture has its generated parts */
+
+extern bool Port_Config_GetWideAi(void);
 /* The texels of each code (code 0, transparent, left out): sTexels[sFirst[c]
  * .. sFirst[c + 1]), so a palette change repaints only the colours it moved
  * (the title animates part of its palette every frame). */
@@ -26,7 +29,9 @@ const PortScenePictureDef* PortScenePic_Find(int gameMode, int bg) {
         const PortScenePictureDef* def = &gPortScenePictures[i];
         if (def->gameMode != gameMode || def->bg != bg) continue;
         if (key < 0) key = PortScenePic_SceneKey(gameMode);
-        if (def->sceneKey == key) return def;
+        if (def->sceneKey != key) continue;
+        if (!Port_Config_GetWideAi() && !PortScenePic_HasGameArtSource(def)) return NULL;
+        return def;
     }
     return NULL;
 }
@@ -73,7 +78,7 @@ void PortScenePic_Release(void) {
     sDef = NULL;
 }
 
-static bool Load(const PortScenePictureDef* def) {
+static bool Load(const PortScenePictureDef* def, bool withAi) {
     PortScenePic_Release();
     const size_t n = (size_t)def->texWidth * (size_t)def->texHeight;
     sCodes = (uint8_t*)malloc(n);
@@ -84,6 +89,9 @@ static bool Load(const PortScenePictureDef* def) {
         sCodes = NULL;
         return false;
     }
+    /* Plain WIDE: none of the generated parts, only the game's own art below. */
+    if (!withAi) memset(sCodes, 0, n);
+    sWithAi = withAi;
     sGameArt = PortScenePic_FillGameArt(def, sCodes);
     uint32_t count[256] = { 0 };
     for (size_t i = 0; i < n; ++i) ++count[sCodes[i]];
@@ -114,7 +122,8 @@ static bool Load(const PortScenePictureDef* def) {
 
 C3D_Tex* PortScenePic_Texture(const PortScenePictureDef* def, const uint16_t* bgPalette) {
     if (!def) return NULL;
-    if (sDef != def && !Load(def)) return NULL;
+    const bool withAi = Port_Config_GetWideAi();
+    if ((sDef != def || sWithAi != withAi) && !Load(def, withAi)) return NULL;
 
     /* Same texel as the atlas (RGBA5551). Code 0 is transparent; N % 16 == 0 the backdrop. */
     uint16_t lut[256];

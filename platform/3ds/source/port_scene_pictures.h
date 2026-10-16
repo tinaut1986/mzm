@@ -33,7 +33,9 @@ typedef struct PortScenePictureDef {
 extern const PortScenePictureDef gPortScenePictures[];
 extern const int gPortScenePictureCount;
 
-/* The picture for this game mode and background BG, or NULL. */
+/* The picture for this game mode and background BG, or NULL. Without WIDE + AI
+ * (Port_Config_GetWideAi) only pictures that hold the game's own art are used, and then
+ * without their generated parts: plain WIDE shows nothing an AI drew. */
 const PortScenePictureDef* PortScenePic_Find(int gameMode, int bg);
 
 /* Which scene of `gameMode` is showing, for modes that play several scenes on the same BG
@@ -57,5 +59,8 @@ bool PortScenePic_HasGameArt(void);
  * once (the title streams its pan). False if the scene has no such source. In
  * port_scene_game_art.c, next to the game's data. */
 bool PortScenePic_FillGameArt(const PortScenePictureDef* def, uint8_t* codes);
+
+/* Whether PortScenePic_FillGameArt has a source for `def` (same file). */
+bool PortScenePic_HasGameArtSource(const PortScenePictureDef* def);
 
 #endif
