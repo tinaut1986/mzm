@@ -32,7 +32,9 @@ AccessControlInfo:
   IdealProcessor: 0
   AffinityMask: 3
   Priority: 16
-  MaxCpu: 0x9E
+  # Bit 7 keeps the multi-core mode; 0x50 = 80 is the core 1 ceiling (APT_SetAppCpuTimeLimit
+  # above MaxCpu & 0x7F is refused). 0x9E capped it at 30.
+  MaxCpu: 0xD0
   HandleTableSize: 0x200
   DisableDebug: false
   EnableForceDebug: false
