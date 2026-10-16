@@ -1,8 +1,34 @@
 # Plan: extending non-gameplay screens in WIDE / Pixel Perfect with generated art
 
-**Status: planned, nothing built (2026-10-14).** This file is the whole brief: when the owner
-says "let's build it", start at "Order of work" and follow it. Nothing here needs to be
-re-researched except the items marked **VERIFY**, which need a screen dump from the console.
+**Status (2026-10-17): built for the title and part of the intro; the rest waits.** The sections
+from 1 on are the original brief (2026-10-14), kept for the reasoning; this block says where it
+stands.
+
+- **Built.** Scenes widen with their own BG data (section 3): intro, title, escapes, credits and the
+  cutscenes except 7, 10 and 11, left ORIGINAL (section 4). Scene pictures
+  (`port_scene_pictures.[ch]`, data made by `tools/scene-extend/to_console.py`): the title (owner's
+  variant 2) and the intro's view of Zebes (variant 1); a picture names its game mode and its scene
+  (`PortScenePic_SceneKey`: the intro's stage).
+- **Opt-in.** Generated art shows only in the aspect **WIDE + AI** (`wide_ai` in `mzm3ds.ini`, off by
+  default); the first time WIDE is on, the bottom screen says the edges were made with a generative
+  AI and asks whether to show them (`wide_ai_asked`). Plain WIDE never loads a generated part; the
+  title still builds its own picture from the game's memory there (no AI), with black around it.
+- **Waiting for the AI.** Packages in `~/Imágenes/MZM/` (outside the repository) for the intro's
+  space, cockpit and Mother Brain scenes: no variants yet.
+- **Waiting for the console.** The heat trail behind the ship in the view of Zebes is cut where the
+  GBA screen ended (its OAM pieces stop there). Package: `mzm-intro-zebes-flame/`
+  (`make_sprite_package.py`); Antigravity's variant 1 (A and B) checked on 2026-10-17: the original
+  pixels untouched, its 5 colours, no half-transparent pixels, straight streaks that continue the
+  original's (variant 2's wave at the end). Next step: a scene-sprite path that draws a texture in
+  place of the game's pieces of that sprite (both frames, blended with the scene's BLDALPHA, at
+  the trail's fixed anchor; the ship keeps its 1 px jitter), gated on WIDE + AI.
+- **Not seen yet.** The room-bound cutscenes 6, 8, 12, 14 with WIDE (they need a save state in their
+  rooms); 7, 10 and 11 need their own pass (owner, 2026-10-17).
+- **Working notes.** Antigravity writes its first variant over the package's `1-template-*` files:
+  regenerate them (`make_package.py` / `make_sprite_package.py` from the dumps) before validating a
+  variant, and validate against the regenerated template (0 original pixels changed, palette only).
+  Dumps: `capture.sh` (it finds which set a dump went to). Cutscenes from the PC:
+  `docs/3ds-debug-tools.md`, "Playing any cutscene".
 
 ## 1. What and why
 
@@ -54,7 +80,8 @@ owner can try a new picture without a build.
   fits, scrolled with the game when it does not, black past it. Its BGs are 256x256 with
   256x160/176 pictures, so it gains columns and a few rows. Adding a mode to
   `PortWide_SceneActive()` is all another scene needs for that part; the AI work below is
-  for what the BG does not hold. Every other mode still returns margin 0 (plain 240x160).
+  for what the BG does not hold. Since then the title, the escapes, the credits and the
+  cutscenes (but 7, 10, 11) are in it too; the other modes return margin 0 (plain 240x160).
 - Game modes (`include/constants/game_state.h`): `GM_SOFT_RESET, GM_INTRO, GM_TITLE,
   GM_FILE_SELECT, GM_INGAME(4), GM_MAP_SCREEN, GM_GAMEOVER, GM_CHOZODIA_ESCAPE, GM_CREDITS,
   GM_TOURIAN_ESCAPE, GM_CUTSCENE, GM_DEMO, GM_GALLERY, GM_FUSION_GALLERY, ...`.

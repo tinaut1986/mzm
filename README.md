@@ -16,7 +16,7 @@ One build works with the **EUR, USA or JAP** ROM: the region is detected when th
   itself has around the GBA's frame. `WIDE + AI` also fills, in some scenes (the title screen, the
   intro), the parts the game never had with art made with a generative image AI; it is off unless
   chosen. The first time WIDE is on, the bottom screen explains this and asks which of the two to use.
-- **Display style**: `PIXEL PERFECT`, `SCALED` or `BLUR`.
+- **Display style**: `PIXEL PERFECT` or `SCALED`.
 - Optional FPS counter and an auto-hide HUD option.
 
 ### Bottom screen
