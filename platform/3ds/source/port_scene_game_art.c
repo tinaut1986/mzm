@@ -8,6 +8,16 @@
 
 extern uint8_t gVram[];
 extern uint8_t* sEwramPointer; /* union EwramData* (include/data/shortcut_pointers.h) */
+/* union NonGameplayRam* (the same header); its first byte is the intro's stage
+ * (struct IntroData, include/structs/intro.h), 4 = the view of Zebes. */
+extern uint8_t* sNonGameplayRamPointer;
+
+enum { GM_INTRO = 1 }; /* include/constants/game_state.h */
+
+int PortScenePic_SceneKey(int gameMode) {
+    if (gameMode == GM_INTRO && sNonGameplayRamPointer) return sNonGameplayRamPointer[0];
+    return 0;
+}
 
 /* One 4bpp text-BG tile's pixel into a code (port_scene_pictures_data.c's codes: the BG
  * palette entry, 16 for the backdrop where the tile is transparent). */

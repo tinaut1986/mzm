@@ -33,8 +33,10 @@ from generate_bezel_asset import lz4_compress  # noqa: E402
 from make_package import SCENES  # noqa: E402
 
 OUTPUT_C = os.path.join(ROOT, 'platform', '3ds', 'source', 'port_scene_pictures_data.c')
-# Game modes (include/constants/game_state.h) the scenes play in.
-GAME_MODES = {'title': 2}
+# Game mode (include/constants/game_state.h) and scene key (PortScenePic_SceneKey: the intro's
+# stage, src/intro.c sIntroStageFunctionsPointer) each scene plays in.
+GAME_MODES = {'title': (2, 0), 'intro-space': (1, 1), 'intro-cockpit': (1, 2), 'intro-zebes': (1, 4),
+              'intro-motherbrain': (1, 6)}
 
 
 def pow2(n):
@@ -101,7 +103,8 @@ def convert(scene, png, dumps_dir):
         print(f'{scene}: {off} pixels not in the palette, given the nearest colour')
     packed = lz4_compress(bytes(data))
     print(f'{scene}: {W}x{H} in a {tex_w}x{tex_h} texture, {len(data)} -> {len(packed)} bytes')
-    return dict(scene=scene, mode=GAME_MODES[scene], bg=sc['bg'], canvas=(cx0, cy0, W, H),
+    mode, key = GAME_MODES[scene]
+    return dict(scene=scene, mode=mode, key=key, bg=sc['bg'], canvas=(cx0, cy0, W, H),
                 picture=(px0, py0, px1, py1), tex=(tex_w, tex_h), packed=packed)
 
 
@@ -126,7 +129,7 @@ def main():
             cx, cy, w, h = p['canvas']
             x0, y0, x1, y1 = p['picture']
             tw, th = p['tex']
-            f.write(f'    {{ "{p["scene"]}", {p["mode"]}, {p["bg"]}, {cx}, {cy}, {w}, {h}, '
+            f.write(f'    {{ "{p["scene"]}", {p["mode"]}, {p["key"]}, {p["bg"]}, {cx}, {cy}, {w}, {h}, '
                     f'{x0}, {y0}, {x1}, {y1}, {tw}, {th}, kPacked_{name}, sizeof(kPacked_{name}) }},\n')
         f.write('};\n')
         f.write(f'const int gPortScenePictureCount = {len(pics)};\n')

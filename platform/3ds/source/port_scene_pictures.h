@@ -20,6 +20,7 @@
 typedef struct PortScenePictureDef {
     const char* name;
     int gameMode;        /* gMainGameMode it belongs to */
+    int sceneKey;        /* which scene of that mode (PortScenePic_SceneKey) */
     int bg;              /* the background BG it extends */
     int canvasX, canvasY; /* the canvas's top-left, in that BG's pixels */
     int width, height;
@@ -34,6 +35,10 @@ extern const int gPortScenePictureCount;
 
 /* The picture for this game mode and background BG, or NULL. */
 const PortScenePictureDef* PortScenePic_Find(int gameMode, int bg);
+
+/* Which scene of `gameMode` is showing, for modes that play several scenes on the same BG
+ * (the intro: its stage); 0 for the others. In port_scene_game_art.c. */
+int PortScenePic_SceneKey(int gameMode);
 
 /* The texture of `def` painted with `bgPalette` (the GBA's 256 BG colours, BGR555). Loaded
  * on first use; repainted only when a colour it uses changed. NULL if it could not be made. */

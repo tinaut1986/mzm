@@ -21,9 +21,13 @@ static uint32_t sFirst[257];
 bool PortScenePic_HasGameArt(void) { return sDef != NULL && sGameArt; }
 
 const PortScenePictureDef* PortScenePic_Find(int gameMode, int bg) {
-    for (int i = 0; i < gPortScenePictureCount; ++i)
-        if (gPortScenePictures[i].gameMode == gameMode && gPortScenePictures[i].bg == bg)
-            return &gPortScenePictures[i];
+    int key = -1;
+    for (int i = 0; i < gPortScenePictureCount; ++i) {
+        const PortScenePictureDef* def = &gPortScenePictures[i];
+        if (def->gameMode != gameMode || def->bg != bg) continue;
+        if (key < 0) key = PortScenePic_SceneKey(gameMode);
+        if (def->sceneKey == key) return def;
+    }
     return NULL;
 }
 
