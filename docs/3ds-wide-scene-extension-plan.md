@@ -45,9 +45,16 @@ owner can try a new picture without a build.
 
 ## 3. What MZM has today (verified 2026-10-14)
 
-- `PortWide_GameActive()` = WIDE selected **and** `gMainGameMode == GM_INGAME`
-  (`platform/3ds/source/port_wide_view.c`). Margins in PIXEL PERFECT: 80 x 40. Every other mode
-  returns margin 0, so the frame is the plain 240x160.
+- `PortWide_GameActive()` = WIDE selected **and** `gMainGameMode` is `GM_INGAME` or `GM_DEMO`
+  (`platform/3ds/source/port_wide_view.c`). Margins in PIXEL PERFECT: 80 x 40.
+- **Since 2026-10-16 the intro (`GM_INTRO`) is widened with its own data, no AI**
+  (`PortWide_SceneActive()`, `ComputeSceneWideView` in `port_gpu_renderer.c`): the view
+  shows as much of the background BG's picture as the BG really holds (the frame grown
+  line by line while the next tile column/row is drawn across the frame), centred when it
+  fits, scrolled with the game when it does not, black past it. Its BGs are 256x256 with
+  256x160/176 pictures, so it gains columns and a few rows. Adding a mode to
+  `PortWide_SceneActive()` is all another scene needs for that part; the AI work below is
+  for what the BG does not hold. Every other mode still returns margin 0 (plain 240x160).
 - Game modes (`include/constants/game_state.h`): `GM_SOFT_RESET, GM_INTRO, GM_TITLE,
   GM_FILE_SELECT, GM_INGAME(4), GM_MAP_SCREEN, GM_GAMEOVER, GM_CHOZODIA_ESCAPE, GM_CREDITS,
   GM_TOURIAN_ESCAPE, GM_CUTSCENE, GM_DEMO, GM_GALLERY, GM_FUSION_GALLERY, ...`.
@@ -173,6 +180,28 @@ original, like `extend_rays.py`. No AI, nothing shipped.
     still says menus and cutscenes are not widened, and update it when the first scene ships.
 
 ## 7. Tooling work
+
+**Done so far (2026-10-16):** `tools/scene-extend/` (README) has `capture.sh` (dumps from the
+console), `gba_dump.py` (draws BGs and sprites from a dump) and `make_package.py` (the section 8b
+folder per scene, from a `SCENES` table) and `to_console.py` (a chosen picture ->
+`port_scene_pictures_data.c`). Packages written for the title (400x440, the whole scroll with
+40 px above and below so the logo ends centred) and four intro scenes. Still to do from the
+list below: `check_extension.py`.
+
+**Shipped (2026-10-16): the title.** The owner's variant 2 of the title package is in
+`port_scene_pictures_data.c`: only the generated parts, stored as BG palette entries (painted
+each frame with the game's palette, so it fades with it; a palette change repaints only the
+texels of the colours that moved), LZ4, ~45 KB. `port_scene_pictures.[ch]` load it on the
+scene's first frame and free it when the scene ends; the renderer draws it behind the BG it
+extends, on that BG's stereo plane and with its BLDY brightness, and the view's extent is the
+canvas. The title streams its pan (two tile sets take turns in VRAM), so the game's own part
+outside the GBA frame is not in VRAM when it shows: `port_scene_game_art.c` builds it into the
+same texture from the game's memory when the picture loads (nothing of the game's art is in
+the repository), and the BG then draws only the frame's tile lines. Checked on the 2DS: the
+pan, skipping it, ~59-60 fps. Two traps met on the way: citro2d skips binding a texture it
+thinks is bound while the batch binds the atlas behind its back (bind it explicitly), and a
+layer map's quad covers the whole widened view, cached cells of the last room included (bound
+it to the layer's clipped range in scenes).
 
 Copy `tools/scene-extend/` from the Zelda repo into `tools/scene-extend/` here, in English,
 and adapt:
