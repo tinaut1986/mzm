@@ -45,9 +45,16 @@ owner can try a new picture without a build.
 
 ## 3. What MZM has today (verified 2026-10-14)
 
-- `PortWide_GameActive()` = WIDE selected **and** `gMainGameMode == GM_INGAME`
-  (`platform/3ds/source/port_wide_view.c`). Margins in PIXEL PERFECT: 80 x 40. Every other mode
-  returns margin 0, so the frame is the plain 240x160.
+- `PortWide_GameActive()` = WIDE selected **and** `gMainGameMode` is `GM_INGAME` or `GM_DEMO`
+  (`platform/3ds/source/port_wide_view.c`). Margins in PIXEL PERFECT: 80 x 40.
+- **Since 2026-10-16 the intro (`GM_INTRO`) is widened with its own data, no AI**
+  (`PortWide_SceneActive()`, `ComputeSceneWideView` in `port_gpu_renderer.c`): the view
+  shows as much of the background BG's picture as the BG really holds (the frame grown
+  line by line while the next tile column/row is drawn across the frame), centred when it
+  fits, scrolled with the game when it does not, black past it. Its BGs are 256x256 with
+  256x160/176 pictures, so it gains columns and a few rows. Adding a mode to
+  `PortWide_SceneActive()` is all another scene needs for that part; the AI work below is
+  for what the BG does not hold. Every other mode still returns margin 0 (plain 240x160).
 - Game modes (`include/constants/game_state.h`): `GM_SOFT_RESET, GM_INTRO, GM_TITLE,
   GM_FILE_SELECT, GM_INGAME(4), GM_MAP_SCREEN, GM_GAMEOVER, GM_CHOZODIA_ESCAPE, GM_CREDITS,
   GM_TOURIAN_ESCAPE, GM_CUTSCENE, GM_DEMO, GM_GALLERY, GM_FUSION_GALLERY, ...`.

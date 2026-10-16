@@ -9,8 +9,11 @@
  * frame. Works with both display styles -- SCALED (1.5x, only a sliver more
  * at the left/right) and PIXEL PERFECT (1:1, extra on every side).
  *
- * Only in-game world rendering can be widened: menus and cutscenes have no
- * world data past the frame, so they keep drawing as ORIGINAL.
+ * In-game (and the title screen's demos) the extra area is the room's own
+ * world. A few scenes (PortWide_SceneActive) are widened too, with what their
+ * background really holds past the frame: a BG is 256 or 512 px across, so a
+ * scene picture usually has more than the 240x160 the GBA shows. Nothing is
+ * invented; past the picture's edges the screen stays black.
  */
 
 /* The WIDE aspect is selected in the settings. */
@@ -21,8 +24,12 @@ bool PortWide_Selected(void);
  * PortWide_FrameDrawn(). */
 bool PortWide_GameActive(void);
 
+/* WIDE is selected AND the game is in a scene (not gameplay) whose background
+ * is shown in full: the intro. */
+bool PortWide_SceneActive(void);
+
 /* How much extra world is shown on each side of the 240x160 GBA frame, in GBA
- * pixels. Zero unless PortWide_GameActive(). */
+ * pixels. Zero unless PortWide_GameActive() or PortWide_SceneActive(). */
 int PortWide_MarginX(void);
 int PortWide_MarginY(void);
 

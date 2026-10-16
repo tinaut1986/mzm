@@ -11,7 +11,7 @@ extern int Port_Config_Get3DSDisplayStyle(void);
 extern short gMainGameMode;
 
 enum { ASPECT_WIDE = 3, STYLE_PIXEL_PERFECT = 0 };
-enum { GM_INGAME = 4, GM_DEMO = 11 };
+enum { GM_INTRO = 1, GM_INGAME = 4, GM_DEMO = 11 };
 
 /* SCALED draws at 1.5x, so the 400px screen holds 400 / 1.5 = 266.7 GBA px:
  * 13.3 more on each side, rounded up. PIXEL PERFECT holds 400x240 outright. */
@@ -34,14 +34,20 @@ bool PortWide_GameActive(void) {
     return PortWide_Selected() && (gMainGameMode == GM_INGAME || gMainGameMode == GM_DEMO);
 }
 
+bool PortWide_SceneActive(void) {
+    return PortWide_Selected() && gMainGameMode == GM_INTRO;
+}
+
+static bool ViewActive(void) { return PortWide_GameActive() || PortWide_SceneActive(); }
+
 int PortWide_MarginX(void) {
-    if (!PortWide_GameActive()) return 0;
+    if (!ViewActive()) return 0;
     return Port_Config_Get3DSDisplayStyle() == STYLE_PIXEL_PERFECT ? MARGIN_X_PIXEL_PERFECT
                                                                    : MARGIN_X_SCALED;
 }
 
 int PortWide_MarginY(void) {
-    if (!PortWide_GameActive()) return 0;
+    if (!ViewActive()) return 0;
     return Port_Config_Get3DSDisplayStyle() == STYLE_PIXEL_PERFECT ? MARGIN_Y_PIXEL_PERFECT
                                                                    : MARGIN_Y_SCALED;
 }
@@ -55,9 +61,10 @@ bool PortWide_FrameDrawn(void) { return sFrameDrawn; }
  * place -- OAM Y/X wrap, so a far-out sprite reads as one on the other side. */
 /* Twice the margin: the view slides inside the room, so on the side it slides
  * toward it can reach the margin plus the slide, up to twice the margin. */
-/* Not in a demo: a projectile kept alive out there can hit what the GBA's would
- * not have, and the recorded inputs would then play out a different run. */
-static bool KeepAliveInMargins(void) { return sFrameDrawn && gMainGameMode != GM_DEMO; }
+/* Only in play. Not in a demo: a projectile kept alive out there can hit what
+ * the GBA's would not have, and the recorded inputs would then play out a
+ * different run. */
+static bool KeepAliveInMargins(void) { return sFrameDrawn && gMainGameMode == GM_INGAME; }
 int Port_WideMarginSubPixelX(void) { return KeepAliveInMargins() ? 2 * PortWide_MarginX() * SUB_PIXELS_PER_PIXEL : 0; }
 int Port_WideMarginSubPixelY(void) { return KeepAliveInMargins() ? 2 * PortWide_MarginY() * SUB_PIXELS_PER_PIXEL : 0; }
 

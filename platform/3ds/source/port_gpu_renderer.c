@@ -2196,6 +2196,10 @@ static void CollectAffineBg2(void) {
  * view slides inside the room (WideView), so the range follows it. Both zero unless the frame is widened, in which
  * case every range below collapses back to the original 240x160 one. */
 static bool sWideOn;
+/* The widened frame is a scene's (PortWide_SceneActive), not a room's: the
+ * extent is the scene's background picture (ComputeSceneWideView) and no room
+ * data is involved. */
+static bool sWideScene;
 static int sExtL, sExtR, sExtT, sExtB;
 
 /* WIDE view geometry for the frame -- see ComputeWideView. */
@@ -2294,6 +2298,7 @@ static inline uint16_t WideBgEntry(const WideBgSource* src, int tx, int ty) {
 static int WideLayerShift(int bgIndex, int shift, bool vertical) {
     extern int PortPpuMzm_WideLayerDivisor(int bg, int vertical);
     if (shift == 0) return 0;
+    if (sWideScene) return shift; /* no parallax rules outside a room */
     const int div = PortPpuMzm_WideLayerDivisor(bgIndex, vertical ? 1 : 0);
     return div > 0 ? shift / div : 0;
 }
@@ -2446,7 +2451,8 @@ static void CollectBgLayer(int bgIndex) {
     /* `covered` is indexed from the range's own start, so it fits however far
      * the view reaches (at most ~54 tiles across, ~32 down). */
     const int covX = -txMin, covY = -tyMin;
-    const WideBgSource wideSrc = sWideOn ? WideBgSourceFor(bgIndex, scrollX, scrollY) : (WideBgSource){ 0 };
+    const WideBgSource wideSrc = (sWideOn && !sWideScene) ? WideBgSourceFor(bgIndex, scrollX, scrollY)
+                                                          : (WideBgSource){ 0 };
 
     /* A room with a visible item tank forces the per-tile path on BG1 (the
      * clipdata layer): the tank is an animated tile with no block-map entry,
@@ -3348,7 +3354,8 @@ static void CollectSprite(int oamIndex, bool obj1D) {
     int y = attr0 & 0xFFu;
     int x = (int)(attr1 & 0x1FFu);
     int originY, originX;
-    if (sWideOn && PortWide_SlotOrigin(oamIndex, &originY, &originX)) {
+    /* Only rooms tag their sprites; a scene's tags would be left over from play. */
+    if (sWideOn && !sWideScene && PortWide_SlotOrigin(oamIndex, &originY, &originX)) {
         /* The game recorded where this sprite really is, so pick the wrap of
          * y / x that lands nearest it. Exact for any part within 128 px
          * vertically / 256 horizontally of the origin, i.e. all of them. */
@@ -4106,6 +4113,132 @@ static void ComputeWideView(void) {
     sHeldValid = true;
 }
 
+/* WIDE view for a scene (PortWide_SceneActive). There is no room: the extent
+ * is the picture in the scene's background BG. The BG is 256 or 512 px on each
+ * axis while the GBA shows 240x160 of it, but only part of it is picture: the
+ * intro's 256x256 BGs hold a 256x160 or 256x176 picture, and the rest is blank
+ * tiles or, worse, map entries pointing at tiles the scene never loaded (junk
+ * the GBA never shows). So the extent starts as what the GBA shows and grows a
+ * tile line at a time while the next column / row is drawn along (almost) the
+ * whole frame; a blank or ragged line ends the picture on that side.
+ *
+ * Inside it the view slides as it does inside a room (WideAxisShift): an axis
+ * where the picture is bigger than the view keeps the game's scroll until the
+ * view reaches the picture's edge. An axis where it fits is centred once and
+ * the shift then held while the picture stays the same, so the game's own
+ * small moves (a shake, a slow pan) still show instead of being cancelled out.
+ * Past the picture DrawWideRoomMasks leaves black, never the BG's repeat.
+ *
+ * The background BG is the biggest enabled text BG; on a tie the one drawn
+ * furthest back (text and overlays sit in front of the picture). With none
+ * (affine modes) the view stays the plain frame. */
+
+enum { SCENE_LINE_FULL_PCT = 75 }; /* share of a line's cells that must be drawn */
+
+/* Grows the frame's span of tile lines [first, last] (BG tile units, may run
+ * past the BG's end: the BG wraps) on one axis while the next line out is
+ * drawn. drawn(line) is how many of the line's cells along the other axis,
+ * within the frame, hold a tile with pixels; cells is how many there are. */
+static void SceneGrowSpan(const uint8_t* drawn, int lines, int cells, int* first, int* last) {
+    const int need = (cells * SCENE_LINE_FULL_PCT + 99) / 100;
+    while (*last - *first + 1 < lines && drawn[((*first - 1) % lines + lines) % lines] >= need) --*first;
+    while (*last - *first + 1 < lines && drawn[(*last + 1) % lines] >= need) ++*last;
+}
+
+static void ComputeSceneWideView(uint16_t dispcnt) {
+    static const int kSizeW[4] = { 256, 512, 256, 512 };
+    static const int kSizeH[4] = { 256, 256, 512, 512 };
+    /* What the held shifts belong to (see above): the picture, by where it
+     * starts in the BG (mod the BG's size) and how big it is. */
+    static int sKeyBg = -1, sKeyCnt, sKeyX, sKeyW, sKeyY, sKeyH, sHeldX, sHeldY;
+    WideView* v = &sWideView;
+    *v = (WideView){ 0 };
+    const unsigned mode = dispcnt & 7u;
+    const int textBgs = mode == 0 ? 4 : mode == 1 ? 2 : 0; /* mode 1: BG2 is affine */
+    int best = -1, bestArea = 0, bestPrio = -1;
+    for (int bg = 0; bg < textBgs; ++bg) {
+        if (!(dispcnt & (0x100u << bg))) continue;
+        const uint16_t cnt = (uint16_t)(gIoMem[0x08 + bg * 2] | (gIoMem[0x09 + bg * 2] << 8));
+        const int size = (cnt >> 14) & 3, prio = cnt & 3;
+        const int area = kSizeW[size] * kSizeH[size];
+        if (area > bestArea || (area == bestArea && prio >= bestPrio)) {
+            best = bg; bestArea = area; bestPrio = prio;
+        }
+    }
+    v->loX = 0; v->hiX = 240;
+    v->loY = 0; v->hiY = 160;
+    v->maskL = 0; v->maskR = 240; v->maskT = 0; v->maskB = 160;
+    if (best < 0) { sKeyBg = -1; return; }
+
+    const uint16_t cnt = (uint16_t)(gIoMem[0x08 + best * 2] | (gIoMem[0x09 + best * 2] << 8));
+    const int w = kSizeW[(cnt >> 14) & 3], h = kSizeH[(cnt >> 14) & 3];
+    const int cols = w / 8, rows = h / 8;
+    const int ox = (int)(gIoMem[0x10 + best * 4] | (gIoMem[0x11 + best * 4] << 8)) & (w - 1);
+    const int oy = (int)(gIoMem[0x12 + best * 4] | (gIoMem[0x13 + best * 4] << 8)) & (h - 1);
+    /* The tile lines the frame shows (the frame's left edge is at ox, so
+     * these run past the BG's end when it wraps). */
+    int fx0 = ox >> 3, fx1 = (ox + 239) >> 3;
+    int fy0 = oy >> 3, fy1 = (oy + 159) >> 3;
+    const int frameCols = fx1 - fx0 + 1, frameRows = fy1 - fy0 + 1;
+
+    /* Per column: how many of the frame's rows hold a drawn tile there; per
+     * row, how many of the frame's columns. Screen blocks are 32x32 entries,
+     * left to right then top to bottom. */
+    const uint32_t charBase = ((cnt >> 2) & 3u) * 0x4000u;
+    const uint32_t screenBase = ((cnt >> 8) & 31u) * 0x800u;
+    const uint32_t tileBytes = (cnt & 0x80) ? 64u : 32u;
+    uint8_t colDrawn[64] = { 0 }, rowDrawn[64] = { 0 };
+    for (int ty = 0; ty < rows; ++ty) {
+        const bool rowInFrame = ((ty - fy0) % rows + rows) % rows <= fy1 - fy0;
+        for (int tx = 0; tx < cols; ++tx) {
+            const bool colInFrame = ((tx - fx0) % cols + cols) % cols <= fx1 - fx0;
+            if (!rowInFrame && !colInFrame) continue;
+            const uint32_t block = (uint32_t)((tx >> 5) + (ty >> 5) * (w >> 8));
+            const uint32_t at = screenBase + block * 0x800u + (uint32_t)(((ty & 31) * 32 + (tx & 31)) * 2);
+            if (at + 2 > 0x10000u) continue;
+            const uint16_t entry = (uint16_t)(gVram[at] | (gVram[at + 1] << 8));
+            const uint32_t tile = charBase + (entry & 0x3FFu) * tileBytes;
+            if (tile + tileBytes > 0x10000u) continue;
+            const uint32_t* px = (const uint32_t*)(gVram + tile);
+            bool drawn = false;
+            for (uint32_t i = 0; i < tileBytes / 4 && !drawn; ++i) drawn = px[i] != 0;
+            if (!drawn) continue;
+            if (rowInFrame) ++colDrawn[tx];
+            if (colInFrame) ++rowDrawn[ty];
+        }
+    }
+    SceneGrowSpan(colDrawn, cols, frameRows, &fx0, &fx1);
+    SceneGrowSpan(rowDrawn, rows, frameCols, &fy0, &fy1);
+    int loX = fx0 * 8, hiX = (fx1 + 1) * 8;
+    int loY = fy0 * 8, hiY = (fy1 + 1) * 8;
+    /* A picture the whole BG wide has no edge of its own but the BG's: put
+     * the copy of it that holds the frame's centre there. */
+    if (hiX - loX >= w) { loX = (ox + 120) / w * w; hiX = loX + w; }
+    if (hiY - loY >= h) { loY = (oy + 80) / h * h; hiY = loY + h; }
+
+    const bool same = best == sKeyBg && cnt == sKeyCnt && (loX & (w - 1)) == sKeyX && hiX - loX == sKeyW &&
+                      (loY & (h - 1)) == sKeyY && hiY - loY == sKeyH;
+    sKeyBg = best; sKeyCnt = cnt;
+    sKeyX = loX & (w - 1); sKeyW = hiX - loX;
+    sKeyY = loY & (h - 1); sKeyH = hiY - loY;
+
+    v->originX = ox; v->originY = oy;
+    v->loX = loX; v->hiX = hiX;
+    v->loY = loY; v->hiY = hiY;
+    v->shiftX = WideAxisShift(ox, sWideMarginX, 240, loX, hiX);
+    v->shiftY = WideAxisShift(oy, sWideMarginY, 160, loY, hiY);
+    if (same && hiX - loX <= 240 + 2 * sWideMarginX) v->shiftX = sHeldX;
+    if (same && hiY - loY <= 160 + 2 * sWideMarginY) v->shiftY = sHeldY;
+    if (v->shiftX < -sWideMarginX) v->shiftX = -sWideMarginX;
+    if (v->shiftX > sWideMarginX) v->shiftX = sWideMarginX;
+    if (v->shiftY < -sWideMarginY) v->shiftY = -sWideMarginY;
+    if (v->shiftY > sWideMarginY) v->shiftY = sWideMarginY;
+    v->maskL = loX - ox; v->maskR = hiX - ox;
+    v->maskT = loY - oy; v->maskB = hiY - oy;
+    sHeldX = v->shiftX;
+    sHeldY = v->shiftY;
+}
+
 /* Blacks out whatever lies beyond the room extent (see WideView), which only
  * shows for a room smaller than the view. baseX/Y is where the shifted world
  * starts on screen. Clamped to stay clear of the 240x160 frame itself, so a
@@ -4347,12 +4480,14 @@ void Port_GpuRenderer_CollectFrame(void) {
      * outside visibility is (ItemPassesWindow), and that holds anywhere.
      * Excluding them flashed the plain frame for the one windowed frame at
      * the end of a power bomb. */
-    sWideOn = PortWide_GameActive() && !sAffineBg2Active;
+    sWideScene = PortWide_SceneActive();
+    sWideOn = (PortWide_GameActive() || sWideScene) && !sAffineBg2Active;
     sWideMarginX = sWideOn ? PortWide_MarginX() : 0;
     sWideMarginY = sWideOn ? PortWide_MarginY() : 0;
     PortWide_SetFrameDrawn(sWideOn);
-    if (sWideOn) ComputeWideView();
-    else sWideView = (WideView){ 0 };
+    if (!sWideOn) sWideView = (WideView){ 0 };
+    else if (sWideScene) ComputeSceneWideView(dispcnt);
+    else ComputeWideView();
     /* The visible range in frame coordinates is [-margin + shift, 240 + margin
      * + shift] (likewise vertically). */
     sExtL = sWideMarginX - sWideView.shiftX;
