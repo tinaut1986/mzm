@@ -786,6 +786,22 @@ tools/mzm-link/mzm-link.py peek gAutoBombTraceNext 4                            
 `tools/auto-bomb-sim.py` is the host model the numbers came from (the same physics and the same
 planner); compare a trace against its output when a change to the physics or the planner is made.
 
+### Audio underruns and the core 1 share
+
+The audio thread counts the NDSP buffers it fills and how many of them the ring could not fill
+(`sBuffersFilled`, `sUnderruns` in `port_mzm_audio_3ds.c`; an underrun is an audible gap). Read
+them twice some seconds apart; about 60 buffers a second is normal, any underrun is a cut:
+
+```sh
+tools/mzm-link/mzm-link.py peek sBuffersFilled 4; tools/mzm-link/mzm-link.py peek sUnderruns 4   # little-endian u32
+tools/mzm-link/mzm-link.py peek sCore1TimeLimit 4                                                # core 1 share granted, %
+```
+
+The game asks for 30 % of core 1, which is also the rsf's `MaxCpu` ceiling. On 2026-10-16 the
+2DS was measured at 80 %: 121-327 underruns in 30 s, the game's own FTP at 3-4 KB/s and the
+system menus crawling, against none and ~100 KB/s at 30 % (`platform_3ds_minimal.c`). Repeat
+that measurement before raising either.
+
 ## Known findings so far (#20, frame rate)
 
 > The live work order for this -- what is done, what is next, and the

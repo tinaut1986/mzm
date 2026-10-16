@@ -147,9 +147,14 @@ int Platform3DS_Init(void) {
      * render worker for Core 1 tried to spawn there anyway, silently failed
      * threadCreate, and the port permanently rendered with one fewer worker
      * thread than intended -- lost ~1/3 of the CPU render's parallelism
-     * without any visible error. Try decreasing candidate percentages since
-     * a lower ask is more likely to be granted than a fixed 80/30. */
-    static const u32 core1Candidates[] = { 80, 70, 50, 30 };
+     * without any visible error.
+     *
+     * 30 %, the rsf's MaxCpu ceiling too. A bigger share starves the system
+     * services that also run on core 1. Measured on the 2DS (2026-10-16, ~30 s
+     * each, FTP server on, MaxCpu raised for the test): 80 % -> 121-327 audio
+     * underruns and the game's FTP at 3-4 KB/s, the system menus crawling;
+     * 50 % -> 0 and 64 KB/s; 30 % -> 0 and 104 KB/s. */
+    static const u32 core1Candidates[] = { 30 };
     Result core1FirstErr = 0;
     for (size_t i = 0; i < sizeof(core1Candidates) / sizeof(core1Candidates[0]); ++i) {
         const Result rc = APT_SetAppCpuTimeLimit(core1Candidates[i]);
@@ -165,9 +170,8 @@ int Platform3DS_Init(void) {
         }
     }
     /* The ceiling is the exheader's MaxCpu & 0x7F (platform/3ds/cia/mzm3ds.rsf):
-     * Luma3DS's PM refuses anything above it with 0xD8E05BF4. It was 0x9E
-     * (= 30) until 2026-10, so every ask above 30 failed. Logged so a CIA's
-     * grant can be read back from the SD log. */
+     * Luma3DS's PM refuses anything above it with 0xD8E05BF4. Logged so a
+     * CIA's grant can be read back from the SD log. */
     {
         extern void Port_DebugLog_Note(const char* msg);
         char msg[96];
