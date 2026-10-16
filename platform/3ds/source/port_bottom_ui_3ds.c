@@ -329,6 +329,15 @@ static int BottomTabLayout(BottomTabSlot slots[BOTTOM_TAB_SLOT_MAX]);
 #define UPD_NOTES_Y0 174
 #define UPD_NOTES_Y1 198
 
+/* The one-time question about the WIDE view's generated art (RenderWideAiQuestion):
+ * the same box and buttons as the update prompt. */
+extern bool Port_Config_WideAiQuestionDue(void);
+extern void Port_Config_AnswerWideAi(bool yes);
+#define WAI_BOX_Y0 34
+#define WAI_BOX_H 182
+#define WAI_BTN_Y0 172
+#define WAI_BTN_Y1 200
+
 /* Called once per frame (even on frames the UI is not redrawn) so time-based
  * state keeps advancing: the blink counter and the RA session pump. */
 void Port_BottomUI_FrameTick(void) {
@@ -346,6 +355,12 @@ void Port_BottomUI_FrameTick(void) {
         if (pr != sLastPrompt || (pr == (int)UPDATER_PROMPT_PROGRESS && pg != sLastProgress)) {
             sLastPrompt = pr;
             sLastProgress = pg;
+            sBottomUiDirty = true;
+        }
+        static bool sLastWideAiDue;
+        const bool due = Port_Config_WideAiQuestionDue();
+        if (due != sLastWideAiDue) {
+            sLastWideAiDue = due;
             sBottomUiDirty = true;
         }
     }
@@ -1433,6 +1448,16 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
                     OpenNotesModal();
                 }
             }
+        }
+        return;
+    }
+
+    /* The WIDE art question, modal like the update prompt (which goes first). */
+    if (Port_Config_WideAiQuestionDue()) {
+        if (isNewTap && y >= WAI_BTN_Y0 && y <= WAI_BTN_Y1) {
+            if (x >= UPD_YES_X0 && x <= UPD_YES_X1) Port_Config_AnswerWideAi(true);
+            else if (x >= UPD_NO_X0 && x <= UPD_NO_X1) Port_Config_AnswerWideAi(false);
+            Port_BottomUI_MarkDirty();
         }
         return;
     }
@@ -3768,6 +3793,52 @@ static void RenderUpdatePrompt(int lang) {
                        C2D_Color32(255, 225, 120, 255), C2D_Color32(46, 36, 12, 255), C2D_Color32(170, 130, 60, 255));
         }
     }
+}
+
+/* Asked once, the first time the WIDE view is on (Port_Config_WideAiQuestionDue): some
+ * scenes have nothing past the GBA's screen, and edges for them were made with a generative
+ * AI (port_scene_pictures.h); does the player want to see them? YES = WIDE + AI, NO = plain
+ * WIDE; both can be changed later in DISPLAY -> ASPECT. Not drawn while the update prompt
+ * is up. */
+static void RenderWideAiQuestion(int lang) {
+    if (!Port_Config_WideAiQuestionDue() || Port_Updater_GetPrompt() != UPDATER_PROMPT_NONE) return;
+    const bool es = (lang == 6);
+    const uint32_t white = C2D_Color32(255, 255, 255, 255);
+    const uint32_t text = C2D_Color32(190, 210, 235, 255);
+    /* The UI font has no comma. */
+    static const char* const linesEn[] = {
+        "SOME SCENES HAVE NO PICTURE BEYOND THE",
+        "EDGES OF THE GBA SCREEN. FOR THEM NEW",
+        "EDGES WERE MADE WITH A GENERATIVE AI",
+        "SO THAT THEY FILL THE WIDE SCREEN.",
+        "",
+    };
+    static const char* const linesEs[] = {
+        "ALGUNAS ESCENAS NO TIENEN IMAGEN MAS ALLA",
+        "DE LOS BORDES DE LA PANTALLA DE LA GBA.",
+        "PARA ELLAS SE HAN CREADO BORDES NUEVOS",
+        "CON IA GENERATIVA QUE LLENAN LA PANTALLA",
+        "AMPLIA.",
+    };
+    const char* const* lines = es ? linesEs : linesEn;
+
+    C2D_DrawRectSolid(0.0f, 0.0f, 0.97f, 320.0f, 240.0f, C2D_Color32(0, 0, 0, 170));
+    C2D_DrawRectSolid(14.0f, (float)WAI_BOX_Y0, 0.98f, 292.0f, (float)WAI_BOX_H, C2D_Color32(40, 70, 120, 255));
+    C2D_DrawRectSolid(16.0f, (float)WAI_BOX_Y0 + 2.0f, 0.99f, 288.0f, (float)WAI_BOX_H - 4.0f,
+                      C2D_Color32(10, 14, 24, 255));
+    DrawTextCentered(160.0f, (float)WAI_BOX_Y0 + 10.0f, 1.0f, es ? "PANTALLA AMPLIA" : "WIDE SCREEN",
+                     C2D_Color32(255, 215, 0, 255));
+    for (int i = 0; i < 5; ++i)
+        DrawTextCentered(160.0f, (float)WAI_BOX_Y0 + 32.0f + 14.0f * (float)i, 1.0f, lines[i], text);
+    DrawTextCentered(160.0f, (float)WAI_BOX_Y0 + 108.0f, 1.0f, es ? "QUIERES VER ESOS BORDES?" : "SHOW THESE EDGES?",
+                     white);
+    DrawTextCentered(160.0f, (float)WAI_BOX_Y0 + 124.0f, 1.0f,
+                     es ? "(SE CAMBIA EN PANTALLA > ASPECTO)" : "(CHANGE IT IN DISPLAY > ASPECT)",
+                     C2D_Color32(130, 140, 160, 255));
+    DrawButton((float)UPD_YES_X0, (float)WAI_BTN_Y0, (float)(UPD_YES_X1 - UPD_YES_X0), 28.0f,
+               es ? "SI" : "YES", white, C2D_Color32(16, 60, 32, 255), C2D_Color32(55, 150, 95, 255));
+    DrawButton((float)UPD_NO_X0, (float)WAI_BTN_Y0, (float)(UPD_NO_X1 - UPD_NO_X0), 28.0f,
+               "NO", white, C2D_Color32(64, 22, 22, 255), C2D_Color32(180, 60, 60, 255));
 }
 
 /* Action picker popup for remapping */
@@ -6131,6 +6202,7 @@ void Port_BottomUI_Render(void) {
      * only draw the toast (if one is active) onto this frame's target. */
     Port_RA_RenderToastOverlay();
     RenderUpdatePrompt(GetLang());
+    RenderWideAiQuestion(GetLang());
     RenderBusyOverlay();
     RenderNoticeToast();
     RenderDevFtp();

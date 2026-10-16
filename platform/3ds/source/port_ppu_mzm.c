@@ -142,6 +142,9 @@ static int sAspectRatio = 1; /* 1 = ORIGINAL, 2 = STRETCH, 3 = WIDE (0 = the old
  * for players who do not want it. Kept apart from sAspectRatio so every "is it WIDE" check
  * (aspect == 3) stays as it is. */
 static bool sWideAi;
+/* The player has answered the one-time question about the generated art (the bottom
+ * screen asks it the first time WIDE is on: Port_Config_WideAiQuestionDue). */
+static bool sWideAiAsked;
 static int sDisplayStyle = 0; /* 0 = PIXEL PERFECT, 1 = SCALED (2 = BLUR retired -- no effect on the GPU path) */
 static const char* const sConfigPath = "mzm3ds.ini";
 
@@ -226,6 +229,7 @@ void Port_Config_Save(void) {
     fprintf(file, "# Metroid Zero Mission 3DS runtime settings\n");
     fprintf(file, "aspect_ratio=%d\n", sAspectRatio);
     fprintf(file, "wide_ai=%u\n", sWideAi ? 1u : 0u);
+    fprintf(file, "wide_ai_asked=%u\n", sWideAiAsked ? 1u : 0u);
     fprintf(file, "display_style=%d\n", sDisplayStyle);
     fprintf(file, "show_fps=%d\n", sFpsPosition);
     fprintf(file, "auto_hide_hud=%u\n", sAutoHideHud ? 1u : 0u);
@@ -352,6 +356,8 @@ void Port_Config_Load(void) {
             if (val >= 1 && val <= 3) sAspectRatio = val;
         } else if (strcmp(key, "wide_ai") == 0) {
             sWideAi = val != 0;
+        } else if (strcmp(key, "wide_ai_asked") == 0) {
+            sWideAiAsked = val != 0;
         } else if (strcmp(key, "display_style") == 0) {
             /* BLUR (2) retired -- clamp any old value into PIXEL PERFECT/SCALED. */
             if (val >= 0 && val <= 1) sDisplayStyle = val;
@@ -653,6 +659,13 @@ const char* Port_Config_Get3DSAspectRatioName(void) {
     return (sAspectRatio >= 0 && sAspectRatio < 4) ? names[sAspectRatio] : "ORIGINAL";
 }
 bool Port_Config_GetWideAi(void) { return sAspectRatio == 3 && sWideAi; }
+/* WIDE is on and the player was never asked whether to show the generated art. */
+bool Port_Config_WideAiQuestionDue(void) { return sAspectRatio == 3 && !sWideAiAsked; }
+void Port_Config_AnswerWideAi(bool yes) {
+    sWideAi = yes;
+    sWideAiAsked = true;
+    Port_Config_Save();
+}
 void Port_Config_Cycle3DSAspectRatio(void) {
     /* WIDE comes twice: plain, then WIDE + AI (sWideAi). */
     if (sAspectRatio == 3 && !sWideAi) {
