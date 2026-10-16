@@ -23,6 +23,7 @@
 #include "port_gba_bezel.h"
 #include "port_wide_view.h"
 #include "port_scene_pictures.h"
+#include "port_scene_sprites.h"
 #include "platform_gpu_3ds.h"
 #include "port_debug_tools.h" /* PORT_DEBUG_TOOLS_ACTIVE */
 
@@ -3686,6 +3687,57 @@ static void CollectSprite(int oamIndex, bool obj1D) {
     }
 }
 
+/* WIDE scene sprite (port_scene_sprites.h): with WIDE + AI, a scene's sprite
+ * that the GBA screen cut off is one texture, the game's pieces plus the
+ * generated rest, drawn where the game put the sprite this frame. Sets hide[]
+ * for the OAM entries it stands for. Pushed before the OAM entries, so it
+ * sits behind every sprite of the same priority, as the trail's pieces do
+ * behind the ship's (they follow it in OAM). */
+static void CollectSceneSprite(bool obj1D, bool hide[128]) {
+    static Tex3DS_SubTexture sSub;
+    extern s16 gMainGameMode;
+    const PortSceneSpriteDef* def = sWideScene && sWideOn ? PortSceneSprite_Find(gMainGameMode) : NULL;
+    const uint16_t* oam = (const uint16_t*)gOamMem;
+    int frame, ax, ay, slot;
+    if (!def || !PortSceneSprite_Match(def, oam, hide, &frame, &ax, &ay, &slot)) {
+        PortSceneSprite_Release();
+        return;
+    }
+    C3D_Tex* tex = PortSceneSprite_Texture(def, frame, (const uint16_t*)gObjPltt, obj1D);
+    if (!tex) {
+        memset(hide, 0, 128 * sizeof(bool));
+        return;
+    }
+    const WindowVis rectWinVis = sWindowActive ? sLayerWinVis[4] : WIN_VIS_ALWAYS;
+    if (rectWinVis == WIN_VIS_NEVER) return;
+    /* The first piece's priority and mode stand for the sprite (the game
+     * gives every piece the same). */
+    const uint16_t attr0 = oam[slot * 4], attr2 = oam[slot * 4 + 2];
+    const int priority = (attr2 >> 10) & 3;
+    const bool blendAlpha = ((attr0 >> 10) & 3u) == 1u || (sBldEffect == 1 && BldIsFirstTarget(sIoBldcnt, 4));
+    sSub = (Tex3DS_SubTexture){
+        .width = (u16)def->width, .height = (u16)def->height,
+        .left = 0.0f, .top = 1.0f,
+        .right = (float)def->width / (float)def->texWidth,
+        .bottom = 1.0f - (float)def->height / (float)def->texHeight,
+    };
+    const int idx = AllocDrawItemSubtex(&sSub, (3 - priority) * 10 + 4);
+    if (idx < 0) return;
+    DrawItem* item = &sDrawItems[idx];
+    item->img.tex = tex;
+    item->x = (float)(ax + def->canvasDX);
+    item->y = (float)(ay + def->canvasDY);
+    item->w = (float)def->width;
+    item->h = (float)def->height;
+    item->angle = 0.0f;
+    item->depthTier = (int8_t)PortStereoDepth_ObjTier(&sDepthState, priority);
+    item->blendAlpha = blendAlpha;
+    item->affine = false;
+    item->winVis = rectWinVis;
+    item->isHud = false;
+    item->plainEnv = false;
+}
+
 /* Frames outside this scope fall back to the CPU renderer (port/ppu) for
  * that frame rather than drawing them wrong: forced blank (DISPCNT bit7 --
  * real hardware shows a blank white screen and skips all BG/OBJ rendering
@@ -4689,7 +4741,12 @@ void Port_GpuRenderer_CollectFrame(void) {
     }
     sPushFx = 0; /* only BG layers set it */
     if (dispcnt & (1u << 12)) {
-        for (int i = 127; i >= 0; --i) CollectSprite(i, obj1D);
+        bool hide[128] = { false };
+        CollectSceneSprite(obj1D, hide);
+        for (int i = 127; i >= 0; --i)
+            if (!hide[i]) CollectSprite(i, obj1D);
+    } else {
+        PortSceneSprite_Release();
     }
     {
         const u64 now = svcGetSystemTick();

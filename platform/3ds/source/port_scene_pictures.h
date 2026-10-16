@@ -46,6 +46,10 @@ int PortScenePic_SceneKey(int gameMode);
  * on first use; repainted only when a colour it uses changed. NULL if it could not be made. */
 C3D_Tex* PortScenePic_Texture(const PortScenePictureDef* def, const uint16_t* bgPalette);
 
+/* Unpacks a standard LZ4 block of exactly dstLen bytes (the pictures' and the scene sprites'
+ * data). */
+bool PortScenePic_Lz4Decompress(const uint8_t* src, size_t srcLen, uint8_t* dst, size_t dstLen);
+
 /* Frees the loaded picture, if any (the scene is over). */
 void PortScenePic_Release(void);
 
