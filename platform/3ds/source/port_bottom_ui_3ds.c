@@ -2544,10 +2544,14 @@ static const char* GetAspectRatioDisplayName(int lang) {
                                              "ETIRE (16:9)", "ALLARGATO (16:9)", "ESTIRADO (16:9)" };
     /* WIDE shows the world the GBA hides past its frame instead of stretching. */
     static const char* const wideL[7] = { "WIDE", "WIDE", "WIDE", "WEIT", "LARGE", "AMPIO", "AMPLIO" };
+    /* WIDE + AI: WIDE that also shows the scene art an image AI generated (off by default). */
+    static const char* const wideAiL[7] = { "WIDE + AI", "WIDE + AI", "WIDE + AI", "WEIT + KI", "LARGE + IA",
+                                            "AMPIO + IA", "AMPLIO + IA" };
+    extern bool Port_Config_GetWideAi(void);
 
     if (lang < 0 || lang > 6) lang = 0;
     int ar = Port_Config_Get3DSAspectRatio();
-    if (ar == 3) return wideL[lang];
+    if (ar == 3) return Port_Config_GetWideAi() ? wideAiL[lang] : wideL[lang];
     /* STRETCH has no meaning at 1:1, so PIXEL PERFECT only offers ORIGINAL / WIDE. */
     if (Port_Config_Get3DSDisplayStyle() == 0) return originalPixelL[lang];
     return ar == 2 ? stretchL[lang] : originalL[lang];

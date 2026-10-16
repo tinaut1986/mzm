@@ -12,7 +12,10 @@ One build works with the **EUR, USA or JAP** ROM: the region is detected when th
 
 - 60 FPS gameplay, rendered by a custom PICA200 GPU renderer (`citro3d`/`citro2d`) for background tiles and sprites, with an automatic per-frame CPU fallback when the scene uses GBA PPU effects the GPU path does not cover (affine backgrounds, windows, mosaic).
 - **Stereoscopic 3D** driven by the console's 3D slider, with multi-layer depth (HUD, platforms, Samus, background scenery).
-- **Aspect ratio**: `WIDE`, `ORIGINAL` or `STRETCH`.
+- **Aspect ratio**: `WIDE`, `WIDE + AI`, `ORIGINAL` or `STRETCH`. `WIDE` shows more of what the game
+  itself has around the GBA's frame. `WIDE + AI` also fills, in some scenes (the title screen, the
+  intro), the parts the game never had with art made with a generative image AI; it is off unless
+  chosen.
 - **Display style**: `PIXEL PERFECT`, `SCALED` or `BLUR`.
 - Optional FPS counter and an auto-hide HUD option.
 

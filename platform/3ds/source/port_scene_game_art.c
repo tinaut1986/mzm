@@ -64,6 +64,10 @@ static bool TitleArt(const PortScenePictureDef* def, uint8_t* codes) {
     return true;
 }
 
+bool PortScenePic_HasGameArtSource(const PortScenePictureDef* def) {
+    return strcmp(def->name, "title") == 0;
+}
+
 bool PortScenePic_FillGameArt(const PortScenePictureDef* def, uint8_t* codes) {
     if (strcmp(def->name, "title") == 0) return TitleArt(def, codes);
     return false;
