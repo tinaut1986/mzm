@@ -37,6 +37,10 @@ bool PortWide_GameActive(void) {
     return PortWide_Selected() && (gMainGameMode == GM_INGAME || gMainGameMode == GM_DEMO);
 }
 
+/* gCurrentCutscene (include/constants/cutscene.h), valid in GM_CUTSCENE. */
+extern signed char gCurrentCutscene;
+enum { CUTSCENE_RIDLEY_IN_SPACE = 7, CUTSCENE_ENTER_TOURIAN = 10, CUTSCENE_BEFORE_RUINS_TEST = 11 };
+
 bool PortWide_SceneActive(void) {
     if (!PortWide_Selected()) return false;
     switch (gMainGameMode) {
@@ -45,8 +49,18 @@ bool PortWide_SceneActive(void) {
         case GM_CHOZODIA_ESCAPE:
         case GM_CREDITS:
         case GM_TOURIAN_ESCAPE:
-        case GM_CUTSCENE:
             return true;
+        case GM_CUTSCENE:
+            /* Left ORIGINAL until they get their own treatment (seen on the 2DS,
+             * 2026-10-16; the owner will go over every cutscene later). Ridley
+             * in space stacks several BGs that each hold a picture of a
+             * different size, so their extents make a patchwork and the view
+             * jumps from layer to layer. The Tourian entrance pans a wide BG
+             * the game fills in as it goes, so its extent grows while it plays
+             * and the picture jumps every time. The owner also left out the one
+             * before the ruins test. */
+            return gCurrentCutscene != CUTSCENE_RIDLEY_IN_SPACE && gCurrentCutscene != CUTSCENE_ENTER_TOURIAN &&
+                   gCurrentCutscene != CUTSCENE_BEFORE_RUINS_TEST;
         default:
             return false;
     }

@@ -95,14 +95,14 @@ tables*; confirm each with a dump (**VERIFY**) before spending an AI run on it.
 | Credits chozo wall / drawing | `GM_CREDITS` | 512x256 and 256x512 | **D** or **C**, **VERIFY** |
 | Chozodia escape, Tourian escape | `GM_CHOZODIA_ESCAPE`, `GM_TOURIAN_ESCAPE` | 256x256 x7 + one 256x512 | **VERIFY**; mostly gameplay-like, probably leave as ORIGINAL |
 | Getting fully powered suit | `GM_CUTSCENE` | 2 x 256x512, 1 x 256x256, uses WIN1 | **C** (tall, vertical scroll) for the BG; windows -> **E** during the flash. Closest relative of the Minish portal scene |
-| Ridley in space | `GM_CUTSCENE` | 2 x 256x512, 4 x 256x256 | **C** + **G** (stars) ; affine/zoom parts -> **E** |
+| Ridley in space | `GM_CUTSCENE` | 2 x 256x512, 4 x 256x256 | **C** + **G** (stars) ; affine/zoom parts -> **E**. **Left ORIGINAL (2026-10-16)**: widened with its own data its layers grew by different amounts (a patchwork, the view jumping between layers); excluded in `PortWide_SceneActive` |
 | Kraid rising | `GM_CUTSCENE` | 4 x 256x256 | **C**-like: vertical scroll, BG wraps at 256 |
 | Statue opening | `GM_CUTSCENE` | 3 x 256x256 | **A**/**C**, **VERIFY** |
 | Samus in blue ship | `GM_CUTSCENE` | 1 x 256x256 | **A**/**G** |
 | Mecha sees Samus | `GM_CUTSCENE` | 1 x 256x256 | **A** |
 | Story text | `GM_CUTSCENE` | 1 x 256x256 | **B** (text on plain) |
-| Before ruins test (chozo wall) | `GM_CUTSCENE` | 4 x 512x256, 5 x 256x256 | **D**: the wall is wider than the screen; only the scroll's ends need art |
-| Enter Tourian | `GM_CUTSCENE` | 256x256 + 512x256 | **D**, **VERIFY** |
+| Before ruins test (chozo wall) | `GM_CUTSCENE` | 4 x 512x256, 5 x 256x256 | **D**: the wall is wider than the screen; only the scroll's ends need art. **Left ORIGINAL (2026-10-16)**, at the owner's request: every cutscene gets a proper pass later |
+| Enter Tourian | `GM_CUTSCENE` | 256x256 + 512x256 | **D**. **Left ORIGINAL (2026-10-16)**: the game fills the 512 BG in as it pans, so the extent grew while it played and the picture jumped; needs a fixed extent (or an AI picture) |
 | Mother Brain close-up, Ridley landing, Ridley spawn | `GM_CUTSCENE` | no page table found in `src/data/cutscenes/` | **VERIFY**; close-up uses affine/zoom -> **E** (leave ORIGINAL) |
 | Map screen / pause | `GM_MAP_SCREEN` etc. | menus | leave ORIGINAL unless the owner asks |
 

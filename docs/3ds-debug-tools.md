@@ -789,6 +789,21 @@ tools/mzm-link/mzm-link.py peek gAutoBombTraceNext 4                            
 `tools/auto-bomb-sim.py` is the host model the numbers came from (the same physics and the same
 planner); compare a trace against its output when a change to the physics or the planner is made.
 
+### Playing any cutscene
+
+A cutscene can be started from the PC without reaching it in a game: from gameplay (a save state),
+set the cutscene, its stage and the game mode, in that order. It plays and then returns to the
+room. The ids are in `include/constants/cutscene.h`. The ones not tied to a room
+(the types in `src/data/cutscenes/cutscenes_data.c`: `NON_GAMEPLAY`, `BETWEEN_GAMEPLAY`) are safe;
+the `IN_GAMEPLAY` ones (6, 8, 12, 14) expect their own room.
+
+```sh
+tools/mzm-link/mzm-link.py loadstate 1
+tools/mzm-link/mzm-link.py poke gCurrentCutscene 05     # Kraid rising
+tools/mzm-link/mzm-link.py poke gSubGameModeStage 00
+tools/mzm-link/mzm-link.py poke gMainGameMode 0a00      # GM_CUTSCENE (s16, little-endian)
+```
+
 ### Audio underruns and the core 1 share
 
 The audio thread counts the NDSP buffers it fills and how many of them the ring could not fill
