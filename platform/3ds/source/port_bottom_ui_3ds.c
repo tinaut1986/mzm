@@ -2180,12 +2180,13 @@ static int BottomTabLayout(BottomTabSlot slots[BOTTOM_TAB_SLOT_MAX]) {
     float x = 4.0f;
     slots[n].x = x; slots[n].w = TAB_ICON_W; slots[n].tab = BOTTOM_TAB_MAP;     slots[n].icon = 0; n++; x += TAB_ICON_PITCH;
     slots[n].x = x; slots[n].w = TAB_ICON_W; slots[n].tab = BOTTOM_TAB_STATUS;  slots[n].icon = 1; n++; x += TAB_ICON_PITCH;
-    if (showDebug) {
-        slots[n].x = x; slots[n].w = TAB_ICON_W; slots[n].tab = BOTTOM_TAB_DEBUG; slots[n].icon = 2; n++; x += TAB_ICON_PITCH;
-    }
     slots[n].x = x; slots[n].w = TAB_ICON_W; slots[n].tab = BOTTOM_TAB_STATE;   slots[n].icon = 4; n++; x += TAB_ICON_PITCH;
     slots[n].x = x; slots[n].w = TAB_ICON_W; slots[n].tab = BOTTOM_TAB_ACHIEVEMENTS; slots[n].icon = 5; n++; x += TAB_ICON_PITCH;
-    slots[n].x = x; slots[n].w = TAB_ICON_W; slots[n].tab = BOTTOM_TAB_OPTIONS; slots[n].icon = 3; n++;
+    slots[n].x = x; slots[n].w = TAB_ICON_W; slots[n].tab = BOTTOM_TAB_OPTIONS; slots[n].icon = 3; n++; x += TAB_ICON_PITCH;
+    /* Last, so the player-facing tabs keep the same places in every build. */
+    if (showDebug) {
+        slots[n].x = x; slots[n].w = TAB_ICON_W; slots[n].tab = BOTTOM_TAB_DEBUG; slots[n].icon = 2; n++;
+    }
     return n;
 }
 
