@@ -150,14 +150,30 @@ int Platform3DS_Init(void) {
      * without any visible error. Try decreasing candidate percentages since
      * a lower ask is more likely to be granted than a fixed 80/30. */
     static const u32 core1Candidates[] = { 80, 70, 50, 30 };
+    Result core1FirstErr = 0;
     for (size_t i = 0; i < sizeof(core1Candidates) / sizeof(core1Candidates[0]); ++i) {
-        if (R_FAILED(APT_SetAppCpuTimeLimit(core1Candidates[i]))) continue;
+        const Result rc = APT_SetAppCpuTimeLimit(core1Candidates[i]);
+        if (R_FAILED(rc)) {
+            if (core1FirstErr == 0) core1FirstErr = rc;
+            continue;
+        }
         u32 actual = 0;
         if (R_SUCCEEDED(APT_GetAppCpuTimeLimit(&actual)) && actual > 0) {
             sCore1Available = true;
             sCore1TimeLimit = actual;
             break;
         }
+    }
+    /* The ceiling is the exheader's MaxCpu & 0x7F (platform/3ds/cia/mzm3ds.rsf):
+     * Luma3DS's PM refuses anything above it with 0xD8E05BF4. It was 0x9E
+     * (= 30) until 2026-10, so every ask above 30 failed. Logged so a CIA's
+     * grant can be read back from the SD log. */
+    {
+        extern void Port_DebugLog_Note(const char* msg);
+        char msg[96];
+        snprintf(msg, sizeof(msg), "core1: granted %u%% (first refusal %08lx)",
+                 sCore1TimeLimit, (unsigned long)core1FirstErr);
+        Port_DebugLog_Note(msg);
     }
 
     threadCreate(Port_GbaTiming_ThreadMain, NULL, 4096, 0x20, -1, true);
