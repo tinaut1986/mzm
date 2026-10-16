@@ -2540,8 +2540,6 @@ static const char* GetAspectRatioDisplayName(int lang) {
                                               "ORIGINAL (3:2)", "ORIGINALE (3:2)", "ORIGINAL (3:2)" };
     static const char* const originalPixelL[7] = { "ORIGINAL (1:1)", "ORIGINAL (1:1)", "ORIGINAL (1:1)", "ORIGINAL (1:1)",
                                                    "ORIGINAL (1:1)", "ORIGINALE (1:1)", "ORIGINAL (1:1)" };
-    static const char* const stretchL[7] = { "STRETCH (16:9)", "STRETCH (16:9)", "STRETCH (16:9)", "GESTRECKT (16:9)",
-                                             "ETIRE (16:9)", "ALLARGATO (16:9)", "ESTIRADO (16:9)" };
     /* WIDE shows the world the GBA hides past its frame instead of stretching. */
     static const char* const wideL[7] = { "WIDE", "WIDE", "WIDE", "WEIT", "LARGE", "AMPIO", "AMPLIO" };
     /* WIDE + AI: WIDE that also shows the scene art an image AI generated (off by default). */
@@ -2552,9 +2550,7 @@ static const char* GetAspectRatioDisplayName(int lang) {
     if (lang < 0 || lang > 6) lang = 0;
     int ar = Port_Config_Get3DSAspectRatio();
     if (ar == 3) return Port_Config_GetWideAi() ? wideAiL[lang] : wideL[lang];
-    /* STRETCH has no meaning at 1:1, so PIXEL PERFECT only offers ORIGINAL / WIDE. */
-    if (Port_Config_Get3DSDisplayStyle() == 0) return originalPixelL[lang];
-    return ar == 2 ? stretchL[lang] : originalL[lang];
+    return Port_Config_Get3DSDisplayStyle() == 0 ? originalPixelL[lang] : originalL[lang];
 }
 
 static const char* GetDisplayStyleDisplayName(int lang) {

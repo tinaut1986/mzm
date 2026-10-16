@@ -4918,7 +4918,6 @@ void Port_GpuRenderer_DrawFrame(void) {
 
     float slider3d = PlatformGpu3DS_Get3DSlider();
     int style = Port_Config_Get3DSDisplayStyle();
-    int aspect = Port_Config_Get3DSAspectRatio();
     /* HUD-in-the-border needs the black border, which WIDE fills with world. */
     bool hudOutside = (style == 0 && Port_Config_GetHudOutside() && !PortWide_Selected());
 
@@ -4939,20 +4938,13 @@ void Port_GpuRenderer_DrawFrame(void) {
         screenBaseX = 80.0f; /* (400 - 240) / 2 */
         screenBaseY = 40.0f; /* (240 - 160) / 2 */
     } else {
-        if (aspect == 2) { /* STRETCH (400x240) */
-            scaleX = 400.0f / 240.0f; /* 1.6666667f */
-            scaleY = 1.5f;
-            screenBaseX = 0.0f;
-            screenBaseY = 0.0f;
-        } else { /* ORIGINAL (3:2 / 360x240), and the retired WIDE (0) with it.
-                  * Must stay in lockstep with PlatformGpu3DS_GetTopImageRect:
-                  * the screen-space effects position themselves off that rect,
-                  * so a disagreement here misplaces them. */
-            scaleX = 1.5f;
-            scaleY = 1.5f;
-            screenBaseX = 20.0f;
-            screenBaseY = 0.0f;
-        }
+        /* SCALED: 3:2, 360x240. Must stay in lockstep with
+         * PlatformGpu3DS_GetTopImageRect: the screen-space effects position
+         * themselves off that rect, so a disagreement here misplaces them. */
+        scaleX = 1.5f;
+        scaleY = 1.5f;
+        screenBaseX = 20.0f;
+        screenBaseY = 0.0f;
     }
 
     /* Where things start on screen. The world slides by the WIDE view's shift

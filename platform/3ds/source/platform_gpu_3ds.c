@@ -95,7 +95,7 @@ extern void Port_GpuRenderer_GetLastFrameStats(int* outItems, int* outObjItems, 
 enum {
     TOP_ASPECT_LEGACY_WIDE = 0, /* the old stretched WIDE, retired -- Port_Config_Load clamps it to ORIGINAL */
     TOP_ASPECT_ORIGINAL,
-    TOP_ASPECT_STRETCH,
+    TOP_ASPECT_RETIRED_STRETCH, /* retired 2026-10-17, read back as ORIGINAL too */
     /* Shows the world past the GBA frame (port_wide_view.h). Only the GPU
      * renderer can draw that; a frame this file draws itself is a plain
      * ORIGINAL one. */
@@ -628,13 +628,12 @@ static void DrawTopImageStereo(const uint32_t* leftPixels, const uint32_t* right
         drawH = 160.0f;
     } else {
         drawH = 240.0f;
-        /* Only STRETCH fills the screen width; ORIGINAL, WIDE (whose extra
-         * world only the GPU renderer draws) and any stale out-of-range value
-         * pillarbox to 360. Kept identical to
-         * PlatformGpu3DS_GetTopImageRect and to port_gpu_renderer.c's
-         * screenBaseX/scaleX: a rect that disagrees with what was actually
-         * drawn misplaces every screen-space effect built on it. */
-        drawW = (Port_Config_Get3DSAspectRatio() == TOP_ASPECT_STRETCH) ? 400.0f : 360.0f;
+        /* ORIGINAL and WIDE (whose extra world only the GPU renderer draws)
+         * pillarbox to 360. Kept identical to PlatformGpu3DS_GetTopImageRect
+         * and to port_gpu_renderer.c's screenBaseX/scaleX: a rect that
+         * disagrees with what was actually drawn misplaces every screen-space
+         * effect built on it. */
+        drawW = 360.0f;
     }
     const C2D_DrawParams params = {
         .pos = { .x = (400.0f - drawW) * 0.5f, .y = (240.0f - drawH) * 0.5f,
@@ -743,8 +742,7 @@ void PlatformGpu3DS_GetTopImageRect(int* outX, int* outY, int* outW, int* outH) 
         w = 240; h = 160;
     } else {
         h = 240;
-        /* See DrawTopImageStereo: STRETCH is the only full-width aspect. */
-        w = (Port_Config_Get3DSAspectRatio() == TOP_ASPECT_STRETCH) ? 400 : 360;
+        w = 360; /* see DrawTopImageStereo */
     }
     if (outX) *outX = (400 - w) / 2;
     if (outY) *outY = (240 - h) / 2;
@@ -1172,7 +1170,7 @@ static void OamCensus(unsigned* outTotal, unsigned* outVisible, unsigned* outAff
  * comparable with one without.
  *
  *   bits 0-1   display style (0 = PIXEL PERFECT, see Port_Config_*)
- *   bits 2-3   aspect ratio (2 = STRETCH)
+ *   bits 2-3   aspect ratio (1 = ORIGINAL, 3 = WIDE)
  *   bits 4-10  3D slider position x100, 0..100
  *   bit  11    FPS overlay on
  *   bit  12    HUD drawn outside the frame

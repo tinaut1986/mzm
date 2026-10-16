@@ -426,7 +426,7 @@ struct PerfSample {      // 148 bytes, sampleCount of them back to back
                                  // bits 16-31 haze tile count
     uint32_t captureFlags;       // the settings the capture was taken under:
                                  // bits 0-1   display style (0 = PIXEL PERFECT)
-                                 // bits 2-3   aspect ratio (2 = STRETCH)
+                                 // bits 2-3   aspect ratio (1 = ORIGINAL, 3 = WIDE)
                                  // bits 4-10  3D slider x100, 0..100
                                  // bit  11    FPS overlay on
                                  // bit  12    HUD outside the frame
