@@ -1039,7 +1039,8 @@ static void ComputeDepthState(uint16_t dispcnt) {
      * valid while GM_CUTSCENE renders. Declared by hand -- this file keeps out
      * of the game struct headers, same as gMainGameMode above. */
     extern signed char gCurrentCutscene;
-    sDepthState.inGameplay = (gMainGameMode == 4);
+    /* GM_DEMO (11): the title screen's demos run the same in-game frame. */
+    sDepthState.inGameplay = (gMainGameMode == 4 || gMainGameMode == 11);
     sDepthState.samusOnTopOfBackgrounds =
         sDepthState.inGameplay && gSamusOnTopOfBackgrounds != 0;
     /* BG0 is the pop-forward overlay layer for menus / dialogs / the pause
@@ -2858,7 +2859,7 @@ static void CollectBgLayer(int bgIndex) {
              * Confirmed from an on-device IO dump of that room.
              *
              * So: the BG0-is-an-overlay rule now applies only outside real
-             * gameplay (GM_INGAME == 4, include/constants/game_state.h),
+             * gameplay (GM_INGAME == 4, or GM_DEMO == 11: game_state.h),
              * which is where BG0 genuinely is the text/dialog layer. In
              * gameplay every BG, BG0 included, maps by its own priority. */
             int depthTier = PortStereoDepth_BgTier(&sDepthState, bgIndex);
@@ -3482,6 +3483,9 @@ static void CollectSprite(int oamIndex, bool obj1D) {
      * so worked out once (it asks four other modules). */
     extern s16 gMainGameMode;
     bool inMapOrPauseScreen = gMainGameMode == 5;
+    /* GM_INGAME, or GM_DEMO: the title screen's demos run the same in-game
+     * frame (HudUpdateOam and the slot tags included). */
+    const bool inPlay = gMainGameMode == 4 || gMainGameMode == 11;
     /* HUD sprites are exactly the OAM slots HudUpdateOam wrote
      * this frame -- it fills OAM from slot 0 and runs before every
      * sprite system in in_game.c's frame (SpriteDrawAll_*,
@@ -3509,7 +3513,7 @@ static void CollectSprite(int oamIndex, bool obj1D) {
      * that never calls HudDraw: the map/pause branch above already
      * handles GM_MAP_SCREEN, and everywhere else these are world
      * sprites. */
-    bool isRealHud = gMainGameMode == 4 && oamIndex < Port_Hud_GetOamCount();
+    bool isRealHud = inPlay && oamIndex < Port_Hud_GetOamCount();
     /* In-game message / area-name banners (and the save cursor) are
      * ordinary sprites, so isRealHud never catches them, yet they
      * are an overlay and draw at OAM priority 0 in 2D. SpriteDraw
@@ -3517,12 +3521,12 @@ static void CollectSprite(int oamIndex, bool obj1D) {
      * the same front tier as the HUD so stereo does not sink the
      * flat text into Samus. */
     extern int Port_OverlayText_IsSlot(int oamIndex);
-    bool isOverlayText = gMainGameMode == 4 && Port_OverlayText_IsSlot(oamIndex);
+    bool isOverlayText = inPlay && Port_OverlayText_IsSlot(oamIndex);
     /* The escape countdown digits (PE_ESCAPE particle, tagged in
      * src/particle.c). Route them exactly like real HUD: HUD depth
      * tier, and off-screen with the HUD when that option is on. */
     extern int Port_OverlayText_IsEscapeSlot(int oamIndex);
-    bool isEscapeHud = gMainGameMode == 4 && Port_OverlayText_IsEscapeSlot(oamIndex);
+    bool isEscapeHud = inPlay && Port_OverlayText_IsEscapeSlot(oamIndex);
     if (isEscapeHud) isRealHud = true;
     /* Per-sprite depth override (port_sprite_depth_oam.c): a few
      * sprite TYPES are authored to composite with a specific BG --
@@ -3530,7 +3534,7 @@ static void CollectSprite(int oamIndex, bool obj1D) {
      * the sprite face blends with the BG that carries the top of
      * the head. SpriteDraw tags their slots; honour that here
      * instead of the one forced world-sprite plane. */
-    int spriteDepthCode = (gMainGameMode == 4) ? Port_SpriteDepth_SlotCode(oamIndex)
+    int spriteDepthCode = inPlay ? Port_SpriteDepth_SlotCode(oamIndex)
                                                : PORT_SPRITE_DEPTH_NONE;
     int depthTier;
     if (inMapOrPauseScreen) {

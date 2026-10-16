@@ -2094,7 +2094,7 @@ bool PortPpuMzm_IsDoorDepthBlock(int blockX, int blockY) {
  * (stage 3). Positions are BG3 scroll, in pixels.
  * ------------------------------------------------------------------- */
 int PortPpuMzm_DoorTunnel(int* outX, int* outY, int* outTargetX, int* outTargetY, int* outPause) {
-    if (gMainGameMode != GM_INGAME) return PORT_DOOR_TUNNEL_NONE;
+    if (gMainGameMode != GM_INGAME && gMainGameMode != GM_DEMO) return PORT_DOOR_TUNNEL_NONE;
     if (gColorFading.type != COLOR_FADING_DOOR_TRANSITION && gColorFading.type != COLOR_FADING_WHITE)
         return PORT_DOOR_TUNNEL_NONE;
     int phase = PORT_DOOR_TUNNEL_NONE;
