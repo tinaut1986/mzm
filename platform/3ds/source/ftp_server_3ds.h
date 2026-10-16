@@ -50,7 +50,11 @@ void FtpServer_Stats(unsigned *sent, unsigned *received, bool *connected);
 // While a .cia is being received or SITE INSTALL runs, the line to show the player (the
 // bottom screen's toast); NULL otherwise.
 const char *FtpServer_Notice(void);
+// How far that is: 1 while a .cia arrives, 2 while it installs, 3 while the game waits to restart
+// into it (FtpServer_TakeRelaunch comes after 10 s), 0 otherwise; `done` of `total` (bytes, or ms
+// for 3). `total` is 0 when the client did not announce the size with ALLO.
+int FtpServer_Progress(unsigned long long *done, unsigned long long *total);
 // Main thread, once per frame: writes what the server thread has to say into the SD log.
 void FtpServer_Tick(void);
-// True once, after a SITE INSTALL succeeded: the main loop jumps into the new build.
+// True once, 10 s after a SITE INSTALL succeeded: the main loop jumps into the new build.
 bool FtpServer_TakeRelaunch(void);

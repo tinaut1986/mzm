@@ -228,8 +228,31 @@ extern const char* FtpServer_Notice(void);
 extern bool FtpServer_InstallOnly(void);
 extern void FtpServer_Address(char* out, unsigned cap);
 extern void FtpServer_Cancel(void);
+extern int FtpServer_Progress(unsigned long long* done, unsigned long long* total);
 static const char* StandingNotice(void) {
     return FtpServer_Notice();
+}
+
+/* The standing notice's line with how far it is: "RECEIVING THE INSTALLER 42%", "INSTALLING 80%",
+ * "RESTARTING IN 7 S". `permille` is -1 when the total is not known (the client sent no ALLO):
+ * no bar, no percentage. */
+static const char* StandingNoticeLine(char* out, size_t cap, int* permille) {
+    const char* notice = StandingNotice();
+    *permille = -1;
+    if (!notice) return NULL;
+    unsigned long long done = 0, total = 0;
+    const int phase = FtpServer_Progress(&done, &total);
+    if (phase == 3 && total) {
+        *permille = (int)(done * 1000 / total);
+        const unsigned left = (unsigned)((total - done + 999) / 1000);
+        snprintf(out, cap, "%s %u S", notice, left);
+    } else if (total) {
+        *permille = (int)(done >= total ? 1000 : done * 1000 / total);
+        snprintf(out, cap, "%s %d%%", notice, *permille / 10);
+    } else {
+        snprintf(out, cap, "%s...", notice);
+    }
+    return out;
 }
 
 /* The install-only FTP server of a production build (dev-ftp.txt): its address and a CANCEL that
@@ -257,11 +280,20 @@ static int NoticeElapsedMs(void) {
 static void NoticeTick(void) {
     {
         static const char* sStandingSeen;
+        static int sPermilleSeen = -2;
+        static char sLineSeen[64];
         static bool sDevFtpSeen;
-        const char* standing = StandingNotice();
+        char line[64];
+        int permille;
+        const char* standing = StandingNoticeLine(line, sizeof(line), &permille);
         const bool devFtp = FtpServer_InstallOnly();
-        if (standing != sStandingSeen || devFtp != sDevFtpSeen) {
+        /* Redrawn when the line (a percent, a second) or the bar's pixel moves, not only when the
+         * notice changes: the server thread advances them without telling anyone. */
+        if (standing != sStandingSeen || devFtp != sDevFtpSeen || permille / 10 != sPermilleSeen / 10 ||
+            (standing && strcmp(line, sLineSeen) != 0)) {
             sStandingSeen = standing;
+            sPermilleSeen = permille;
+            snprintf(sLineSeen, sizeof(sLineSeen), "%s", standing ? line : "");
             sDevFtpSeen = devFtp;
             sBottomUiDirty = true;
         }
@@ -5937,12 +5969,15 @@ static void RenderDevFtp(void) {
  * colours as the rest of the bottom screen's dialogs, an amber warning
  * accent, centred and floating over whatever tab is showing. */
 static void RenderNoticeToast(void) {
-    const char* standing = StandingNotice();
+    char standingLine[64];
+    int permille = -1;
+    const char* standing = StandingNoticeLine(standingLine, sizeof(standingLine), &permille);
     /* A standing notice is drawn steady (no slide, no fade) for as long as it lasts. */
     const int elapsed = standing ? (int)NOTICE_ENTER_MS : NoticeElapsedMs();
     if (elapsed < 0) return;
     const char* title = standing ? "NEW BUILD" : sNoticeTitle;
     const char* body = standing ? standing : sNoticeBody;
+    const bool bar = standing && permille >= 0;
 
     float alpha = 1.0f;
     float rise = 0.0f;
@@ -5960,10 +5995,11 @@ static void RenderNoticeToast(void) {
     const float padX = 10.0f;
     const float gap = 10.0f;
     const float titleW = (float)Utf8CharCount(title) * 6.0f - 1.0f;
-    const float bodyW = (float)Utf8CharCount(body) * 6.0f - 1.0f;
+    /* A standing notice reserves the longest line it takes, so the box does not resize as it counts. */
+    const float bodyW = (float)Utf8CharCount(standing ? "RECEIVING THE INSTALLER 100%" : body) * 6.0f - 1.0f;
     const float textW = titleW > bodyW ? titleW : bodyW;
     const float boxW = (float)(int)(4.0f + padX + icon + gap + textW + padX);
-    const float boxH = 44.0f;
+    const float boxH = standing ? 56.0f : 44.0f;
     const float x = (float)(int)((320.0f - boxW) / 2.0f);
     const float y = (float)(int)((240.0f - boxH) / 2.0f + rise);
 
@@ -5982,6 +6018,11 @@ static void RenderNoticeToast(void) {
     const float tx = ix + icon + gap;
     DrawText(tx, y + 10.0f, 1.0f, title, NOTICE_RGBA(255, 215, 0, 255));
     DrawText(tx, y + 26.0f, 1.0f, body, NOTICE_RGBA(190, 210, 240, 255));
+    if (bar) { /* the bar, over the whole text column */
+        const float by = y + 42.0f;
+        C2D_DrawRectSolid(tx, by, 0.97f, textW, 6.0f, NOTICE_RGBA(40, 52, 84, 255));
+        C2D_DrawRectSolid(tx, by, 0.97f, textW * (float)permille / 1000.0f, 6.0f, NOTICE_RGBA(245, 175, 45, 255));
+    }
 #undef NOTICE_RGBA
 }
 

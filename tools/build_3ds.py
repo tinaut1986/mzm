@@ -410,7 +410,9 @@ def install_into_running_game(cia, host, port, dry_run=False):
     transferencia): el juego se instala sobre sí mismo y se relanza. Devuelve el código de salida."""
     from urllib.parse import quote
     cmd = ["curl", "--max-time", "300", "--ftp-create-dirs", "--user", ftp_login(), "-T", cia,
-           f"ftp://{host}:{port}{quote(INSTALL_SD_PATH)}", "-Q", f"-SITE INSTALL {INSTALL_SD_PATH}"]
+           f"ftp://{host}:{port}{quote(INSTALL_SD_PATH)}",
+           # "+" = before the transfer: the game's progress bar needs the size.
+           "-Q", f"+ALLO {os.path.getsize(cia)}", "-Q", f"-SITE INSTALL {INSTALL_SD_PATH}"]
     print(f"{BOLD}{CYAN}[+]{RESET} Enviando a {host}:{port} e instalando sobre el juego en marcha...")
     if dry_run:
         print(f"      {DIM}{' '.join(cmd)}{RESET}")

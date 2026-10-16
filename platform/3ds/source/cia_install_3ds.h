@@ -11,3 +11,6 @@ bool CiaInstall_File(const char *sdPath, char *error, unsigned errorCap);
 // Makes the process start the installed build of this title when it exits (libctru's
 // chainloader, run by aptExit()). Call it, then quit through the normal exit path.
 void CiaInstall_RelaunchOnExit(void);
+
+// How much of the running CiaInstall_File is written, in bytes (any thread).
+void CiaInstall_Progress(unsigned long long *done, unsigned long long *total);

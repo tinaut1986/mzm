@@ -6,6 +6,14 @@
 
 enum { kCiaIoSize = 128 * 1024 };
 
+// Written by the installing thread, read by the main one (CiaInstall_Progress).
+static volatile unsigned long long sProgressDone, sProgressTotal;
+
+void CiaInstall_Progress(unsigned long long *done, unsigned long long *total) {
+  *done = sProgressDone;
+  *total = sProgressTotal;
+}
+
 // The running title's ID and media (APT knows the application the system started).
 static bool RunningTitle(u64 *pid, FS_MediaType *media) {
   u8 m = MEDIATYPE_SD;
@@ -55,6 +63,7 @@ bool CiaInstall_File(const char *sdPath, char *error, unsigned errorCap) {
   snprintf(error, errorCap, "install start failed (%08lx)", (unsigned long)rc);
   if (R_FAILED(rc)) goto done;
   started = true;
+  sProgressDone = 0, sProgressTotal = size;
   for (u64 offset = 0; offset < size;) {
     u32 read = 0, wrote = 0, want = size - offset > kCiaIoSize ? kCiaIoSize : (u32)(size - offset);
     rc = FSFILE_Read(input, &read, offset, data, want);
@@ -64,6 +73,7 @@ bool CiaInstall_File(const char *sdPath, char *error, unsigned errorCap) {
     snprintf(error, errorCap, "install write failed (%08lx)", (unsigned long)rc);
     if (R_FAILED(rc) || wrote != read) goto done;
     offset += read;
+    sProgressDone = offset;
   }
   rc = AM_FinishCiaInstall(output);
   started = false;
