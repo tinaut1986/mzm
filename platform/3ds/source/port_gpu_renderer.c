@@ -22,6 +22,7 @@
 #include "port_haze_3ds.h"
 #include "port_gba_bezel.h"
 #include "port_wide_view.h"
+#include "port_scene_pictures.h"
 #include "platform_gpu_3ds.h"
 #include "port_debug_tools.h" /* PORT_DEBUG_TOOLS_ACTIVE */
 
@@ -2200,6 +2201,33 @@ static bool sWideOn;
  * extent is the scene's background picture (ComputeSceneWideView) and no room
  * data is involved. */
 static bool sWideScene;
+
+/* Each enabled text BG's picture this frame (ComputeSceneWideView), in its
+ * own BG px with the frame's left / top edge at its scroll (masked to the BG's
+ * size). CollectBgLayer draws a layer only inside its picture, so a logo or a
+ * text layer never shows the junk its BG holds past the frame. */
+typedef struct SceneSpan {
+    bool on;
+    int loX, hiX, loY, hiY;
+} SceneSpan;
+static SceneSpan sSceneSpan[4];
+
+/* Per BG, what its tile lines held last frame (see ComputeSceneWideView). */
+typedef struct SceneTrust {
+    uint32_t frame; /* sSceneFrame it was last updated on; 0 = never */
+    uint16_t cnt;
+    uint32_t colHash[64], rowHash[64];
+    bool colBad[64], rowBad[64];
+} SceneTrust;
+static SceneTrust sSceneTrust[4];
+static uint32_t sSceneFrame;
+
+/* The AI-drawn picture behind the scene's background BG, if the scene has one
+ * (port_scene_pictures.h): set by ComputeSceneWideView, drawn first in each
+ * eye. sScenePicX/Y: its canvas's top-left in GBA frame px. */
+static const PortScenePictureDef* sScenePic;
+static C3D_Tex* sScenePicTex;
+static int sScenePicX, sScenePicY;
 static int sExtL, sExtR, sExtT, sExtB;
 
 /* WIDE view geometry for the frame -- see ComputeWideView. */
@@ -2446,8 +2474,23 @@ static void CollectBgLayer(int bgIndex) {
      * original ones (-1..31 by 0..20); with it they grow by however many
      * tiles cover the extra area. wideSrc rebuilds the tiles VRAM does not
      * hold out there -- see WideBgSourceFor. */
-    const int txMin = -1 - (eL + 7) / 8, txMax = 31 + (eR + 7) / 8;
-    const int tyMin = -(eT + 7) / 8, tyMax = 20 + (eB + 7) / 8;
+    int txMin = -1 - (eL + 7) / 8, txMax = 31 + (eR + 7) / 8;
+    int tyMin = -(eT + 7) / 8, tyMax = 20 + (eB + 7) / 8;
+    /* A scene: only the layer's own picture, never the frame's own tiles
+     * (they are inside it by construction). See SceneSpan. */
+    if (sWideScene && sSceneSpan[bgIndex].on) {
+        const SceneSpan* sp = &sSceneSpan[bgIndex];
+        const int toScrollX = scrollX - (scrollX & (mapWidthTiles * 8 - 1));
+        const int toScrollY = scrollY - (scrollY & (mapHeightTiles * 8 - 1));
+        const int loX = ((sp->loX + toScrollX) >> 3) - scrollX / 8;
+        const int hiX = ((sp->hiX + toScrollX - 1) >> 3) - scrollX / 8;
+        const int loY = ((sp->loY + toScrollY) >> 3) - scrollY / 8;
+        const int hiY = ((sp->hiY + toScrollY - 1) >> 3) - scrollY / 8;
+        if (txMin < loX) txMin = loX;
+        if (txMax > hiX) txMax = hiX;
+        if (tyMin < loY) tyMin = loY;
+        if (tyMax > hiY) tyMax = hiY;
+    }
     /* `covered` is indexed from the range's own start, so it fits however far
      * the view reaches (at most ~54 tiles across, ~32 down). */
     const int covX = -txMin, covY = -tyMin;
@@ -2763,8 +2806,16 @@ static void CollectBgLayer(int bgIndex) {
          * each side horizontally (the stereo shift reveals that much), its
          * texture coordinates the layer's absolute position -- they run past
          * 1.0 and wrap. Same eighth-texel tie shift as the atlas. */
-        const float x0 = (float)(-eL - 8), x1 = (float)(248 + eR);
-        const float y0 = (float)(-eT), y1 = (float)(160 + eB);
+        float x0 = (float)(-eL - 8), x1 = (float)(248 + eR);
+        float y0 = (float)(-eT), y1 = (float)(160 + eB);
+        /* A scene's layer stops at its own picture (SceneSpan): the map's
+         * cells past it still hold whatever the last room left there. */
+        if (sWideScene && sSceneSpan[bgIndex].on) {
+            if (x0 < (float)(txMin * 8 - fineX)) x0 = (float)(txMin * 8 - fineX);
+            if (x1 > (float)((txMax + 1) * 8 - fineX)) x1 = (float)((txMax + 1) * 8 - fineX);
+            if (y0 < (float)(tyMin * 8 - fineY)) y0 = (float)(tyMin * 8 - fineY);
+            if (y1 > (float)((tyMax + 1) * 8 - fineY)) y1 = (float)((tyMax + 1) * 8 - fineY);
+        }
         const float sh = ATLAS_UV_TIE_SHIFT;
         const float u0 = ((float)scrollX + x0 + sh) / (float)LM_W;
         const float v0 = ((float)scrollY + y0 + sh) / (float)LM_H;
@@ -4122,6 +4173,13 @@ static void ComputeWideView(void) {
  * tile line at a time while the next column / row is drawn along (almost) the
  * whole frame; a blank or ragged line ends the picture on that side.
  *
+ * VRAM out of the frame is only the picture while it holds still: the title
+ * screen streams its pan, writing the tiles that left the frame over with the
+ * ones about to come in, and loads other graphics there once the pan is over.
+ * So a line out of the frame whose map entries or tile pixels change is left
+ * out until the frame shows it again (SceneTrust). When lines inside the frame
+ * change too, it is a new picture, and every line starts trusted again.
+ *
  * Inside it the view slides as it does inside a room (WideAxisShift): an axis
  * where the picture is bigger than the view keeps the game's scroll until the
  * view reaches the picture's edge. An axis where it fits is centred once and
@@ -4145,36 +4203,15 @@ static void SceneGrowSpan(const uint8_t* drawn, int lines, int cells, int* first
     while (*last - *first + 1 < lines && drawn[(*last + 1) % lines] >= need) ++*last;
 }
 
-static void ComputeSceneWideView(uint16_t dispcnt) {
+/* The picture of one text BG (see above), grown from the frame. */
+static SceneSpan SceneLayerSpan(int bg, uint16_t cnt) {
     static const int kSizeW[4] = { 256, 512, 256, 512 };
     static const int kSizeH[4] = { 256, 256, 512, 512 };
-    /* What the held shifts belong to (see above): the picture, by where it
-     * starts in the BG (mod the BG's size) and how big it is. */
-    static int sKeyBg = -1, sKeyCnt, sKeyX, sKeyW, sKeyY, sKeyH, sHeldX, sHeldY;
-    WideView* v = &sWideView;
-    *v = (WideView){ 0 };
-    const unsigned mode = dispcnt & 7u;
-    const int textBgs = mode == 0 ? 4 : mode == 1 ? 2 : 0; /* mode 1: BG2 is affine */
-    int best = -1, bestArea = 0, bestPrio = -1;
-    for (int bg = 0; bg < textBgs; ++bg) {
-        if (!(dispcnt & (0x100u << bg))) continue;
-        const uint16_t cnt = (uint16_t)(gIoMem[0x08 + bg * 2] | (gIoMem[0x09 + bg * 2] << 8));
-        const int size = (cnt >> 14) & 3, prio = cnt & 3;
-        const int area = kSizeW[size] * kSizeH[size];
-        if (area > bestArea || (area == bestArea && prio >= bestPrio)) {
-            best = bg; bestArea = area; bestPrio = prio;
-        }
-    }
-    v->loX = 0; v->hiX = 240;
-    v->loY = 0; v->hiY = 160;
-    v->maskL = 0; v->maskR = 240; v->maskT = 0; v->maskB = 160;
-    if (best < 0) { sKeyBg = -1; return; }
-
-    const uint16_t cnt = (uint16_t)(gIoMem[0x08 + best * 2] | (gIoMem[0x09 + best * 2] << 8));
+    SceneSpan out = { 0 };
     const int w = kSizeW[(cnt >> 14) & 3], h = kSizeH[(cnt >> 14) & 3];
     const int cols = w / 8, rows = h / 8;
-    const int ox = (int)(gIoMem[0x10 + best * 4] | (gIoMem[0x11 + best * 4] << 8)) & (w - 1);
-    const int oy = (int)(gIoMem[0x12 + best * 4] | (gIoMem[0x13 + best * 4] << 8)) & (h - 1);
+    const int ox = (int)(gIoMem[0x10 + bg * 4] | (gIoMem[0x11 + bg * 4] << 8)) & (w - 1);
+    const int oy = (int)(gIoMem[0x12 + bg * 4] | (gIoMem[0x13 + bg * 4] << 8)) & (h - 1);
     /* The tile lines the frame shows (the frame's left edge is at ox, so
      * these run past the BG's end when it wraps). */
     int fx0 = ox >> 3, fx1 = (ox + 239) >> 3;
@@ -4188,11 +4225,16 @@ static void ComputeSceneWideView(uint16_t dispcnt) {
     const uint32_t screenBase = ((cnt >> 8) & 31u) * 0x800u;
     const uint32_t tileBytes = (cnt & 0x80) ? 64u : 32u;
     uint8_t colDrawn[64] = { 0 }, rowDrawn[64] = { 0 };
+    uint32_t colHash[64], rowHash[64];
+    bool colIn[64], rowIn[64];
+    for (int tx = 0; tx < cols; ++tx) {
+        colHash[tx] = 2166136261u;
+        colIn[tx] = ((tx - fx0) % cols + cols) % cols <= fx1 - fx0;
+    }
     for (int ty = 0; ty < rows; ++ty) {
-        const bool rowInFrame = ((ty - fy0) % rows + rows) % rows <= fy1 - fy0;
+        rowHash[ty] = 2166136261u;
+        rowIn[ty] = ((ty - fy0) % rows + rows) % rows <= fy1 - fy0;
         for (int tx = 0; tx < cols; ++tx) {
-            const bool colInFrame = ((tx - fx0) % cols + cols) % cols <= fx1 - fx0;
-            if (!rowInFrame && !colInFrame) continue;
             const uint32_t block = (uint32_t)((tx >> 5) + (ty >> 5) * (w >> 8));
             const uint32_t at = screenBase + block * 0x800u + (uint32_t)(((ty & 31) * 32 + (tx & 31)) * 2);
             if (at + 2 > 0x10000u) continue;
@@ -4200,21 +4242,104 @@ static void ComputeSceneWideView(uint16_t dispcnt) {
             const uint32_t tile = charBase + (entry & 0x3FFu) * tileBytes;
             if (tile + tileBytes > 0x10000u) continue;
             const uint32_t* px = (const uint32_t*)(gVram + tile);
-            bool drawn = false;
-            for (uint32_t i = 0; i < tileBytes / 4 && !drawn; ++i) drawn = px[i] != 0;
-            if (!drawn) continue;
-            if (rowInFrame) ++colDrawn[tx];
-            if (colInFrame) ++rowDrawn[ty];
+            uint32_t cell = entry, any = 0;
+            for (uint32_t i = 0; i < tileBytes / 4; ++i) {
+                any |= px[i];
+                cell = (cell ^ px[i]) * 16777619u;
+            }
+            rowHash[ty] = (rowHash[ty] ^ cell) * 16777619u;
+            colHash[tx] = (colHash[tx] ^ cell) * 16777619u;
+            if (!any) continue;
+            if (rowIn[ty]) ++colDrawn[tx];
+            if (colIn[tx]) ++rowDrawn[ty];
         }
     }
+
+    /* SceneTrust: which lines out of the frame changed while out of it. */
+    SceneTrust* tr = &sSceneTrust[bg];
+    bool fresh = tr->frame == 0 || tr->frame + 1 != sSceneFrame || tr->cnt != cnt;
+    for (int i = 0; i < cols && !fresh; ++i) fresh = colIn[i] && colHash[i] != tr->colHash[i];
+    for (int i = 0; i < rows && !fresh; ++i) fresh = rowIn[i] && rowHash[i] != tr->rowHash[i];
+    for (int i = 0; i < cols; ++i) {
+        tr->colBad[i] = !fresh && !colIn[i] && (tr->colBad[i] || colHash[i] != tr->colHash[i]);
+        tr->colHash[i] = colHash[i];
+    }
+    for (int i = 0; i < rows; ++i) {
+        tr->rowBad[i] = !fresh && !rowIn[i] && (tr->rowBad[i] || rowHash[i] != tr->rowHash[i]);
+        tr->rowHash[i] = rowHash[i];
+    }
+    tr->frame = sSceneFrame;
+    tr->cnt = cnt;
+    for (int i = 0; i < cols; ++i) if (tr->colBad[i]) colDrawn[i] = 0;
+    for (int i = 0; i < rows; ++i) if (tr->rowBad[i]) rowDrawn[i] = 0;
+
     SceneGrowSpan(colDrawn, cols, frameRows, &fx0, &fx1);
     SceneGrowSpan(rowDrawn, rows, frameCols, &fy0, &fy1);
-    int loX = fx0 * 8, hiX = (fx1 + 1) * 8;
-    int loY = fy0 * 8, hiY = (fy1 + 1) * 8;
+    out.on = true;
+    out.loX = fx0 * 8; out.hiX = (fx1 + 1) * 8;
+    out.loY = fy0 * 8; out.hiY = (fy1 + 1) * 8;
     /* A picture the whole BG wide has no edge of its own but the BG's: put
      * the copy of it that holds the frame's centre there. */
-    if (hiX - loX >= w) { loX = (ox + 120) / w * w; hiX = loX + w; }
-    if (hiY - loY >= h) { loY = (oy + 80) / h * h; hiY = loY + h; }
+    if (out.hiX - out.loX >= w) { out.loX = (ox + 120) / w * w; out.hiX = out.loX + w; }
+    if (out.hiY - out.loY >= h) { out.loY = (oy + 80) / h * h; out.hiY = out.loY + h; }
+    return out;
+}
+
+static void ComputeSceneWideView(uint16_t dispcnt) {
+    static const int kSizeW[4] = { 256, 512, 256, 512 };
+    static const int kSizeH[4] = { 256, 256, 512, 512 };
+    /* What the held shifts belong to (see above): the picture, by where it
+     * starts in the BG (mod the BG's size) and how big it is. */
+    static int sKeyBg = -1, sKeyCnt, sKeyX, sKeyW, sKeyY, sKeyH, sHeldX, sHeldY;
+    WideView* v = &sWideView;
+    *v = (WideView){ 0 };
+    const unsigned mode = dispcnt & 7u;
+    const int textBgs = mode == 0 ? 4 : mode == 1 ? 2 : 0; /* mode 1: BG2 is affine */
+    int best = -1, bestArea = 0, bestPrio = -1;
+    for (int bg = 0; bg < 4; ++bg) {
+        sSceneSpan[bg].on = false;
+        if (bg >= textBgs || !(dispcnt & (0x100u << bg))) continue;
+        const uint16_t cnt = (uint16_t)(gIoMem[0x08 + bg * 2] | (gIoMem[0x09 + bg * 2] << 8));
+        sSceneSpan[bg] = SceneLayerSpan(bg, cnt);
+        const int size = (cnt >> 14) & 3, prio = cnt & 3;
+        const int area = kSizeW[size] * kSizeH[size];
+        if (area > bestArea || (area == bestArea && prio >= bestPrio)) {
+            best = bg; bestArea = area; bestPrio = prio;
+        }
+    }
+    v->loX = 0; v->hiX = 240;
+    v->loY = 0; v->hiY = 160;
+    v->maskL = 0; v->maskR = 240; v->maskT = 0; v->maskB = 160;
+    sScenePic = NULL;
+    if (best < 0) { sKeyBg = -1; return; }
+
+    const uint16_t cnt = (uint16_t)(gIoMem[0x08 + best * 2] | (gIoMem[0x09 + best * 2] << 8));
+    const int w = kSizeW[(cnt >> 14) & 3], h = kSizeH[(cnt >> 14) & 3];
+    const int ox = (int)(gIoMem[0x10 + best * 4] | (gIoMem[0x11 + best * 4] << 8)) & (w - 1);
+    const int oy = (int)(gIoMem[0x12 + best * 4] | (gIoMem[0x13 + best * 4] << 8)) & (h - 1);
+    SceneSpan* sp = &sSceneSpan[best];
+    int loX = sp->loX, hiX = sp->hiX, loY = sp->loY, hiY = sp->hiY;
+
+    /* A scene with a generated picture: the view's extent is the picture's
+     * canvas, and the BG itself draws only inside the game's own picture
+     * (past it VRAM holds whatever the scene streamed there). The canvas is
+     * in BG px; the copy of it used is the one nearest the frame (the BG
+     * wraps). */
+    extern s16 gMainGameMode;
+    sScenePic = PortScenePic_Find(gMainGameMode, best);
+    if (sScenePic) {
+        const PortScenePictureDef* pic = sScenePic;
+        const int dx = (int)floorf((float)(ox + 120 - (pic->canvasX + pic->width / 2)) / (float)w + 0.5f) * w;
+        const int dy = (int)floorf((float)(oy + 80 - (pic->canvasY + pic->height / 2)) / (float)h + 0.5f) * h;
+        loX = pic->canvasX + dx; hiX = loX + pic->width;
+        loY = pic->canvasY + dy; hiY = loY + pic->height;
+        if (sp->loX < pic->pictureX0 + dx) sp->loX = pic->pictureX0 + dx;
+        if (sp->hiX > pic->pictureX1 + dx) sp->hiX = pic->pictureX1 + dx;
+        if (sp->loY < pic->pictureY0 + dy) sp->loY = pic->pictureY0 + dy;
+        if (sp->hiY > pic->pictureY1 + dy) sp->hiY = pic->pictureY1 + dy;
+        sScenePicX = loX - ox;
+        sScenePicY = loY - oy;
+    }
 
     const bool same = best == sKeyBg && cnt == sKeyCnt && (loX & (w - 1)) == sKeyX && hiX - loX == sKeyW &&
                       (loY & (h - 1)) == sKeyY && hiY - loY == sKeyH;
@@ -4223,16 +4348,17 @@ static void ComputeSceneWideView(uint16_t dispcnt) {
     sKeyY = loY & (h - 1); sKeyH = hiY - loY;
 
     v->originX = ox; v->originY = oy;
-    v->loX = loX; v->hiX = hiX;
-    v->loY = loY; v->hiY = hiY;
     v->shiftX = WideAxisShift(ox, sWideMarginX, 240, loX, hiX);
     v->shiftY = WideAxisShift(oy, sWideMarginY, 160, loY, hiY);
-    if (same && hiX - loX <= 240 + 2 * sWideMarginX) v->shiftX = sHeldX;
-    if (same && hiY - loY <= 160 + 2 * sWideMarginY) v->shiftY = sHeldY;
+    const bool fitsX = hiX - loX <= 240 + 2 * sWideMarginX, fitsY = hiY - loY <= 160 + 2 * sWideMarginY;
+    if (same && fitsX) v->shiftX = sHeldX;
+    if (same && fitsY) v->shiftY = sHeldY;
     if (v->shiftX < -sWideMarginX) v->shiftX = -sWideMarginX;
     if (v->shiftX > sWideMarginX) v->shiftX = sWideMarginX;
     if (v->shiftY < -sWideMarginY) v->shiftY = -sWideMarginY;
     if (v->shiftY > sWideMarginY) v->shiftY = sWideMarginY;
+    v->loX = loX; v->hiX = hiX;
+    v->loY = loY; v->hiY = hiY;
     v->maskL = loX - ox; v->maskR = hiX - ox;
     v->maskT = loY - oy; v->maskB = hiY - oy;
     sHeldX = v->shiftX;
@@ -4481,13 +4607,32 @@ void Port_GpuRenderer_CollectFrame(void) {
      * Excluding them flashed the plain frame for the one windowed frame at
      * the end of a power bomb. */
     sWideScene = PortWide_SceneActive();
+    ++sSceneFrame; /* every frame, so a gap in the scene frames shows (SceneTrust) */
     sWideOn = (PortWide_GameActive() || sWideScene) && !sAffineBg2Active;
     sWideMarginX = sWideOn ? PortWide_MarginX() : 0;
     sWideMarginY = sWideOn ? PortWide_MarginY() : 0;
     PortWide_SetFrameDrawn(sWideOn);
+    sScenePic = NULL;
     if (!sWideOn) sWideView = (WideView){ 0 };
     else if (sWideScene) ComputeSceneWideView(dispcnt);
     else ComputeWideView();
+    /* The scene's picture, painted with this frame's palette (it fades with
+     * the game's); released as soon as no scene shows it. */
+    sScenePicTex = sScenePic ? PortScenePic_Texture(sScenePic, (const uint16_t*)gBgPltt) : NULL;
+    if (!sScenePic) PortScenePic_Release();
+    /* The texture holds the game's own picture too (built from the game's
+     * memory): the BG draws only the tile lines of the GBA frame, the one
+     * part its VRAM is sure to hold while the scene streams the rest. */
+    if (sScenePicTex && PortScenePic_HasGameArt()) {
+        const int bg = sScenePic->bg;
+        const uint16_t cnt = (uint16_t)(gIoMem[0x08 + bg * 2] | (gIoMem[0x09 + bg * 2] << 8));
+        const int w = (cnt & 0x4000) ? 512 : 256, h = (cnt & 0x8000) ? 512 : 256;
+        const int ox = (int)(gIoMem[0x10 + bg * 4] | (gIoMem[0x11 + bg * 4] << 8)) & (w - 1);
+        const int oy = (int)(gIoMem[0x12 + bg * 4] | (gIoMem[0x13 + bg * 4] << 8)) & (h - 1);
+        SceneSpan* sp = &sSceneSpan[bg];
+        sp->loX = (ox >> 3) * 8; sp->hiX = (((ox + 239) >> 3) + 1) * 8;
+        sp->loY = (oy >> 3) * 8; sp->hiY = (((oy + 159) >> 3) + 1) * 8;
+    }
     /* The visible range in frame coordinates is [-margin + shift, 240 + margin
      * + shift] (likewise vertically). */
     sExtL = sWideMarginX - sWideView.shiftX;
@@ -5004,6 +5149,40 @@ void Port_GpuRenderer_DrawFrame(void) {
             } else {
                 HazeBlitStrips(sHazeCur, screenBaseX + eyeOffBg3, screenBaseY, scaleX, scaleY);
             }
+        }
+
+        /* WIDE scene picture: behind everything, on its BG's plane and with
+         * that BG's brighten / darken. The BG's own tiles draw over it. */
+        if (sScenePicTex) {
+            const PortScenePictureDef* pic = sScenePic;
+            const int bg = pic->bg;
+            const int tier = PortStereoDepth_BgTier(&sDepthState, bg);
+            const float eyeOff = (tier >= 0 && tier < BATCH_TIER_NONE) ? tierOffset[tier] : 0.0f;
+            const Tex3DS_SubTexture sub = {
+                .width = (u16)pic->width,
+                .height = (u16)pic->height,
+                .left = 0.0f,
+                .top = 1.0f,
+                .right = (float)pic->width / (float)pic->texWidth,
+                .bottom = 1.0f - (float)pic->height / (float)pic->texHeight,
+            };
+            const C2D_Image img = { .tex = sScenePicTex, .subtex = &sub };
+            const C2D_DrawParams prm = {
+                .pos = { worldBaseX + (float)sScenePicX * scaleX + eyeOff, worldBaseY + (float)sScenePicY * scaleY,
+                         (float)pic->width * scaleX, (float)pic->height * scaleY },
+                .center = { 0.0f, 0.0f },
+                .depth = 0.0f,
+                .angle = 0.0f,
+            };
+            const bool bright = (sBldEffect == 2 || sBldEffect == 3) && BldIsFirstTarget(sIoBldcnt, bg);
+            if (bright) ConfigureFxTextureEnv(ITEM_FX_BRIGHT);
+            C2D_DrawImage(img, &prm, NULL);
+            /* citro2d skips binding a texture it believes is still bound, but
+             * the batch binds the atlas behind its back (BatchQuad): bind it
+             * for real, or the quad samples the atlas. */
+            C3D_TexBind(0, sScenePicTex);
+            C2D_Flush();
+            if (bright) ConfigureAtlasTextureEnv();
         }
 
         /* Single pass over sDrawOrder (true back-to-front GBA priority

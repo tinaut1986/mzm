@@ -181,6 +181,28 @@ original, like `extend_rays.py`. No AI, nothing shipped.
 
 ## 7. Tooling work
 
+**Done so far (2026-10-16):** `tools/scene-extend/` (README) has `capture.sh` (dumps from the
+console), `gba_dump.py` (draws BGs and sprites from a dump) and `make_package.py` (the section 8b
+folder per scene, from a `SCENES` table) and `to_console.py` (a chosen picture ->
+`port_scene_pictures_data.c`). Packages written for the title (400x440, the whole scroll with
+40 px above and below so the logo ends centred) and four intro scenes. Still to do from the
+list below: `check_extension.py`.
+
+**Shipped (2026-10-16): the title.** The owner's variant 2 of the title package is in
+`port_scene_pictures_data.c`: only the generated parts, stored as BG palette entries (painted
+each frame with the game's palette, so it fades with it; a palette change repaints only the
+texels of the colours that moved), LZ4, ~45 KB. `port_scene_pictures.[ch]` load it on the
+scene's first frame and free it when the scene ends; the renderer draws it behind the BG it
+extends, on that BG's stereo plane and with its BLDY brightness, and the view's extent is the
+canvas. The title streams its pan (two tile sets take turns in VRAM), so the game's own part
+outside the GBA frame is not in VRAM when it shows: `port_scene_game_art.c` builds it into the
+same texture from the game's memory when the picture loads (nothing of the game's art is in
+the repository), and the BG then draws only the frame's tile lines. Checked on the 2DS: the
+pan, skipping it, ~59-60 fps. Two traps met on the way: citro2d skips binding a texture it
+thinks is bound while the batch binds the atlas behind its back (bind it explicitly), and a
+layer map's quad covers the whole widened view, cached cells of the last room included (bound
+it to the layer's clipped range in scenes).
+
 Copy `tools/scene-extend/` from the Zelda repo into `tools/scene-extend/` here, in English,
 and adapt:
 

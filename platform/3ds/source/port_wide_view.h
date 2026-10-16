@@ -25,7 +25,8 @@ bool PortWide_Selected(void);
 bool PortWide_GameActive(void);
 
 /* WIDE is selected AND the game is in a scene (not gameplay) whose background
- * is shown in full: the intro. */
+ * is shown in full: the intro, the title screen, the story cutscenes, the two
+ * escape sequences and the credits. */
 bool PortWide_SceneActive(void);
 
 /* How much extra world is shown on each side of the 240x160 GBA frame, in GBA

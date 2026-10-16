@@ -11,7 +11,10 @@ extern int Port_Config_Get3DSDisplayStyle(void);
 extern short gMainGameMode;
 
 enum { ASPECT_WIDE = 3, STYLE_PIXEL_PERFECT = 0 };
-enum { GM_INTRO = 1, GM_INGAME = 4, GM_DEMO = 11 };
+enum {
+    GM_INTRO = 1, GM_TITLE = 2, GM_INGAME = 4, GM_CHOZODIA_ESCAPE = 7, GM_CREDITS = 8,
+    GM_TOURIAN_ESCAPE = 9, GM_CUTSCENE = 10, GM_DEMO = 11,
+};
 
 /* SCALED draws at 1.5x, so the 400px screen holds 400 / 1.5 = 266.7 GBA px:
  * 13.3 more on each side, rounded up. PIXEL PERFECT holds 400x240 outright. */
@@ -35,7 +38,18 @@ bool PortWide_GameActive(void) {
 }
 
 bool PortWide_SceneActive(void) {
-    return PortWide_Selected() && gMainGameMode == GM_INTRO;
+    if (!PortWide_Selected()) return false;
+    switch (gMainGameMode) {
+        case GM_INTRO:
+        case GM_TITLE:
+        case GM_CHOZODIA_ESCAPE:
+        case GM_CREDITS:
+        case GM_TOURIAN_ESCAPE:
+        case GM_CUTSCENE:
+            return true;
+        default:
+            return false;
+    }
 }
 
 static bool ViewActive(void) { return PortWide_GameActive() || PortWide_SceneActive(); }
