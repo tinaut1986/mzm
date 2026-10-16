@@ -37,7 +37,7 @@ const PortScenePictureDef* PortScenePic_Find(int gameMode, int bg) {
 }
 
 /* Standard LZ4 block, as port_gba_bezel.c unpacks the bezel. */
-static bool Lz4Decompress(const uint8_t* src, size_t srcLen, uint8_t* dst, size_t dstLen) {
+bool PortScenePic_Lz4Decompress(const uint8_t* src, size_t srcLen, uint8_t* dst, size_t dstLen) {
     size_t s = 0, d = 0;
     while (d < dstLen && s < srcLen) {
         const uint8_t token = src[s++];
@@ -83,7 +83,7 @@ static bool Load(const PortScenePictureDef* def, bool withAi) {
     const size_t n = (size_t)def->texWidth * (size_t)def->texHeight;
     sCodes = (uint8_t*)malloc(n);
     if (!sCodes) return false;
-    if (!Lz4Decompress(def->packed, def->packedSize, sCodes, n) ||
+    if (!PortScenePic_Lz4Decompress(def->packed, def->packedSize, sCodes, n) ||
         !C3D_TexInit(&sTex, (u16)def->texWidth, (u16)def->texHeight, GPU_RGBA5551)) {
         free(sCodes);
         sCodes = NULL;

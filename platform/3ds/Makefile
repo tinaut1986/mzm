@@ -128,6 +128,8 @@ SRCS_3DS := \
 	$(CURDIR)/source/port_scene_pictures.c \
 	$(CURDIR)/source/port_scene_pictures_data.c \
 	$(CURDIR)/source/port_scene_game_art.c \
+	$(CURDIR)/source/port_scene_sprites.c \
+	$(CURDIR)/source/port_scene_sprites_data.c \
 	$(CURDIR)/source/port_state_thumb.c \
 	$(CURDIR)/source/port_state_blob.c \
 	$(CURDIR)/source/port_state_vars.c \

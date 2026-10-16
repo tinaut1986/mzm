@@ -1,4 +1,5 @@
 #include "port_scene_pictures.h"
+#include "port_scene_sprites.h"
 
 #include <string.h>
 
@@ -71,4 +72,17 @@ bool PortScenePic_HasGameArtSource(const PortScenePictureDef* def) {
 bool PortScenePic_FillGameArt(const PortScenePictureDef* def, uint8_t* codes) {
     if (strcmp(def->name, "title") == 0) return TitleArt(def, codes);
     return false;
+}
+
+/* The intro's heat trail (src/data/intro_data.c, drawn by IntroViewOfZebesProcessOam): frame A
+ * is sIntroViewOfZebesHeatOam_1, B sIntroViewOfZebesHeatOam_2 (make_sprite_package.py). */
+extern const uint16_t (*p_sIntroViewOfZebesHeatOam_1)[73]; /* port/generated/intro_data_rom.h */
+extern const uint16_t (*p_sIntroViewOfZebesHeatOam_2)[37];
+
+const uint16_t* PortSceneSprite_GameOam(const PortSceneSpriteDef* def, int frame) {
+    if (strcmp(def->name, "intro-zebes-flame") == 0)
+        return frame == 0 && p_sIntroViewOfZebesHeatOam_1   ? *p_sIntroViewOfZebesHeatOam_1
+               : frame == 1 && p_sIntroViewOfZebesHeatOam_2 ? *p_sIntroViewOfZebesHeatOam_2
+                                                            : NULL;
+    return NULL;
 }

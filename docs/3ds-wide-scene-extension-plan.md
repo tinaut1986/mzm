@@ -1,6 +1,6 @@
 # Plan: extending non-gameplay screens in WIDE / Pixel Perfect with generated art
 
-**Status (2026-10-17): built for the title and part of the intro; the rest waits.** The sections
+**Status (2026-10-17): built for the title and part of the intro (its view of Zebes, trail included); the rest waits.** The sections
 from 1 on are the original brief (2026-10-14), kept for the reasoning; this block says where it
 stands.
 
@@ -15,13 +15,14 @@ stands.
   title still builds its own picture from the game's memory there (no AI), with black around it.
 - **Waiting for the AI.** Packages in `~/Imágenes/MZM/` (outside the repository) for the intro's
   space, cockpit and Mother Brain scenes: no variants yet.
-- **Waiting for the console.** The heat trail behind the ship in the view of Zebes is cut where the
-  GBA screen ended (its OAM pieces stop there). Package: `mzm-intro-zebes-flame/`
-  (`make_sprite_package.py`); Antigravity's variant 1 (A and B) checked on 2026-10-17: the original
-  pixels untouched, its 5 colours, no half-transparent pixels, straight streaks that continue the
-  original's (variant 2's wave at the end). Next step: a scene-sprite path that draws a texture in
-  place of the game's pieces of that sprite (both frames, blended with the scene's BLDALPHA, at
-  the trail's fixed anchor; the ship keeps its 1 px jitter), gated on WIDE + AI.
+- **Scene sprites.** A scene's sprite the GBA screen cut off is drawn from one texture per
+  animation frame (`port_scene_sprites.[ch]`, data made by `tools/scene-extend/sprite_to_console.py`):
+  the renderer finds the sprite's pieces in OAM by tile, palette and shape, hides them, and draws
+  the texture at the anchor the game used that frame, with the pieces' priority and mode. The
+  game's own pieces are rasterized from OBJ VRAM when it loads; only the generated pixels ship, as
+  OBJ palette entries. WIDE + AI only. The intro's heat trail behind the ship (package
+  `mzm-intro-zebes-flame/`, Antigravity's variant 1) uses it: seen on the console on 2026-10-17,
+  continuous past the old top and right cuts, the ship over it.
 - **Not seen yet.** The room-bound cutscenes 6, 8, 12, 14 with WIDE (they need a save state in their
   rooms); 7, 10 and 11 need their own pass (owner, 2026-10-17).
 - **Working notes.** Antigravity writes its first variant over the package's `1-template-*` files:
