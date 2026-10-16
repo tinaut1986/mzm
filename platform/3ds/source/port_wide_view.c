@@ -6,11 +6,12 @@ extern int Port_Config_Get3DSAspectRatio(void);
 extern int Port_Config_Get3DSDisplayStyle(void);
 
 /* Kept as a hand-written extern, like the renderer does: this file stays out
- * of the game headers. GM_INGAME == 4 (include/constants/game_state.h). */
+ * of the game headers. GM_INGAME == 4, GM_DEMO == 11
+ * (include/constants/game_state.h). */
 extern short gMainGameMode;
 
 enum { ASPECT_WIDE = 3, STYLE_PIXEL_PERFECT = 0 };
-enum { GM_INGAME = 4 };
+enum { GM_INGAME = 4, GM_DEMO = 11 };
 
 /* SCALED draws at 1.5x, so the 400px screen holds 400 / 1.5 = 266.7 GBA px:
  * 13.3 more on each side, rounded up. PIXEL PERFECT holds 400x240 outright. */
@@ -28,8 +29,9 @@ bool PortWide_Selected(void) {
     return Port_Config_Get3DSAspectRatio() == ASPECT_WIDE;
 }
 
+/* The title screen's demos run the same InGameHandler as play, under GM_DEMO. */
 bool PortWide_GameActive(void) {
-    return PortWide_Selected() && gMainGameMode == GM_INGAME;
+    return PortWide_Selected() && (gMainGameMode == GM_INGAME || gMainGameMode == GM_DEMO);
 }
 
 int PortWide_MarginX(void) {
@@ -53,8 +55,11 @@ bool PortWide_FrameDrawn(void) { return sFrameDrawn; }
  * place -- OAM Y/X wrap, so a far-out sprite reads as one on the other side. */
 /* Twice the margin: the view slides inside the room, so on the side it slides
  * toward it can reach the margin plus the slide, up to twice the margin. */
-int Port_WideMarginSubPixelX(void) { return sFrameDrawn ? 2 * PortWide_MarginX() * SUB_PIXELS_PER_PIXEL : 0; }
-int Port_WideMarginSubPixelY(void) { return sFrameDrawn ? 2 * PortWide_MarginY() * SUB_PIXELS_PER_PIXEL : 0; }
+/* Not in a demo: a projectile kept alive out there can hit what the GBA's would
+ * not have, and the recorded inputs would then play out a different run. */
+static bool KeepAliveInMargins(void) { return sFrameDrawn && gMainGameMode != GM_DEMO; }
+int Port_WideMarginSubPixelX(void) { return KeepAliveInMargins() ? 2 * PortWide_MarginX() * SUB_PIXELS_PER_PIXEL : 0; }
+int Port_WideMarginSubPixelY(void) { return KeepAliveInMargins() ? 2 * PortWide_MarginY() * SUB_PIXELS_PER_PIXEL : 0; }
 
 /* ---- OAM position tags ---------------------------------------------------
  * The game's sprite drawers tag each OAM span they emit with the sprite's true
