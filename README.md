@@ -1,8 +1,36 @@
 # Metroid: Zero Mission — Nintendo 3DS Port
 
+<p align="center">
+  <img src="screenshots/preview.png" alt="Metroid: Zero Mission 3DS Preview" width="400">
+</p>
+
 A native, hardware-accelerated Nintendo 3DS port of **Metroid: Zero Mission**, built from the C decompilation codebase.
 
 One build works with the **EUR, USA or JAP** ROM: the region is detected when the ROM is loaded and the game adapts at runtime.
+
+---
+
+## Screenshots
+
+<p align="center">
+  <b>Top screen: WIDE, and PIXEL PERFECT with the GBA frame</b><br>
+  <img src="screenshots/top_gameplay_wide.png" alt="Top screen, WIDE gameplay" width="380">
+  &nbsp;&nbsp;
+  <img src="screenshots/top_gameplay_bezel.png" alt="Top screen, GBA frame and LCD filters" width="380">
+</p>
+
+<p align="center">
+  <b>Bottom screen: touch tabs</b><br>
+  <img src="screenshots/bottom_map.png" alt="Bottom screen, MAP tab" width="240">
+  &nbsp;
+  <img src="screenshots/bottom_status.png" alt="Bottom screen, STATUS tab" width="240">
+  &nbsp;
+  <img src="screenshots/bottom_states.png" alt="Bottom screen, STATE tab" width="240">
+  <br><br>
+  <img src="screenshots/bottom_achievements.png" alt="Bottom screen, ACHIEVEMENTS tab" width="240">
+  &nbsp;
+  <img src="screenshots/bottom_options.png" alt="Bottom screen, OPTIONS tab" width="240">
+</p>
 
 ---
 
