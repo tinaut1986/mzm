@@ -1224,10 +1224,12 @@ void PortPpuMzm_GetSamusRecordState(uint32_t* out) {
  * uses for the original game's own room/door debug menu. */
 extern const struct Door* sAreaDoorsPointers[AREA_ENTRY_COUNT];
 
-/* Safety cap for the door-table walk below. No real area comes close, but
- * the table is terminated by a DOOR_TYPE_NONE entry rather than by a count,
- * so an unexpected table must not turn into an unbounded scan. */
-#define PORT_WARP_MAX_DOORS 128
+/* Safety cap for the door-table walk below. The table is terminated by a
+ * DOOR_TYPE_NONE entry rather than by a count, so an unexpected table must not
+ * turn into an unbounded scan. It has to clear the biggest real one: Chozodia
+ * has 246 doors (sChozodiaDoors), and a cap of 128 left the rooms whose doors sit
+ * past it (the ones around Chozodia's map tile 2,13) with no warp target. */
+#define PORT_WARP_MAX_DOORS 512
 
 static bool sWarpPointValid;
 static bool sWarpPending;
@@ -1359,7 +1361,10 @@ bool PortPpuMzm_DebugRequestWarpToSelection(void) {
  * owns gSubGameMode1 at that moment. The request stays pending until
  * gameplay is reached, so triggering it from the pause screen warps as soon
  * as the game resumes instead of being dropped. */
+static void PortPpuMzm_MapWarpQueryService(void);
+
 void PortPpuMzm_DebugApplyPendingWarp(void) {
+    PortPpuMzm_MapWarpQueryService();
     if (!sWarpPending) return;
     if (gMainGameMode != GM_INGAME || gSubGameMode1 != SUB_GAME_MODE_PLAYING) return;
 
@@ -1405,20 +1410,55 @@ static bool PortPpuMzm_DoorMapTile(int area, int door, int* outX, int* outY) {
     return true;
 }
 
-/* Door whose map tile is nearest to (tileX, tileY), or -1 if the area has
- * none within `maxDist` tiles. Nearest-match rather than exact because a
- * room can span several map tiles while its doors only sit on the tiles at
- * its edges -- tapping the middle of a big room should still work. */
+/* The map rectangle a room covers, in map tiles: its map origin plus its size in screens. The
+ * clipdata is whole screens of blocks plus a 4 block border (15 x 10 blocks a screen), so a
+ * 34 x 44 one is 2 x 4 screens. False for a room the ROM does not describe. */
+static bool PortPpuMzm_RoomMapRect(int area, int room, int* x0, int* y0, int* x1, int* y1) {
+    const struct RoomEntryRom* pRoom = &sAreaRoomEntryPointers[area][room];
+    const u8* clip = GBA_RESOLVE(pRoom->pClipData);
+    if (clip == NULL) return false;
+    const int widthBlocks = clip[0], heightBlocks = clip[1];
+    if (widthBlocks == 0 || heightBlocks == 0) return false;
+    *x0 = pRoom->mapX;
+    *y0 = pRoom->mapY;
+    int screensX = (widthBlocks - 4 + SCREEN_SIZE_X_BLOCKS - 1) / SCREEN_SIZE_X_BLOCKS;
+    int screensY = (heightBlocks - 4 + SCREEN_SIZE_Y_BLOCKS - 1) / SCREEN_SIZE_Y_BLOCKS;
+    if (screensX < 1) screensX = 1;
+    if (screensY < 1) screensY = 1;
+    *x1 = *x0 + screensX;
+    *y1 = *y0 + screensY;
+    return true;
+}
+
+/* The door to warp to for a tap on map tile (tileX, tileY): the nearest door of the room that
+ * covers that tile. The nearest door of ANY room, which this used to pick, sends a tap in a
+ * tall or wide room to a neighbour whose door happens to sit closer (a tap in the room above
+ * landed in the room below). Falls back to the nearest door within maxDist when no described
+ * room covers the tile. */
 int PortPpuMzm_DebugFindDoorNearMapTile(int area, int tileX, int tileY, int maxDist) {
-    int best = -1;
-    int bestDist = maxDist * maxDist + 1;
+    int best = -1, bestDist = 0x7FFFFFFF;
     int count = PortPpuMzm_DebugGetDoorCount(area);
+    for (int d = 0; d < count; ++d) {
+        int x0, y0, x1, y1, dx, dy;
+        if (!PortPpuMzm_DoorMapTile(area, d, &dx, &dy)) continue;
+        const int room = PortPpuMzm_DebugGetDoorRoom(area, d);
+        if (!PortPpuMzm_RoomMapRect(area, room, &x0, &y0, &x1, &y1)) continue;
+        if (tileX < x0 || tileX >= x1 || tileY < y0 || tileY >= y1) continue;
+        const int ddx = dx - tileX, ddy = dy - tileY;
+        const int dist = ddx * ddx + ddy * ddy;
+        if (dist < bestDist) {
+            bestDist = dist;
+            best = d;
+        }
+    }
+    if (best >= 0) return best;
+
+    bestDist = maxDist * maxDist + 1;
     for (int d = 0; d < count; ++d) {
         int dx, dy;
         if (!PortPpuMzm_DoorMapTile(area, d, &dx, &dy)) continue;
-        int ddx = dx - tileX;
-        int ddy = dy - tileY;
-        int dist = ddx * ddx + ddy * ddy;
+        const int ddx = dx - tileX, ddy = dy - tileY;
+        const int dist = ddx * ddx + ddy * ddy;
         if (dist < bestDist) {
             bestDist = dist;
             best = d;
@@ -1427,10 +1467,96 @@ int PortPpuMzm_DebugFindDoorNearMapTile(int area, int tileX, int tileY, int maxD
     return best;
 }
 
-/* Warps to whatever door is nearest the given map tile. Returns the door id
- * used, or -1 when the area has nothing close enough. */
+/* The last map tap's lookup, for checking it from the PC: `mzm-link.py peek gMapWarpDiag 22`
+ * (int16 each: area, tile x, tile y, door, room, x0, y0, x1, y1, door tile x, door tile y). */
+int16_t gMapWarpDiag[16];
+
+/* A tap's lookup without the warp, for checking the map from the PC: poke gMapWarpQuery
+ * (int16: area, tile x, tile y, pending = 1), read gMapWarpDiag once pending is 0 again. */
+int16_t gMapWarpQuery[4];
+
+static void PortPpuMzm_MapWarpQueryService(void) {
+    if (gMapWarpQuery[3] == 0) return;
+    if (gMapWarpQuery[3] == 2) {
+        /* Door `gMapWarpQuery[1]` of the area: room, its map origin and clipdata size, door start. */
+        const int a = gMapWarpQuery[0], d = gMapWarpQuery[1];
+        for (int i = 0; i < 11; ++i) gMapWarpDiag[i] = -1;
+        gMapWarpDiag[10] = (int16_t)PortPpuMzm_DebugGetDoorCount(a);
+        if (PortPpuMzm_DebugGetDoorRoom(a, d) >= 0) {
+            const struct Door* pDoor = &sAreaDoorsPointers[a][d];
+            const struct RoomEntryRom* pRoom = &sAreaRoomEntryPointers[a][pDoor->sourceRoom];
+            const u8* clip = GBA_RESOLVE(pRoom->pClipData);
+            gMapWarpDiag[0] = (int16_t)a;
+            gMapWarpDiag[1] = (int16_t)d;
+            gMapWarpDiag[2] = (int16_t)pDoor->sourceRoom;
+            gMapWarpDiag[3] = (int16_t)pDoor->type;
+            gMapWarpDiag[4] = pRoom->mapX;
+            gMapWarpDiag[5] = pRoom->mapY;
+            gMapWarpDiag[6] = clip ? clip[0] : -1;
+            gMapWarpDiag[7] = clip ? clip[1] : -1;
+            gMapWarpDiag[8] = pDoor->xStart;
+            gMapWarpDiag[9] = pDoor->yStart;
+        }
+        gMapWarpQuery[3] = 0;
+        return;
+    }
+    if (gMapWarpQuery[3] == 3) {
+        /* Room `gMapWarpQuery[1]` of the area, doors or not: map origin and clipdata size. */
+        const int a = gMapWarpQuery[0], r = gMapWarpQuery[1];
+        const struct RoomEntryRom* pRoom = &sAreaRoomEntryPointers[a][r];
+        const u8* clip = GBA_RESOLVE(pRoom->pClipData);
+        for (int i = 0; i < 11; ++i) gMapWarpDiag[i] = -1;
+        gMapWarpDiag[0] = (int16_t)a;
+        gMapWarpDiag[1] = (int16_t)r;
+        gMapWarpDiag[4] = pRoom->mapX;
+        gMapWarpDiag[5] = pRoom->mapY;
+        gMapWarpDiag[6] = clip ? clip[0] : -1;
+        gMapWarpDiag[7] = clip ? clip[1] : -1;
+        gMapWarpQuery[3] = 0;
+        return;
+    }
+    const int area = gMapWarpQuery[0], tx = gMapWarpQuery[1], ty = gMapWarpQuery[2];
+    const int door = PortPpuMzm_DebugFindDoorNearMapTile(area, tx, ty, 6);
+    gMapWarpDiag[0] = (int16_t)area;
+    gMapWarpDiag[1] = (int16_t)tx;
+    gMapWarpDiag[2] = (int16_t)ty;
+    gMapWarpDiag[3] = (int16_t)door;
+    for (int i = 4; i < 11; ++i) gMapWarpDiag[i] = -1;
+    if (door >= 0) {
+        int x0 = -1, y0 = -1, x1 = -1, y1 = -1, dx = -1, dy = -1;
+        const int room = PortPpuMzm_DebugGetDoorRoom(area, door);
+        PortPpuMzm_RoomMapRect(area, room, &x0, &y0, &x1, &y1);
+        PortPpuMzm_DoorMapTile(area, door, &dx, &dy);
+        gMapWarpDiag[4] = (int16_t)room;
+        gMapWarpDiag[5] = (int16_t)x0;
+        gMapWarpDiag[6] = (int16_t)y0;
+        gMapWarpDiag[7] = (int16_t)x1;
+        gMapWarpDiag[8] = (int16_t)y1;
+        gMapWarpDiag[9] = (int16_t)dx;
+        gMapWarpDiag[10] = (int16_t)dy;
+    }
+    gMapWarpQuery[3] = 0;
+}
+
 int PortPpuMzm_DebugRequestWarpToMapTile(int area, int tileX, int tileY) {
     int door = PortPpuMzm_DebugFindDoorNearMapTile(area, tileX, tileY, 6);
+    gMapWarpDiag[0] = (int16_t)area;
+    gMapWarpDiag[1] = (int16_t)tileX;
+    gMapWarpDiag[2] = (int16_t)tileY;
+    gMapWarpDiag[3] = (int16_t)door;
+    if (door >= 0) {
+        int x0 = -1, y0 = -1, x1 = -1, y1 = -1, dx = -1, dy = -1;
+        const int room = PortPpuMzm_DebugGetDoorRoom(area, door);
+        PortPpuMzm_RoomMapRect(area, room, &x0, &y0, &x1, &y1);
+        PortPpuMzm_DoorMapTile(area, door, &dx, &dy);
+        gMapWarpDiag[4] = (int16_t)room;
+        gMapWarpDiag[5] = (int16_t)x0;
+        gMapWarpDiag[6] = (int16_t)y0;
+        gMapWarpDiag[7] = (int16_t)x1;
+        gMapWarpDiag[8] = (int16_t)y1;
+        gMapWarpDiag[9] = (int16_t)dx;
+        gMapWarpDiag[10] = (int16_t)dy;
+    }
     if (door < 0) return -1;
     if (!PortPpuMzm_RequestWarpTo((u8)area, (u8)door)) return -1;
     char msg[96];

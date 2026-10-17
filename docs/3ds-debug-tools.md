@@ -820,6 +820,21 @@ The game asks for 30 % of core 1, which is also the rsf's `MaxCpu` ceiling. On 2
 system menus crawling, against none and ~100 KB/s at 30 % (`platform_3ds_minimal.c`). Repeat
 that measurement before raising either.
 
+## Map warp lookup (`gMapWarpQuery` / `gMapWarpDiag`)
+
+The map's tap-to-warp picks, for the tile tapped, the nearest door of the room whose map rectangle
+(origin plus clipdata size, `PortPpuMzm_RoomMapRect`) covers it. Debug builds can ask it without
+warping, which is how a tile that goes to the wrong room is found:
+
+```sh
+# int16 each: area, tile x, tile y, pending=1 (the lookup), or pending=2 (door tile x of the area), 3 (room tile x)
+tools/mzm-link/mzm-link.py poke gMapWarpQuery 0600 0200 0d00 0100
+tools/mzm-link/mzm-link.py peek gMapWarpDiag 22    # area, x, y, door, room, rect x0 y0 x1 y1, door tile x y
+```
+
+Pending 2 reports door `tile x` of the area (room, map origin, clipdata size, door start, the area's
+door count), pending 3 does the same for room `tile x` whether it has doors or not.
+
 ## Known findings so far (#20, frame rate)
 
 > The live work order for this -- what is done, what is next, and the
