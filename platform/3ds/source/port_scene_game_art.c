@@ -13,10 +13,21 @@ extern uint8_t* sEwramPointer; /* union EwramData* (include/data/shortcut_pointe
  * (struct IntroData, include/structs/intro.h), 4 = the view of Zebes. */
 extern uint8_t* sNonGameplayRamPointer;
 
-enum { GM_INTRO = 1 }; /* include/constants/game_state.h */
+extern int16_t gSubGameMode1; /* include/structs/game_state.h */
+
+enum { GM_INTRO = 1, GM_TITLE = 2 }; /* include/constants/game_state.h */
+
+/* No picture matches this key. */
+enum { SCENE_NOT_READY = -2 };
 
 int PortScenePic_SceneKey(int gameMode) {
     if (gameMode == GM_INTRO && sNonGameplayRamPointer) return sNonGameplayRamPointer[0];
+    /* The title's picture is read from the game's memory once, when it is
+     * loaded (TitleArt), and TitleScreenInit is what puts it there. On the
+     * frame the game switches to the title (coming back from a demo, say) that
+     * has not run yet (sub mode 0): memory and VRAM are still the previous
+     * scene's, and the picture would be built from them and kept. */
+    if (gameMode == GM_TITLE && gSubGameMode1 == 0) return SCENE_NOT_READY;
     return 0;
 }
 
