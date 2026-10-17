@@ -13,12 +13,15 @@
 #define NES_METROID_DATA_H
 typedef void (*NesEmuFunc_T)(void*);
 
-extern const NesEmuFunc_T*p_sNesEmuBootLoader;
-#define sNesEmuBootLoader (*p_sNesEmuBootLoader)
-extern const u8(*p_sNesMetroidData_Text)[18];
-#define sNesMetroidData_Text (*p_sNesMetroidData_Text)
-extern const u8*p_sNesMetroidData;
-#define sNesMetroidData p_sNesMetroidData
+struct NesMetroid {
+    const NesEmuFunc_T emuBootLoader;
+    const u8 data_Prologue[156];
+    const u8 data_Text[18];
+    const u8 data[0];
+};
+
+extern const u8 (*p_sNesMetroid)[];
+#define sNesMetroid (*p_sNesMetroid)
 
 void PortGen_nes_metroid_Init(void);
 
