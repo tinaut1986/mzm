@@ -20,6 +20,13 @@ One build works with the **EUR, USA or JAP** ROM: the region is detected when th
 </p>
 
 <p align="center">
+  <b>Title screen: WIDE, and WIDE + AI (the extra width drawn with generative art)</b><br>
+  <img src="screenshots/title_wide.png" alt="Title screen, WIDE" width="380">
+  &nbsp;&nbsp;
+  <img src="screenshots/title_wide_ai.png" alt="Title screen, WIDE + AI" width="380">
+</p>
+
+<p align="center">
   <b>Bottom screen: touch tabs</b><br>
   <img src="screenshots/bottom_map.png" alt="Bottom screen, MAP tab" width="240">
   &nbsp;

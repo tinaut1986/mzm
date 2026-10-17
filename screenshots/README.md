@@ -9,6 +9,8 @@ Esta carpeta contiene las imágenes de muestra utilizadas en el `README.md` del 
 | `preview.png` | Dual Screen | 400x500 | Imagen combinada vertical (pantalla superior + inferior) para la cabecera. |
 | `top_gameplay_wide.png` | Superior | 400x240 | Gameplay en modo panorámico (WIDE / 16:9). |
 | `top_gameplay_bezel.png` | Superior | 400x240 | Modo Pixel Perfect con marco retro GBA y rejilla LCD. |
+| `title_wide.png` | Superior | 400x240 | Pantalla de título en WIDE (sin IA, negro a los lados). |
+| `title_wide_ai.png` | Superior | 400x240 | Pantalla de título en WIDE + AI. |
 | `bottom_map.png` | Inferior | 320x240 | Pestaña **MAP**: mapa en tiempo real, zoom y contadores de items. |
 | `bottom_status.png` | Inferior | 320x240 | Pestaña **STATUS**: equipamiento, porcentaje de mapa y trajes. |
 | `bottom_states.png` | Inferior | 320x240 | Pestaña **STATE**: lista dinámica de save states con fecha y miniaturas. |
