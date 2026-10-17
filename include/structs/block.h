@@ -61,7 +61,9 @@ struct TankBehavior {
     boolu8 underwater;
     MessageId messageId;
     u16 revealedClipdata;
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     u16 padding;
+#endif
 };
 
 typedef u32 (*BlockFunc_T)(struct ClipdataBlockData*);

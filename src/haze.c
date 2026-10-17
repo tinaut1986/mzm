@@ -1,4 +1,6 @@
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "region.h"
+#endif
 #include "haze.h"
 #include "dma.h"
 #include "gba.h"
@@ -253,12 +255,18 @@ void HazeSetupCode(HazeValue hazeValue)
 
             PowerBombYellowTint(0);
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #ifdef BUGFIX
             WRITE_16(COLOR_DATA_BG_EWRAM, COLOR_WHITE);
 #else
             // EUR added this (see docs/bugs_and_glitches.md)
             if (REGION_IS_EU())
                 WRITE_16(COLOR_DATA_BG_EWRAM, COLOR_WHITE);
+#endif
+#else
+#if defined(REGION_EU) || defined(BUGFIX)
+            WRITE_16(COLOR_DATA_BG_EWRAM, COLOR_WHITE);
+#endif // REGION_EU || BUGFIX
 #endif
 
             if (gIoRegistersBackup.Dispcnt_NonGameplay & DCNT_BG0 && gCurrentRoomEntry.bg0Prop != BG_PROP_DISABLE_TRANSPARENCY)
@@ -296,7 +304,9 @@ void HazeSetupCode(HazeValue hazeValue)
             if (gHazeInfo.enabled)
                 gHazeInfo.active = TRUE;
             break;
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 
         case HAZE_VALUE_AFTER_POWER_BOMB:
         case HAZE_VALUE_COLD:
@@ -557,16 +567,28 @@ void Haze_Bg3(void)
 }
 
 /**
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
  * @brief 5d81c | 124 | Updates the haze effect (BG3, strong in effect, weak outside)
+#else
+ * @brief 5d828 | 118 | Updates the haze effect (BG3, strong in effect, weak outside)
+#endif
  * 
  */
 void Haze_Bg3StrongWeak(void)
 {
     s32 i;
+#if !(defined(MZM_3DS) || defined(PORT_NATIVE))
+    const s8* src1;
+#endif
     s32 mask1;
+#if !(defined(MZM_3DS) || defined(PORT_NATIVE))
+    const s8* src2;
+#endif
     s32 mask2;
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     const s8* src1;
     const s8* src2;
+#endif
     s32 position;
     u16* dst;
     s32 offset;
@@ -598,7 +620,9 @@ void Haze_Bg3StrongWeak(void)
     src2 = GBA_RESOLVE(src2);
 #endif
     mask2 = 0xF;
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 
     gHazeLoops[1].unk_3 = FALSE;
     gHazeLoops[1].timer++;
@@ -884,7 +908,9 @@ u32 Haze_PowerBombRetracting(void)
 #if defined(MZM_3DS) || defined(PORT_NATIVE)
     src = GBA_RESOLVE(src);
 #endif
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
     size = gCurrentPowerBomb.semiMinorAxis;
     xPosition = SUB_PIXEL_TO_PIXEL_(gCurrentPowerBomb.xPosition - gBg1XPosition);
     yPosition = SUB_PIXEL_TO_PIXEL_(gCurrentPowerBomb.yPosition - gBg1YPosition);

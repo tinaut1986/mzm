@@ -1,4 +1,6 @@
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "region.h"
+#endif
 #include "ending_and_gallery.h"
 #include "callbacks.h"
 #include "dma.h"
@@ -73,6 +75,7 @@ static void EndingImageLoadTextOam(EndingImageTextSet set)
 {
     s32 i;
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     /* EUR's table also covers hiragana and falls back to English, so it is
      * right for every region: German..Spanish can only be reached with an
      * EUR ROM. */
@@ -153,6 +156,115 @@ static void EndingImageLoadTextOam(EndingImageTextSet set)
             }
             break;
     }
+#else
+#ifdef REGION_EU
+    switch (ENDING_DATA.language)
+    {
+        case LANGUAGE_GERMAN:
+            if (set == ENDING_IMAGE_OAM_SET_CLEAR_TIME)
+            {
+                SETUP_ENDING_TEXT_OAM(sEndingImageOam_ClearTime_German, i);
+            }
+            else
+            {
+                SETUP_ENDING_TEXT_OAM(sEndingImageOam_Collecting_German, i);
+            }
+            break;
+
+        case LANGUAGE_FRENCH:
+            if (set == ENDING_IMAGE_OAM_SET_CLEAR_TIME)
+            {
+                SETUP_ENDING_TEXT_OAM(sEndingImageOam_ClearTime_French, i);
+            }
+            else
+            {
+                SETUP_ENDING_TEXT_OAM(sEndingImageOam_Collecting_French, i);
+            }
+            break;
+
+        case LANGUAGE_ITALIAN:
+            if (set == ENDING_IMAGE_OAM_SET_CLEAR_TIME)
+            {
+                SETUP_ENDING_TEXT_OAM(sEndingImageOam_ClearTime_Italian, i);
+            }
+            else if (set == ENDING_IMAGE_OAM_SET_YOUR_RATE)
+            {
+                SETUP_ENDING_TEXT_OAM(sEndingImageOam_YourRate_Italian, i);
+            }
+            else
+            {
+                SETUP_ENDING_TEXT_OAM(sEndingImageOam_Collecting_Italian, i);
+            }
+            break;
+
+        case LANGUAGE_SPANISH:
+            if (set == ENDING_IMAGE_OAM_SET_CLEAR_TIME)
+            {
+                SETUP_ENDING_TEXT_OAM(sEndingImageOam_ClearTime_Spanish, i);
+            }
+            else
+            {
+                SETUP_ENDING_TEXT_OAM(sEndingImageOam_Collecting_Spanish, i);
+            }
+            break;
+
+        case LANGUAGE_HIRAGANA:
+            if (set == ENDING_IMAGE_OAM_SET_CLEAR_TIME)
+            {
+                SETUP_ENDING_TEXT_OAM(sEndingImageOam_ClearTime_Hiragana, i);
+            }
+            else
+            {
+                SETUP_ENDING_TEXT_OAM(sEndingImageOam_Collecting_Hiragana, i);
+            }
+            break;
+
+        default:
+            // Japanese and English
+            if (set == ENDING_IMAGE_OAM_SET_CLEAR_TIME)
+            {
+                SETUP_ENDING_TEXT_OAM(sEndingImageOam_ClearTime_English, i);
+            }
+            else if (set == ENDING_IMAGE_OAM_SET_YOUR_RATE)
+            {
+                SETUP_ENDING_TEXT_OAM(sEndingImageOam_YourRate_English, i);
+            }
+            else
+            {
+                SETUP_ENDING_TEXT_OAM(sEndingImageOam_Collecting_English, i);
+            }
+            break;
+    }
+#else // !REGION_EU
+    if (ENDING_DATA.language == LANGUAGE_HIRAGANA)
+    {
+        if (set == ENDING_IMAGE_OAM_SET_CLEAR_TIME)
+        {
+            SETUP_ENDING_TEXT_OAM(sEndingImageOam_ClearTime_Hiragana, i);
+        }
+        else
+        {
+            SETUP_ENDING_TEXT_OAM(sEndingImageOam_Collecting_Hiragana, i);
+        }
+    }
+    else
+    {
+        // Japanese and English
+        if (set == ENDING_IMAGE_OAM_SET_CLEAR_TIME)
+        {
+            SETUP_ENDING_TEXT_OAM(sEndingImageOam_ClearTime_English, i);
+        }
+        else if (set == ENDING_IMAGE_OAM_SET_YOUR_RATE)
+        {
+            SETUP_ENDING_TEXT_OAM(sEndingImageOam_YourRate_English, i);
+        }
+        else
+        {
+            SETUP_ENDING_TEXT_OAM(sEndingImageOam_Collecting_English, i);
+        }
+    }
+#endif // REGION_EU
+#endif
 }
 
 /**
@@ -164,6 +276,7 @@ static void EndingImageDisplayLinePermanently(EndingImageLine line)
 {
     s32 i;
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     /* EUR's table also covers hiragana and falls back to English, so it is
      * right for every region: German..Spanish can only be reached with an
      * EUR ROM. */
@@ -193,6 +306,45 @@ static void EndingImageDisplayLinePermanently(EndingImageLine line)
             SETUP_ENDING_FULL_LINES_OAM(sEndingImageOam_FullLines_English);
             break;
     }
+#else
+#ifdef REGION_EU
+    switch (ENDING_DATA.language)
+    {
+        case LANGUAGE_GERMAN:
+            SETUP_ENDING_FULL_LINES_OAM(sEndingImageOam_FullLines_German);
+            break;
+
+        case LANGUAGE_FRENCH:
+            SETUP_ENDING_FULL_LINES_OAM(sEndingImageOam_FullLines_French);
+            break;
+
+        case LANGUAGE_ITALIAN:
+            SETUP_ENDING_FULL_LINES_OAM(sEndingImageOam_FullLines_Italian);
+            break;
+
+        case LANGUAGE_SPANISH:
+            SETUP_ENDING_FULL_LINES_OAM(sEndingImageOam_FullLines_Spanish);
+            break;
+
+        case LANGUAGE_HIRAGANA:
+            SETUP_ENDING_FULL_LINES_OAM(sEndingImageOam_FullLines_Hiragana);
+            break;
+
+        default:
+            SETUP_ENDING_FULL_LINES_OAM(sEndingImageOam_FullLines_English);
+            break;
+    }
+#else // !REGION_EU
+    if (ENDING_DATA.language == LANGUAGE_HIRAGANA)
+    {
+        SETUP_ENDING_FULL_LINES_OAM(sEndingImageOam_FullLines_Hiragana);
+    }
+    else
+    {
+        SETUP_ENDING_FULL_LINES_OAM(sEndingImageOam_FullLines_English);
+    }
+#endif // REGION_EU
+#endif
 
     for (i  = 0; i < ENDING_DATA.oamLength - 6; i++)
         ENDING_DATA.oamTypes[i + 6] = ENDING_OAM_TYPE_NONE;
@@ -675,6 +827,7 @@ static u8 CreditsDisplayLine(u32 line)
                     ENDING_DATA.creditLineTilemap_1[tilemapOffset] = tile + 0x9A;
                     ENDING_DATA.creditLineTilemap_2[tilemapOffset] = tile + 0xBA;
                 }
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
                 // Accented characters only exist in the EUR credits
                 else if (REGION_IS_EU() && pCredits->text[i] == 0x23)
                 {
@@ -690,6 +843,24 @@ static u8 CreditsDisplayLine(u32 line)
                 {
                     ENDING_DATA.creditLineTilemap_2[tilemapOffset] = tile + 0x7E;
                 }
+#else
+#ifdef REGION_EU
+                else if (pCredits->text[i] == 0x23) // ó
+                {
+                    ENDING_DATA.creditLineTilemap_1[tilemapOffset] = tile + 0x9B;
+                    ENDING_DATA.creditLineTilemap_2[tilemapOffset] = tile + 0xBB;
+                }
+                else if (pCredits->text[i] == 0x24) // ß
+                {
+                    ENDING_DATA.creditLineTilemap_1[tilemapOffset] = tile + 0x5D;
+                    ENDING_DATA.creditLineTilemap_2[tilemapOffset] = tile + 0x7D;
+                }
+                else if (pCredits->text[i] == 0x25) // acute accent (´)
+                {
+                    ENDING_DATA.creditLineTilemap_2[tilemapOffset] = tile + 0x7E;
+                }
+#endif // REGION_EU
+#endif
 
                 i++;
                 tilemapOffset++;
@@ -802,6 +973,7 @@ static u8 CreditsDisplay(void)
         ENDING_DATA.unk_8++;
     }
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     // EUR scrolls the credits slightly faster
     {
         u8 step = REGION_IS_EU() ? 9 : 7;
@@ -809,6 +981,15 @@ static u8 CreditsDisplay(void)
         ENDING_DATA.unk_E += step;
         gBg0YPosition += step;
     }
+#else
+#ifdef REGION_EU
+    ENDING_DATA.unk_E += 9;
+    gBg0YPosition += 9;
+#else // !REGION_EU
+    ENDING_DATA.unk_E += 7;
+    gBg0YPosition += 7;
+#endif // REGION_EU
+#endif
 
     return FALSE;
 }
@@ -1396,10 +1577,17 @@ static void EndingImageInit(void)
 
     ENDING_DATA.completionPercentage = energyNbr + missilesNbr + superMissilesNbr + powerBombNbr + abilityCount;
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#else
+#ifndef REGION_EU
+    LZ77UncompVram(sEndingImageNumbersMiscEnglishGfx, VRAM_OBJ);
+#endif // !REGION_EU
+#endif
 
     ENDING_DATA.language = gLanguage;
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     if (REGION_IS_EU())
     {
             switch (ENDING_DATA.language)
@@ -1449,6 +1637,50 @@ static void EndingImageInit(void)
         else
             LZ77UncompVram(sEndingImageTextEnglishGfx, VRAM_BASE + 0x11000);
     }
+#else
+#ifdef REGION_EU
+    switch (ENDING_DATA.language)
+    {
+        case LANGUAGE_GERMAN:
+            LZ77UncompVram(sEndingImageNumbersMiscGermanGfx, VRAM_OBJ);
+            LZ77UncompVram(sEndingImageTextGermanGfx, VRAM_BASE + 0x11000);
+            break;
+        
+        case LANGUAGE_FRENCH:
+            LZ77UncompVram(sEndingImageNumbersMiscFrenchGfx, VRAM_OBJ);
+            LZ77UncompVram(sEndingImageTextFrenchGfx, VRAM_BASE + 0x11000);
+            break;
+
+        case LANGUAGE_ITALIAN:
+            LZ77UncompVram(sEndingImageNumbersMiscItalianGfx, VRAM_OBJ);
+            LZ77UncompVram(sEndingImageTextItalianGfx, VRAM_BASE + 0x11000);
+            break;
+
+        case LANGUAGE_SPANISH:
+            LZ77UncompVram(sEndingImageNumbersMiscSpanishGfx, VRAM_OBJ);
+            LZ77UncompVram(sEndingImageTextSpanishGfx, VRAM_BASE + 0x11000);
+            break;
+
+        case LANGUAGE_HIRAGANA:
+            LZ77UncompVram(sEndingImageNumbersMiscEnglishGfx, VRAM_OBJ);
+            LZ77UncompVram(sEndingImageTextHiraganaGfx, VRAM_BASE + 0x11000);
+            break;
+
+        default:
+            LZ77UncompVram(sEndingImageNumbersMiscEnglishGfx, VRAM_OBJ);
+            LZ77UncompVram(sEndingImageTextEnglishGfx, VRAM_BASE + 0x11000);
+            break;
+    }
+#else // !REGION_EU
+    if (gLanguage > LANGUAGE_ENGLISH)
+        ENDING_DATA.language = LANGUAGE_ENGLISH;
+
+    if (ENDING_DATA.language == LANGUAGE_HIRAGANA)
+        LZ77UncompVram(sEndingImageTextHiraganaGfx, VRAM_BASE + 0x11000);
+    else
+        LZ77UncompVram(sEndingImageTextEnglishGfx, VRAM_BASE + 0x11000);
+#endif // REGION_EU
+#endif
 
 #ifdef REGION_EU
     DmaTransfer(3, sEndingImageTextPal, PALRAM_OBJ, sizeof(sEndingImageTextPal), 16);
@@ -1563,9 +1795,17 @@ static void EndingImageDisplayText(void)
             
         palette = sEndingImageNewRecordPalettes[ENDING_DATA.newRecordPaletteTimer / 6];
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
         src = REGION_IS_EU()
             ? sEndingImageOamPointers_NewRecord[ENDING_DATA.language]
             : sEndingImageOam_NewRecordEnglish;
+#else
+#ifdef REGION_EU
+        src = sEndingImageOamPointers_NewRecord[ENDING_DATA.language];
+#else // !REGION_EU
+        src = sEndingImageOam_NewRecordEnglish;
+#endif // REGION_EU
+#endif
 
         part = *src++;
         nextSlot += MOD_AND(part, 0x100);

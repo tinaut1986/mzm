@@ -860,8 +860,10 @@ void ConnectionLoadDoors(void)
                         // Increment number of hatches
                         gNumberOfValidHatchesInRoom = i + 1;
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
 
+#endif
                         // Set hatch lock flag
                         if (hatchType == HATCH_LOCKED)
                             gHatchesState.hatchesLockedWithTimer |= (1 << i);

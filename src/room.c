@@ -2,7 +2,9 @@
 #include "dma.h"
 #include "gba.h"
 #include "event.h"
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 #if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "port_gba_mem.h"
 #endif
@@ -216,7 +218,9 @@ void RoomLoad(void)
     HazeProcess();
     MinimapCheckOnTransition();
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
     // Check using elevator
     if (!gIsLoadingFile && gSubGameMode3 != 0 && gPauseScreenFlag == PAUSE_SCREEN_NONE && gSamusData.pose == SPOSE_USING_AN_ELEVATOR)
     {
@@ -279,10 +283,14 @@ static struct RoomEntryRom Port_ResolveRoomEntryRom(struct RoomEntryRom entry)
 #define RESOLVE_TILESET_ENTRY(e) Port_ResolveTilesetEntry(e)
 #define RESOLVE_ROOM_ENTRY_ROM(e) Port_ResolveRoomEntryRom(e)
 #else
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #define RESOLVE_TILESET_ENTRY(e) (e)
 #define RESOLVE_ROOM_ENTRY_ROM(e) (e)
 #endif
+#endif
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 /**
  * @brief 561e8 | 21c | Loads the tileset of the current room
  * 
@@ -292,10 +300,16 @@ void RoomLoadTileset(void)
     struct TilesetEntry entry;
     u32 backgroundGfxSize;
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     entry = RESOLVE_TILESET_ENTRY(sTilesetEntries[gCurrentRoomEntry.tileset]);
+#else
+    entry = sTilesetEntries[gCurrentRoomEntry.tileset];
+#endif
 
     gTilemapAndClipPointers.pTilemap = gTilemap;
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
     gTilemapAndClipPointers.pClipCollisions = gClipdataCollisionTypes;
     gTilemapAndClipPointers.pClipBehaviors = gClipdataBehaviorTypes;
 
@@ -358,10 +372,16 @@ void RoomLoadEntry(void)
 {
     struct RoomEntryRom entry;
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     entry = RESOLVE_ROOM_ENTRY_ROM(sAreaRoomEntryPointers[gCurrentArea][gCurrentRoom]);
+#else
+    entry = sAreaRoomEntryPointers[gCurrentArea][gCurrentRoom];
+#endif
 
     gCurrentRoomEntry.tileset = entry.tileset;
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 
     gCurrentRoomEntry.bg0Prop = entry.bg0Prop;
     gCurrentRoomEntry.bg1Prop = entry.bg1Prop;
@@ -434,10 +454,16 @@ void RoomLoadBackgrounds(void)
     const u8* src;
 
     // Why
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     entry = RESOLVE_ROOM_ENTRY_ROM(sAreaRoomEntryPointers[gCurrentArea][gCurrentRoom]);
+#else
+    entry = sAreaRoomEntryPointers[gCurrentArea][gCurrentRoom];
+#endif
 
     // Load BG3, always LZ77
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
     gCurrentRoomEntry.bg3Size = *entry.pBg3Data;
     src = entry.pBg3Data + 4;
     CallLZ77UncompWram(src, gDecompBg3Map);

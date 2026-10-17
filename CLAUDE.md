@@ -22,6 +22,15 @@ earlier convention. Convert a file's comments/identifiers to English **as you
 touch it** for other reasons, not as a standalone task. User-facing UI strings and
 prose docs can stay as they are until their file is otherwise being reworked.
 
+## The GBA ROM must still build
+
+`src/`, `include/` and `asm/` come from upstream, and the decompilation's own build has to keep
+producing the retail ROM (`make REGION=eu` -> `mzm_eu.sha1`). So a port change to a file that exists
+upstream goes inside `#if defined(MZM_3DS) || defined(PORT_NATIVE)` with upstream's text in `#else`.
+`tools/guard_port.py check` tells whether a change is guarded (CI runs it); `tools/guard_port.py fix`
+adds the guards; `tools/check_gba_rom.sh` builds the ROM and compares it. Read
+`docs/gba-rom-build.md` before touching `src/`, and again after merging upstream.
+
 ## Save states
 
 Before adding, renaming or changing a global in `src/` (or anything the save

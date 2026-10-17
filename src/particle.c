@@ -171,8 +171,13 @@ void ParticleDraw(struct ParticleEffect* pParticle)
 #if defined(MZM_3DS) || defined(PORT_NATIVE)
     src = GBA_RESOLVE(src);
 #endif
-    partCount = *src++;
+#if !(defined(MZM_3DS) || defined(PORT_NATIVE))
 
+#endif
+    partCount = *src++;
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+
+#endif
     
     newSlot = partCount + prevSlot;
 
@@ -228,6 +233,7 @@ void ParticleDraw(struct ParticleEffect* pParticle)
         }
 
         gNextOamSlot = partCount + prevSlot;
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
 #if defined(MZM_3DS)
         {
@@ -238,6 +244,7 @@ void ParticleDraw(struct ParticleEffect* pParticle)
         }
 #endif
 
+#endif
 #if defined(MZM_3DS) || defined(PORT_NATIVE)
         /* The escape countdown is an OBJ particle drawn during gameplay with
          * absolute (non-scrolling) position and OAM priority 0 -- it is HUD

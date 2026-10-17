@@ -1523,6 +1523,7 @@ void Imago(void)
         else
             ImagoCoreFlashingAnim();
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
         /* See ImagoCocoon's tail (and Luma arm11 dumps 50/51):
          * ImagoSyncSubSprites dereferences gSubSpriteData1.pMultiOam, which
          * an Init path may never have assigned. Nested in a block here, so
@@ -1534,6 +1535,10 @@ void Imago(void)
             SpriteUtilUpdateSubSprite1Anim();
             ImagoSyncSubSprites();
         }
+#else
+        SpriteUtilUpdateSubSprite1Anim();
+        ImagoSyncSubSprites();
+#endif
     }
 }
 

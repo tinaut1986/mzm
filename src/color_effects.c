@@ -2,7 +2,9 @@
 #include "macros.h"
 #include "dma.h"
 #include "gba.h"
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 #if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "port_gba_mem.h"
 #endif
@@ -374,7 +376,9 @@ void ApplySmoothPaletteTransition(u16* srcStart, u16* srcEnd, u16* dst, u8 stage
     // interpolation loop writes through it directly, so map it here too.
     dst = GBA_RESOLVE(dst);
 #endif
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
     if (stage == 0)
     {
         DmaTransfer(3, srcStart, dst, 1 * PAL_ROW_SIZE, 16);

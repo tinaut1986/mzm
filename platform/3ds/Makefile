@@ -89,8 +89,8 @@ SRCS_ROOT := \
 # (port_mzm_audio_3ds.c).
 SRCS_ASM := \
 	$(ROOT)/asm/intr_main.s \
-	$(ROOT)/asm/linker_symbols.s \
-	$(ROOT)/asm/audio_internal.s \
+	$(ROOT)/port/asm/linker_symbols.s \
+	$(ROOT)/port/asm/audio_internal.s \
 	$(ROOT)/asm/soundcode.s
 
 SRCS_3DS := \
@@ -528,8 +528,13 @@ $(BUILD)/root/%.o: $(ROOT)/%.c
 	@echo "CC $<"
 	@$(CC) -MMD -MP -MF $(@:.o=.d) $(CFLAGS_DECOMP) $(INCLUDES) -c $< -o $@
 
-# Compilación de archivos ensamblador bajo asm/
+# Assembly under asm/ (the decompilation's) and port/asm/ (the port's own versions)
 $(BUILD)/root/asm/%.o: $(ROOT)/asm/%.s
+	@mkdir -p $(dir $@)
+	@echo "AS $<"
+	@$(CC) -x assembler-with-cpp -Wa,-I$(ROOT) -march=armv6k -mfloat-abi=hard -mtp=soft -I$(ROOT) -c $< -o $@
+
+$(BUILD)/root/port/asm/%.o: $(ROOT)/port/asm/%.s
 	@mkdir -p $(dir $@)
 	@echo "AS $<"
 	@$(CC) -x assembler-with-cpp -Wa,-I$(ROOT) -march=armv6k -mfloat-abi=hard -mtp=soft -I$(ROOT) -c $< -o $@

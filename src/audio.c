@@ -3,7 +3,9 @@
 #include "gba.h"
 #include "syscalls.h"
 #include "audio/track_internal.h"
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "port_gba_mem.h"
+#endif
 
 #include "data/audio.h"
 
@@ -148,17 +150,51 @@ void UpdateMusic(void)
         gMusicInfo.currentSoundChannel++;
         pVariables = pChannel->pVariables;
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
         if (pVariables != NULL)
+#else
+        while (pChannel->unk_13 != 0)
+#endif
         {
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
             while (pChannel->unk_13 != 0)
+#else
+            if (pChannel->unk_13 & 0x2)
+#endif
             {
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
                 if (pChannel->unk_13 & 0x2)
+#else
+                if (pChannel->unk_1 == 0x20)
+                    pChannel->unk_18 = pChannel->pSample[3] << 14;
+                else
+                    pChannel->unk_18 = 0;
+
+                pChannel->unk_10 = 0;
+                pChannel->unk_13 &= ~0x2;
+                pChannel->unk_13 |= 0x10;
+            }
+            else if (pChannel->unk_13 & 0x4)
+            {
+                pChannel->unk_13 &= ~0x4;
+            }
+            else if (pChannel->unk_13 & 0x10)
+            {
+                if (pVariables->unk_0 & 0x80)
+#endif
                 {
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
                     if (pChannel->unk_1 == 0x20)
                         pChannel->unk_18 = pChannel->pSample[3] << 14;
                     else
                         pChannel->unk_18 = 0;
+#else
+                    pVariables->unk_6 = pChannel->unk_3;
+                    unk_4f10(pVariables);
+                }
+#endif
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
                     pChannel->unk_10 = 0;
                     pChannel->unk_13 &= ~0x2;
                     pChannel->unk_13 |= 0x10;
@@ -174,17 +210,27 @@ void UpdateMusic(void)
                         pVariables->unk_6 = pChannel->unk_3;
                         unk_4f10(pVariables);
                     }
+#else
+                pChannel->unk_4 = (pVariables->unk_8 * (pChannel->unk_F + 1)) >> 7;
+                pChannel->unk_5 = (pVariables->unk_9 * (pChannel->unk_F + 1)) >> 7;
+#endif
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
                     pChannel->unk_4 = (pVariables->unk_8 * (pChannel->unk_F + 1)) >> 7;
                     pChannel->unk_5 = (pVariables->unk_9 * (pChannel->unk_F + 1)) >> 7;
 
                     pChannel->unk_13 &= ~0x10;
                 }
+#else
+                pChannel->unk_13 &= ~0x10;
+#endif
             }
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
         }
         else
         {
             pChannel->unk_13 = 0;
+#endif
         }
 
         var_1 = pChannel->unk_10;
@@ -379,22 +425,38 @@ void UpdatePsgSounds(void)
                 {
                     if ((pSound->unk_2 >> 1) > pSound->unk_3)
                     {
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
                         WRITE_8(ptr, control | (1 << i));
+#else
+                        *ptr = control | (1 << i);
+#endif
                     }
                     else
                     {
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
                         WRITE_8(ptr, control | (17 << i));
+#else
+                        *ptr = control | (17 << i);
+#endif
                     }
                 }
                 else
                 {
                     if ((pSound->unk_3 >> 1) > pSound->unk_2)
                     {
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
                         WRITE_8(ptr, control | (16 << i));
+#else
+                        *ptr = control | (16 << i);
+#endif
                     }
                     else
                     {
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
                         WRITE_8(ptr, control | (17 << i));
+#else
+                        *ptr = control | (17 << i);
+#endif
                     }
                 }
 
@@ -1244,6 +1306,7 @@ static void unk_1f3c(struct TrackData* pTrack, struct TrackVariables* pVariables
  * @param pTrack Track data pointer
  * @param pVariables Track variables pointer
  */
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 /*
  * [PORT] Resolve the PSG voice slot a track's channel refers to.
  *
@@ -1280,6 +1343,7 @@ static struct PsgSoundData* PortPsgSlotForChannel(u8 channel)
     return &gUnk_300376C[ch];
 }
 
+#endif
 static void unk_1f90(struct TrackData* pTrack, struct TrackVariables* pVariables)
 {
     u8 var_0;
@@ -1290,7 +1354,11 @@ static void unk_1f90(struct TrackData* pTrack, struct TrackVariables* pVariables
     else
         var_0 = pTrack->unk_3 + pVariables->priority;
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     pSound = PortPsgSlotForChannel(pVariables->channel);
+#else
+    pSound = &gUnk_300376C[pVariables->channel & 7];
+#endif
     if (pSound->unk_0 == 0 ||
         (var_0 >= pSound->unk_16 &&
         (var_0 != pSound->unk_16 ||
@@ -1316,7 +1384,11 @@ static void unk_1fe0(struct TrackData* pTrack, struct TrackVariables* pVariables
     else
         var_0 = pTrack->unk_3 + pVariables->priority;
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     pSound = PortPsgSlotForChannel(pVariables->channel);
+#else
+    pSound = &gUnk_300376C[pVariables->channel & 7];
+#endif
     if (pSound->unk_0 == 0 ||
         (var_0 >= pSound->unk_16 &&
         (var_0 != pSound->unk_16 ||
@@ -1356,6 +1428,7 @@ static void unk_2030(struct PsgSoundData* pSound, struct TrackVariables* pVariab
         var_0 = 0;
 
     pSound->maybe_noteDelay = GetNoteDelay(pVariables, var_0, pVariables->unk_18);
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     // [PORT] On real GBA hardware, a write through a NULL pSound->pVariables
     // (a freshly-unused PSG slot, zero-initialized) lands at a low address
     // that's silently discarded by the hardware bus -- effectively a no-op,
@@ -1366,6 +1439,9 @@ static void unk_2030(struct PsgSoundData* pSound, struct TrackVariables* pVariab
     // guard has to be explicit here to reproduce the same (no-op) behavior.
     if (pSound->pVariables != NULL)
         pSound->pVariables->pSoundPsg = NULL;
+#else
+    pSound->pVariables->pSoundPsg = NULL;
+#endif
     pSound->pVariables = pVariables;
     pSound->unk_F |= 2;
     pSound->unk_0 = 1;
@@ -1612,19 +1688,26 @@ void AudioCommand_Voice(struct TrackData* pTrack, struct TrackVariables* pVariab
         if (pVariables->channel == 0x80)
         {
             pVariables->unk_0 |= 0x80;
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
             // [PORT] pVoice->pSample is a raw GBA ROM address baked into the
             // voice table data (pVoice itself is host-resolved, but this
             // field inside it is not) -- dereferenced directly afterward via
             // *pVariables->pSample2 in unk_4e10 (asm/audio_internal.s). See
             // port_resolve_addr() in port_gba_mem.c.
             pVariables->pSample2 = GBA_RESOLVE(pVoice->pSample);
+#else
+            pVariables->pSample2 = pVoice->pSample;
+#endif
         }
         else if (pVariables->channel == 0x40)
         {
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
             uintptr_t rawKeymapPtr;
             uintptr_t resolvedKeymap;
 
+#endif
             pVariables->unk_0 |= 0x40;
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
             pVariables->pSample2 = GBA_RESOLVE(pVoice->pSample);
             // [PORT] For multi-sample / keysplit instruments (channel == 0x40),
             // pVoice->envelope is a raw GBA ROM pointer (u8*) to a 128-byte
@@ -1633,6 +1716,10 @@ void AudioCommand_Voice(struct TrackData* pTrack, struct TrackVariables* pVariab
             rawKeymapPtr = *(const uintptr_t*)&pVoice->envelope;
             resolvedKeymap = (uintptr_t)GBA_RESOLVE((const void*)rawKeymapPtr);
             pVariables->envelope2 = *(const struct Envelope*)&resolvedKeymap;
+#else
+            pVariables->pSample2 = pVoice->pSample;
+            pVariables->envelope2 = pVoice->envelope;
+#endif
         }
     }
     else
@@ -1644,6 +1731,7 @@ void AudioCommand_Voice(struct TrackData* pTrack, struct TrackVariables* pVariab
 
         if (channel == 0)
         {
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
             // [PORT] same raw-ROM-pointer issue as pSample2 above: pVoice->pSample
             // is a real sample pointer for this instrument type, dereferenced
             // later via SoundChannel.pSample/pData/pSize (unk_4f8c in
@@ -1651,6 +1739,9 @@ void AudioCommand_Voice(struct TrackData* pTrack, struct TrackVariables* pVariab
             // deliberately do NOT resolve -- they extract a small packed value
             // from the raw pointer's bit pattern, not a real address.
             pVariables->pSample1 = GBA_RESOLVE(pVoice->pSample);
+#else
+            pVariables->pSample1 = pVoice->pSample;
+#endif
         }
         else if (channel < 3)
         {
@@ -1663,10 +1754,14 @@ void AudioCommand_Voice(struct TrackData* pTrack, struct TrackVariables* pVariab
         }
         else if (channel == 3)
         {
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
             // [PORT] real pointer to 16 bytes of programmable-wave sample
             // data in ROM, dereferenced directly by UploadSampleToWaveRam
             // (asm/audio_internal.s). Same class as pSample1/pSample2 above.
             UploadSampleToWaveRam(GBA_RESOLVE(pVoice->pSample));
+#else
+            UploadSampleToWaveRam(pVoice->pSample);
+#endif
         }
         else if (channel == 4)
         {

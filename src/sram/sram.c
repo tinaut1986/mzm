@@ -4,7 +4,9 @@
 #include "io.h"
 
 static const char sSramVersion[] = "SRAM_V113";
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 #if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include <string.h>
 #include <stdio.h>
@@ -391,3 +393,6 @@ u8* SramWriteChecked(u8* src, u8* dest, u32 size)
 }
 #endif
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+
+#endif

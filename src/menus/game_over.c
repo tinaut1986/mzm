@@ -1,11 +1,15 @@
 #include "menus/game_over.h"
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "region.h"
+#endif
 #include "dma.h"
 #include "macros.h"
 #include "callbacks.h"
 #include "oam_id.h"
 #include "temp_globals.h"
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 #if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "port_gba_mem.h"
 #endif

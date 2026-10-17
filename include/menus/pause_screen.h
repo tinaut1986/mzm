@@ -45,6 +45,7 @@ s32 PauseScreenStatusScreenInit(void);
 s32 PauseScreenQuitStatusScreen(void);
 s32 PauseScreenEasySleepInit(void);
 s32 PauseScreenQuitEasySleep(void);
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 /*
  * EUR picks between a fast and a slow key-repeat table, so its version takes
  * a speed; USA/JAP only have the fast table and take no argument. The ports
@@ -60,6 +61,13 @@ void CheckForMaintainedInput(MaintainedInputSpeed speed);
 #else
 void CheckForMaintainedInput(void);
 #define CHECK_MAINTAINED_INPUT(speed) ((void)(speed), CheckForMaintainedInput())
+#endif
+#else
+#ifdef REGION_EU
+void CheckForMaintainedInput(MaintainedInputSpeed speed);
+#else // !REGION_EU
+void CheckForMaintainedInput(void);
+#endif // REGION_EU
 #endif
 
 #endif /* PAUSE_SCREEN_MENU_H */

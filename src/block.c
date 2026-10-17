@@ -3,7 +3,9 @@
 #include "dma.h"
 #include "gba.h"
 #include "bg_clip.h"
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 #if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "port_gba_mem.h"
 #endif
@@ -621,9 +623,11 @@ u32 BlockApplyCcaa(u16 yPosition, u16 xPosition, u16 trueClip)
             {
                 result = TRUE;
             }
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
 
 
+#endif
             else
             {
                 // Check on block

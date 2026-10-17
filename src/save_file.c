@@ -1,10 +1,14 @@
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "region.h"
+#endif
 #include "save_file.h"
 #include "callbacks.h"
 #include "dma.h"
 #include "macros.h"
 #include "event.h"
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 #ifdef MZM_3DS
 #include "port_gba_mem.h"
 #endif
@@ -36,7 +40,9 @@
 #ifdef MZM_3DS
 #include "port_debug_log.h"
 #endif
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 extern const struct SaveDemo* sDemoRamDataPointers[MAX_AMOUNT_OF_DEMOS];
 
 static struct SaveFileInfo sSaveFileInfo_Empty = {
@@ -58,7 +64,9 @@ static struct SaveFileInfo sSaveFileInfo_Empty = {
     .difficulty = DIFF_NORMAL,
     .timeAttack = FALSE
 };
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 #ifdef MZM_3DS
 /**
  * The environmental effect slots hold pOamFrame, a pointer to the frame being
@@ -110,6 +118,7 @@ void SramRead_All(void)
     SramRead_MostRecentSaveFile();
     SramRead_TimeAttack();
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     if (REGION_IS_EU())
     {
         SramRead_Language();
@@ -121,6 +130,17 @@ void SramRead_All(void)
         SramWrite_Language();
     }
 
+#else
+#ifdef REGION_EU
+    SramRead_Language();
+#else // !REGION_EU
+    if (SramRead_Language())
+    {
+        gLanguage = LANGUAGE_DEFAULT;
+        SramWrite_Language();
+    }
+#endif // REGION_EU
+#endif
 #ifdef MZM_3DS
     /* A save shared between region builds can hold a gLanguage that is valid
      * data but wrong for the loaded ROM's region; the decomp only clamps on
@@ -1000,7 +1020,9 @@ void SramTestFlash(void)
 
     if (flags)
         gSramCorruptFlag = flags;
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 #ifdef MZM_3DS
     {
         extern struct Sram* sSramFlashPointer;
@@ -1569,7 +1591,15 @@ void SramWrite_Language(void)
     i = gLanguage;
     if ((u32)i >= LANGUAGE_COUNT)
     {
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
         i = REGION_IS_EU() ? 0 : REGION_DEFAULT_LANGUAGE();
+#else
+#ifdef REGION_EU
+        i = 0;
+#else
+        i = LANGUAGE_DEFAULT;
+#endif // REGION_EU
+#endif
     }
 
     pSave->value = i;
@@ -2177,13 +2207,25 @@ void unk_7584c(u8 param_1)
                 gDebugMode = FALSE;            
             }
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
             /* Clamp to a language the loaded ROM has. USA has only English, so
              * it resets unconditionally -- that is what the missing #else did. */
             if (REGION_IS_EU() ? INVALID_EU_LANGUAGE(gLanguage)
                 : REGION_IS_JP() ? gLanguage > LANGUAGE_HIRAGANA
                 : TRUE)
+#else
+#if defined(REGION_EU)
+            if (INVALID_EU_LANGUAGE(gLanguage))
+#elif defined(REGION_JP)
+            if (gLanguage > LANGUAGE_HIRAGANA)
+#endif
+#endif
             {
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
                 gLanguage = REGION_DEFAULT_LANGUAGE();
+#else
+                gLanguage = LANGUAGE_DEFAULT;
+#endif
             }
 
             gCurrentCutscene = 0;

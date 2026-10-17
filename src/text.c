@@ -1,9 +1,13 @@
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "region.h"
+#endif
 #include "text.h"
 #include "dma.h"
 #include "gba.h"
 #include "macros.h"
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 #if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "port_gba_mem.h"
 #endif
@@ -178,7 +182,9 @@ void TextDrawCharacter(u16 charId, u32* dst, u16 indent, u8 color)
     /* See GBA_RESOLVE comment in TextDrawMessageCharacter above. */
     dst = GBA_RESOLVE(dst);
 #endif
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
     BitFill(3, 0, gCurrentCharacterGfx, sizeof(gCurrentCharacterGfx), 16);
     width = TextGetCharacterWidth(charId);
 
@@ -306,6 +312,7 @@ void TextDrawCharacter(u16 charId, u32* dst, u16 indent, u8 color)
         else
             srcGfx = gCurrentCharacterGfx;
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
         palette = indent & 7;
 
         if (REGION_IS_EU())
@@ -316,6 +323,19 @@ void TextDrawCharacter(u16 charId, u32* dst, u16 indent, u8 color)
             if (indent + width < 224 && (indent + width) % 8 == 0 && width % 8 != 0)
                 width++;
         }
+#else
+#ifdef REGION_EU
+        palette = indent;
+        palette &= 7;
+        // If next char position is within same line, and next char position is
+        // on a tile boundary, and char width is not an exact tile multiple,
+        // increment char width
+        if (indent + width < 224 && (indent + width) % 8 == 0 && width % 8 != 0)
+            width++;
+#else // !REGION_EU
+        palette = indent & 7;
+#endif // REGION_EU
+#endif
 
         if (palette != 0)
         {
@@ -456,7 +476,9 @@ void TextDrawMessageCharacter(u16 charId, u32* dst, u16 indent, u8 color)
      * port_gba_mem.h. */
     dst = GBA_RESOLVE(dst);
 #endif
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
     BitFill(3, 0, gCurrentCharacterGfx, sizeof(gCurrentCharacterGfx), 16);
     width = TextGetCharacterWidth(charId);
 
@@ -590,6 +612,7 @@ void TextDrawMessageCharacter(u16 charId, u32* dst, u16 indent, u8 color)
         else
             srcGfx = gCurrentCharacterGfx;
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
         palette = indent & 7;
 
         if (REGION_IS_EU())
@@ -600,6 +623,19 @@ void TextDrawMessageCharacter(u16 charId, u32* dst, u16 indent, u8 color)
             if (indent + width < 224 && (indent + width) % 8 == 0 && width % 8 != 0)
                 width++;
         }
+#else
+#ifdef REGION_EU
+        palette = indent;
+        palette &= 7;
+        // If next char position is within same line, and next char position is
+        // on a tile boundary, and char width is not an exact tile multiple,
+        // increment char width
+        if (indent + width < 224 && (indent + width) % 8 == 0 && width % 8 != 0)
+            width++;
+#else // !REGION_EU
+        palette = indent & 7;
+#endif // REGION_EU
+#endif
 
         if (palette != 0)
         {
@@ -1372,7 +1408,9 @@ u8 TextProcessCurrentMessage(struct Message* pMessage, const u16* pText, u32* ds
     pText = (const u16*)port_resolve_addr((uintptr_t)pText);
     dst = (u32*)port_resolve_write_addr((uintptr_t)dst);
 #endif
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
     state = TEXT_STATE_NONE;
     pMessage->timer++;
 

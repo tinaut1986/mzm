@@ -17,6 +17,7 @@ MAKE_ENUM(u8, FileSelectFadingStage) {
     FILE_SELECT_FADING_STAGE_CHECK_FADE_OUT
 };
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 /*
  * EUR renders the file-screen message in ONE stage that loops over up to 8
  * lines; the other regions use four stages, one per line. The port has to
@@ -29,6 +30,7 @@ MAKE_ENUM(u8, FileSelectFadingStage) {
  * The GBA build keeps the original per-region numbering so `make check` still
  * matches; LINE / LINE_1 are aliased so the shared code compiles either way.
  */
+#endif
 #if defined(MZM_3DS) || defined(PORT_NATIVE)
 MAKE_ENUM(u8, FileScreenProcessTextStage) {
     FILE_SCREEN_PROCESS_TEXT_STAGE_NONE,
@@ -54,8 +56,10 @@ MAKE_ENUM(u8, FileScreenProcessTextStage) {
 #endif // REGION_EU
     FILE_SCREEN_PROCESS_TEXT_STAGE_UPDATE_QUEUE
 };
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #ifndef REGION_EU
 #define FILE_SCREEN_PROCESS_TEXT_STAGE_LINE FILE_SCREEN_PROCESS_TEXT_STAGE_LINE_1
+#endif
 #endif
 #endif
 

@@ -11,7 +11,9 @@
 #include "constants/game_state.h"
 #include "structs/audio.h"
 #include "structs/game_state.h"
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 #ifdef MZM_3DS
 #include "port_debug_log.h"
 #endif

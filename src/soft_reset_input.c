@@ -8,7 +8,9 @@
 #include "structs/game_state.h"
 
 #include "data/menus/language_select_data.h"
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "region.h"
+#endif
 
 #define SOFT_RESET_KEYS (KEY_A | KEY_B | KEY_START | KEY_SELECT)
 
@@ -44,7 +46,13 @@ void SoftResetCheck(void)
  */
 void SoftReset(void)
 {
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     s32 tmp;
+#else
+#ifdef REGION_EU
+    s32 tmp;
+#endif // REGION_EU
+#endif
 
     HazeTransferAndDeactivate();
     RestartSound();
@@ -87,6 +95,7 @@ void SoftReset(void)
     gStereoFlag = FALSE;
 #endif // !BUGFIX
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #ifdef DEBUG
     if (gMainGameMode == GM_INTRO)
 #endif // DEBUG
@@ -98,6 +107,20 @@ void SoftReset(void)
             gSubGameMode1 = sLanguageSelectGameModeSub1Values[1];
         }
     }
+#else
+#ifdef REGION_EU
+#ifdef DEBUG
+    if (gMainGameMode == GM_INTRO)
+#endif // DEBUG
+    {
+        if (INVALID_EU_LANGUAGE(gLanguage))
+        {
+            gMainGameMode = GM_SOFT_RESET;
+            gSubGameMode1 = sLanguageSelectGameModeSub1Values[1];
+        }
+    }
+#endif // REGION_EU
+#endif
 
     gButtonInput = KEY_NONE;
     gPreviousButtonInput = KEY_NONE;
@@ -105,7 +128,17 @@ void SoftReset(void)
 
     WRITE_16(REG_IF, USHORT_MAX);
     // TODO: Find a better way to get a match here
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     // Written this way to produce matching ASM on EUR; identical either way
     tmp = TRUE;
     WRITE_16(REG_IME, tmp);
+#else
+#if defined(REGION_EU) && !defined(REGION_EU_BETA)
+    // Written this way to produce matching ASM
+    tmp = TRUE;
+    WRITE_16(REG_IME, tmp);
+#else // !REGION_EU || REGION_EU_BETA
+    WRITE_16(REG_IME, TRUE);
+#endif // REGION_EU && !REGION_EU_BETA
+#endif
 }

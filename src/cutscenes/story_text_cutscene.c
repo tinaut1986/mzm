@@ -1,4 +1,6 @@
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "region.h"
+#endif
 #include "cutscenes/story_text_cutscene.h"
 #include "cutscenes/cutscene_utils.h"
 #include "dma.h"

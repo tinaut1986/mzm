@@ -1,0 +1,25 @@
+name: Check GBA sources
+
+# src/ and include/ come from metroidret/mzm, and the GBA ROM built from them has
+# to match the retail one. The ROM itself cannot be built here (it needs the
+# retail ROM), so this checks the thing that keeps it buildable: with the port's
+# macros off, every file is upstream's text. See docs/gba-rom-build.md.
+
+on:
+  push:
+    paths: ['src/**', 'include/**', 'asm/**', 'tools/guard_port.py', 'tools/upstream_base']
+  pull_request:
+    paths: ['src/**', 'include/**', 'asm/**', 'tools/guard_port.py', 'tools/upstream_base']
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Fetch the upstream commit the sources were merged from
+        run: git fetch --depth=1 https://github.com/metroidret/mzm.git "$(head -n1 tools/upstream_base | cut -d' ' -f1)"
+      - name: Every file matches upstream with the port macros off
+        run: python3 tools/guard_port.py check

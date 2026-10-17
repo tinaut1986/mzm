@@ -11,10 +11,16 @@
 
 struct TitleScreenOamTiming {
     u8 stage;
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     /* EUR-only ("Start Game" / "Language" title menu), but declared in every
      * region: the u8 sits in what is otherwise alignment padding, so the
      * struct layout is identical either way. */
     u8 menuOption;
+#else
+#ifdef REGION_EU
+    u8 menuOption;
+#endif // REGION_EU
+#endif
     u16 timer;
 };
 

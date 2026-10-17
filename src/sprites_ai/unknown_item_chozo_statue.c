@@ -122,7 +122,9 @@ static void UnknownItemChozoStatueSyncSubSprites(void)
     pData = GBA_RESOLVE(pData);
 #endif
     oamIdx = pData[gCurrentSprite.roomSlot][MULTI_SPRITE_DATA_ELEMENT_OAM_INDEX];
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
     
     if (gCurrentSprite.pOam != sUnknownItemChozoStatueFrameDataPointers[oamIdx])
     {
