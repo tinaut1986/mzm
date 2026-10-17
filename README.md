@@ -10,29 +10,39 @@ One build works with the **EUR, USA or JAP** ROM: the region is detected when th
 
 ### Top screen
 
-- 60 FPS gameplay, rendered by a custom PICA200 GPU renderer (`citro3d`/`citro2d`) for background tiles and sprites, with an automatic per-frame CPU fallback when the scene uses GBA PPU effects the GPU path does not cover (affine backgrounds, windows, mosaic).
+- **60 FPS gameplay**, rendered by a custom PICA200 GPU renderer (`citro3d`/`citro2d`) for background tiles and sprites, with an automatic per-frame CPU fallback when the scene uses GBA PPU effects the GPU path does not cover (affine backgrounds, windows, mosaic).
 - **Stereoscopic 3D** driven by the console's 3D slider, with multi-layer depth (HUD, platforms, Samus, background scenery).
 - **Aspect ratio**: `WIDE`, `WIDE + AI` or `ORIGINAL`. `WIDE` shows more of what the game
   itself has around the GBA's frame. `WIDE + AI` also fills, in some scenes (the title screen, the
   intro), the parts the game never had with art made with a generative image AI; it is off unless
   chosen. The first time WIDE is on, the bottom screen explains this and asks which of the two to use.
-- **Display style**: `PIXEL PERFECT` or `SCALED`.
+- **Display style**: `PIXEL PERFECT` (1:1 pixel mapping) or `SCALED` (sharp scaling).
+- **GBA LCD filters**: optional post-processing, each from `OFF` to `HIGH`:
+  - **GBA COLOR**: colour correction that tones down the brightness boost of the original GBA picture.
+  - **GBA GRID**: 1-pixel dark scanlines and a vertical LCD grille.
+  - **VIGNETTE**: smooth darkening of the outer edges.
+- **GBA FRAME**: a Game Boy Advance border around the picture, in `PIXEL PERFECT` and in `SCALED` + `ORIGINAL`. Not available in `WIDE`, which fills that border with the room.
+- **HUD position**: `TOP BORDER` moves the HUD into the border outside the 240x160 picture (`PIXEL PERFECT`, not in `WIDE`), or `DEFAULT`.
+- **Frame pacing**: `ADAPTIVE` (30 to 60 FPS as the console allows) or `LOCK 30`.
 - Optional FPS counter and an auto-hide HUD option.
 
 ### Bottom screen
 
-Three touch tabs (a fourth, `DEBUG`, only exists in debug builds):
+Five touch tabs (a sixth, `DEBUG`, only exists in debug builds):
 
-- **MAP** — the area map in real time, with zoom levels, browsing other areas with the `<` / `>` arrows, a follow-Samus toggle, and item counts for the area being viewed.
-- **STATUS** — beams, bombs, suits and abilities, item total and downloaded maps, localized into the game's seven languages. Tapping the item line opens a collectibles breakdown per area (Energy Tanks, Missiles, Super Missiles, Power Bombs), which can be spoiler-hidden.
-- **OPTIONS** — display settings, button remapping, RetroAchievements settings, the achievement list, and a restart-game button.
+- **MAP** — The area map in real time with zoom levels, browsing other areas with `<` / `>`, a follow-Samus toggle, and collectibles counts for the area being viewed.
+- **STATUS** — Beams, bombs, suits and abilities, total item collection percentage, and downloaded map stations, localized into the game's seven languages. Tapping the item line opens a collectibles breakdown per area (Energy Tanks, Missiles, Super Missiles, Power Bombs), which can be spoiler-hidden.
+- **STATE** — Full-state save management (save states) with an open-ended slot list, room name, in-game stats, timestamp, and visual screenshot thumbnails. Supports instant save, load, overwrite, and delete.
+- **ACHIEVEMENTS** — Dedicated RetroAchievements interface with unlock progress, timestamps, and on-demand badge art cached to the SD card. Account login through the *SETTINGS* modal.
+- **OPTIONS** — Display settings modal (aspect, filters, frame, pacing), button remapping modal, in-app updater (*UPDATES*) with release notes viewer, and soft/hard reset buttons.
 
 ### Other
 
-- **RetroAchievements**: optional login, achievement list with badges, and a hardcore mode, built on [rcheevos](https://github.com/RetroAchievements/rcheevos). The game is identified by the ROM's hash, so each region resolves to its own achievement set. Talks to `retroachievements.org` directly over the console's HTTP service, so it needs a network connection and an account.
+- **In-App Updater**: Check for updates and download/install new CIA releases directly on the console over Wi-Fi. Features a **WHAT'S NEW** release notes viewer to inspect changes before upgrading.
+- **RetroAchievements**: Optional login, achievement list with badges, built on [rcheevos](https://github.com/RetroAchievements/rcheevos). The game is identified by the ROM's hash, so each region resolves to its own achievement set. Talks to `retroachievements.org` directly over the console's HTTP service, so it needs a network connection and an account.
 - **Native audio** through the decompiled MZM sound engine, output on the 3DS DSP (NDSP).
 - **Console optimization**: New 3DS 804 MHz CPU boost and L2 cache when available, plus frame pacing for Old 3DS and 2DS.
-- Settings and the save file live next to the ROM on the SD card, not inside the app.
+- **Settings and save data**: All saves, states, cached badges, and configuration files live next to the ROM on the SD card, not inside the app.
 
 ---
 
@@ -110,7 +120,8 @@ Everything lives inside the game folder (`sdmc:/3ds/Metroid Zero Mission 3DS/`);
 
 - `mzm.sav` — the save file. It is shared by every region: if you switch ROMs, a language that the new ROM does not have is clamped to that region's default on load.
 - `mzm3ds.ini` — settings (display, button mapping, C-Stick mode, bottom-screen state, RetroAchievements).
-- `states/` — save states and the saved warp point.
+- `states/` — save states and visual thumbnails.
+- `badges/` — cached achievement badge icons downloaded on-demand from RetroAchievements.
 - `debug/` — logs (debug, RetroAchievements) and debug-menu captures (perf, scene recorder, dumps). Only appears in use with the logging/debug tools.
 - `update/` — the CIA downloaded by the in-app updater (removed after a successful install).
 
@@ -121,6 +132,7 @@ Everything lives inside the game folder (`sdmc:/3ds/Metroid Zero Mission 3DS/`);
 ### Requirements
 
 - [devkitPro](https://devkitpro.org/) with `devkitARM`, `libctru`, `citro2d` and `citro3d`.
+- 3DS portlibs used by the self-updater: `3ds-curl`, `3ds-mbedtls`, `3ds-zlib` (`dkp-pacman -S 3ds-curl 3ds-mbedtls 3ds-zlib`).
 - `makerom` and `bannertool` for `.cia` packaging.
 
 ### Build commands & Helper Scripts
@@ -164,6 +176,17 @@ Runs a local web server at `http://127.0.0.1:8731/` and opens your browser. It i
 - **REC**: Inspect on-device scene recording dumps (`mzm-rec.bin`) frame-by-frame.
 
 See [tools/layer-workbench/README.md](tools/layer-workbench/README.md) for full usage instructions and shortcuts.
+
+### Tools: Screenshot Processing
+
+Helper script to convert raw console dumps or Luma3DS screenshots to web-ready PNGs for the repository:
+
+```sh
+python3 tools/process_screenshots.py --placeholders
+python3 tools/process_screenshots.py --import-dir /path/to/dumps_or_screenshots/
+```
+
+See [screenshots/README.md](screenshots/README.md) for full import instructions and expected dimensions.
 
 ### Region
 
