@@ -3034,7 +3034,7 @@ static void RenderAchievementsModal(int lang) {
     /* Header: the set's name when the list is filtered to one, the generic
      * title when it is showing everything. */
     const char* titles[7] = {
-        "RETROACHIEVEMENTS LIST", "RETROACHIEVEMENTS LIST", "RETROACHIEVEMENTS LIST",
+        "ACHIEVEMENT LIST", "ACHIEVEMENT LIST", "ACHIEVEMENT LIST",
         "ERFOLGSLISTE", "LISTE DES SUCCES", "LISTA DEGLI OBIETTIVI", "LISTA DE LOGROS"
     };
     const char* header = titles[lang];
