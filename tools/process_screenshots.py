@@ -142,7 +142,10 @@ def generate_all_placeholders():
 
     for fname, w, h, title, sub in placeholders:
         target = os.path.join(SCREENSHOTS_DIR, fname)
-        # Only create if it doesn't already exist or is a placeholder
+        # Never overwrite a real screenshot
+        if os.path.exists(target):
+            print(f"Kept existing: {target}")
+            continue
         png_bytes = create_placeholder_image(w, h, title, sub)
         with open(target, "wb") as f:
             f.write(png_bytes)
@@ -152,7 +155,8 @@ def generate_all_placeholders():
     top_p = os.path.join(SCREENSHOTS_DIR, "top_gameplay_wide.png")
     bot_p = os.path.join(SCREENSHOTS_DIR, "bottom_map.png")
     prev_p = os.path.join(SCREENSHOTS_DIR, "preview.png")
-    generate_composite_preview(top_p, bot_p, prev_p)
+    if not os.path.exists(prev_p):
+        generate_composite_preview(top_p, bot_p, prev_p)
 
 
 def import_directory(src_dir):

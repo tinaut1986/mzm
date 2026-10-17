@@ -1,42 +1,59 @@
-# Screenshots / Capturas de Pantalla
+# Screenshots
 
-Esta carpeta contiene las imágenes de muestra utilizadas en el `README.md` del proyecto.
+The images the project `README.md` shows. Replace a file to update it; the names below are the ones the README links.
 
-## Archivos y Resoluciones
+## Files
 
-| Archivo | Pantalla | Resolución | Descripción |
+| File | Screen | Size | What it shows |
 |---|---|---|---|
-| `preview.png` | Dual Screen | 400x500 | Imagen combinada vertical (pantalla superior + inferior) para la cabecera. |
-| `top_gameplay_wide.png` | Superior | 400x240 | Gameplay en modo panorámico (WIDE / 16:9). |
-| `top_gameplay_bezel.png` | Superior | 400x240 | Modo Pixel Perfect con marco retro GBA y rejilla LCD. |
-| `title_wide.png` | Superior | 400x240 | Pantalla de título en WIDE (sin IA, negro a los lados). |
-| `title_wide_ai.png` | Superior | 400x240 | Pantalla de título en WIDE + AI. |
-| `bottom_map.png` | Inferior | 320x240 | Pestaña **MAP**: mapa en tiempo real, zoom y contadores de items. |
-| `bottom_status.png` | Inferior | 320x240 | Pestaña **STATUS**: equipamiento, porcentaje de mapa y trajes. |
-| `bottom_states.png` | Inferior | 320x240 | Pestaña **STATE**: lista dinámica de save states con fecha y miniaturas. |
-| `bottom_achievements.png` | Inferior | 320x240 | Pestaña **ACHIEVEMENTS**: lista de logros de RetroAchievements e insignias. |
-| `bottom_options.png` | Inferior | 320x240 | Pestaña **OPTIONS**: menú de visualización, controles y actualizaciones. |
+| `preview.png` | Both | 400x500 | Header image: the top screen over the bottom screen. |
+| `top_gameplay_wide.png` | Top | 400x240 | Gameplay in `WIDE`. |
+| `top_gameplay_bezel.png` | Top | 400x240 | `PIXEL PERFECT` with the GBA frame and the LCD filters. |
+| `title_wide.png` | Top | 400x240 | Title screen in `WIDE` (nothing generated, black at the sides). |
+| `title_wide_ai.png` | Top | 400x240 | Title screen in `WIDE + AI`. |
+| `bottom_map.png` | Bottom | 320x240 | **MAP** tab: the area map, zoom and item counts. |
+| `bottom_status.png` | Bottom | 320x240 | **STATUS** tab: equipment, abilities and downloaded maps. |
+| `bottom_states.png` | Bottom | 320x240 | **STATE** tab: the list of save states. |
+| `bottom_achievements.png` | Bottom | 320x240 | **ACHIEVEMENTS** tab: the RetroAchievements list. |
+| `bottom_options.png` | Bottom | 320x240 | **OPTIONS** tab: display, controls and updates. |
 
----
+Use the English interface and turn the FPS counter off (OPTIONS -> DISPLAY) before taking them.
 
-## Cómo añadir tus capturas reales
+## How to take them
 
-### Método 1: Captura directa desde Luma3DS
-1. En tu consola 3DS, abre el menú Rosalina pulsando `L + Abajo + Select`.
-2. Selecciona **Take screenshot**.
-3. Las imágenes se guardarán en la tarjeta SD dentro de `/luma/screenshots/`.
-4. Copia esas imágenes a tu ordenador, renómbralas con los nombres de la tabla superior y colócalas en esta carpeta sustituyendo los archivos existentes.
-5. Ejecuta:
+### From the PC, with a debug build running
+
+`tools/mzm-link/mzm-link.py` takes both screens as PNG, already the right size and orientation
+(`docs/3ds-debug-tools.md`, "FTP server, install and remote control"):
+
+```sh
+tools/mzm-link/mzm-link.py shot /tmp/mzm-shot      # top.png and bottom.png
+```
+
+It can also tap the bottom screen (`touch X Y`) to switch tabs and open the settings.
+
+### With Luma3DS
+
+1. On the console, open the Rosalina menu (`L + Down + Select`) and choose **Take screenshot**.
+2. The images are saved on the SD card in `/luma/screenshots/`.
+3. Copy them to the PC, name them as in the table and put them in this folder, replacing the existing ones.
+4. Rebuild the header image:
+
    ```sh
    python3 tools/process_screenshots.py --composite
    ```
-   para regenerar automáticamente la imagen de vista previa dual (`preview.png`).
 
-### Método 2: DUMP SCREEN desde el menú DEBUG del juego
-1. En una versión compilada con `DEBUG_TOOLS=1`, accede a la pestaña **DEBUG** en la pantalla táctil y pulsa **HERRAMIENTAS / DEBUG TOOLS -> DUMP SCREEN**.
-2. Se generarán volcados `.rgb` en la SD en `sdmc:/3ds/Metroid Zero Mission 3DS/debug/`.
-3. Pasa esa carpeta a tu PC y conviértelos automáticamente ejecutando:
+### From the debug tools' screen dump
+
+1. In a build made with `DEBUG_TOOLS=1`, open the **DEBUG** tab and tap **DEBUG TOOLS -> SCREEN DUMP**.
+2. The `.rgb` dumps are written to `sdmc:/3ds/Metroid Zero Mission 3DS/debug/`. Copy that folder to the PC.
+3. Convert them:
+
    ```sh
-   python3 tools/process_screenshots.py --import-dir /ruta/a/carpeta/debug/
+   python3 tools/process_screenshots.py --import-dir /path/to/debug/
    ```
-   El conversor rotará la orientación nativa de 3DS (portrait a landscape) y corregirá los canales de color BGR8 a RGB8 de forma automática.
+
+   The converter rotates the console's portrait orientation to landscape and turns BGR8 into RGB8.
+
+`--placeholders` writes a labelled grey image for each name that does not exist yet; it never
+replaces a file that is there.

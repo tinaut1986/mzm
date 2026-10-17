@@ -105,8 +105,8 @@ Two extras beyond the original game:
 
 - **Aiming with the mapped Aim button also enables diagonal aim**, which the GBA game cannot do.
 - **On-screen numbers** (OPTIONS → DISPLAY → `SHOW FPS`, a corner of the top screen): five small lines in a dim box. The first is the game's own rate (green from 59, yellow from 50, red below); `L` is the logic's cost per tick in ms, `D` the renderer's CPU time and `G` the GPU's time per frame, and `S` the rate frames actually reach the screen.
-- **Automatic bomb jump** (OPTIONS → CONTROLS → `AUTO BOMB JUMP`, on by default; off in RetroAchievements hardcore): in the Morph Ball, hold the bomb button and the port chains the bombs for you, timed so each one throws Samus higher than the last, to climb a shaft one finger at a time.
-- **Automatic Space Jump** (OPTIONS → CONTROLS → `AUTO SPACE JUMP`, on by default; off in RetroAchievements hardcore): with Space Jump, hold the jump button in a spin and the port lifts and presses it on the frames the game accepts the next jump, so Samus climbs without tapping in rhythm.
+- **Automatic bomb jump** (OPTIONS → CONTROLS → `AUTO BOMB JUMP`, on by default): in the Morph Ball, hold the bomb button and the port chains the bombs for you, timed so each one throws Samus higher than the last, to climb a shaft one finger at a time.
+- **Automatic Space Jump** (OPTIONS → CONTROLS → `AUTO SPACE JUMP`, on by default): with Space Jump, hold the jump button in a spin and the port lifts and presses it on the frames the game accepts the next jump, so Samus climbs without tapping in rhythm.
 - **Soft reset** works with the retail combo `A + B + Start + Select` and also with `L + R + Start + Select`.
 
 ---
@@ -217,7 +217,6 @@ See [tools/layer-workbench/README.md](tools/layer-workbench/README.md) for full 
 Helper script to convert raw console dumps or Luma3DS screenshots to web-ready PNGs for the repository:
 
 ```sh
-python3 tools/process_screenshots.py --placeholders
 python3 tools/process_screenshots.py --import-dir /path/to/dumps_or_screenshots/
 ```
 
