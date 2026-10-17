@@ -92,7 +92,7 @@ SCENES = {
         over="Samus's ship and its red flame trail (sprites)"),
     'intro-motherbrain': dict(
         name="intro, Mother Brain's tank",
-        bg=0, dumps=['intro-960/1', 'intro-1090/1'], final='intro-1090/1',
+        bg=0, dumps=['intro-960/1'], final='intro-960/1',  # VRAM holds the whole map at once
         picture=(0, 0, 240, 256), canvas=(-80, 0, 320, 256),
         about="Mother Brain's glass tank in Tourian, all red: the tank and its rim at the top, the "
               "organic machinery, pipes and cables around it, the tank's base below. The game "

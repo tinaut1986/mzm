@@ -7,15 +7,15 @@ stands.
 - **Built.** Scenes widen with their own BG data (section 3): intro, title, escapes, credits and the
   cutscenes except 7, 10 and 11, left ORIGINAL (section 4). Scene pictures
   (`port_scene_pictures.[ch]`, data made by `tools/scene-extend/to_console.py`): the title (owner's
-  variant 2), the intro's view of Zebes (variant 1) and its ship in deep space (variant 2); a
-  picture names its game mode and its scene
+  variant 2), the intro's view of Zebes (variant 1), its ship in deep space (variant 2) and Mother
+  Brain's tank (variant 1, re-cropped from the AI's own image with `refit.py`); a picture names its game mode and its scene
   (`PortScenePic_SceneKey`: the intro's stage).
 - **Opt-in.** Generated art shows only in the aspect **WIDE + AI** (`wide_ai` in `mzm3ds.ini`, off by
   default); the first time WIDE is on, the bottom screen says the edges were made with a generative
   AI and asks whether to show them (`wide_ai_asked`). Plain WIDE never loads a generated part; the
   title still builds its own picture from the game's memory there (no AI), with black around it.
-- **Waiting for the AI.** Packages in `~/Imágenes/MZM/` (outside the repository) for the intro's
-  cockpit and Mother Brain scenes: no variants yet.
+- **Waiting for the AI.** The package in `~/Imágenes/MZM/` (outside the repository) for the
+  intro's cockpit: no variants yet.
 - **Scene sprites.** A scene's sprite the GBA screen cut off is drawn from one texture per
   animation frame (`port_scene_sprites.[ch]`, data made by `tools/scene-extend/sprite_to_console.py`):
   the renderer finds the sprite's pieces in OAM by tile, palette and shape, hides them, and draws
@@ -32,7 +32,10 @@ stands.
   Dumps: `capture.sh` (it finds which set a dump went to); they are kept in `~/Imágenes/MZM/dumps/`.
   The intro's space stage lasts about 32 frames, shorter than a dump takes: wait for the intro's
   stage byte to read 1 in game mode 01, write 2 to its timer (IntroData +0xC) and dump at once.
-  `to_console.py` keeps the pictures already in the data file, so it needs only the new scene's dump. Cutscenes from the PC:
+  `to_console.py` keeps the pictures already in the data file, so it needs only the new scene's dump.
+  An AI that redraws the whole canvas at its own size and pastes the original over a crop that
+  does not line up (Antigravity did, for Mother Brain): keep the image it drew before cropping
+  and run `refit.py` on it, which finds the original in it and crops the canvas again. Cutscenes from the PC:
   `docs/3ds-debug-tools.md`, "Playing any cutscene".
 
 ## 1. What and why
