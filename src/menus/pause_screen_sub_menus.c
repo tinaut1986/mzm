@@ -1,4 +1,6 @@
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "region.h"
+#endif
 #include "menus/pause_screen_sub_menus.h"
 #include "menus/pause_screen.h"
 #include "menus/pause_screen_map.h"
@@ -21,6 +23,7 @@
 #include "structs/display.h"
 #include "structs/minimap.h"
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 static const s8* GetChozoStatueTargetPath(u8 area) {
     switch (area) {
         case AREA_BRINSTAR: return (const s8*)sChozoStatueTargetPathBrinstar;
@@ -32,6 +35,16 @@ static const s8* GetChozoStatueTargetPath(u8 area) {
     }
 }
 
+#else
+static const s8* sChozoStatueTargetPathPointers[6] = {
+    [AREA_BRINSTAR] = (s8*)sChozoStatueTargetPathBrinstar,
+    [AREA_KRAID] = (s8*)sChozoStatueTargetPathKraid,
+    [AREA_NORFAIR] = (s8*)sChozoStatueTargetPathNorfair,
+    [AREA_RIDLEY] = (s8*)sChozoStatueTargetPathRidley,
+    [AREA_TOURIAN] = (s8*)NULL,
+    [AREA_CRATERIA] = (s8*)sChozoStatueTargetPathCrateria
+};
+#endif
 
 /**
  * @brief 71f70 | 1da | Easy sleep menu main loop
@@ -58,9 +71,17 @@ u32 PauseScreenEasySleepHandler(void)
                 // Goto YES option
                 SoundPlay(SOUND_YES_NO_CURSOR_MOVING);
                 PAUSE_SCREEN_DATA.stateInfo.stage = EASY_SLEEP_MENU_STAGE_YES_OPTION;
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
                 PAUSE_SCREEN_DATA.miscOam[1].xPosition = REGION_IS_EU()
                     ? BLOCK_SIZE * 4 - QUARTER_BLOCK_SIZE
                     : BLOCK_SIZE * 3 + QUARTER_BLOCK_SIZE;
+#else
+#ifdef REGION_EU
+                PAUSE_SCREEN_DATA.miscOam[1].xPosition = BLOCK_SIZE * 4 - QUARTER_BLOCK_SIZE;
+#else // !REGION_EU
+                PAUSE_SCREEN_DATA.miscOam[1].xPosition = BLOCK_SIZE * 3 + QUARTER_BLOCK_SIZE;
+#endif // REGION_EU
+#endif
             }
             else if (gChangedInput & (KEY_B | KEY_L | KEY_R))
             {
@@ -796,7 +817,11 @@ void ChozoStatueHintDeterminePath(u8 param_1)
         }
         else
         {
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
             pTarget = GetChozoStatueTargetPath(gCurrentArea);
+#else
+            pTarget = sChozoStatueTargetPathPointers[gCurrentArea];
+#endif
             pTarget += pStatueTarget->targetArea * 6;
 
             if (PAUSE_SCREEN_DATA.currentArea == pStatueTarget->statueArea)
@@ -844,8 +869,12 @@ void ChozoStatueHintDeterminePath(u8 param_1)
     else if (PAUSE_SCREEN_DATA.chozoHintTarget.activatedTargets != 0 && gCurrentArea < AREA_CHOZODIA)
     {
         gCurrentArea = gCurrentArea;
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
         pTarget = GetChozoStatueTargetPath(gCurrentArea);
 
+#else
+        pTarget = sChozoStatueTargetPathPointers[gCurrentArea];
+#endif
         if (pTarget != NULL)
         {
             for (i = 0; i < ARRAY_SIZE(sChozoStatueTargetConditions) - 1; i++)

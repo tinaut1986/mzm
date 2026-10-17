@@ -1528,7 +1528,9 @@ void ImagoCocoon(void)
     if (gSubSpriteData1.pMultiOam == NULL)
         return;
 #endif
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
     SpriteUtilUpdateSubSprite1Anim();
     if (gCurrentSprite.pose >= IMAGO_COCOON_POSE_UNLOCK_PASSAGE)
         SpriteUtilSyncCurrentSpritePositionWithSubSprite1Position();

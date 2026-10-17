@@ -32,7 +32,9 @@ void ClipdataSetupCode(void)
     gClipdataCodePointer = (ClipFunc_T)(gNonGameplayRam.inGame.clipdataCode + 1);
 #endif
 }
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 
 /**
  * @brief 57df8 | 84 | Gets information on the clipdata block at the position in parameters, only used for samus

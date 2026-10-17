@@ -311,7 +311,9 @@ void SpriteDebrisDraw(struct SpriteDebris* pDebris)
 #endif
     partCount = *src++;
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
     if (partCount + prevSlot < OAM_BUFFER_DATA_SIZE)
     {
         dst = (u16*)(gOamData + prevSlot);
@@ -406,7 +408,9 @@ void SpriteDebrisInit(u8 cloudType, u8 debrisType, u16 yPosition, u16 xPosition)
         }
         if (prev_counter == UCHAR_MAX)
             return;
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 #if defined(MZM_3DS) || defined(PORT_NATIVE)
         /* The loop above always exits with pDebris one element PAST the end
          * of gSpriteDebris (gSpriteDebris + MAX_AMOUNT_OF_SPRITE_DEBRIS), not

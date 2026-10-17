@@ -60,6 +60,7 @@ struct CutsceneScrollingInfo {
     s16 length;
     s8 speed;
     s8 maxDelay;
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     // The retail ROM stores this table as the original `u32 data[2]` records,
     // i.e. 8 bytes per element. Without this padding the struct is only 6
     // bytes, so the 3DS/native port (which resolves the table straight from
@@ -69,6 +70,7 @@ struct CutsceneScrollingInfo {
     // reach its exit threshold and the Ridley intro cutscene loops forever
     // on the ship-landing animation (issue #31).
     u8 padding_6[2];
+#endif
 };
 
 struct CutsceneInfo {

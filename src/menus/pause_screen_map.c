@@ -2,7 +2,9 @@
 #include "menus/pause_screen.h"
 #include "menus/status_screen.h"
 #include "dma.h"
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 #if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "port_gba_mem.h"
 #endif

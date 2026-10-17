@@ -1,6 +1,8 @@
 #include "event.h"
 #include "constants/event.h"
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 #ifdef MZM_3DS
 u32 gEventsTriggered[8];
 #endif

@@ -2,7 +2,9 @@
 #include "gba.h"
 #include "macros.h"
 #include "event.h"
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 
 #include "data/sprites/kraid.h"
 #include "data/sprite_data.h"
@@ -1998,9 +2000,15 @@ static void KraidPartInit(void)
             gCurrentSprite.properties |= SP_IMMUNE_TO_PROJECTILES;
             gCurrentSprite.samusCollision = SSC_HURTS_SAMUS;
             
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
             gCurrentSprite.drawDistanceTop = SUB_PIXEL_TO_PIXEL(BLOCK_SIZE * 2);
             gCurrentSprite.drawDistanceBottom = SUB_PIXEL_TO_PIXEL(HALF_BLOCK_SIZE + EIGHTH_BLOCK_SIZE);
             gCurrentSprite.drawDistanceHorizontal = SUB_PIXEL_TO_PIXEL(BLOCK_SIZE + HALF_BLOCK_SIZE);
+#else
+            gCurrentSprite.drawDistanceTop = BLOCK_SIZE * 2;
+            gCurrentSprite.drawDistanceBottom = (HALF_BLOCK_SIZE + EIGHTH_BLOCK_SIZE);
+            gCurrentSprite.drawDistanceHorizontal = BLOCK_SIZE + HALF_BLOCK_SIZE;
+#endif
 
             gCurrentSprite.drawOrder = 2;
             gCurrentSprite.pOam = sKraidPartOam_LeftArmIdle;
@@ -2049,7 +2057,11 @@ static void KraidPartInit(void)
             gCurrentSprite.samusCollision = SSC_HURTS_SAMUS;
 
             gCurrentSprite.drawDistanceTop = SUB_PIXEL_TO_PIXEL(BLOCK_SIZE * 3 + QUARTER_BLOCK_SIZE + EIGHTH_BLOCK_SIZE);
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
             gCurrentSprite.drawDistanceBottom = SUB_PIXEL_TO_PIXEL(HALF_BLOCK_SIZE + EIGHTH_BLOCK_SIZE);
+#else
+            gCurrentSprite.drawDistanceBottom = (HALF_BLOCK_SIZE + EIGHTH_BLOCK_SIZE);
+#endif
             gCurrentSprite.drawDistanceHorizontal = SUB_PIXEL_TO_PIXEL(BLOCK_SIZE * 7);
 
             gCurrentSprite.hitboxTop = BLOCK_SIZE * 2;
@@ -2368,8 +2380,13 @@ static void KraidPartDyingSinking(void)
                 gCurrentSprite.pOam = sKraidPartOam_RightArmIdle;
                 gCurrentSprite.animationDurationCounter = 0;
                 gCurrentSprite.currentAnimationFrame = 0;
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
                 gCurrentSprite.drawDistanceTop = SUB_PIXEL_TO_PIXEL(HALF_BLOCK_SIZE + EIGHTH_BLOCK_SIZE);
                 gCurrentSprite.drawDistanceBottom = SUB_PIXEL_TO_PIXEL(QUARTER_BLOCK_SIZE + EIGHTH_BLOCK_SIZE);
+#else
+                gCurrentSprite.drawDistanceTop = (HALF_BLOCK_SIZE + EIGHTH_BLOCK_SIZE);
+                gCurrentSprite.drawDistanceBottom = (QUARTER_BLOCK_SIZE + EIGHTH_BLOCK_SIZE);
+#endif
                 gCurrentSprite.pose = KRAID_PART_POSE_DYING_STATIONNARY;
             }
         }
@@ -2380,8 +2397,13 @@ static void KraidPartDyingSinking(void)
                 gCurrentSprite.pOam = sKraidPartOam_LeftArmIdle;
                 gCurrentSprite.animationDurationCounter = 0;
                 gCurrentSprite.currentAnimationFrame = 0;
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
                 gCurrentSprite.drawDistanceTop = SUB_PIXEL_TO_PIXEL(BLOCK_SIZE);
                 gCurrentSprite.drawDistanceBottom = SUB_PIXEL_TO_PIXEL(QUARTER_BLOCK_SIZE + EIGHTH_BLOCK_SIZE);
+#else
+                gCurrentSprite.drawDistanceTop = BLOCK_SIZE;
+                gCurrentSprite.drawDistanceBottom = (QUARTER_BLOCK_SIZE + EIGHTH_BLOCK_SIZE);
+#endif
                 gCurrentSprite.pose = KRAID_PART_POSE_DYING_STATIONNARY;
             }
         }
@@ -2880,9 +2902,15 @@ void KraidSpike(void)
             gCurrentSprite.pose = KRAID_SPIKE_POSE_DELAY_BEFORE_MOVING;
             gCurrentSprite.samusCollision = SSC_HURTS_SAMUS;
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
             gCurrentSprite.drawDistanceTop = SUB_PIXEL_TO_PIXEL(BLOCK_SIZE);
             gCurrentSprite.drawDistanceBottom = SUB_PIXEL_TO_PIXEL(BLOCK_SIZE);
             gCurrentSprite.drawDistanceHorizontal = SUB_PIXEL_TO_PIXEL(BLOCK_SIZE * 3);
+#else
+            gCurrentSprite.drawDistanceTop = QUARTER_BLOCK_SIZE;
+            gCurrentSprite.drawDistanceBottom = QUARTER_BLOCK_SIZE;
+            gCurrentSprite.drawDistanceHorizontal = THREE_QUARTER_BLOCK_SIZE;
+#endif
 
             gCurrentSprite.hitboxTop = -HALF_BLOCK_SIZE;
             gCurrentSprite.hitboxBottom = HALF_BLOCK_SIZE;

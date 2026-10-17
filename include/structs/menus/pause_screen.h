@@ -26,9 +26,13 @@ struct ChozoStatueTarget {
     u8 targetX;
     u8 targetY;
     u8 endIcon;
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     u8 _pad[2];
+#endif
 };
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 
 struct PauseScreenAreaIconData {
     OverlayOamId nameOamId;
@@ -46,7 +50,9 @@ struct PauseScreenWireframeData {
     u8 objMode;
     u16 xPosition2; // TODO: better name
     u16 yPosition2;
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     u8 _pad[2];
+#endif
 };
 
 struct WorldMapData {
@@ -54,7 +60,9 @@ struct WorldMapData {
     u8 outlinedOamId;
     u16 xPosition;
     u16 yPosition;
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     u8 _pad[2];
+#endif
 };
 
 struct MapScreenAreaIds {
@@ -73,9 +81,13 @@ struct MinimapAreaName {
     u8 mapY2;
     s8 xOffset2;
     s8 yOffset2;
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     u8 _pad[2];
+#endif
 };
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 
 struct PauseScreenStateData {
     PauseScreenState state;

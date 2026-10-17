@@ -15,12 +15,17 @@
 #else
 #define COLOR_DATA_BG_EWRAM ((u16*)(EWRAM_BASE + 0x35000))
 #define COLOR_DATA_OBJ_EWRAM ((u16*)(EWRAM_BASE + 0x35200))
+#if !(defined(MZM_3DS) || defined(PORT_NATIVE))
+// todo: Naming
+#endif
 #define COLOR_DATA_BG_EWRAM2 ((u16*)(EWRAM_BASE + 0x35000 + PALRAM_SIZE))
 #define COLOR_DATA_OBJ_EWRAM2 ((u16*)(EWRAM_BASE + 0x35200 + PALRAM_SIZE))
 #define COLOR_DATA_BG_EWRAM3 ((u16*)(EWRAM_BASE + 0x35000 + 2 * PALRAM_SIZE))
 #define COLOR_DATA_OBJ_EWRAM3 ((u16*)(EWRAM_BASE + 0x35200 + 2 * PALRAM_SIZE))
 #endif
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 
 MAKE_ENUM(u8, EffectCutscene) {
     EFFECT_CUTSCENE_NONE,

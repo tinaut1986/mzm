@@ -1,11 +1,18 @@
 #include "data/in_game_cutscene_data.h"
 #include "macros.h"
 
+#if !(defined(MZM_3DS) || defined(PORT_NATIVE))
+#include "constants/connection.h"
+#endif
 #include "in_game_cutscene.h"
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #undef sInGameCutsceneData
 const struct InGameCutsceneData sInGameCutsceneData_Compiled[IGC_COUNT] = {
 
+#else
+const struct InGameCutsceneData sInGameCutsceneData[IGC_COUNT] = {
+#endif
     [0] = {
         .unk_0 = 1,
         .area = SCHAR_MAX,

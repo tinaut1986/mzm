@@ -4,7 +4,9 @@
 #include "syscalls.h"
 #include "gba.h"
 #include "macros.h"
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "port_gba_mem.h"
+#endif
 
 #include "data/audio.h"
 
@@ -470,7 +472,9 @@ void unk_39c8(void)
  * @param musicTrack Music track
  * @param priority Priority
  */
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 void PlayMusic(Sound musicTrack, u8 priority)
 {
     const u8* pHeader;
@@ -881,12 +885,16 @@ void QueueSound(u16 sound, u16 timer)
     trackGroup = sSoundDataEntries[sound].trackGroundNumber;
     pHeader = sSoundDataEntries[sound].pHeader;
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     // [PORT] pHeader is a raw GBA ROM address (see StopOrFadeSound below,
     // which compares it by identity against a fresh untranslated reread of
     // sSoundDataEntries[].pHeader -- it must stay raw when stored into
     // gSoundQueue[].pHeader). Only the byte reads of the header's own
     // "priority" field need a resolved pointer.
     if (sArray_808cee2[trackGroup] == 0 || !(gSoundQueue[trackGroup].exists & 3) || gSoundQueue[trackGroup].priority <= GBA_RESOLVE(pHeader)[2])
+#else
+    if (sArray_808cee2[trackGroup] == 0 || !(gSoundQueue[trackGroup].exists & 3) || gSoundQueue[trackGroup].priority <= pHeader[2])
+#endif
     {
         if (timer == 0)
         {
@@ -899,7 +907,11 @@ void QueueSound(u16 sound, u16 timer)
             gSoundQueue[trackGroup].fadingTimer = timer;
         }
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
         gSoundQueue[trackGroup].priority = GBA_RESOLVE(pHeader)[2];
+#else
+        gSoundQueue[trackGroup].priority = pHeader[2];
+#endif
         gSoundQueue[trackGroup].pHeader = pHeader;
     }
 }

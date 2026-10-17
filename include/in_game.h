@@ -6,9 +6,15 @@
 
 u32 InGameHandler(void);
 void SetVBlankCodeInGame(void);
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 /* EUR calls this from agbmain; the other regions do the same work inside
  * InGameHandler. Compiled in every region so the port can pick at runtime. */
 void InGameIoWriteRegisters(void);
+#else
+#ifdef REGION_EU
+void InGameIoWriteRegisters(void);
+#endif // REGION_EU
+#endif
 void TransferSamusGraphics(u32 updatePalette, struct SamusPhysics* pPhysics);
 void VBlankCodeInGameLoad(void);
 void TransferSamusAndBgGraphics(void);

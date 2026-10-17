@@ -94,7 +94,9 @@ static void ChozoStatueSyncSubSprites(void)
     pData = GBA_RESOLVE(pData);
 #endif
     oamIdx = pData[gCurrentSprite.roomSlot][MULTI_SPRITE_DATA_ELEMENT_OAM_INDEX];
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
     
     if (gCurrentSprite.pOam != sChozoStatueFrameDataPointers[oamIdx])
     {
@@ -1295,7 +1297,9 @@ void ChozoStatue(void)
     if (gSubSpriteData1.pMultiOam == NULL)
         return;
 #endif
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
     SpriteUtilUpdateSubSprite1Anim();
     ChozoStatueSyncSubSprites();
 }

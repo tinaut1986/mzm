@@ -1,4 +1,6 @@
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "region.h"
+#endif
 #include "chozodia_escape.h"
 #include "dma.h"
 #include "gba.h"
@@ -925,7 +927,9 @@ static u8 ChozodiaEscapeShipBlowingUp(void)
          * the ROM shim. Translate before dereferencing pOam->timer/pFrame. */
         pOamBase = GBA_RESOLVE(pOamBase);
 #endif
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
         pOam = &pOamBase[CHOZODIA_ESCAPE_DATA.oamFrames[i]];
 
         if (CHOZODIA_ESCAPE_DATA.oamTimers[i]++ >= pOam->timer)
@@ -1181,6 +1185,7 @@ static u8 ChozodiaEscapeMissionAccomplished(void)
             // Setup mission accomplished OAM
             CHOZODIA_ESCAPE_DATA.oamTypes[CHOZODIA_ESCAPE_OAM_MISSION_ACCOMPLISHED]++;
             
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
             // Only the EUR ROM has a per-language table for this
             if (REGION_IS_EU())
             {
@@ -1197,6 +1202,23 @@ static u8 ChozodiaEscapeMissionAccomplished(void)
                 CHOZODIA_ESCAPE_DATA.oamPointers[CHOZODIA_ESCAPE_OAM_MISSION_ACCOMPLISHED] =
                     sChozodiaEscapeOam_MissionAccomplishedEnglish_Frame0;
             }
+#else
+#ifdef REGION_EU
+            CHOZODIA_ESCAPE_DATA.oamPointers[CHOZODIA_ESCAPE_OAM_MISSION_ACCOMPLISHED] =
+                sChozodiaEscapeOamPointers_MissionAccomplished[gLanguage];
+#else // !REGION_EU
+            if (gLanguage == LANGUAGE_HIRAGANA)
+            {
+                CHOZODIA_ESCAPE_DATA.oamPointers[CHOZODIA_ESCAPE_OAM_MISSION_ACCOMPLISHED] =
+                    sChozodiaEscapeOam_MissionAccomplishedHiragana_Frame0;
+            }
+            else
+            {
+                CHOZODIA_ESCAPE_DATA.oamPointers[CHOZODIA_ESCAPE_OAM_MISSION_ACCOMPLISHED] =
+                    sChozodiaEscapeOam_MissionAccomplishedEnglish_Frame0;
+            }
+#endif // REGION_EU
+#endif
 
             CHOZODIA_ESCAPE_DATA.oamFrames[CHOZODIA_ESCAPE_OAM_MISSION_ACCOMPLISHED] = 1;
             CHOZODIA_ESCAPE_DATA.oamXPositions[CHOZODIA_ESCAPE_OAM_MISSION_ACCOMPLISHED] = SCREEN_X_MIDDLE;

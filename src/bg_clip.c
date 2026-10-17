@@ -21,7 +21,9 @@
 #include "structs/transparency.h"
 #include "structs/game_state.h"
 #include "structs/samus.h"
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 
 /**
  * @brief 5a484 | d8 | Sets the value for a BG block
@@ -109,7 +111,9 @@ void BgClipSetBg1BlockValue(u16 value, u16 yPosition, u16 xPosition)
 #if defined(MZM_3DS) || defined(PORT_NATIVE)
     dst = GBA_RESOLVE(dst);
 #endif
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 
     dst += MOD_AND(yPosition, 16) * 64 + MOD_AND(xPosition, 16) * 2;
     
@@ -718,14 +722,18 @@ HatchOpeningAction BgClipCheckOpeningHatch(u16 xPosition, u16 yPosition)
 
         action = HATCH_OPENING_ACTION_NOT_OPENING;
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
 
+#endif
         // Check touches hatch and hatch is weak
         if (gHatchData[i].xPosition == xPosition && gHatchData[i].yPosition <= yPosition &&
             yPosition <= gHatchData[i].yPosition + (HATCH_VERTICAL_SIZE - 1) &&
             sHatchBehaviors[gHatchData[i].type][0] &
             sClipdataAffectingActionDamageTypes[gCurrentClipdataAffectingAction])
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
         {
             // Increase hits
             gHatchData[i].hits++;

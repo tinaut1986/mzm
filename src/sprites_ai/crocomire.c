@@ -97,6 +97,9 @@ static void CrocomireSyncSubSprites(void)
 #if defined(MZM_3DS) || defined(PORT_NATIVE)
     pData = GBA_RESOLVE(pData);
 #endif
+#if !(defined(MZM_3DS) || defined(PORT_NATIVE))
+
+#endif
     oamIdx = pData[gCurrentSprite.roomSlot][MULTI_SPRITE_DATA_ELEMENT_OAM_INDEX];
     
     if (gCurrentSprite.pOam != sCrocomireFrameDataPointers[oamIdx])
@@ -291,7 +294,9 @@ void Crocomire(void)
     if (gSubSpriteData1.pMultiOam == NULL)
         return;
 #endif
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
     SpriteUtilUpdateSubSprite1Anim();
     CrocomireSyncSubSprites();
 }

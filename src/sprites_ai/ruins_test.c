@@ -26,7 +26,9 @@
 #include "structs/samus.h"
 #include "structs/sprite.h"
 #include "structs/projectile.h"
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 #ifdef MZM_3DS
 #include "port_debug_log.h"
 #endif

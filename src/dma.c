@@ -1,7 +1,9 @@
 #include "dma.h"
 #include "gba.h"
 #include "macros.h"
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 #if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include <string.h>
 #include "port_gba_mem.h"
@@ -348,3 +350,6 @@ lbl_08003370: \n\
 #endif
 #endif
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+
+#endif

@@ -3,10 +3,14 @@
 #include "data/menus/language_select_data.h"
 
 #include "gba.h"
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "port_debug_log.h"
+#endif
 #include "audio/track_internal.h"
 #include "constants/game_state.h"
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "region.h"
+#endif
 
 #include "structs/cutscene.h"
 #include "structs/demo.h"
@@ -49,8 +53,15 @@ void agbmain(void)
         }
 #endif
         gVblankActive = FALSE;
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
         if (REGION_IS_EU() && (gMainGameMode == GM_INGAME || gMainGameMode == GM_DEMO))
             InGameIoWriteRegisters();
+#else
+#ifdef REGION_EU
+        if (gMainGameMode == GM_INGAME || gMainGameMode == GM_DEMO)
+            InGameIoWriteRegisters();
+#endif // REGION_EU
+#endif
 #if defined(MZM_3DS) && defined(PORT_VERBOSE_FRAME_LOG)
         Port_DebugLog("agbmain: before UpdateAudio()");
 #endif
@@ -80,6 +91,7 @@ void agbmain(void)
 #if defined(MZM_3DS) && defined(PORT_VERBOSE_FRAME_LOG)
         Port_DebugLog("agbmain: SoftResetCheck() done");
 #endif
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
 #ifdef PORT_LINUX_DIAG_WARP_TO_DEOREM
         /* Two-stage debug warp, bypassing menu navigation entirely (test
@@ -134,6 +146,7 @@ void agbmain(void)
         }
 #endif
 
+#endif
         // Increment frame counters
         APPLY_DELTA_TIME_INC(gFrameCounter8Bit);
         APPLY_DELTA_TIME_INC(gFrameCounter16Bit);
@@ -152,9 +165,13 @@ void agbmain(void)
             Port_SaveState_ServicePending();
         }
 #endif
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
         switch (gMainGameMode)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
         {
             case GM_SOFT_RESET:
                 if (SoftResetHandler())
@@ -193,9 +210,15 @@ void agbmain(void)
 #endif // DEBUG
                 if (TitleScreenHandler())
                 {
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
                     /* EUR clears this before the dispatch below, the other
                      * regions after it; nothing in between reads it. */
                     gSubGameMode1 = 0;
+#else
+#ifdef REGION_EU
+                    gSubGameMode1 = 0;
+#endif // REGION_EU
+#endif
                     if (gSubGameMode2 == 1)
                     {
                         gMainGameMode = GM_FILE_SELECT;
@@ -205,12 +228,22 @@ void agbmain(void)
                         DemoStart();
                         gMainGameMode = GM_DEMO;
                     }
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
                     else if (REGION_IS_EU() && gSubGameMode2 == 3)
                     {
                         // "Language" picked on the EUR title screen
                         gMainGameMode = GM_SOFT_RESET;
                         gSubGameMode1 = sLanguageSelectGameModeSub1Values[1];
                     }
+#else
+#ifdef REGION_EU
+                    else if (gSubGameMode2 == 3)
+                    {
+                        gMainGameMode = GM_SOFT_RESET;
+                        gSubGameMode1 = sLanguageSelectGameModeSub1Values[1];
+                    }
+#endif // REGION_EU
+#endif
                     else
                     {
 #ifdef DEBUG
@@ -220,6 +253,11 @@ void agbmain(void)
 #endif // DEBUG
                     }
 
+#if !(defined(MZM_3DS) || defined(PORT_NATIVE))
+#ifndef REGION_EU
+                    gSubGameMode1 = 0;
+#endif // !REGION_EU
+#endif
                     gPauseScreenFlag = 0;
                     gSubGameMode2 = 0;
                 }
@@ -444,12 +482,23 @@ void agbmain(void)
                             gMainGameMode = GM_INGAME;
                             break;
                         case 2:
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
                             if (REGION_IS_EU() && INVALID_EU_LANGUAGE(gLanguage))
                             {
                                 gMainGameMode = GM_SOFT_RESET;
                                 gSubGameMode1 = sLanguageSelectGameModeSub1Values[2];
                             }
                             else
+#else
+#ifdef REGION_EU
+                            if (INVALID_EU_LANGUAGE(gLanguage))
+                            {
+                                gMainGameMode = GM_SOFT_RESET;
+                                gSubGameMode1 = sLanguageSelectGameModeSub1Values[2];
+                            }
+                            else
+#endif // REGION_EU
+#endif
                             {
                                 gMainGameMode = GM_INTRO;
                             }
@@ -481,13 +530,18 @@ void agbmain(void)
                     }
                 }
 #else // !DEBUG
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
                 gMainGameMode = GM_INTRO;
                 gSubGameMode1 = 0;
                 break;
+#else
+                while (TRUE);
+#endif
 #endif // DEBUG
                 break;
         }
         
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
 #if defined(MZM_3DS) && defined(PORT_VERBOSE_FRAME_LOG)
         Port_DebugLog("agbmain: switch done, before Halt wait");
@@ -504,6 +558,7 @@ void agbmain(void)
             extern void Port_FlushSramIfDirty(void);
             Port_FlushSramIfDirty();
         }
+#endif
 
         gVBlankRequestFlag &= ~TRUE;
         gVblankActive = TRUE;
@@ -515,7 +570,9 @@ void agbmain(void)
         Port_DebugLog("agbmain: Halt wait done, looping");
 #endif
     }
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 #if defined(MZM_3DS) || defined(PORT_NATIVE)
     {
         extern void Port_FlushSramWait(void);

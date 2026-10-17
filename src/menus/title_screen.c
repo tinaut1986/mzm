@@ -4,8 +4,10 @@
 #include "callbacks.h"
 #include "oam_id.h"
 #include "gba/rom_header.h"
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "region.h"
 
+#endif
 #if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "port_gba_mem.h"
 #endif
@@ -28,7 +30,13 @@
 
 #define TITLE_SCREEN_SPARKLE_DELAY CONVERT_SECONDS(.35f + 1.f / 60)
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 static void TitleScreenSetMenuPalette(TitleScreenMenuOption param0);
+#else
+#ifdef REGION_EU
+static void TitleScreenSetMenuPalette(TitleScreenMenuOption param0);
+#endif // REGION_EU
+#endif
 
 static struct TitleScreenAnimatedPalette sTitleScreenAnimatedPaletteTemplates[4] = {
     [0] = {
@@ -978,8 +986,15 @@ u32 TitleScreenProcessBottomSparkle(struct TitleScreenOamTiming* pTiming, struct
  */
 u32 TitleScreenCheckPlayEffects(void)
 {
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     u32 tmp1;
     u32 tmp2;
+#else
+#ifdef REGION_EU
+    u32 tmp1;
+    u32 tmp2;
+#endif // REGION_EU
+#endif
 
     TITLE_SCREEN_DATA.demoTimer++;
     if (TITLE_SCREEN_DATA.demoTimer > 60 * 17)
@@ -1014,6 +1029,7 @@ u32 TitleScreenCheckPlayEffects(void)
     }
     else if (gChangedInput & (KEY_A | KEY_START))
     {
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
         if (REGION_IS_EU())
         {
             tmp1 = TITLE_SCREEN_DATA.oamTimings[2].menuOption != TITLE_SCREEN_MENU_OPTION_START_GAME ? 3 : 1;
@@ -1022,8 +1038,18 @@ u32 TitleScreenCheckPlayEffects(void)
         }
 
         return 1;
+#else
+#ifdef REGION_EU
+        tmp1 = TITLE_SCREEN_DATA.oamTimings[2].menuOption != TITLE_SCREEN_MENU_OPTION_START_GAME ? 3 : 1;
+        tmp2 = tmp1;
+        return tmp2;
+#else // !REGION
+        return 1;
+#endif // REGION_EU
+#endif
     }
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     if (REGION_IS_EU() && gChangedInput & (KEY_UP | KEY_DOWN))
     {
         tmp2 = FALSE;
@@ -1046,6 +1072,32 @@ u32 TitleScreenCheckPlayEffects(void)
             TITLE_SCREEN_DATA.demoTimer = 0;
         }
     }
+#else
+#ifdef REGION_EU
+    if (gChangedInput & (KEY_UP | KEY_DOWN))
+    {
+        tmp2 = FALSE;
+
+        if (gChangedInput & KEY_UP && TITLE_SCREEN_DATA.oamTimings[2].menuOption != TITLE_SCREEN_MENU_OPTION_START_GAME)
+        {
+            TITLE_SCREEN_DATA.oamTimings[2].menuOption = TITLE_SCREEN_MENU_OPTION_START_GAME;
+            tmp2 = TRUE;
+        }
+        else if (gChangedInput & KEY_DOWN && TITLE_SCREEN_DATA.oamTimings[2].menuOption == TITLE_SCREEN_MENU_OPTION_START_GAME)
+        {
+            TITLE_SCREEN_DATA.oamTimings[2].menuOption = TITLE_SCREEN_MENU_OPTION_LANGUAGE;
+            tmp2 = TRUE;
+        }
+
+        if (tmp2)
+        {
+            SoundPlay(0x1FA);
+            TitleScreenSetMenuPalette(TITLE_SCREEN_DATA.oamTimings[2].menuOption);
+            TITLE_SCREEN_DATA.demoTimer = 0;
+        }
+    }
+#endif // REGION_EU
+#endif
 
 #ifdef DEBUG
     if (gChangedInput & KEY_L)
@@ -1121,11 +1173,21 @@ u32 TitleScreenHandler(void)
 #endif // DEBUG
                 else
                 {
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
                     if (REGION_IS_EU() && gSubGameMode2 == 3)
                     {
                         SoundPlay(SOUND_ACCEPT_CONFIRM_MENU);
                     }
                     else
+#else
+#ifdef REGION_EU
+                    if (gSubGameMode2 == 3)
+                    {
+                        SoundPlay(SOUND_ACCEPT_CONFIRM_MENU);
+                    }
+                    else
+#endif // REGION_EU
+#endif
                     {
                         SoundPlay(SOUND_TITLE_SCREEN_PRESSING_START);
                     }
@@ -1315,17 +1377,25 @@ void TitleScreenInit(void)
 
     SET_BACKDROP_COLOR(COLOR_BLACK);
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     if (REGION_IS_EU())
     {
         DmaTransfer(3, &sTitleScreenUnselectedMenuPal, PALRAM_BASE + 0x1E0, sizeof(sTitleScreenUnselectedMenuPal), 16);
         TITLE_SCREEN_DATA.oamTimings[2].menuOption = TITLE_SCREEN_MENU_OPTION_START_GAME;
     }
+#else
+#ifdef REGION_EU
+    DmaTransfer(3, &sTitleScreenUnselectedMenuPal, PALRAM_BASE + 0x1E0, sizeof(sTitleScreenUnselectedMenuPal), 16);
+    TITLE_SCREEN_DATA.oamTimings[2].menuOption = TITLE_SCREEN_MENU_OPTION_START_GAME;
+#endif // REGION_EU
+#endif
 
     TitleScreenLoadPageData(&sTitleScreenPageData[0]);
     TitleScreenLoadPageData(&sTitleScreenPageData[1]);
 
     // JP uses the registered trademark symbol, while non-JP uses the trademark symbol.
     // Debug allows any language, so it checks the language to decide which to use.
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #ifdef DEBUG
     if (gLanguage >= LANGUAGE_ENGLISH)
 #else // !DEBUG
@@ -1338,6 +1408,24 @@ void TitleScreenInit(void)
     {
         TitleScreenSetCopyrightSymbol(TITLE_SCREEN_COPYRIGHT_SYMBOL_REGISTERED_TRADEMARK);
     }
+#else
+#if defined(DEBUG) || !defined(REGION_JP)
+#if defined(DEBUG)
+    if (gLanguage >= LANGUAGE_ENGLISH)
+#endif // DEBUG
+    {
+        TitleScreenSetCopyrightSymbol(TITLE_SCREEN_COPYRIGHT_SYMBOL_TRADEMARK);
+    }
+#endif // DEBUG || !REGION_JP
+#if defined(DEBUG) || defined(REGION_JP)
+#if defined(DEBUG)
+    else
+#endif // DEBUG
+    {
+        TitleScreenSetCopyrightSymbol(TITLE_SCREEN_COPYRIGHT_SYMBOL_REGISTERED_TRADEMARK);
+    }
+#endif // DEBUG || REGION_JP
+#endif
 
     CallLZ77UncompVram(sTitleScreenTitleGfx, VRAM_BASE + 0xC000);
     CallLZ77UncompVram(sTitleScreenSpaceBackgroundGfx, VRAM_BASE + 0x4000);
@@ -1348,12 +1436,20 @@ void TitleScreenInit(void)
 
     CallLZ77UncompVram(sTitleScreenSparklesGfx, VRAM_OBJ);
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     if (REGION_IS_EU())
     {
         CallLZ77UncompVram(sTitleScreenMenuGfxPointers[(gLanguage - LANGUAGE_ENGLISH) * 2], VRAM_BASE + 0xE800);
         CallLZ77UncompVram(sTitleScreenMenuGfxPointers[(gLanguage - LANGUAGE_ENGLISH) * 2 + 1], VRAM_BASE + 0xEC00);
         TitleScreenSetMenuPalette(TITLE_SCREEN_DATA.oamTimings[2].menuOption);
     }
+#else
+#ifdef REGION_EU
+    CallLZ77UncompVram(sTitleScreenMenuGfxPointers[(gLanguage - LANGUAGE_ENGLISH) * 2], VRAM_BASE + 0xE800);
+    CallLZ77UncompVram(sTitleScreenMenuGfxPointers[(gLanguage - LANGUAGE_ENGLISH) * 2 + 1], VRAM_BASE + 0xEC00);
+    TitleScreenSetMenuPalette(TITLE_SCREEN_DATA.oamTimings[2].menuOption);
+#endif // REGION_EU
+#endif
 
     // Undefined
     TitleScreenSetBGCNTPageData(&sTitleScreenPageData[0]);
@@ -1448,6 +1544,7 @@ void TitleScreenVBlank_Empty(void)
     vu8 c = 0;
 }
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 /**
  * @brief Sets the palette for "Start Game" and "Language" on the title screen
  * 
@@ -1514,6 +1611,64 @@ static void TitleScreenSetMenuPalette(TitleScreenMenuOption option)
         }
     }
 }
+#else
+#ifdef REGION_EU
+/**
+ * @brief Sets the palette for "Start Game" and "Language" on the title screen
+ * 
+ * @param option Which option is selected
+ */
+static void TitleScreenSetMenuPalette(TitleScreenMenuOption option)
+{
+    s32 temp;
+    u16* dst1;
+    u16* dst2;
+    u16 i;
+
+    // Set "Start Game" palette
+    dst1 = VRAM_BASE + 0x352 + sTitleScreenPageData[0].tiletablePage * 0x800;
+    dst2 = dst1 + 0x20;
+
+    if (option == TITLE_SCREEN_MENU_OPTION_START_GAME)
+    {
+        for (i = 0; i < 12; i++, dst1++, dst2++)
+        {
+            *dst1 = (*dst1 & 0x3FF) | 0xD000;
+            *dst2 = (*dst2 & 0x3FF) | 0xD000;
+        }
+    }
+    else
+    {
+        for (i = 0; i < 12; i++, dst1++, dst2++)
+        {
+            *dst1 |= 0xF000;
+            *dst2 |= 0xF000;
+        }
+    }
+
+    // Set "Language" palette
+    dst1 = VRAM_BASE + 0x3D6 + sTitleScreenPageData[0].tiletablePage * 0x800;
+    dst2 = dst1 + 0x20;
+
+    if (option != TITLE_SCREEN_MENU_OPTION_START_GAME)
+    {
+        for (i = 0; i < 8; i++, dst1++, dst2++)
+        {
+            *dst1 = (*dst1 & 0x3FF) | 0xD000;
+            *dst2 = (*dst2 & 0x3FF) | 0xD000;
+        }
+    }
+    else
+    {
+        for (i = 0; i < 8; i++, dst1++, dst2++)
+        {
+            *dst1 |= 0xF000;
+            *dst2 |= 0xF000;
+        }
+    }
+}
+#endif // REGION_EU
+#endif
 
 /**
  * @brief 777d8 | 4c | Changes the copyright symbol
@@ -1552,7 +1707,9 @@ void TitleScreenSetCopyrightSymbol(TitleScreenCopyrightSymbol symbol)
      * needs an explicit translation. */
     dst = (u16*)gba_MemPtr((uintptr_t)dst);
 #endif
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
     while (i < 2)
     {
         *dst++ = (*dst & mask) | (value + i);
@@ -1571,7 +1728,9 @@ void TitleScreenSetCopyrightSymbol(TitleScreenCopyrightSymbol symbol)
 void TitleScreenDrawString(const u8* pString, u16* dst, u8 palette)
 {
     u16 tile;
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 #if defined(MZM_3DS) || defined(PORT_NATIVE)
     /* Callers pass a raw VRAM_BASE-relative GBA address (see call sites
      * below), and this function dereferences dst directly instead of going

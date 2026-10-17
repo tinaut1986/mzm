@@ -89,8 +89,8 @@ SRCS_ROOT := \
 # (port_mzm_audio_3ds.c).
 SRCS_ASM := \
 	$(ROOT)/asm/intr_main.s \
-	$(ROOT)/asm/linker_symbols.s \
-	$(ROOT)/asm/audio_internal.s \
+	$(ROOT)/port/asm/linker_symbols.s \
+	$(ROOT)/port/asm/audio_internal.s \
 	$(ROOT)/asm/soundcode.s
 
 SRCS_3DS := \

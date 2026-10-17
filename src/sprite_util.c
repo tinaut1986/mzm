@@ -3587,7 +3587,9 @@ void SpriteUtilUpdateSubSprite1Anim(void)
     if (gSubSpriteData1.pMultiOam == NULL)
         return;
 #endif
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
     APPLY_DELTA_TIME_INC(gSubSpriteData1.animationDurationCounter);
 
     if (gSubSpriteData1.pMultiOam[gSubSpriteData1.currentAnimationFrame].timer < gSubSpriteData1.animationDurationCounter)
@@ -3614,7 +3616,9 @@ void SpriteUtilSyncCurrentSpritePositionWithSubSprite1Position(void)
     if (gSubSpriteData1.pMultiOam == NULL)
         return;
 #endif
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
     pData = gSubSpriteData1.pMultiOam[gSubSpriteData1.currentAnimationFrame].pData;
 #if defined(MZM_3DS) || defined(PORT_NATIVE)
     pData = GBA_RESOLVE(pData);
@@ -3627,7 +3631,9 @@ void SpriteUtilSyncCurrentSpritePositionWithSubSprite1Position(void)
 void SpriteUtilSyncCurrentSpritePositionWithSubSpriteData1PositionAndOam(void)
 {
     MultiSpriteDataInfo_T pData;
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 #if defined(MZM_3DS) || defined(PORT_NATIVE)
     /* Same uninitialised-pMultiOam case as SpriteUtilUpdateSubSprite1Anim
      * above -- the callers pair the two in the same frame. */
@@ -3790,7 +3796,9 @@ void SpriteUtilSyncCurrentSpritePositionWithSubSpritePositionAndOam(struct SubSp
     else
         gCurrentSprite.xPosition = pSub->xPosition + pData[gCurrentSprite.roomSlot][MULTI_SPRITE_DATA_ELEMENT_X_OFFSET];
 }
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 
 /**
  * @brief 1157c | a4 | Checks if the current sprite is colliding with Samus
