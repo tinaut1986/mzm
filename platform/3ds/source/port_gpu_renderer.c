@@ -5599,17 +5599,6 @@ void Port_GpuRenderer_DrawFrame(void) {
             PlatformGpu3DS_ResetSolidTexEnv();
         }
 
-        /* Shared overlay so a CPU fallback frame draws the exact same box
-         * (see PlatformGpu3DS_DrawFpsOverlay). Parallax past the frontmost
-         * world tier (HUD, +2.0px) and pixel-snapped like the tile layers,
-         * so the counter always reads as being in front of everything. */
-        /* No bare ResetSolidTexEnv() here: it would rewrite TEV 0 while this
-         * eye's tile quads are still sitting unflushed in citro2d's vertex
-         * buffer, and they would then be emitted with the solid-colour env
-         * (untinted vertex colour == nothing) instead of the atlas env.
-         * DrawFpsOverlay flushes first and resets the TEV itself. */
-        PlatformGpu3DS_DrawFpsOverlay(floorf(eyeSign * slider3d * (+2.5f) + 0.5f));
-
         /* RetroAchievements unlock toast, when the player put it on the top
          * screen. Same frontmost parallax as the FPS box so it floats in
          * front of the whole scene; no-ops when the toast is on the bottom
