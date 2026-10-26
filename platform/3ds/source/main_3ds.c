@@ -3,6 +3,7 @@
 #include "port_debug_log.h"
 #include "port_rom.h"
 #include "port_paths.h"
+#include "port_dsp_firm_prompt_3ds.h"
 
 /* Metroid Zero Mission 3DS - Main Entrypoint */
 
@@ -192,6 +193,7 @@ int main(int argc, char** argv) {
     Port_DebugLog("main: before Port_MzmAudio_Init");
     if (!Port_MzmAudio_Init()) {
         Port_DebugLog("main: Port_MzmAudio_Init failed (no DSP firmware?) -- audio disabled");
+        Port_DspFirm_Raise(); /* the bottom screen asks to extract the firmware */
         printf("Warning: audio unavailable (ndspInit failed). Check DSP firmware dump.\n");
     } else {
         Port_DebugLog("main: Port_MzmAudio_Init done");
