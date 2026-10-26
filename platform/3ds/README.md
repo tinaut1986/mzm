@@ -41,7 +41,7 @@ This target builds the native dual-screen Nintendo 3DS port of **Metroid: Zero M
 
    The ROM is read directly from the SD card and is never packaged inside the CIA.
 
-4. **Audio**: Ensure DSP firmware is dumped on your console (on Luma3DS, press `L + Down + Select` to open Rosalina Menu -> *Miscellaneous options* -> *Dump DSP firmware*).
+4. **Audio**: The sound needs the DSP firmware (`sdmc:/3ds/dspfirm.cdc`). If it is missing or damaged the game offers to extract it from the console (A / EXTRACT); or dump it yourself on Luma3DS (`L + Down + Select` -> Rosalina Menu -> *Miscellaneous options* -> *Dump DSP firmware*).
 
 ---
 

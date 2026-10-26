@@ -147,7 +147,7 @@ Two extras beyond the original game:
 
 3. **Audio setup**
 
-   Dump your console's DSP firmware, or there will be no sound. On Luma3DS: `L + Down + Select` to open the Rosalina menu → *Miscellaneous options* → *Dump DSP firmware*.
+   The sound needs your console's DSP firmware (`sdmc:/3ds/dspfirm.cdc`). If it is missing or damaged, the game says so on the bottom screen and offers to extract it from the console itself (A / EXTRACT); without it the game runs, silent. It is Nintendo's, so it is never part of a download. You can also dump it yourself: on Luma3DS, `L + Down + Select` → Rosalina menu → *Miscellaneous options* → *Dump DSP firmware*.
 
 ### Files the port creates
 
@@ -245,7 +245,7 @@ For renderer selection, diagnostics flags and the rest of the build options, see
 
 ## Known issues
 
-- Sound is silent until the DSP firmware is dumped (see Installation).
+- Sound is silent until the DSP firmware is on the SD card; the game offers to extract it (see Installation).
 - Behavioural differences against the original game are collected in [KNOWN_DIFFERENCES.md](KNOWN_DIFFERENCES.md).
 
 ---
