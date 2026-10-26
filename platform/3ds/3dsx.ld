@@ -77,11 +77,11 @@ SECTIONS
 	 * rebuild that does not touch the decomp keeps __ss_data_start (and the
 	 * fingerprint) put, so old slots still load. The ASSERT fires if .text +
 	 * .rodata ever reach the pinned base -- raise it then (that one rebuild
-	 * invalidates slots, as before). Headroom at time of writing: ~1 MiB.
+	 * invalidates slots, as before). Raised to 0x600000 when the scene pictures grew past 0x500000; headroom ~1 MiB.
 	 * Format 4 states (docs/3ds-save-states.md) do not depend on this; the pin
 	 * only keeps the older format 3 slots loadable. */
-	ASSERT(. <= 0x00500000, "3dsx.ld: .text/.rodata overflowed the pinned .data base (0x500000) -- raise it")
-	. = 0x00500000;
+	ASSERT(. <= 0x00600000, "3dsx.ld: .text/.rodata overflowed the pinned .data base (0x600000) -- raise it")
+	. = 0x00600000;
 
 	.data :
 	{
@@ -183,8 +183,8 @@ SECTIONS
 	 * of the data-region sections and this address, so __bss_start__ is set
 	 * past the gap -- crt0 only zero-fills __bss_start__..__bss_end__, so the
 	 * gap costs nothing. Headroom for .data + .got + arrays growth: ~470 KiB. */
-	ASSERT(. <= 0x00580000, "3dsx.ld: data-region sections overflowed the pinned .bss base (0x580000) -- raise it")
-	. = 0x00580000;
+	ASSERT(. <= 0x00680000, "3dsx.ld: data-region sections overflowed the pinned .bss base (0x680000) -- raise it")
+	. = 0x00680000;
 
 	__bss_start__ = .;
 	.bss ALIGN(4) :

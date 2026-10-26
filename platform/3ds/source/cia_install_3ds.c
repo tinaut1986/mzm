@@ -6,6 +6,14 @@
 
 enum { kCiaIoSize = 128 * 1024 };
 
+// Written by the installing thread, read by the main one (CiaInstall_Progress).
+static volatile unsigned long long sProgressDone, sProgressTotal;
+
+void CiaInstall_Progress(unsigned long long *done, unsigned long long *total) {
+  *done = sProgressDone;
+  *total = sProgressTotal;
+}
+
 // The running title's ID and media (APT knows the application the system started).
 static bool RunningTitle(u64 *pid, FS_MediaType *media) {
   u8 m = MEDIATYPE_SD;
@@ -55,6 +63,7 @@ bool CiaInstall_File(const char *sdPath, char *error, unsigned errorCap) {
   snprintf(error, errorCap, "install start failed (%08lx)", (unsigned long)rc);
   if (R_FAILED(rc)) goto done;
   started = true;
+  sProgressDone = 0, sProgressTotal = size;
   for (u64 offset = 0; offset < size;) {
     u32 read = 0, wrote = 0, want = size - offset > kCiaIoSize ? kCiaIoSize : (u32)(size - offset);
     rc = FSFILE_Read(input, &read, offset, data, want);
@@ -64,6 +73,7 @@ bool CiaInstall_File(const char *sdPath, char *error, unsigned errorCap) {
     snprintf(error, errorCap, "install write failed (%08lx)", (unsigned long)rc);
     if (R_FAILED(rc) || wrote != read) goto done;
     offset += read;
+    sProgressDone = offset;
   }
   rc = AM_FinishCiaInstall(output);
   started = false;
@@ -77,12 +87,10 @@ done:
   return ok;
 }
 
-bool CiaInstall_JumpToSelf(void) {
-  u64 title = 0;
-  FS_MediaType media = MEDIATYPE_SD;
-  u8 param[0x300] = { 0 };
-  u8 hmac[0x20] = { 0 };
-  if (!RunningTitle(&title, &media)) return false;
-  if (R_FAILED(APT_PrepareToDoApplicationJump(0, title, media))) return false;
-  return R_SUCCEEDED(APT_DoApplicationJump(param, sizeof(param), hmac));
+void CiaInstall_RelaunchOnExit(void) {
+  // libctru's aptExit() starts this title again once the process exits, after the normal exit
+  // path. Jumping at once (APT_PrepareToDoApplicationJump + APT_DoApplicationJump) had the system
+  // load the title a second time while the new build ran, and the loader faulted out of memory
+  // (r0 = 0xD86007F3; ../zelda-tmc-3ds issue #4, ../legend-of-doom-3ds issue #1).
+  aptSetChainloaderToSelf();
 }

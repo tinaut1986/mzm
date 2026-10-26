@@ -1,4 +1,6 @@
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "region.h"
+#endif
 #include "sprites_ai/zipline.h"
 #include "macros.h"
 #include "event.h"
@@ -114,9 +116,15 @@ static u8 ZiplineMoving(void)
             if (samusGrabbing)
             {
                 gSamusData.xPosition += velocity;
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
                 // EUR also reports the direction while riding
                 if (REGION_IS_EU())
                     gSamusPhysics.horizontalMovingDirection = HDMOVING_RIGHT;
+#else
+#ifdef REGION_EU
+                gSamusPhysics.horizontalMovingDirection = HDMOVING_RIGHT;
+#endif // REGION_EU
+#endif
             }
         }
         else
@@ -125,8 +133,14 @@ static u8 ZiplineMoving(void)
             if (samusGrabbing)
             {
                 gSamusData.xPosition -= velocity;
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
                 if (REGION_IS_EU())
                     gSamusPhysics.horizontalMovingDirection = HDMOVING_LEFT;
+#else
+#ifdef REGION_EU
+                gSamusPhysics.horizontalMovingDirection = HDMOVING_LEFT;
+#endif // REGION_EU
+#endif
             }
         }
     }

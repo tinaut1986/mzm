@@ -1,4 +1,6 @@
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "region.h"
+#endif
 #include "samus.h"
 #include "gba.h"
 #include "block.h" // Necessary
@@ -21,8 +23,12 @@
 #include "structs/clipdata.h"
 #include "structs/game_state.h"
 #include "structs/visual_effects.h"
+#if !(defined(MZM_3DS) || defined(PORT_NATIVE))
+#include "structs/samus.h"
+#endif
 #include "structs/screen_shake.h"
 #include "structs/scroll.h"
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
 #if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "port_gba_mem.h"
@@ -57,6 +63,7 @@ static void SamusEnvLogBad(const char* where, u32 slot)
 }
 #endif
 
+#endif
 
 static SamusFunc_T sSamusPoseFunctionPointers[SPOSE_COUNT] = {
     [SPOSE_RUNNING] = SamusRunning,
@@ -222,7 +229,9 @@ void SamusCheckScrewSpeedboosterAffectingEnvironment(struct SamusData* pData, st
 
     if (pData->speedboostingShinesparking)
         action += DESTRUCTING_ACTION_SPEED;
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 #if defined(MZM_3DS) || defined(PORT_NATIVE)
     /* Debug "always active" effects: apply the screw / speedbooster
      * destruction to the environment regardless of pose or speed, so the
@@ -2296,7 +2305,11 @@ void SamusCheckCarryFromCopy(struct SamusData* pData, struct SamusData* pCopy, s
     {
         case SPOSE_RUNNING:
             // Carry aim if diagonal or weapon is armed, otherwise default to none
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
             if (gButtonInput & gButtonAssignments.diagonalAim || gButtonInput & (1 << 10) || gButtonInput & gButtonAssignments.armWeapon)
+#else
+            if (gButtonInput & gButtonAssignments.diagonalAim || gButtonInput & gButtonAssignments.armWeapon)
+#endif
                 pData->armCannonDirection = pCopy->armCannonDirection;
             else
                 pData->armCannonDirection = ACD_NONE;
@@ -2369,7 +2382,11 @@ void SamusCheckCarryFromCopy(struct SamusData* pData, struct SamusData* pCopy, s
                 // Force upwards shinespark
                 pData->yVelocity = SAMUS_SIDEWARD_SHINESPARK_X_VELOCITY;
             }
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
             else if (gButtonInput & gButtonAssignments.diagonalAim || gButtonInput & (1 << 10))
+#else
+            else if (gButtonInput & gButtonAssignments.diagonalAim)
+#endif
             {
                 // Pressed diagonal input, do a diagonal shinespark
                 pData->forcedMovement = FORCED_MOVEMENT_DIAGONAL_SHINESPARK;
@@ -2828,7 +2845,9 @@ void SamusCopyPalette(const u16* src, s32 offset, s32 nbrColors)
         gSamusPalette[i] = *src++;
 }
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 /**
  * @brief 779c | 4c | Updates samus
  * 
@@ -2879,8 +2898,14 @@ void SamusUpdateHitboxMovingDirection(void)
     pPhysics->touchingTopBlock = FALSE;
     pPhysics->unk_5A = 0;
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     // EUR added this guard; the earlier releases update the direction regardless
     if (!REGION_IS_EU() || pPhysics->standingStatus != STANDING_NOT_IN_CONTROL)
+#else
+#ifdef REGION_EU
+    if (pPhysics->standingStatus != STANDING_NOT_IN_CONTROL)
+#endif // REGION_EU
+#endif
     {
         pPhysics->horizontalMovingDirection = HDMOVING_NONE;
         pPhysics->verticalMovingDirection = VDMOVING_NONE;
@@ -3022,7 +3047,11 @@ void SamusAimCannon(struct SamusData* pData)
 
     pWeapon = &gSamusWeaponInfo;
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     if (gButtonInput & gButtonAssignments.diagonalAim || gButtonInput & (1 << 10))
+#else
+    if (gButtonInput & gButtonAssignments.diagonalAim)
+#endif
     {
         // Process diagonal aim button
         switch (pData->pose)
@@ -3881,6 +3910,7 @@ SamusAnimState SamusUpdateAnimation(struct SamusData* pData, u8 slowed)
     else
         pAnim = sSamusAnimPointers_PowerSuit[pData->pose][0];
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     pAnim = RESOLVE_SAMUS_PTR(pAnim);
 
 #if defined(MZM_3DS) || defined(PORT_NATIVE)
@@ -3891,9 +3921,12 @@ SamusAnimState SamusUpdateAnimation(struct SamusData* pData, u8 slowed)
         pAnim = RESOLVE_SAMUS_PTR(sSamusAnimPointers_PowerSuit[pData->pose][0]);
 #endif
 
+#endif
     // Get for current frame
     pAnim = &pAnim[pData->currentAnimationFrame];
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 
     // Get time of current frame
     timer = pAnim->timer;
@@ -4021,11 +4054,15 @@ SamusPose SamusRunningGfx(struct SamusData* pData)
         pScrew->flag = SCREW_SPEED_FLAG_ACTIVE;
     }
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     pAnim = RESOLVE_SAMUS_PTR(pAnim);
 
+#endif
     // Get for current frame
     pAnim = &pAnim[pData->currentAnimationFrame];
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 
     // Get time of current frame
     timer = pAnim->timer;
@@ -4367,6 +4404,7 @@ SamusPose SamusCrouching(struct SamusData* pData)
 
     // Check morphing
     if (gChangedInput & KEY_DOWN && gEquipment.suitMiscActivation & SMF_MORPH_BALL &&
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
         (gSamusWeaponInfo.diagonalAim == DIAG_AIM_NONE || pData->armCannonDirection == ACD_DIAGONALLY_DOWN)
 #if defined(MZM_3DS) || defined(PORT_NATIVE)
         /* Suitless Samus has no morph-ball graphics (vanilla never reaches
@@ -4375,6 +4413,9 @@ SamusPose SamusCrouching(struct SamusData* pData)
         && gEquipment.suitType != SUIT_SUITLESS
 #endif
         )
+#else
+        (gSamusWeaponInfo.diagonalAim == DIAG_AIM_NONE || pData->armCannonDirection == ACD_DIAGONALLY_DOWN))
+#endif
     {
         SoundPlay(SOUND_MORPHING);
         return SPOSE_MORPHING;
@@ -4597,11 +4638,15 @@ SamusPose SamusMidAir(struct SamusData* pData)
     u32 newVelocity;
 
     // Check morph, pressing down while aiming down
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     if (gChangedInput & KEY_DOWN && pData->armCannonDirection == ACD_DOWN && gEquipment.suitMiscActivation & SMF_MORPH_BALL
 #if defined(MZM_3DS) || defined(PORT_NATIVE)
         && gEquipment.suitType != SUIT_SUITLESS /* no suitless morph-ball gfx; see SamusCrouching */
 #endif
         )
+#else
+    if (gChangedInput & KEY_DOWN && pData->armCannonDirection == ACD_DOWN && gEquipment.suitMiscActivation & SMF_MORPH_BALL)
+#endif
     {
         SoundPlay(SOUND_MORPHING);
         return SPOSE_MORPH_BALL_MIDAIR;
@@ -4990,11 +5035,15 @@ SamusPose SamusScrewAttackingGfx(struct SamusData* pData)
             SoundPlay(SOUND_SCREW_ATTACK);
     }
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     pAnim = RESOLVE_SAMUS_PTR(pAnim);
 
+#endif
     // Get current frame
     pAnim = &pAnim[pData->currentAnimationFrame];
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 
     // Scale timer with slowed
     timer = pAnim->timer;
@@ -5458,7 +5507,11 @@ SamusPose SamusHangingOnLedge(struct SamusData* pData)
     }
 
     // Check either pressing the diagonal aim, up, down or the direction opposite to the block
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     if (gButtonInput & gButtonAssignments.diagonalAim || gButtonInput & (1 << 10) || gButtonInput & (KEY_UP | KEY_DOWN) || gButtonInput & OPPOSITE_DIRECTION(pData->direction))
+#else
+    if (gButtonInput & gButtonAssignments.diagonalAim || gButtonInput & (KEY_UP | KEY_DOWN) || gButtonInput & OPPOSITE_DIRECTION(pData->direction))
+#endif
     {
         // Change direction to face outside the block
         pData->direction ^= KEY_RIGHT | KEY_LEFT;
@@ -5659,7 +5712,11 @@ SamusPose SamusAimingWhileHanging(struct SamusData* pData)
     }
 
     aimingUp = FALSE;
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     if (!(gButtonInput & gButtonAssignments.diagonalAim) && !(gButtonInput & (1 << 10)))
+#else
+    if (!(gButtonInput & gButtonAssignments.diagonalAim))
+#endif
     {
         if (gChangedInput & OPPOSITE_DIRECTION(pData->direction))
         {
@@ -5885,11 +5942,15 @@ SamusPose SamusUsingAnElevatorGfx(struct SamusData* pData)
     else
         pAnim = sSamusAnimPointers_PowerSuit_UsingAnElevator[1][0];
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     pAnim = RESOLVE_SAMUS_PTR(pAnim);
 
+#endif
     // Get current frame
     pAnim = &pAnim[pData->currentAnimationFrame];
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 
     // Update samus animation
     if (pData->animationDurationCounter >= pAnim->timer)
@@ -6090,11 +6151,15 @@ SamusPose SamusShinesparkingGfx(struct SamusData* pData)
         loopFrame = 2;
     }
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     pAnim = RESOLVE_SAMUS_PTR(pAnim);
 
+#endif
     // Get current frame
     pAnim = &pAnim[pData->currentAnimationFrame];
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 
     // Update samus animation
     if (pData->animationDurationCounter >= pAnim->timer)
@@ -6218,9 +6283,13 @@ SamusPose SamusBallsparkingGfx(struct SamusData* pData)
     const struct SamusAnimationData* pAnim;
 
     pAnim = sSamusAnimPointers_PowerSuit[pData->pose][0];
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     pAnim = RESOLVE_SAMUS_PTR(pAnim);
+#endif
     pAnim = &pAnim[pData->currentAnimationFrame];
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 
     // Update samus animation
     if (pData->animationDurationCounter >= pAnim->timer)
@@ -6774,11 +6843,17 @@ SamusPose SamusExecutePoseHandler(struct SamusData* pData)
     pEquipment = &gEquipment;
     pHazard = &gSamusHazardDamage;
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #ifdef BUGFIX
     if (gSubGameMode1 != 0)
 #else
     // EUR added this guard (see docs/bugs_and_glitches.md)
     if (!REGION_IS_EU() || gSubGameMode1 != 0)
+#endif
+#else
+#if defined(REGION_EU) || defined(BUGFIX)
+    if (gSubGameMode1 != 0)
+#endif // REGION_EU || BUGFIX
 #endif
     {
         // Update hazard damage
@@ -6807,11 +6882,17 @@ SamusPose SamusExecutePoseHandler(struct SamusData* pData)
     // Update weapon highlight
     if (pEquipment->suitType != SUIT_SUITLESS)
     {
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #ifdef BUGFIX
         if (pData->pose != SPOSE_DYING)
 #else
         // EUR added this guard (see docs/bugs_and_glitches.md)
         if (!REGION_IS_EU() || pData->pose != SPOSE_DYING)
+#endif
+#else
+#if defined(REGION_EU) || defined(BUGFIX)
+        if (pData->pose != SPOSE_DYING)
+#endif // REGION_EU || BUGFIX
 #endif
         {
             SamusSetHighlightedWeapon(pData, pWeapon, pEquipment);
@@ -7382,6 +7463,7 @@ void SamusUpdateGraphicsOam(struct SamusData* pData, u8 direction)
     }
 
     // Offset by current frame
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     pAnim = RESOLVE_SAMUS_PTR(pAnim);
     pArmCannonAnim = RESOLVE_SAMUS_PTR(pArmCannonAnim);
 
@@ -7399,19 +7481,32 @@ void SamusUpdateGraphicsOam(struct SamusData* pData, u8 direction)
         pArmCannonAnim = RESOLVE_SAMUS_PTR(sArmCannonAnimPointers_Suit_All[pose][direction]);
 #endif
 
+#endif
     pAnim = &pAnim[pData->currentAnimationFrame];
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     pPhysics->pBodyOam = RESOLVE_SAMUS_PTR(pAnim->pOam);
+#else
+    pPhysics->pBodyOam = pAnim->pOam;
+#endif
 
     // Update head and upper body
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     pGraphics = RESOLVE_SAMUS_PTR(pAnim->pTopGfx);
+#else
+    pGraphics = pAnim->pTopGfx;
+#endif
     pPhysics->shoulderGfxSize = *pGraphics++ * SAMUS_GFX_PART_SIZE;
     pPhysics->torsoGfxSize = *pGraphics++ * SAMUS_GFX_PART_SIZE;
     pPhysics->pShouldersGfx = pGraphics;
     pPhysics->pTorsoGfx = &pGraphics[pPhysics->shoulderGfxSize];
 
     // Update legs and lower body
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     pGraphics = RESOLVE_SAMUS_PTR(pAnim->pBottomGfx);
+#else
+    pGraphics = pAnim->pBottomGfx;
+#endif
     pPhysics->legsGfxSize = *pGraphics++ * SAMUS_GFX_PART_SIZE;
     pPhysics->bodyLowerHalfGfxSize = *pGraphics++ * SAMUS_GFX_PART_SIZE;
     pPhysics->pLegsGfx = pGraphics;
@@ -7434,7 +7529,11 @@ void SamusUpdateGraphicsOam(struct SamusData* pData, u8 direction)
     // Update arm cannon OAM
     pArmCannonAnim = &pArmCannonAnim[pData->currentAnimationFrame];
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     pPhysics->pArmCannonOam = RESOLVE_SAMUS_PTR(pArmCannonAnim->pOam);
+#else
+    pPhysics->pArmCannonOam = pArmCannonAnim->pOam;
+#endif
     pPhysics->unk_22 = *pPhysics->pArmCannonOam;
 
     // Fetch current arm cannon graphics based on the current pose and arm cannon direction
@@ -7545,9 +7644,11 @@ void SamusUpdateGraphicsOam(struct SamusData* pData, u8 direction)
             }
     }
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     pPhysics->pArmCannonGfxUpper = RESOLVE_SAMUS_PTR(pPhysics->pArmCannonGfxUpper);
     pPhysics->pArmCannonGfxLower = RESOLVE_SAMUS_PTR(pPhysics->pArmCannonGfxLower);
 
+#endif
     // Reset effect graphics info
     pPhysics->unk_36 = 0;
     pPhysics->screwSpeedGfxSize = 0;
@@ -7573,7 +7674,15 @@ void SamusUpdateGraphicsOam(struct SamusData* pData, u8 direction)
     if (pScrew->flag == SCREW_SPEED_FLAG_NONE)
         return;
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     pEffectAnim = NULL;
+#else
+    pPhysics->unk_36 = 1 * SAMUS_GFX_PART_SIZE;
+
+#ifdef BUGFIX
+    pEffectAnim = NULL;
+#endif // BUGFIX
+#endif
 
     // Fetch current effect graphics and OAM based on the current pose and the effect flag
     switch (pose)
@@ -7607,15 +7716,22 @@ void SamusUpdateGraphicsOam(struct SamusData* pData, u8 direction)
             break;
     }
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     if (!pEffectAnim)
         return;
 
+#endif
     // Offset by current frame
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     pEffectAnim = RESOLVE_SAMUS_PTR(pEffectAnim);
+#endif
     pEffectAnim = &pEffectAnim[pScrew->currentAnimationFrame];
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
     // Update OAM
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     pPhysics->pScrewSpeedOam = RESOLVE_SAMUS_PTR(pEffectAnim->pOam);
 
     /* Flag SamusUpdateGraphicsOam to actually emit the screw/speedbooster
@@ -7625,15 +7741,24 @@ void SamusUpdateGraphicsOam(struct SamusData* pData, u8 direction)
      * dropped by the ROM-pointer-resolve pass (c69da7ea), so the arcs never
      * drew on the port. Set it here, once pScrewSpeedOam is known valid. */
     pPhysics->unk_36 = 1 * SAMUS_GFX_PART_SIZE;
+#else
+    pPhysics->pScrewSpeedOam = pEffectAnim->pOam;
+#endif
 
     // Update graphics
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     pGraphics = RESOLVE_SAMUS_PTR(pEffectAnim->pGraphics);
+#else
+    pGraphics = pEffectAnim->pGraphics;
+#endif
     pPhysics->screwSpeedGfxSize = *pGraphics++ * SAMUS_GFX_PART_SIZE;
     pPhysics->screwShinesparkGfxSize = *pGraphics++ * SAMUS_GFX_PART_SIZE;
 
     pPhysics->pScrewSpeedGfx = pGraphics;
     pPhysics->pScrewShinesparkGfx = &pGraphics[pPhysics->screwSpeedGfxSize];
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 }
 
 /**
@@ -8165,6 +8290,7 @@ void SamusUpdateArmCannonPositionOffset(u8 direction)
     }
 
     // Get current animation
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     pAnim = RESOLVE_SAMUS_PTR(pAnim);
 
 #if defined(MZM_3DS) || defined(PORT_NATIVE)
@@ -8175,12 +8301,19 @@ void SamusUpdateArmCannonPositionOffset(u8 direction)
         pAnim = RESOLVE_SAMUS_PTR(sArmCannonAnimPointers_Suit_All[pose][direction]);
 #endif
 
+#endif
     pAnim = &pAnim[pData->currentAnimationFrame];
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     pOffset = RESOLVE_SAMUS_PTR(pAnim->pOffset);
+#else
+    pOffset = pAnim->pOffset;
+#endif
 
     // Update Y offset
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
     // Check sign bit set (8-bit)
     offset = pOffset->y;
     if (offset & 0x80)

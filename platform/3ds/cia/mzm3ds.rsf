@@ -32,6 +32,9 @@ AccessControlInfo:
   IdealProcessor: 0
   AffinityMask: 3
   Priority: 16
+  # Bit 7: multi-core mode; & 0x7F = 30, the most of core 1 APT_SetAppCpuTimeLimit may ask (Luma's
+  # PM refuses more with 0xD8E05BF4). 0xD0 (80) was tried on 2026-10-16 and starved the system
+  # services on core 1 on the 2DS: audio underruns, the game's FTP at 3 KB/s (platform_3ds_minimal.c).
   MaxCpu: 0x9E
   HandleTableSize: 0x200
   DisableDebug: false

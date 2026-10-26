@@ -17,15 +17,31 @@
 //
 // Other SITE commands are the remote control, debug_link_3ds.h.
 //
-// Its thread runs at a lower priority than the game and blocks on the network, so it costs
-// nothing while idle.
+// Its thread runs at a lower priority than the game and, while idle, asks the network without
+// waiting and naps 10 ms between the asks: a blocking poll held up every other thread's socket
+// calls (libctru has one SOC session per process).
 #include <stdbool.h>
 #include <stdint.h>
 
 enum { FTP_SERVER_PORT = 5000 };
 
 bool FtpServer_Start(void);
+/* Production builds: the install-only server, started when dev-ftp.txt is in the data folder. Only
+ * /3ds/Metroid Zero Mission 3DS/update is reachable, the remote control (SITE) is off, and the
+ * bottom screen shows the address with a CANCEL button (FtpServer_Cancel). Not started again
+ * after a cancel: the player has to leave the game and open it again. */
+bool FtpServer_StartInstallOnly(void);
+bool FtpServer_InstallOnly(void); /* serving in that mode right now */
+void FtpServer_Cancel(void);
+// Waits up to 3 s for the server thread. One that does not end is left running, and the server
+// stays off until the game restarts (status "STUCK, RESTART THE GAME"): freeing it, or the network
+// service under it, froze the game.
 void FtpServer_Stop(void);
+// Logic thread (FtpServer_Tick calls it): logs once to the SD log when the server thread has been
+// inside one command for 30 s.
+void FtpServer_WatchdogPoll(void);
+// "waiting for a command for 3.2 s", "command PEEK for 41.0 s", or "off".
+void FtpServer_DescribeStage(char *out, unsigned cap);
 bool FtpServer_Running(void);
 // "192.168.1.50:5000", or a short reason when it is not serving.
 void FtpServer_Address(char *out, unsigned cap);
@@ -34,7 +50,11 @@ void FtpServer_Stats(unsigned *sent, unsigned *received, bool *connected);
 // While a .cia is being received or SITE INSTALL runs, the line to show the player (the
 // bottom screen's toast); NULL otherwise.
 const char *FtpServer_Notice(void);
+// How far that is: 1 while a .cia arrives, 2 while it installs, 3 while the game waits to restart
+// into it (FtpServer_TakeRelaunch comes after 10 s), 0 otherwise; `done` of `total` (bytes, or ms
+// for 3). `total` is 0 when the client did not announce the size with ALLO.
+int FtpServer_Progress(unsigned long long *done, unsigned long long *total);
 // Main thread, once per frame: writes what the server thread has to say into the SD log.
 void FtpServer_Tick(void);
-// True once, after a SITE INSTALL succeeded: the main loop jumps into the new build.
+// True once, 10 s after a SITE INSTALL succeeded: the main loop jumps into the new build.
 bool FtpServer_TakeRelaunch(void);

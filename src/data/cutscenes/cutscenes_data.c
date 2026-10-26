@@ -17,9 +17,16 @@
 
 #include "constants/event.h"
 #include "constants/color_fading.h"
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #undef sCutsceneData
 const struct CutsceneInfo sCutsceneData_Compiled[CUTSCENE_COUNT] = {
+#else
+#include "constants/text.h"
+#endif
 
+#if !(defined(MZM_3DS) || defined(PORT_NATIVE))
+const struct CutsceneInfo sCutsceneData[CUTSCENE_COUNT] = {
+#endif
     [CUTSCENE_NONE] = {
         .gameplayType = CUTSCENE_TYPE_NON_GAMEPLAY,
         .playRoomMusic = TRUE,

@@ -6,11 +6,15 @@ extern int Port_Config_Get3DSAspectRatio(void);
 extern int Port_Config_Get3DSDisplayStyle(void);
 
 /* Kept as a hand-written extern, like the renderer does: this file stays out
- * of the game headers. GM_INGAME == 4 (include/constants/game_state.h). */
+ * of the game headers. GM_INGAME == 4, GM_DEMO == 11
+ * (include/constants/game_state.h). */
 extern short gMainGameMode;
 
 enum { ASPECT_WIDE = 3, STYLE_PIXEL_PERFECT = 0 };
-enum { GM_INGAME = 4 };
+enum {
+    GM_INTRO = 1, GM_TITLE = 2, GM_FILE_SELECT = 3, GM_INGAME = 4, GM_CHOZODIA_ESCAPE = 7, GM_CREDITS = 8,
+    GM_TOURIAN_ESCAPE = 9, GM_CUTSCENE = 10, GM_DEMO = 11,
+};
 
 /* SCALED draws at 1.5x, so the 400px screen holds 400 / 1.5 = 266.7 GBA px:
  * 13.3 more on each side, rounded up. PIXEL PERFECT holds 400x240 outright. */
@@ -28,18 +32,51 @@ bool PortWide_Selected(void) {
     return Port_Config_Get3DSAspectRatio() == ASPECT_WIDE;
 }
 
+/* The title screen's demos run the same InGameHandler as play, under GM_DEMO. */
 bool PortWide_GameActive(void) {
-    return PortWide_Selected() && gMainGameMode == GM_INGAME;
+    return PortWide_Selected() && (gMainGameMode == GM_INGAME || gMainGameMode == GM_DEMO);
 }
 
+/* gCurrentCutscene (include/constants/cutscene.h), valid in GM_CUTSCENE. */
+extern signed char gCurrentCutscene;
+enum { CUTSCENE_RIDLEY_IN_SPACE = 7, CUTSCENE_ENTER_TOURIAN = 10, CUTSCENE_BEFORE_RUINS_TEST = 11 };
+
+bool PortWide_SceneActive(void) {
+    if (!PortWide_Selected()) return false;
+    switch (gMainGameMode) {
+        case GM_INTRO:
+        case GM_TITLE:
+        case GM_FILE_SELECT:
+        case GM_CHOZODIA_ESCAPE:
+        case GM_CREDITS:
+        case GM_TOURIAN_ESCAPE:
+            return true;
+        case GM_CUTSCENE:
+            /* Left ORIGINAL until they get their own treatment (seen on the 2DS,
+             * 2026-10-16; the owner will go over every cutscene later). Ridley
+             * in space stacks several BGs that each hold a picture of a
+             * different size, so their extents make a patchwork and the view
+             * jumps from layer to layer. The Tourian entrance pans a wide BG
+             * the game fills in as it goes, so its extent grows while it plays
+             * and the picture jumps every time. The owner also left out the one
+             * before the ruins test. */
+            return gCurrentCutscene != CUTSCENE_RIDLEY_IN_SPACE && gCurrentCutscene != CUTSCENE_ENTER_TOURIAN &&
+                   gCurrentCutscene != CUTSCENE_BEFORE_RUINS_TEST;
+        default:
+            return false;
+    }
+}
+
+static bool ViewActive(void) { return PortWide_GameActive() || PortWide_SceneActive(); }
+
 int PortWide_MarginX(void) {
-    if (!PortWide_GameActive()) return 0;
+    if (!ViewActive()) return 0;
     return Port_Config_Get3DSDisplayStyle() == STYLE_PIXEL_PERFECT ? MARGIN_X_PIXEL_PERFECT
                                                                    : MARGIN_X_SCALED;
 }
 
 int PortWide_MarginY(void) {
-    if (!PortWide_GameActive()) return 0;
+    if (!ViewActive()) return 0;
     return Port_Config_Get3DSDisplayStyle() == STYLE_PIXEL_PERFECT ? MARGIN_Y_PIXEL_PERFECT
                                                                    : MARGIN_Y_SCALED;
 }
@@ -53,8 +90,12 @@ bool PortWide_FrameDrawn(void) { return sFrameDrawn; }
  * place -- OAM Y/X wrap, so a far-out sprite reads as one on the other side. */
 /* Twice the margin: the view slides inside the room, so on the side it slides
  * toward it can reach the margin plus the slide, up to twice the margin. */
-int Port_WideMarginSubPixelX(void) { return sFrameDrawn ? 2 * PortWide_MarginX() * SUB_PIXELS_PER_PIXEL : 0; }
-int Port_WideMarginSubPixelY(void) { return sFrameDrawn ? 2 * PortWide_MarginY() * SUB_PIXELS_PER_PIXEL : 0; }
+/* Only in play. Not in a demo: a projectile kept alive out there can hit what
+ * the GBA's would not have, and the recorded inputs would then play out a
+ * different run. */
+static bool KeepAliveInMargins(void) { return sFrameDrawn && gMainGameMode == GM_INGAME; }
+int Port_WideMarginSubPixelX(void) { return KeepAliveInMargins() ? 2 * PortWide_MarginX() * SUB_PIXELS_PER_PIXEL : 0; }
+int Port_WideMarginSubPixelY(void) { return KeepAliveInMargins() ? 2 * PortWide_MarginY() * SUB_PIXELS_PER_PIXEL : 0; }
 
 /* ---- OAM position tags ---------------------------------------------------
  * The game's sprite drawers tag each OAM span they emit with the sprite's true

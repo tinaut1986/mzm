@@ -1,4 +1,6 @@
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "region.h"
+#endif
 #include "cutscenes/getting_fully_powered_suit.h"
 #include "cutscenes/cutscene_utils.h"
 #include "dma.h"
@@ -337,6 +339,7 @@ static u8 GettingFullyPoweredSuitInit(void)
 {
     s32 i;
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #ifdef BUGFIX
     CutsceneFadeScreenToWhite();
 #else
@@ -345,6 +348,13 @@ static u8 GettingFullyPoweredSuitInit(void)
         CutsceneFadeScreenToWhite();
     else
         CutsceneFadeScreenToBlack();
+#endif
+#else
+#if defined(REGION_EU) || defined(BUGFIX)
+    CutsceneFadeScreenToWhite();
+#else // !(REGION_EU || BUGFIX)
+    CutsceneFadeScreenToBlack();
+#endif // REGION_EU || BUGFIX
 #endif
 
     // Load palette, in both background and object

@@ -605,8 +605,13 @@ void ProjectileDraw(struct ProjectileData* pProj)
 #if defined(MZM_3DS) || defined(PORT_NATIVE)
     src = GBA_RESOLVE(src);
 #endif
-    partCount = *src++;
+#if !(defined(MZM_3DS) || defined(PORT_NATIVE))
 
+#endif
+    partCount = *src++;
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+
+#endif
 
     if (partCount + prevSlot < OAM_BUFFER_DATA_SIZE)
     {
@@ -663,7 +668,9 @@ void ProjectileDraw(struct ProjectileData* pProj)
         }
 
         gNextOamSlot = partCount + prevSlot;
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 #if defined(MZM_3DS)
         {
             // True screen position of the projectile, so WIDE can undo the OAM wrap.

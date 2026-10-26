@@ -1,6 +1,8 @@
 #include "tourian_escape.h"
 #include "macros.h"
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "port_gba_mem.h"
+#endif
 #include "animated_graphics.h"
 #include "audio_wrappers.h"
 #include "fixed_point.h"

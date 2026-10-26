@@ -426,7 +426,7 @@ struct PerfSample {      // 148 bytes, sampleCount of them back to back
                                  // bits 16-31 haze tile count
     uint32_t captureFlags;       // the settings the capture was taken under:
                                  // bits 0-1   display style (0 = PIXEL PERFECT)
-                                 // bits 2-3   aspect ratio (2 = STRETCH)
+                                 // bits 2-3   aspect ratio (1 = ORIGINAL, 3 = WIDE)
                                  // bits 4-10  3D slider x100, 0..100
                                  // bit  11    FPS overlay on
                                  // bit  12    HUD outside the frame
@@ -692,28 +692,57 @@ An FTP server left on starts again at the next launch (`debug_ftp` in `mzm3ds.in
 only), retrying every ~2 s until Wi-Fi is up (`WAITING WI-FI`; tapping the button cancels it).
 The SD log keeps its own rule: off until switched on.
 
-- Anonymous: any user name and password. `/` is the root of the SD card; the game's files are in
+- Login `mzm3ds` / the password in `platform/3ds/source/ftp_credentials_3ds.h` (CLAUDE.md has it
+  too); a wrong one costs a second. `/` is the root of the SD card; the game's files are in
   `/3ds/Metroid Zero Mission 3DS/` (`debug/`, `states/`, `mzm3ds.ini`).
 - Passive mode only (PASV and EPSV, data ports 5001-5064), one client at a time.
   FileZilla, WinSCP, lftp and curl work:
 
 ```sh
-curl ftp://<3ds-ip>:5000/3ds/Metroid%20Zero%20Mission%203DS/debug/
-curl -O ftp://<3ds-ip>:5000/3ds/Metroid%20Zero%20Mission%203DS/debug/mzm-debug-01.log
+curl -u mzm3ds:PASSWORD ftp://<3ds-ip>:5000/3ds/Metroid%20Zero%20Mission%203DS/debug/
+curl -u mzm3ds:PASSWORD -O ftp://<3ds-ip>:5000/3ds/Metroid%20Zero%20Mission%203DS/debug/mzm-debug-01.log
 ```
 
-The server thread runs on core 1 (when the app has a share of it) below the game's priority and
-sleeps on the network, so it costs nothing while idle. It shares the socket service with the
-updater (`net_3ds.c`). Its lines reach the SD log through the logic thread.
+**Install-only server in a production build.** A production build has no tools window, so a new
+build could only be installed with FBI. If `dev-ftp.txt` (any content, empty is fine) is in
+`/3ds/Metroid Zero Mission 3DS/`, a production build starts a reduced server as soon as Wi-Fi is up:
+same login, but only `/3ds/Metroid Zero Mission 3DS/update/` can be listed, read or written (any
+other path answers `550 Not allowed.`), and the remote control (every `SITE` but INSTALL) is off.
+So `tools/build_3ds.py --install <ip>` works on it as on a debug build, with the debug build
+installed over it. The bottom screen shows `FTP (INSTALL ONLY)`, the address and a CANCEL button over
+every tab: CANCEL stops the server for the rest of the session (leave the game and open it again to
+get it back). Create the file once, while a debug build still has its FTP on:
+`curl -u mzm3ds:PASSWORD -T /dev/null ftp://<ip>:5000/3ds/Metroid%20Zero%20Mission%203DS/dev-ftp.txt`.
+Players never see it and it is not in the release notes. Delete the file to turn it off.
+
+The server thread runs on core 1 (when the app has a share of it) below the game's priority. It
+shares the socket service with the updater and RetroAchievements (`net_3ds.c`), and libctru sends
+every socket call of the process through one session, so the thread never blocks in it: it polls
+without waiting and naps 10 ms between polls, and sends in pieces of 8 KB (a 250 ms blocking poll
+made the updater's downloads crawl while the server ran). Its lines reach the SD log through the
+logic thread.
+
+Stopping it waits up to 3 s for the server thread (a remote-control request waiting for the game
+gives up at once). A thread that does not end is left running: the cell says
+`STUCK, RESTART THE GAME` and no server starts again until the game is restarted, because freeing
+it, or the network service under it, froze the game. With LOG A SD on, the SD log gets each stop
+(`ftp stop: server thread <what it was doing>`, `ftp stop: thread ended`, `ftp stop: done`, or
+`ftp stop: thread did not end in 3 s (...), left running`), flushed at once even with LOG EN
+BUFFER on, and a thread busy in one command for 30 s
+(`WATCHDOG: ftp server thread busy: command PEEK for 30.2 s`; for SITE it names the sub-command).
 
 ### Installing a build over FTP
 
 `SITE INSTALL <path>` installs a CIA of this game that is already on the SD card over the running
-game and relaunches into it (the FTP server comes back on with it). `python3 tools/build_3ds.py
+game and relaunches into it 10 s later through libctru's chainloader (jumping at once made the
+system loader crash out of memory); the FTP server comes back on with it. `python3 tools/build_3ds.py
 --install IP` builds, uploads to `/3ds/Metroid Zero Mission 3DS/update/dev.cia` and installs in
 one go; the interactive menu offers it as "Instalar sobre el juego en marcha". Unsaved progress is
 lost. While a `.cia` arrives and while it installs, the bottom screen shows a box in the middle
-(`NEW BUILD`: `RECEIVING THE INSTALLER...`, then `INSTALLING - THE GAME WILL RESTART`) on any tab.
+(`NEW BUILD`: `RECEIVING THE INSTALLER 42%`, then `INSTALLING 80%`, then `RESTARTING IN 7 S`, a bar
+under each; the game relaunches when the countdown ends) on any tab. The percentages need the
+client to announce the size with `ALLO` before the upload (`build_3ds.py --install` does; with plain
+curl add `-Q "+ALLO <bytes>"`); without it the box says `...` and shows no bar.
 A CIA of another title is refused. The first build with this feature has to arrive by FBI or
 ftpd as before.
 
@@ -759,6 +788,52 @@ tools/mzm-link/mzm-link.py peek gAutoBombTraceNext 4                            
 
 `tools/auto-bomb-sim.py` is the host model the numbers came from (the same physics and the same
 planner); compare a trace against its output when a change to the physics or the planner is made.
+
+### Playing any cutscene
+
+A cutscene can be started from the PC without reaching it in a game: from gameplay (a save state),
+set the cutscene, its stage and the game mode, in that order. It plays and then returns to the
+room. The ids are in `include/constants/cutscene.h`. The ones not tied to a room
+(the types in `src/data/cutscenes/cutscenes_data.c`: `NON_GAMEPLAY`, `BETWEEN_GAMEPLAY`) are safe;
+the `IN_GAMEPLAY` ones (6, 8, 12, 14) expect their own room.
+
+```sh
+tools/mzm-link/mzm-link.py loadstate 1
+tools/mzm-link/mzm-link.py poke gCurrentCutscene 05     # Kraid rising
+tools/mzm-link/mzm-link.py poke gSubGameModeStage 00
+tools/mzm-link/mzm-link.py poke gMainGameMode 0a00      # GM_CUTSCENE (s16, little-endian)
+```
+
+### Audio underruns and the core 1 share
+
+The audio thread counts the NDSP buffers it fills and how many of them the ring could not fill
+(`sBuffersFilled`, `sUnderruns` in `port_mzm_audio_3ds.c`; an underrun is an audible gap). Read
+them twice some seconds apart; about 60 buffers a second is normal, any underrun is a cut:
+
+```sh
+tools/mzm-link/mzm-link.py peek sBuffersFilled 4; tools/mzm-link/mzm-link.py peek sUnderruns 4   # little-endian u32
+tools/mzm-link/mzm-link.py peek sCore1TimeLimit 4                                                # core 1 share granted, %
+```
+
+The game asks for 30 % of core 1, which is also the rsf's `MaxCpu` ceiling. On 2026-10-16 the
+2DS was measured at 80 %: 121-327 underruns in 30 s, the game's own FTP at 3-4 KB/s and the
+system menus crawling, against none and ~100 KB/s at 30 % (`platform_3ds_minimal.c`). Repeat
+that measurement before raising either.
+
+## Map warp lookup (`gMapWarpQuery` / `gMapWarpDiag`)
+
+The map's tap-to-warp picks, for the tile tapped, the nearest door of the room whose map rectangle
+(origin plus clipdata size, `PortPpuMzm_RoomMapRect`) covers it. Debug builds can ask it without
+warping, which is how a tile that goes to the wrong room is found:
+
+```sh
+# int16 each: area, tile x, tile y, pending=1 (the lookup), or pending=2 (door tile x of the area), 3 (room tile x)
+tools/mzm-link/mzm-link.py poke gMapWarpQuery 0600 0200 0d00 0100
+tools/mzm-link/mzm-link.py peek gMapWarpDiag 22    # area, x, y, door, room, rect x0 y0 x1 y1, door tile x y
+```
+
+Pending 2 reports door `tile x` of the area (room, map origin, clipdata size, door start, the area's
+door count), pending 3 does the same for room `tile x` whether it has doors or not.
 
 ## Known findings so far (#20, frame rate)
 

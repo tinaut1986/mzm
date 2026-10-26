@@ -523,7 +523,11 @@ s32 ScrollProcessY(struct Scroll* pScroll, struct Coordinates* pCoords)
  */
 void ScrollLoad(void)
 {
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     const u8* const* ppSrc;
+#else
+    const u8** ppSrc;
+#endif
 
     ppSrc = sAreaScrollPointers[gCurrentArea];
 #if defined(MZM_3DS) || defined(PORT_NATIVE)
@@ -533,28 +537,47 @@ void ScrollLoad(void)
     // Loop through every scroll of the area
     for (; ; ppSrc++)
     {
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
         const u8* pData = *ppSrc;
 #if defined(MZM_3DS) || defined(PORT_NATIVE)
         pData = GBA_RESOLVE(pData);
 #endif
         if (!pData || *pData == gCurrentRoom)
+#else
+        if (**ppSrc == gCurrentRoom)
+#endif
         {
             // Found room, set pointer and flag
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
             gCurrentRoomScrollDataPointer = pData;
             if (pData && *pData == gCurrentRoom)
                 gCurrentRoomEntry.scrollsFlag = ROOM_SCROLLS_FLAG_HAS_SCROLLS;
+#else
+            gCurrentRoomScrollDataPointer = *ppSrc;
+            gCurrentRoomEntry.scrollsFlag = ROOM_SCROLLS_FLAG_HAS_SCROLLS;
+#endif
             break;
         }
         
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
         if (*pData == UCHAR_MAX)
+#else
+        if (**ppSrc == UCHAR_MAX)
+#endif
         {
             // Reached terminator
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
             gCurrentRoomScrollDataPointer = pData;
+#else
+            gCurrentRoomScrollDataPointer = *ppSrc;
+#endif
             break;
         }
     }
 }
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 
 /**
  * @brief 584d8 | 138 | Updates the current scrolls

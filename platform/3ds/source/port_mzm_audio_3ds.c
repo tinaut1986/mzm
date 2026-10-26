@@ -40,6 +40,9 @@ static bool sPaused;
 static volatile bool sAudioThreadRunning;
 static Thread sAudioThread;
 static LightEvent sAudioWake;
+/* NDSP buffers filled, and how many of them the ring could not fill (padded
+ * with silence: an audible gap). Read from the PC with mzm-link peek. */
+static volatile uint32_t sBuffersFilled, sUnderruns;
 
 /* Guards gMusicInfo/TrackData (port_mzm_audio_glue.c's Port_MzmAudio_ProduceTick,
  * called from AudioThreadMain below) against the game-logic thread's own
@@ -161,7 +164,9 @@ static void FillBuffer(int index) {
         consumed += chunk;
     }
 
+    ++sBuffersFilled;
     if (toRead < BUFFER_FRAMES) {
+        ++sUnderruns;
         if (toRead > 0) {
             /* Smoothly fade out the last few samples to eliminate harsh pop/click on underrun */
             const unsigned int fadeLen = (toRead >= 8) ? 8 : toRead;
@@ -294,7 +299,12 @@ bool Port_MzmAudio_Init(void) {
      * New3DS the port already claims a CPU budget on Core 1 (SYSCORE) via
      * APT_SetAppCpuTimeLimit (see Platform3DS_CanUseCore1/Core1TimeLimit)
      * but nothing was using it yet. Old3DS has no such budget, so it must
-     * stay on core 0 there. */
+     * stay on core 0 there.
+     *
+     * Core 1 is shared with the system services, and the app's share there is
+     * 30 % on purpose (platform_3ds_minimal.c, the rsf's MaxCpu): at 80 % this
+     * thread starved with them on the 2DS and the audio broke up. Check
+     * sUnderruns (above) before and after changing either. */
     const int audioThreadCore = Platform3DS_CanUseCore1() ? 1 : 0;
     __atomic_store_n(&sAudioThreadRunning, true, __ATOMIC_RELEASE);
     sAudioThread = threadCreate(AudioThreadMain, NULL, AUDIO_THREAD_STACK, priority, audioThreadCore, false);

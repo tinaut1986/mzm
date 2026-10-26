@@ -89,12 +89,14 @@ SRCS_ROOT := \
 # (port_mzm_audio_3ds.c).
 SRCS_ASM := \
 	$(ROOT)/asm/intr_main.s \
-	$(ROOT)/asm/linker_symbols.s \
-	$(ROOT)/asm/audio_internal.s \
+	$(ROOT)/port/asm/linker_symbols.s \
+	$(ROOT)/port/asm/audio_internal.s \
 	$(ROOT)/asm/soundcode.s
 
 SRCS_3DS := \
 	$(CURDIR)/source/main_3ds.c \
+	$(CURDIR)/source/dsp_firm.c \
+	$(CURDIR)/source/port_dsp_firm_prompt_3ds.c \
 	$(CURDIR)/source/platform_3ds_minimal.c \
 	$(CURDIR)/source/port_oam_census.c \
 	$(CURDIR)/source/platform_gpu_3ds.c \
@@ -125,6 +127,11 @@ SRCS_3DS := \
 	$(CURDIR)/source/port_gba_screen_fx.c \
 	$(CURDIR)/source/port_gba_bezel.c \
 	$(CURDIR)/source/port_gba_bezel_data.c \
+	$(CURDIR)/source/port_scene_pictures.c \
+	$(CURDIR)/source/port_scene_pictures_data.c \
+	$(CURDIR)/source/port_scene_game_art.c \
+	$(CURDIR)/source/port_scene_sprites.c \
+	$(CURDIR)/source/port_scene_sprites_data.c \
 	$(CURDIR)/source/port_state_thumb.c \
 	$(CURDIR)/source/port_state_blob.c \
 	$(CURDIR)/source/port_state_vars.c \
@@ -523,8 +530,13 @@ $(BUILD)/root/%.o: $(ROOT)/%.c
 	@echo "CC $<"
 	@$(CC) -MMD -MP -MF $(@:.o=.d) $(CFLAGS_DECOMP) $(INCLUDES) -c $< -o $@
 
-# Compilación de archivos ensamblador bajo asm/
+# Assembly under asm/ (the decompilation's) and port/asm/ (the port's own versions)
 $(BUILD)/root/asm/%.o: $(ROOT)/asm/%.s
+	@mkdir -p $(dir $@)
+	@echo "AS $<"
+	@$(CC) -x assembler-with-cpp -Wa,-I$(ROOT) -march=armv6k -mfloat-abi=hard -mtp=soft -I$(ROOT) -c $< -o $@
+
+$(BUILD)/root/port/asm/%.o: $(ROOT)/port/asm/%.s
 	@mkdir -p $(dir $@)
 	@echo "AS $<"
 	@$(CC) -x assembler-with-cpp -Wa,-I$(ROOT) -march=armv6k -mfloat-abi=hard -mtp=soft -I$(ROOT) -c $< -o $@

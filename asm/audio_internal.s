@@ -10,22 +10,9 @@
     thumb_func_start InitTrack
 InitTrack: @ 0x08004b50
     push {r4, r5, r6, r7, lr}
-    sub sp, #12
+    sub sp, #4
     adds r4, r0, #0
     adds r5, r1, #0
-    @ [PORT] r1/pHeader is a raw GBA ROM address: sSoundDataEntries[].pHeader
-    @ (src/music_wrappers.c, src/audio_wrappers.c) is read straight out of the
-    @ loaded ROM bytes and never translated at the C call sites -- same bug
-    @ class as pVoice/pRawData below, just one level higher (this function
-    @ dereferences the header pointer itself via ldr [r5, ...] several times).
-    @ Stash the RAW value on the stack (needed later for TrackData.pHeader,
-    @ which C code compares by identity against fresh untranslated rereads of
-    @ sSoundDataEntries[].pHeader -- must stay raw on both sides) and keep
-    @ only a RESOLVED copy in r5 for this function's own dereferences.
-    str r5, [sp, #4]
-    movs r0, r5
-    bl port_resolve_addr
-    adds r5, r0, #0
     ldrb r6, [r4, o_TrackData_occupied]
     cmp r6, #0
     bne lbl_08004c04
@@ -69,16 +56,8 @@ lbl_08004ba2:
     orrs r2, r3
     ldr r0, [r5, #4]
     str r2, [r4, o_TrackData_flags]
-    @ [PORT] r0 is a raw GBA ROM address (voice/instrument table) baked
-    @ into the sound header data -- same translation issue as pRawData
-    @ below, dereferenced directly later via pTrack->pVoice[...] in
-    @ AudioCommand_Voice (src/audio.c). See port_resolve_addr().
-    push {r3}
-    bl port_resolve_addr
-    pop {r3}
     str r0, [r4, o_TrackData_pVoice]
-    ldr r1, [sp, #4]
-    str r1, [r4, o_TrackData_pHeader]
+    str r5, [r4, o_TrackData_pHeader]
     lsls r3, r3, #7
     strh r3, [r4, o_TrackData_unk_C]
     lsrs r2, r6, #0x1f
@@ -115,17 +94,6 @@ lbl_08004bec:
     adds r5, #4
 lbl_08004bf4:
     ldr r3, [r5]
-    @ [PORT] r3 is a raw GBA ROM address baked into the sound header data
-    @ (not the pHeader pointer itself, which is already host-resolved) --
-    @ must go through the port's address translation before being stored
-    @ as a real host pointer that UpdateTrack() will dereference directly
-    @ via *pVariables->pRawData. See port_resolve_addr() in port_gba_mem.c
-    @ and docs/3ds-port-status-2026-08-17.md section 6 for the bug this fixes.
-    push {r0, r1, r2}
-    movs r0, r3
-    bl port_resolve_addr
-    movs r3, r0
-    pop {r0, r1, r2}
     strb r0, [r7, o_TrackVariables_unk_0]
     strh r2, [r7, o_TrackVariables_bendRange]
     str r1, [r7, o_TrackVariables_volume]
@@ -136,7 +104,7 @@ lbl_08004c00:
     strb r6, [r4, o_TrackData_occupied]
 lbl_08004c04:
     movs r0, #0
-    add sp, #12
+    add sp, #4
     pop {r4, r5, r6, r7}
     pop {r1}
     bx r1
@@ -144,7 +112,7 @@ lbl_08004c0e:
     movs r6, #0
     strb r6, [r4, o_TrackData_occupied]
     movs r0, #1
-    add sp, #12
+    add sp, #4
     pop {r4, r5, r6, r7}
     pop {r1}
     bx r1
@@ -481,19 +449,7 @@ lbl_08004e4c:
     movs r4, #7
     ands r3, r4
     bne lbl_08004e6a
-    @ [PORT] r3 is a raw GBA ROM address (sample pointer) read straight out
-    @ of the voice table entry -- same bug class as AudioCommand_Voice's
-    @ pVoice->pSample (see docs/3ds-port-status-2026-08-17.md section 6k
-    @ point 2), just reached from note-on processing instead of voice
-    @ setup. lr is safe here (unk_4e10 saves it at entry via
-    @ push {r4, r5, lr} and restores it through r0/bx r0 below), unlike
-    @ the AudioCommand_Goto/PatternPlay bug in section 6m.
     ldr r3, [r1, #4]
-    push {r0, r1, r2}
-    movs r0, r3
-    bl port_resolve_addr
-    movs r3, r0
-    pop {r0, r1, r2}
     str r3, [r0, o_TrackVariables_pSample1]
     b lbl_08004eaa
 lbl_08004e6a:
@@ -519,15 +475,7 @@ lbl_08004e88:
     bne lbl_08004e9c
     adds r4, r0, #0
     adds r5, r1, #0
-    @ [PORT] r0 is a raw GBA ROM address (GB channel 3 waveform sample)
-    @ read straight out of the voice table entry, same bug class as the
-    @ pSample1 fix just above -- passed on to UploadSampleToWaveRam
-    @ unresolved. r4/r5 are safe across this call (callee-saved, and
-    @ unk_4e10 saved the real lr on the stack at entry rather than relying
-    @ on a live bx lr, so clobbering lr here is harmless -- unlike section
-    @ 6m's AudioCommand_Goto/PatternPlay bug).
     ldr r0, [r5, #4]
-    bl port_resolve_addr
     bl UploadSampleToWaveRam
     adds r0, r4, #0
     adds r1, r5, #0
@@ -795,25 +743,6 @@ lbl_08005050:
     lsls r3, r3, #0x18
     orrs r2, r3
 lbl_0800506a:
-    @ [PORT] r2 is a raw GBA ROM address (loop/goto target) just read out
-    @ of the track's raw data stream -- needs translation before it's
-    @ stored back into pRawData, same issue as InitTrack above.
-    @ [PORT] This function is entered via bl (lr = caller's return address)
-    @ and returns via bx lr, but never saved lr before -- the original GBA
-    @ code never called anything internally, so lr was never at risk. The
-    @ bl port_resolve_addr call added by the port clobbers lr as a normal
-    @ side effect of bl, so lr must be saved/restored around it or bx lr
-    @ below returns into the middle of this function instead of the real
-    @ caller (confirmed on hardware/Azahar: UndefinedInstruction/NoExecuteFault
-    @ shortly after a music track hits GOTO or PATT, see
-    @ docs/3ds-port-status-2026-08-17.md section 6l).
-    push {r0, r4}
-    mov r4, lr
-    movs r0, r2
-    bl port_resolve_addr
-    movs r2, r0
-    mov lr, r4
-    pop {r0, r4}
     str r2, [r0, o_TrackVariables_pRawData]
     bx lr
     .align 2, 0
@@ -856,19 +785,6 @@ lbl_08005094:
     orrs r2, r3
     adds r1, #1
 lbl_080050b0:
-    @ [PORT] r2 is a raw GBA ROM address (pattern jump target) just read
-    @ out of the track's raw data stream -- needs translation before it's
-    @ stored back into pRawData, same issue as InitTrack/AudioCommand_Goto.
-    @ [PORT] Same lr-clobber bug as AudioCommand_Goto above: this function
-    @ returns via bx lr but never saved lr, and bl port_resolve_addr
-    @ overwrites it as a side effect. Save/restore it here too.
-    push {r0, r1, r4}
-    mov r4, lr
-    movs r0, r2
-    bl port_resolve_addr
-    movs r2, r0
-    mov lr, r4
-    pop {r0, r1, r4}
     str r2, [r0, o_TrackVariables_pRawData]
     adds r0, o_TrackVariables_patternStartPointers
     ldr r2, [r0]
@@ -913,23 +829,8 @@ UploadSampleToWaveRam: @ 0x080050d0
     strb r2, [r3]
     bx lr
     .align 2, 0
-@ [PORT] These were the raw GBA MMIO addresses (REG_SOUND3CNT_L = 0x04000070,
-@ REG_WAVE_RAM0_L = 0x04000090). Nothing maps that range on the 3DS, so the
-@ strb/str through them was a data abort the instant a sound actually used the
-@ PSG wave channel -- confirmed from a real-hardware Luma3DS crash dump
-@ (2026-08-19): type=3 (data abort), FAR=0x04000070, pc inside
-@ UploadSampleToWaveRam, lr in AudioCommand_Voice (src/audio.c:1625). Same bug
-@ class as sections 5.1/6b ("raw _BASE macro dereferenced without going
-@ through the WRITE_*/gba_MemPtr translation"), just reached from asm the C-side
-@ sweeps could not see. Point them at the emulated I/O block instead
-@ (gIoMem, port/port_gba_mem.h, covers 0x04000000-0x040003FF at the same
-@ offsets) -- a plain relocated symbol+addend, so no bl and therefore none of
-@ the clobbered-lr risk of section 6m. NOTE: writes here now land in emulated
-@ I/O memory and are inert -- PSG/wave channels produce no audible sound on
-@ this port (the engine's software mixer only covers the Direct Sound path).
-@ That is a pre-existing gap, not a regression; this fix only stops the crash.
-lbl_080050fc: .4byte gIoMem + 0x70
-lbl_08005100: .4byte gIoMem + 0x90
+lbl_080050fc: .4byte REG_SOUND3CNT_L
+lbl_08005100: .4byte REG_WAVE_RAM0_L
 
 @ Signature: void unk_5104(struct PSGSoundData* pSound)
     thumb_func_start unk_5104
@@ -942,12 +843,10 @@ unk_5104: @ 0x08005104
     ldrb r1, [r1, r2]
     cmp r1, #8
     ble lbl_0800513e
-    @ [PORT] Was building the raw MMIO address 0x04000089 (SOUNDBIAS high byte)
-    @ with movs/lsls/orrs and reading through it -- same unmapped-address fault
-    @ as UploadSampleToWaveRam above. Load the emulated I/O address instead.
-    @ r3 held only the 0x89 addend and is overwritten just below, so dropping
-    @ it changes nothing.
-    ldr r2, lbl_port_gIoMem_89
+    movs r2, #4
+    movs r3, #0x89
+    lsls r2, r2, #0x18
+    orrs r2, r3
     ldrb r2, [r2]
     lsrs r2, r2, #6
     lsls r2, r2, #6
@@ -968,10 +867,10 @@ lbl_08005134:
     orrs r2, r3
     ands r5, r2
 lbl_0800513e:
-    @ [PORT] Was building raw MMIO 0x04000060 (REG_SOUND1CNT_L, base of the PSG
-    @ channel register block written through r2 below). Same fix as above; r3
-    @ held only the 0x60 addend and is reloaded with 7 on the next line.
-    ldr r2, lbl_port_gIoMem_60
+    movs r2, #4
+    movs r3, #0x60
+    lsls r2, r2, #0x18
+    orrs r2, r3
     movs r3, #7
     ands r1, r3
     lsls r3, r4, #8
@@ -1014,7 +913,4 @@ lbl_08005184:
     pop {r4, r5}
     bx lr
     .align 2, 0
-@ [PORT] Literal pool for the two emulated-I/O addresses unk_5104 now uses
-@ instead of building raw 0x040000xx MMIO addresses inline (see comments above).
-lbl_port_gIoMem_89: .4byte gIoMem + 0x89
-lbl_port_gIoMem_60: .4byte gIoMem + 0x60
+    

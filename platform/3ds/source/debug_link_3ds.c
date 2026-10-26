@@ -1,5 +1,6 @@
 #if defined(PORT_DEBUG_TOOLS)
 #include "debug_link_3ds.h"
+#include "ftp_server_3ds.h"
 
 #include "platform_gpu_3ds.h"
 #include "port_save_state.h"
@@ -21,6 +22,7 @@ extern void Port_BottomUI_TouchReleased(void);
 
 /* A request the logic thread never takes (game hung or in a stalled transition). */
 #define LINK_WAIT_NS 20000000000LL
+#define LINK_WAIT_SLICE_NS 50000000LL
 
 enum {
     LINK_PEEK_MAX = 256,
@@ -134,7 +136,16 @@ static void RunOnLogicThread(LinkOp op, char* reply, unsigned cap) {
     LightEvent_Clear(&sDone);
     sResult[0] = 0;
     __atomic_store_n(&sOp, op, __ATOMIC_RELEASE);
-    if (LightEvent_WaitTimeout(&sDone, LINK_WAIT_NS) != 0) {
+    /* In slices, giving up as soon as the server stops: FtpServer_Stop runs on the logic thread,
+     * so a request waiting for it could only time out, and the stop's 3 s join gave up first. */
+    bool done = false;
+    for (long long waited = 0; waited < LINK_WAIT_NS && FtpServer_Running(); waited += LINK_WAIT_SLICE_NS) {
+        if (LightEvent_WaitTimeout(&sDone, LINK_WAIT_SLICE_NS) == 0) {
+            done = true;
+            break;
+        }
+    }
+    if (!done) {
         __atomic_store_n(&sOp, LINK_OP_NONE, __ATOMIC_RELEASE);
         snprintf(reply, cap, "451 The game did not take the request (stopped?).");
     } else {

@@ -51,31 +51,6 @@ static bool sFxReady;
 static int sBakedGrade = -1, sBakedGrid = -1, sBakedVig = -1, sBakedFps = -1;
 static int sBakedRect[4] = { -1, -1, -1, -1 };
 
-/* The top-screen numbers box (PlatformGpu3DS_DrawFpsOverlay): five small lines, up to 40 px
- * wide and 52 high, 2 px from the corner, plus a small margin. Carve it out of the mask so the
- * effects never clip across it in SCALED (where it sits inside the picture). These must track
- * DrawFpsOverlay's own box layout (FPS_OVERLAY_* in platform_gpu_3ds.c). */
-enum { FPS_BOX_W = 40, FPS_BOX_H = 52, FPS_BOX_PAD = 3 };
-enum { FPS_LEFT_X = 2, FPS_RIGHT_X = 358, FPS_TOP_Y = 2, FPS_BOTTOM_Y = 186 };
-
-/* Carve-out box for FPS position `pos`, padded. Returns false for OFF (or an
- * unknown position), leaving the outputs untouched. */
-static bool FpsCarveBox(int pos, int* x0, int* y0, int* x1, int* y1) {
-    int bx, by;
-    switch (pos) {
-        case 1: bx = FPS_LEFT_X;  by = FPS_BOTTOM_Y; break;
-        case 2: bx = FPS_RIGHT_X; by = FPS_BOTTOM_Y; break;
-        case 3: bx = FPS_LEFT_X;  by = FPS_TOP_Y;    break;
-        case 4: bx = FPS_RIGHT_X; by = FPS_TOP_Y;    break;
-        default: return false;
-    }
-    *x0 = bx - FPS_BOX_PAD;
-    *y0 = by - FPS_BOX_PAD;
-    *x1 = bx + FPS_BOX_W + FPS_BOX_PAD;
-    *y1 = by + FPS_BOX_H + FPS_BOX_PAD;
-    return true;
-}
-
 static int ClampLevel(int level) {
     if (level < 0) return 0;
     if (level > 3) return 3;
@@ -163,15 +138,12 @@ static void BakeMask(int grade, int grid, int vig, int fpsPos, const int rect[4]
     const int rx = rect[0], ry = rect[1], rw = rect[2], rh = rect[3];
     const int gBase = GradeBaseAlpha(grade);
     u32* data = (u32*)sFxTex.data;
-    int fx0 = 0, fy0 = 0, fx1 = 0, fy1 = 0;
-    const bool hasFpsBox = FpsCarveBox(fpsPos, &fx0, &fy0, &fx1, &fy1);
 
     for (int y = 0; y < FX_H; ++y) {
         for (int x = 0; x < FX_W; ++x) {
             const int lx = x - rx, ly = y - ry;
             u32 texel = 0u;
-            const bool inFps = hasFpsBox && x >= fx0 && x < fx1 && y >= fy0 && y < fy1;
-            if (!inFps && lx >= 0 && lx < rw && ly >= 0 && ly < rh) {
+            if (lx >= 0 && lx < rw && ly >= 0 && ly < rh) {
                 int a = gBase
                       + GridBlackAlphaAt(grid, lx, ly, rw, rh)
                       + VignetteBlackAlphaAt(vig, lx, ly, rw, rh);

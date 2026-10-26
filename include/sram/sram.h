@@ -14,5 +14,7 @@ void Port_SaveSram(void);
 void Port_FlushSramIfDirty(void);
 void Port_FlushSramWait(void);
 #endif
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 #endif /* SRAM_SRAM_H */

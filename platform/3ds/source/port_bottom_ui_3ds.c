@@ -12,6 +12,7 @@
 #include "port_save_state.h"
 #include "port_state_thumb.h"
 #include "port_updater_3ds.h"
+#include "port_dsp_firm_prompt_3ds.h"
 
 /* GBA & MZM minimap and state globals */
 extern uint16_t gDecompressedMinimapVisitedTiles[32 * 32];
@@ -224,16 +225,43 @@ static volatile uint64_t sNoticeStartMs; /* 0 = no notice */
 
 /* A notice that stays for as long as it lasts, shown in the same box: a build arriving over the
  * debug FTP server and its install (ftp_server_3ds.h). A literal, so a change is a pointer change. */
-#if defined(PORT_DEBUG_TOOLS)
 extern const char* FtpServer_Notice(void);
-#endif
+extern bool FtpServer_InstallOnly(void);
+extern void FtpServer_Address(char* out, unsigned cap);
+extern void FtpServer_Cancel(void);
+extern int FtpServer_Progress(unsigned long long* done, unsigned long long* total);
 static const char* StandingNotice(void) {
-#if defined(PORT_DEBUG_TOOLS)
     return FtpServer_Notice();
-#else
-    return NULL;
-#endif
 }
+
+/* The standing notice's line with how far it is: "RECEIVING THE INSTALLER 42%", "INSTALLING 80%",
+ * "RESTARTING IN 7 S". `permille` is -1 when the total is not known (the client sent no ALLO):
+ * no bar, no percentage. */
+static const char* StandingNoticeLine(char* out, size_t cap, int* permille) {
+    const char* notice = StandingNotice();
+    *permille = -1;
+    if (!notice) return NULL;
+    unsigned long long done = 0, total = 0;
+    const int phase = FtpServer_Progress(&done, &total);
+    if (phase == 3 && total) {
+        *permille = (int)(done * 1000 / total);
+        const unsigned left = (unsigned)((total - done + 999) / 1000);
+        snprintf(out, cap, "%s %u S", notice, left);
+    } else if (total) {
+        *permille = (int)(done >= total ? 1000 : done * 1000 / total);
+        snprintf(out, cap, "%s %d%%", notice, *permille / 10);
+    } else {
+        snprintf(out, cap, "%s...", notice);
+    }
+    return out;
+}
+
+/* The install-only FTP server of a production build (dev-ftp.txt): its address and a CANCEL that
+ * stops it until the game is opened again. Over every tab and window; only that button is live. */
+#define DEVFTP_X 236
+#define DEVFTP_Y 204
+#define DEVFTP_W 76
+#define DEVFTP_H 28
 
 void Port_BottomUI_ShowNotice(const char* title, const char* body) {
     snprintf(sNoticeTitle, sizeof(sNoticeTitle), "%s", title ? title : "");
@@ -253,9 +281,21 @@ static int NoticeElapsedMs(void) {
 static void NoticeTick(void) {
     {
         static const char* sStandingSeen;
-        const char* standing = StandingNotice();
-        if (standing != sStandingSeen) {
+        static int sPermilleSeen = -2;
+        static char sLineSeen[64];
+        static bool sDevFtpSeen;
+        char line[64];
+        int permille;
+        const char* standing = StandingNoticeLine(line, sizeof(line), &permille);
+        const bool devFtp = FtpServer_InstallOnly();
+        /* Redrawn when the line (a percent, a second) or the bar's pixel moves, not only when the
+         * notice changes: the server thread advances them without telling anyone. */
+        if (standing != sStandingSeen || devFtp != sDevFtpSeen || permille / 10 != sPermilleSeen / 10 ||
+            (standing && strcmp(line, sLineSeen) != 0)) {
             sStandingSeen = standing;
+            sPermilleSeen = permille;
+            snprintf(sLineSeen, sizeof(sLineSeen), "%s", standing ? line : "");
+            sDevFtpSeen = devFtp;
             sBottomUiDirty = true;
         }
     }
@@ -290,6 +330,15 @@ static int BottomTabLayout(BottomTabSlot slots[BOTTOM_TAB_SLOT_MAX]);
 #define UPD_NOTES_Y0 174
 #define UPD_NOTES_Y1 198
 
+/* The one-time question about the WIDE view's generated art (RenderWideAiQuestion):
+ * the same box and buttons as the update prompt. */
+extern bool Port_Config_WideAiQuestionDue(void);
+extern void Port_Config_AnswerWideAi(bool yes);
+#define WAI_BOX_Y0 34
+#define WAI_BOX_H 182
+#define WAI_BTN_Y0 172
+#define WAI_BTN_Y1 200
+
 /* Called once per frame (even on frames the UI is not redrawn) so time-based
  * state keeps advancing: the blink counter and the RA session pump. */
 void Port_BottomUI_FrameTick(void) {
@@ -297,6 +346,15 @@ void Port_BottomUI_FrameTick(void) {
     ++sFrameCounter;
     Port_RA_Update();
     NoticeTick();
+    Port_DspFirm_Pump();
+    {
+        static int sLastDspState;
+        const int dsp = Port_DspFirm_State();
+        if (dsp != sLastDspState) {
+            sLastDspState = dsp;
+            sBottomUiDirty = true;
+        }
+    }
 
     /* The prompt is raised by the updater's worker thread: redraw when it (or
      * the install progress it shows) changes instead of waiting for a tap. */
@@ -307,6 +365,12 @@ void Port_BottomUI_FrameTick(void) {
         if (pr != sLastPrompt || (pr == (int)UPDATER_PROMPT_PROGRESS && pg != sLastProgress)) {
             sLastPrompt = pr;
             sLastProgress = pg;
+            sBottomUiDirty = true;
+        }
+        static bool sLastWideAiDue;
+        const bool due = Port_Config_WideAiQuestionDue();
+        if (due != sLastWideAiDue) {
+            sLastWideAiDue = due;
             sBottomUiDirty = true;
         }
     }
@@ -1367,6 +1431,29 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
      * nothing else can be touched (a thumbnail read is too short to matter). */
     if (Port_SaveState_IsBusy() && Port_SaveState_CurrentJob() != PORT_SS_JOB_THUMB) return;
 
+    /* The install-only FTP server's CANCEL, over everything. */
+    if (FtpServer_InstallOnly() && x >= DEVFTP_X && x < DEVFTP_X + DEVFTP_W && y >= DEVFTP_Y && y < DEVFTP_Y + DEVFTP_H) {
+        if (isNewTap) {
+            FtpServer_Cancel();
+            Port_BottomUI_MarkDirty();
+        }
+        return;
+    }
+
+    /* The DSP firmware question is modal over everything, like the update prompt below. */
+    if (Port_DspFirm_State() != DSPFIRM_PROMPT_NONE) {
+        if (isNewTap && Port_DspFirm_State() != DSPFIRM_PROMPT_WORKING && y >= WAI_BTN_Y0 && y <= WAI_BTN_Y1) {
+            if (Port_DspFirm_State() == DSPFIRM_PROMPT_ASK) {
+                if (x >= UPD_YES_X0 && x <= UPD_YES_X1) Port_DspFirm_Answer(true);
+                else if (x >= UPD_NO_X0 && x <= UPD_NO_X1) Port_DspFirm_Answer(false);
+            } else if (x >= 116 && x <= 204) {
+                Port_DspFirm_Answer(true);
+            }
+            Port_BottomUI_MarkDirty();
+        }
+        return;
+    }
+
     /* The update prompt is modal over every tab: it swallows all touches. */
     if (Port_Updater_GetPrompt() != UPDATER_PROMPT_NONE && !sShowNotesModal) {
         if (isNewTap) {
@@ -1385,6 +1472,16 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
                     OpenNotesModal();
                 }
             }
+        }
+        return;
+    }
+
+    /* The WIDE art question, modal like the update prompt (which goes first). */
+    if (Port_Config_WideAiQuestionDue()) {
+        if (isNewTap && y >= WAI_BTN_Y0 && y <= WAI_BTN_Y1) {
+            if (x >= UPD_YES_X0 && x <= UPD_YES_X1) Port_Config_AnswerWideAi(true);
+            else if (x >= UPD_NO_X0 && x <= UPD_NO_X1) Port_Config_AnswerWideAi(false);
+            Port_BottomUI_MarkDirty();
         }
         return;
     }
@@ -2164,12 +2261,13 @@ static int BottomTabLayout(BottomTabSlot slots[BOTTOM_TAB_SLOT_MAX]) {
     float x = 4.0f;
     slots[n].x = x; slots[n].w = TAB_ICON_W; slots[n].tab = BOTTOM_TAB_MAP;     slots[n].icon = 0; n++; x += TAB_ICON_PITCH;
     slots[n].x = x; slots[n].w = TAB_ICON_W; slots[n].tab = BOTTOM_TAB_STATUS;  slots[n].icon = 1; n++; x += TAB_ICON_PITCH;
-    if (showDebug) {
-        slots[n].x = x; slots[n].w = TAB_ICON_W; slots[n].tab = BOTTOM_TAB_DEBUG; slots[n].icon = 2; n++; x += TAB_ICON_PITCH;
-    }
     slots[n].x = x; slots[n].w = TAB_ICON_W; slots[n].tab = BOTTOM_TAB_STATE;   slots[n].icon = 4; n++; x += TAB_ICON_PITCH;
     slots[n].x = x; slots[n].w = TAB_ICON_W; slots[n].tab = BOTTOM_TAB_ACHIEVEMENTS; slots[n].icon = 5; n++; x += TAB_ICON_PITCH;
-    slots[n].x = x; slots[n].w = TAB_ICON_W; slots[n].tab = BOTTOM_TAB_OPTIONS; slots[n].icon = 3; n++;
+    slots[n].x = x; slots[n].w = TAB_ICON_W; slots[n].tab = BOTTOM_TAB_OPTIONS; slots[n].icon = 3; n++; x += TAB_ICON_PITCH;
+    /* Last, so the player-facing tabs keep the same places in every build. */
+    if (showDebug) {
+        slots[n].x = x; slots[n].w = TAB_ICON_W; slots[n].tab = BOTTOM_TAB_DEBUG; slots[n].icon = 2; n++;
+    }
     return n;
 }
 
@@ -2491,17 +2589,17 @@ static const char* GetAspectRatioDisplayName(int lang) {
                                               "ORIGINAL (3:2)", "ORIGINALE (3:2)", "ORIGINAL (3:2)" };
     static const char* const originalPixelL[7] = { "ORIGINAL (1:1)", "ORIGINAL (1:1)", "ORIGINAL (1:1)", "ORIGINAL (1:1)",
                                                    "ORIGINAL (1:1)", "ORIGINALE (1:1)", "ORIGINAL (1:1)" };
-    static const char* const stretchL[7] = { "STRETCH (16:9)", "STRETCH (16:9)", "STRETCH (16:9)", "GESTRECKT (16:9)",
-                                             "ETIRE (16:9)", "ALLARGATO (16:9)", "ESTIRADO (16:9)" };
     /* WIDE shows the world the GBA hides past its frame instead of stretching. */
     static const char* const wideL[7] = { "WIDE", "WIDE", "WIDE", "WEIT", "LARGE", "AMPIO", "AMPLIO" };
+    /* WIDE + AI: WIDE that also shows the scene art an image AI generated (off by default). */
+    static const char* const wideAiL[7] = { "WIDE + AI", "WIDE + AI", "WIDE + AI", "WEIT + KI", "LARGE + IA",
+                                            "AMPIO + IA", "AMPLIO + IA" };
+    extern bool Port_Config_GetWideAi(void);
 
     if (lang < 0 || lang > 6) lang = 0;
     int ar = Port_Config_Get3DSAspectRatio();
-    if (ar == 3) return wideL[lang];
-    /* STRETCH has no meaning at 1:1, so PIXEL PERFECT only offers ORIGINAL / WIDE. */
-    if (Port_Config_Get3DSDisplayStyle() == 0) return originalPixelL[lang];
-    return ar == 2 ? stretchL[lang] : originalL[lang];
+    if (ar == 3) return Port_Config_GetWideAi() ? wideAiL[lang] : wideL[lang];
+    return Port_Config_Get3DSDisplayStyle() == 0 ? originalPixelL[lang] : originalL[lang];
 }
 
 static const char* GetDisplayStyleDisplayName(int lang) {
@@ -2960,7 +3058,7 @@ static void RenderAchievementsModal(int lang) {
     /* Header: the set's name when the list is filtered to one, the generic
      * title when it is showing everything. */
     const char* titles[7] = {
-        "RETROACHIEVEMENTS LIST", "RETROACHIEVEMENTS LIST", "RETROACHIEVEMENTS LIST",
+        "ACHIEVEMENT LIST", "ACHIEVEMENT LIST", "ACHIEVEMENT LIST",
         "ERFOLGSLISTE", "LISTE DES SUCCES", "LISTA DEGLI OBIETTIVI", "LISTA DE LOGROS"
     };
     const char* header = titles[lang];
@@ -3714,6 +3812,111 @@ static void RenderUpdatePrompt(int lang) {
                        (float)(UPD_NOTES_Y1 - UPD_NOTES_Y0), es ? "NOVEDADES" : "WHAT'S NEW",
                        C2D_Color32(255, 225, 120, 255), C2D_Color32(46, 36, 12, 255), C2D_Color32(170, 130, 60, 255));
         }
+    }
+}
+
+/* Asked once, the first time the WIDE view is on (Port_Config_WideAiQuestionDue): some
+ * scenes have nothing past the GBA's screen, and edges for them were made with a generative
+ * AI (port_scene_pictures.h); does the player want to see them? YES = WIDE + AI, NO = plain
+ * WIDE; both can be changed later in DISPLAY -> ASPECT. Not drawn while the update prompt
+ * is up. */
+static void RenderWideAiQuestion(int lang) {
+    if (!Port_Config_WideAiQuestionDue() || Port_Updater_GetPrompt() != UPDATER_PROMPT_NONE) return;
+    const bool es = (lang == 6);
+    const uint32_t white = C2D_Color32(255, 255, 255, 255);
+    const uint32_t text = C2D_Color32(190, 210, 235, 255);
+    /* The UI font has no comma. */
+    static const char* const linesEn[] = {
+        "SOME SCENES HAVE NO PICTURE BEYOND THE",
+        "EDGES OF THE GBA SCREEN. FOR THEM NEW",
+        "EDGES WERE MADE WITH A GENERATIVE AI",
+        "SO THAT THEY FILL THE WIDE SCREEN.",
+        "",
+    };
+    static const char* const linesEs[] = {
+        "ALGUNAS ESCENAS NO TIENEN IMAGEN MAS ALLA",
+        "DE LOS BORDES DE LA PANTALLA DE LA GBA.",
+        "PARA ELLAS SE HAN CREADO BORDES NUEVOS",
+        "CON IA GENERATIVA QUE LLENAN LA PANTALLA",
+        "AMPLIA.",
+    };
+    const char* const* lines = es ? linesEs : linesEn;
+
+    C2D_DrawRectSolid(0.0f, 0.0f, 0.97f, 320.0f, 240.0f, C2D_Color32(0, 0, 0, 170));
+    C2D_DrawRectSolid(14.0f, (float)WAI_BOX_Y0, 0.98f, 292.0f, (float)WAI_BOX_H, C2D_Color32(40, 70, 120, 255));
+    C2D_DrawRectSolid(16.0f, (float)WAI_BOX_Y0 + 2.0f, 0.99f, 288.0f, (float)WAI_BOX_H - 4.0f,
+                      C2D_Color32(10, 14, 24, 255));
+    DrawTextCentered(160.0f, (float)WAI_BOX_Y0 + 10.0f, 1.0f, es ? "PANTALLA AMPLIA" : "WIDE SCREEN",
+                     C2D_Color32(255, 215, 0, 255));
+    for (int i = 0; i < 5; ++i)
+        DrawTextCentered(160.0f, (float)WAI_BOX_Y0 + 32.0f + 14.0f * (float)i, 1.0f, lines[i], text);
+    DrawTextCentered(160.0f, (float)WAI_BOX_Y0 + 108.0f, 1.0f, es ? "QUIERES VER ESOS BORDES?" : "SHOW THESE EDGES?",
+                     white);
+    DrawTextCentered(160.0f, (float)WAI_BOX_Y0 + 124.0f, 1.0f,
+                     es ? "(SE CAMBIA EN PANTALLA > ASPECTO)" : "(CHANGE IT IN DISPLAY > ASPECT)",
+                     C2D_Color32(130, 140, 160, 255));
+    DrawButton((float)UPD_YES_X0, (float)WAI_BTN_Y0, (float)(UPD_YES_X1 - UPD_YES_X0), 28.0f,
+               es ? "SI" : "YES", white, C2D_Color32(16, 60, 32, 255), C2D_Color32(55, 150, 95, 255));
+    DrawButton((float)UPD_NO_X0, (float)WAI_BTN_Y0, (float)(UPD_NO_X1 - UPD_NO_X0), 28.0f,
+               "NO", white, C2D_Color32(64, 22, 22, 255), C2D_Color32(180, 60, 60, 255));
+}
+
+/* A button with the pad key it answers to in a round badge at its left ("A" / "B"), as in the
+ * other ports' dialogs. The label is centred in what is left of the button. */
+static void DrawKeyButton(float x, float y, float w, float h, char key, const char* label,
+                          uint32_t textCol, uint32_t bodyCol, uint32_t borderCol) {
+    const bool pressed = DrawButtonBox(x, y, w, h, bodyCol, borderCol);
+    const float cx = x + 15.0f, cy = y + h * 0.5f + (pressed ? 1.0f : 0.0f);
+    C2D_DrawCircleSolid(cx, cy, 0.93f, 9.0f, textCol);
+    C2D_DrawCircleSolid(cx, cy, 0.94f, 7.5f, bodyCol);
+    const char k[2] = { key, 0 };
+    DrawTextCentered(cx + 0.5f, cy - 3.0f, 1.0f, k, textCol);
+    if (!label || !*label) return;
+    DrawTextCentered(x + 28.0f + (w - 28.0f) * 0.5f, cy - 3.0f, 1.0f, label, textCol);
+}
+
+/* The question about the console's DSP firmware (port_dsp_firm_prompt_3ds.c), over everything.
+ * The UI font has no comma. */
+static void RenderDspFirmQuestion(int lang) {
+    const int state = Port_DspFirm_State();
+    if (state == DSPFIRM_PROMPT_NONE) return;
+    const bool es = (lang == 6);
+    const uint32_t white = C2D_Color32(255, 255, 255, 255);
+    const uint32_t text = C2D_Color32(190, 210, 235, 255);
+    const float z = 0.994f;
+
+    C2D_DrawRectSolid(0.0f, 0.0f, z, 320.0f, 240.0f, C2D_Color32(0, 0, 0, 200));
+    C2D_DrawRectSolid(14.0f, (float)WAI_BOX_Y0, z + 0.001f, 292.0f, (float)WAI_BOX_H, C2D_Color32(40, 70, 120, 255));
+    C2D_DrawRectSolid(16.0f, (float)WAI_BOX_Y0 + 2.0f, z + 0.002f, 288.0f, (float)WAI_BOX_H - 4.0f,
+                      C2D_Color32(10, 14, 24, 255));
+    const float y0 = (float)WAI_BOX_Y0;
+    DrawTextCentered(160.0f, y0 + 10.0f, 1.0f, es ? "FALTA EL FIRMWARE DE SONIDO" : "SOUND FIRMWARE NEEDED",
+                     C2D_Color32(255, 215, 0, 255));
+    if (state == DSPFIRM_PROMPT_ASK) {
+        const bool missing = Port_DspFirm_Missing();
+        DrawTextCentered(160.0f, y0 + 36.0f, 1.0f,
+                         es ? (missing ? "EL FIRMWARE DSP NO ESTA EN LA TARJETA SD." : "EL FIRMWARE DSP DE LA TARJETA SD ESTA DANADO.")
+                            : (missing ? "THE DSP FIRMWARE IS NOT ON THE SD CARD." : "THE DSP FIRMWARE ON THE SD CARD IS DAMAGED."),
+                         text);
+        DrawTextCentered(160.0f, y0 + 62.0f, 1.0f, es ? "SIN ELLO EL JUEGO FUNCIONA SIN SONIDO." : "WITHOUT IT THE GAME RUNS BUT SILENT.",
+                         C2D_Color32(255, 170, 90, 255));
+        DrawTextCentered(160.0f, y0 + 82.0f, 1.0f, es ? "PARA JUGAR CON SONIDO EXTRAELO AHORA." : "TO PLAY WITH SOUND EXTRACT IT NOW.", text);
+        DrawTextCentered(160.0f, y0 + 108.0f, 1.0f, es ? "(SE COPIA DE LA PROPIA CONSOLA)" : "(IT IS COPIED FROM THIS CONSOLE)",
+                         C2D_Color32(130, 140, 160, 255));
+        DrawKeyButton((float)UPD_YES_X0, (float)WAI_BTN_Y0, (float)(UPD_YES_X1 - UPD_YES_X0), 28.0f, 'A',
+                   es ? "EXTRAER" : "EXTRACT", white, C2D_Color32(16, 60, 32, 255), C2D_Color32(55, 150, 95, 255));
+        DrawKeyButton((float)UPD_NO_X0, (float)WAI_BTN_Y0, (float)(UPD_NO_X1 - UPD_NO_X0), 28.0f, 'B',
+                   es ? "SIN SONIDO" : "NO SOUND", white, C2D_Color32(64, 22, 22, 255), C2D_Color32(180, 60, 60, 255));
+    } else if (state == DSPFIRM_PROMPT_WORKING) {
+        DrawTextCentered(160.0f, y0 + 76.0f, 1.0f, es ? "EXTRAYENDO..." : "EXTRACTING...", white);
+    } else {
+        const bool ok = (state == DSPFIRM_PROMPT_DONE);
+        DrawTextCentered(160.0f, y0 + 50.0f, 1.0f,
+                         ok ? (es ? "LISTO. EL SONIDO FUNCIONARA." : "DONE. THE SOUND WILL WORK.")
+                            : (es ? "NO SE PUDO EXTRAER." : "COULD NOT EXTRACT IT."),
+                         ok ? C2D_Color32(120, 255, 160, 255) : C2D_Color32(255, 110, 110, 255));
+        if (!ok) DrawTextCentered(160.0f, y0 + 76.0f, 1.0f, Port_DspFirm_Failure(), C2D_Color32(130, 140, 160, 255));
+        DrawKeyButton(116.0f, (float)WAI_BTN_Y0, 88.0f, 28.0f, 'A', "OK", white, C2D_Color32(24, 40, 70, 255), C2D_Color32(90, 130, 180, 255));
     }
 }
 
@@ -5901,18 +6104,34 @@ static void StateTapReleased(void) {
     }
 }
 
+static void RenderDevFtp(void) {
+    if (!FtpServer_InstallOnly()) return;
+    char address[48];
+    FtpServer_Address(address, sizeof(address));
+    C2D_DrawRectSolid(0.0f, 200.0f, 0.97f, 320.0f, 40.0f, C2D_Color32(10, 14, 24, 255));
+    C2D_DrawRectSolid(0.0f, 200.0f, 0.97f, 320.0f, 1.0f, C2D_Color32(245, 175, 45, 255));
+    DrawText(8.0f, 206.0f, 1.0f, "FTP (INSTALL ONLY)", C2D_Color32(255, 215, 0, 255));
+    DrawText(8.0f, 222.0f, 1.0f, address, C2D_Color32(190, 210, 240, 255));
+    C2D_DrawRectSolid(DEVFTP_X, DEVFTP_Y, 0.97f, DEVFTP_W, DEVFTP_H, C2D_Color32(120, 150, 210, 255));
+    C2D_DrawRectSolid(DEVFTP_X + 1, DEVFTP_Y + 1, 0.97f, DEVFTP_W - 2, DEVFTP_H - 2, C2D_Color32(30, 40, 70, 255));
+    DrawText(DEVFTP_X + 17.0f, DEVFTP_Y + 10.0f, 1.0f, "CANCEL", C2D_Color32(255, 215, 0, 255));
+}
+
 /* "Wait" message over whatever tab is showing while the SD card is read or
  * written. The thumbnail read is too short to deserve it. */
 /* The notice raised by Port_BottomUI_ShowNotice: the same frame and text
  * colours as the rest of the bottom screen's dialogs, an amber warning
  * accent, centred and floating over whatever tab is showing. */
 static void RenderNoticeToast(void) {
-    const char* standing = StandingNotice();
+    char standingLine[64];
+    int permille = -1;
+    const char* standing = StandingNoticeLine(standingLine, sizeof(standingLine), &permille);
     /* A standing notice is drawn steady (no slide, no fade) for as long as it lasts. */
     const int elapsed = standing ? (int)NOTICE_ENTER_MS : NoticeElapsedMs();
     if (elapsed < 0) return;
     const char* title = standing ? "NEW BUILD" : sNoticeTitle;
     const char* body = standing ? standing : sNoticeBody;
+    const bool bar = standing && permille >= 0;
 
     float alpha = 1.0f;
     float rise = 0.0f;
@@ -5930,10 +6149,11 @@ static void RenderNoticeToast(void) {
     const float padX = 10.0f;
     const float gap = 10.0f;
     const float titleW = (float)Utf8CharCount(title) * 6.0f - 1.0f;
-    const float bodyW = (float)Utf8CharCount(body) * 6.0f - 1.0f;
+    /* A standing notice reserves the longest line it takes, so the box does not resize as it counts. */
+    const float bodyW = (float)Utf8CharCount(standing ? "RECEIVING THE INSTALLER 100%" : body) * 6.0f - 1.0f;
     const float textW = titleW > bodyW ? titleW : bodyW;
     const float boxW = (float)(int)(4.0f + padX + icon + gap + textW + padX);
-    const float boxH = 44.0f;
+    const float boxH = standing ? 56.0f : 44.0f;
     const float x = (float)(int)((320.0f - boxW) / 2.0f);
     const float y = (float)(int)((240.0f - boxH) / 2.0f + rise);
 
@@ -5952,6 +6172,11 @@ static void RenderNoticeToast(void) {
     const float tx = ix + icon + gap;
     DrawText(tx, y + 10.0f, 1.0f, title, NOTICE_RGBA(255, 215, 0, 255));
     DrawText(tx, y + 26.0f, 1.0f, body, NOTICE_RGBA(190, 210, 240, 255));
+    if (bar) { /* the bar, over the whole text column */
+        const float by = y + 42.0f;
+        C2D_DrawRectSolid(tx, by, 0.97f, textW, 6.0f, NOTICE_RGBA(40, 52, 84, 255));
+        C2D_DrawRectSolid(tx, by, 0.97f, textW * (float)permille / 1000.0f, 6.0f, NOTICE_RGBA(245, 175, 45, 255));
+    }
 #undef NOTICE_RGBA
 }
 
@@ -6056,8 +6281,11 @@ void Port_BottomUI_Render(void) {
      * only draw the toast (if one is active) onto this frame's target. */
     Port_RA_RenderToastOverlay();
     RenderUpdatePrompt(GetLang());
+    RenderWideAiQuestion(GetLang());
+    RenderDspFirmQuestion(GetLang());
     RenderBusyOverlay();
     RenderNoticeToast();
+    RenderDevFtp();
 
     /* L+R+START scene recorder indicator (platform_gpu_3ds.c) -- drawn last,
      * on top of whichever tab is active, so it's never hidden by one. Blinks

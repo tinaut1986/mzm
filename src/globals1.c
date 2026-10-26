@@ -296,6 +296,7 @@ IWRAM_DATA struct MusicInfo gMusicInfo = {};
 IWRAM_DATA u8 gUnk_3003760[12] = {};
 #endif
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 // [PORT] Declared [1] in the decomp, but src/audio.c indexed it with
 // `pVariables->channel & 7` (0-7). On real hardware the GBA ROM's fixed IWRAM
 // layout (see mzm_eu.map) places this immediately before gPsgSounds[4], so
@@ -314,6 +315,9 @@ IWRAM_DATA u8 gUnk_3003760[12] = {};
 // longer depends on being adjacent to anything. Kept at [8] so the full 0-7
 // index range stays in bounds.
 IWRAM_DATA struct PsgSoundData gUnk_300376C[8] = {};
+#else
+IWRAM_DATA struct PsgSoundData gUnk_300376C[1] = {};
+#endif
 
 IWRAM_DATA struct PsgSoundData gPsgSounds[4] = {};
 IWRAM_DATA struct SoundChannelBackup gSoundChannelBackup[7] = {};

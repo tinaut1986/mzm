@@ -1,4 +1,6 @@
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "region.h"
+#endif
 #include "menus/erase_sram.h"
 #include "macros.h"
 #include "callbacks.h"
@@ -407,6 +409,7 @@ static void EraseSramInit(void)
     ERASE_SRAM_DATA.language = gLanguage;
     // This code sets the language to the region's default if the language is invalid for that region.
     // Debug allows any language, US allows any European language, and JP allows Japanese or hiragana.
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #ifdef DEBUG
     if (ERASE_SRAM_DATA.language >= LANGUAGE_COUNT)
 #else
@@ -414,7 +417,21 @@ static void EraseSramInit(void)
         : INVALID_EU_LANGUAGE(ERASE_SRAM_DATA.language))
 #endif
     {
+#else
+#if defined(DEBUG)
+    if (ERASE_SRAM_DATA.language >= LANGUAGE_COUNT)
+#elif defined(REGION_JP)
+    if (ERASE_SRAM_DATA.language > LANGUAGE_HIRAGANA)
+#else // !(DEBUG || REGION_JP)
+    if (INVALID_EU_LANGUAGE(ERASE_SRAM_DATA.language))
+#endif
+    {
+#endif
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
         ERASE_SRAM_DATA.language = REGION_DEFAULT_LANGUAGE();
+#else
+        ERASE_SRAM_DATA.language = LANGUAGE_DEFAULT;
+#endif
     }
 
     while (READ_16(REG_VCOUNT) >= 21 && READ_16(REG_VCOUNT) <= SCREEN_SIZE_Y);

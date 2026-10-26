@@ -20,7 +20,9 @@
 #include "structs/samus.h"
 #include "structs/scroll.h"
 #include "structs/sprite.h"
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 
 // Spawn health of deorem
 #define DEOREM_MAX_HEALTH (MISSILE_DAMAGE * 3)
@@ -811,9 +813,13 @@ static void DeoremSpawnDelayBeforeHead(void)
             yPosition - DEOREM_EYE_Y_OFFSET, xPosition - DEOREM_EYE_X_OFFSET, 0);
 
         if (eyeSlot == UCHAR_MAX)
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
         {
+#endif
             gCurrentSprite.status = 0;
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
         }
+#endif
         else
             gCurrentSprite.work3 = eyeSlot;
     }

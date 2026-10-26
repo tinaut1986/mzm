@@ -95,7 +95,7 @@ extern void Port_GpuRenderer_GetLastFrameStats(int* outItems, int* outObjItems, 
 enum {
     TOP_ASPECT_LEGACY_WIDE = 0, /* the old stretched WIDE, retired -- Port_Config_Load clamps it to ORIGINAL */
     TOP_ASPECT_ORIGINAL,
-    TOP_ASPECT_STRETCH,
+    TOP_ASPECT_RETIRED_STRETCH, /* retired 2026-10-17, read back as ORIGINAL too */
     /* Shows the world past the GBA frame (port_wide_view.h). Only the GPU
      * renderer can draw that; a frame this file draws itself is a plain
      * ORIGINAL one. */
@@ -216,6 +216,26 @@ static void OverlayAccumulate(void) {
 
 static void DrawStatusTextColor(float x, float y, float scale, const char* text, uint32_t color);
 
+/* The overlay's lines and its box (top-left, size) for FPS position `pos`. */
+static void FpsOverlayLayout(int pos, char line[5][12], float* x, float* y, float* w, float* h) {
+    snprintf(line[0], 12, "%.1f", sOverlay.gameFps);
+    snprintf(line[1], 12, "L%.1f", sOverlay.logicMs);
+    snprintf(line[2], 12, "D%.1f", sOverlay.drawMs);
+    snprintf(line[3], 12, "G%.1f", sOverlay.gpuMs);
+    snprintf(line[4], 12, "S%.1f", Port_PPU_3DS_CurrentFps());
+    int chars = 0;
+    for (int i = 0; i < 5; ++i) {
+        const int n = (int)strlen(line[i]);
+        if (n > chars) chars = n;
+    }
+    *w = (float)(chars * 6 + 3);
+    *h = (float)(FPS_OVERLAY_LINES * FPS_OVERLAY_PITCH + 2);
+    /* 1 = BOTTOM-LEFT, 2 = BOTTOM-RIGHT, 3 = TOP-LEFT, 4 = TOP-RIGHT */
+    const bool right = pos == 2 || pos == 4, bottom = pos == 1 || pos == 2;
+    *x = right ? 400.0f - FPS_OVERLAY_MARGIN - *w : (float)FPS_OVERLAY_MARGIN;
+    *y = bottom ? 240.0f - FPS_OVERLAY_MARGIN - *h : (float)FPS_OVERLAY_MARGIN;
+}
+
 /* The on-screen numbers, drawn identically no matter which path (GPU tile renderer or CPU
  * scanline fallback) produced this frame, so an intermittent fallback doesn't flip their
  * size/position/font. `eyeXOffset` is the per-eye horizontal shift (0 for mono / left, parallax
@@ -224,8 +244,8 @@ static void DrawStatusTextColor(float x, float y, float scale, const char* text,
  *
  * Five small lines in a dim box, like sm-3ds's: the game's rate (green from 59, yellow from 50,
  * red below), L the logic's ms per tick, D the renderer's CPU ms and G the GPU's ms per frame,
- * S the rate frames reach the screen. The box layout is mirrored by FpsCarveBox in
- * port_gba_screen_fx.c. */
+ * S the rate frames reach the screen. Drawn once per frame by PlatformGpu3DS_EndBottom, after the
+ * GBA effects, so they lie over them. */
 void PlatformGpu3DS_DrawFpsOverlay(float eyeXOffset) {
     int pos = Port_Config_GetFpsPosition();
     if (pos == 0) return;
@@ -242,22 +262,9 @@ void PlatformGpu3DS_DrawFpsOverlay(float eyeXOffset) {
     PlatformGpu3DS_ResetSolidTexEnv();
 
     char line[5][12];
-    snprintf(line[0], sizeof(line[0]), "%.1f", sOverlay.gameFps);
-    snprintf(line[1], sizeof(line[1]), "L%.1f", sOverlay.logicMs);
-    snprintf(line[2], sizeof(line[2]), "D%.1f", sOverlay.drawMs);
-    snprintf(line[3], sizeof(line[3]), "G%.1f", sOverlay.gpuMs);
-    snprintf(line[4], sizeof(line[4]), "S%.1f", Port_PPU_3DS_CurrentFps());
-    int chars = 0;
-    for (int i = 0; i < 5; ++i) {
-        const int n = (int)strlen(line[i]);
-        if (n > chars) chars = n;
-    }
-    const float w = (float)(chars * 6 + 3);
-    const float h = (float)(FPS_OVERLAY_LINES * FPS_OVERLAY_PITCH + 2);
-    /* 1 = BOTTOM-LEFT, 2 = BOTTOM-RIGHT, 3 = TOP-LEFT, 4 = TOP-RIGHT */
-    const bool right = pos == 2 || pos == 4, bottom = pos == 1 || pos == 2;
-    const float boxX = (right ? 400.0f - FPS_OVERLAY_MARGIN - w : (float)FPS_OVERLAY_MARGIN) + eyeXOffset;
-    const float boxY = bottom ? 240.0f - FPS_OVERLAY_MARGIN - h : (float)FPS_OVERLAY_MARGIN;
+    float boxX, boxY, w, h;
+    FpsOverlayLayout(pos, line, &boxX, &boxY, &w, &h);
+    boxX += eyeXOffset;
     C2D_DrawRectSolid(boxX, boxY, 0.7f, w, h, C2D_Color32(0, 0, 0, 150));
     const float fps = sOverlay.gameFps;
     const uint32_t colors[5] = {
@@ -628,13 +635,12 @@ static void DrawTopImageStereo(const uint32_t* leftPixels, const uint32_t* right
         drawH = 160.0f;
     } else {
         drawH = 240.0f;
-        /* Only STRETCH fills the screen width; ORIGINAL, WIDE (whose extra
-         * world only the GPU renderer draws) and any stale out-of-range value
-         * pillarbox to 360. Kept identical to
-         * PlatformGpu3DS_GetTopImageRect and to port_gpu_renderer.c's
-         * screenBaseX/scaleX: a rect that disagrees with what was actually
-         * drawn misplaces every screen-space effect built on it. */
-        drawW = (Port_Config_Get3DSAspectRatio() == TOP_ASPECT_STRETCH) ? 400.0f : 360.0f;
+        /* ORIGINAL and WIDE (whose extra world only the GPU renderer draws)
+         * pillarbox to 360. Kept identical to PlatformGpu3DS_GetTopImageRect
+         * and to port_gpu_renderer.c's screenBaseX/scaleX: a rect that
+         * disagrees with what was actually drawn misplaces every screen-space
+         * effect built on it. */
+        drawW = 360.0f;
     }
     const C2D_DrawParams params = {
         .pos = { .x = (400.0f - drawW) * 0.5f, .y = (240.0f - drawH) * 0.5f,
@@ -656,7 +662,6 @@ static void DrawTopImageStereo(const uint32_t* leftPixels, const uint32_t* right
     if (PortGbaBezel_Active()) {
         PortGbaBezel_Draw(sTopTarget);
     }
-    PlatformGpu3DS_DrawFpsOverlay(0.0f);
 
     if (sTopRightTarget) {
         C2D_TargetClear(sTopRightTarget, C2D_Color32(0, 0, 0, 255));
@@ -667,7 +672,6 @@ static void DrawTopImageStereo(const uint32_t* leftPixels, const uint32_t* right
         if (PortGbaBezel_Active()) {
             PortGbaBezel_Draw(sTopRightTarget);
         }
-        PlatformGpu3DS_DrawFpsOverlay(0.0f);
     }
 }
 
@@ -743,8 +747,7 @@ void PlatformGpu3DS_GetTopImageRect(int* outX, int* outY, int* outW, int* outH) 
         w = 240; h = 160;
     } else {
         h = 240;
-        /* See DrawTopImageStereo: STRETCH is the only full-width aspect. */
-        w = (Port_Config_Get3DSAspectRatio() == TOP_ASPECT_STRETCH) ? 400 : 360;
+        w = 360; /* see DrawTopImageStereo */
     }
     if (outX) *outX = (400 - w) / 2;
     if (outY) *outY = (240 - h) / 2;
@@ -802,6 +805,19 @@ bool PlatformGpu3DS_EndBottom(const uint32_t* pixels, bool changed) {
         C3D_RenderTarget* fxRight =
             (PlatformGpu3DS_Get3DSlider() > 0.01f) ? sTopRightTarget : NULL;
         PortGbaScreenFx_PostProcessTop(sTopTarget, fxRight);
+    }
+
+    /* The numbers go on last, over the GBA effects, so the effects cover the whole picture and
+     * only the numbers' own box is left out (a hole in the mask cannot follow the parallax of
+     * both eyes). Frontmost parallax, the same on both paths. */
+    if (Port_Config_GetFpsPosition() != 0) {
+        const float slider = PlatformGpu3DS_Get3DSlider();
+        C2D_SceneBegin(sTopTarget);
+        PlatformGpu3DS_DrawFpsOverlay(floorf(slider * 2.5f + 0.5f));
+        if (slider > 0.01f && sTopRightTarget) {
+            C2D_SceneBegin(sTopRightTarget);
+            PlatformGpu3DS_DrawFpsOverlay(floorf(-slider * 2.5f + 0.5f));
+        }
     }
 
     extern void Port_BottomUI_FrameTick(void);
@@ -1172,7 +1188,7 @@ static void OamCensus(unsigned* outTotal, unsigned* outVisible, unsigned* outAff
  * comparable with one without.
  *
  *   bits 0-1   display style (0 = PIXEL PERFECT, see Port_Config_*)
- *   bits 2-3   aspect ratio (2 = STRETCH)
+ *   bits 2-3   aspect ratio (1 = ORIGINAL, 3 = WIDE)
  *   bits 4-10  3D slider position x100, 0..100
  *   bit  11    FPS overlay on
  *   bit  12    HUD drawn outside the frame

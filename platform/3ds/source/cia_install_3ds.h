@@ -8,6 +8,9 @@
 // running title's. On failure `error` says why.
 bool CiaInstall_File(const char *sdPath, char *error, unsigned errorCap);
 
-// Jumps into the installed build of this title (APT application jump). Call from the main
-// thread, then let the game close as on HOME -> close. False when the jump was refused.
-bool CiaInstall_JumpToSelf(void);
+// Makes the process start the installed build of this title when it exits (libctru's
+// chainloader, run by aptExit()). Call it, then quit through the normal exit path.
+void CiaInstall_RelaunchOnExit(void);
+
+// How much of the running CiaInstall_File is written, in bytes (any thread).
+void CiaInstall_Progress(unsigned long long *done, unsigned long long *total);

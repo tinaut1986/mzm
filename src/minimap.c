@@ -1,4 +1,6 @@
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "region.h"
+#endif
 #include "minimap.h"
 #include "dma.h"
 #include "gba.h"
@@ -455,10 +457,17 @@ void MinimapDraw(void)
         tile = *tmp & 0x3ff;
         } while(0);
         
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
         /* Hiragana only ever comes from a JAP ROM, so the language test alone
          * gives every region its retail behaviour. */
         if (gLanguage == LANGUAGE_HIRAGANA && tile > MINIMAP_TILE_BACKGROUND)
             tile += 0x20;
+#else
+#ifndef REGION_EU
+        if (gLanguage == LANGUAGE_HIRAGANA && tile > MINIMAP_TILE_BACKGROUND)
+            tile += 0x20;
+#endif // !REGION_EU
+#endif
 
         tile <<= 5;
         sMinimapTilesCopyGfxFunctionPointers[flip](dst, &tile, palette);

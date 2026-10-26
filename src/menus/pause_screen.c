@@ -1,10 +1,14 @@
 #include "menus/pause_screen.h"
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "region.h"
+#endif
 #include "dma.h"
 #include "temp_globals.h"
 #include "gba.h"
 #include "macros.h"
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 #if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "port_gba_mem.h"
 #endif
@@ -2474,6 +2478,7 @@ void PauseScreenInit(void)
     sBgPalramPointer[0] = 0;
 
     DmaTransfer(3, sMinimapTilesGfx, VRAM_BASE + 0x8000, 0x3000, 16);
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     if (REGION_IS_JP())
     {
         // JAP swaps the two halves the other way round, and only for hiragana
@@ -2484,6 +2489,14 @@ void PauseScreenInit(void)
     {
         DmaTransfer(3, VRAM_BASE + 0xA820, VRAM_BASE + 0xAC20, 0x3E0, 32);
     }
+#else
+#ifdef REGION_JP
+    if (gLanguage == LANGUAGE_HIRAGANA)
+        DmaTransfer(3, VRAM_BASE + 0xAC20, VRAM_BASE + 0xA820, 0x3E0, 32);
+#else // !REGION_JP
+    DmaTransfer(3, VRAM_BASE + 0xA820, VRAM_BASE + 0xAC20, 0x3E0, 32);
+#endif // REGION_JP
+#endif
 
     CallLZ77UncompVram(sTankIconsGfx, VRAM_BASE + 0x13000);
     CallLZ77UncompVram(sMapScreenAreaNamesGfxPointers[gLanguage], VRAM_BASE + 0x10800);
@@ -2493,6 +2506,7 @@ void PauseScreenInit(void)
     if (PAUSE_SCREEN_DATA.typeFlags & PAUSE_SCREEN_TYPE_CHOZO_STATUE_HINT)
     {
         CallLZ77UncompVram(sChozoHintBackgroundGfx, VRAM_BASE);
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
         /* Hiragana only ever comes from a JAP ROM, so no region test is
          * needed around the language check. */
         if (gLanguage == LANGUAGE_HIRAGANA)
@@ -2500,6 +2514,15 @@ void PauseScreenInit(void)
             CallLZ77UncompVram(sMinimapTilesAreaNamesHiraganaGfx, VRAM_BASE + 0xA800);
         }
         else
+#else
+#ifdef REGION_JP
+        if (gLanguage == LANGUAGE_HIRAGANA)
+        {
+            CallLZ77UncompVram(sMinimapTilesAreaNamesHiraganaGfx, VRAM_BASE + 0xA800);
+        }
+        else
+#endif // REGION_JP
+#endif
         {
             CallLZ77UncompVram(sMinimapTilesAreaNamesEnglishGfx, VRAM_BASE + 0xA800);
         }
@@ -2696,6 +2719,7 @@ void PauseScreenInit(void)
         PAUSE_SCREEN_DATA.unk_78 = 0;
         PAUSE_SCREEN_DATA.unk_7A = 0;
         PAUSE_SCREEN_DATA.unk_6E = 0;
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
         /* Do NOT "fix" this to BGCNT_LOW_PRIORITY -- that was tried and is
          * wrong. Decoded straight from a real-hardware VRAM dump (gVram +
          * BG1/2/3 CNT) during this exact screen: BG1 (blend first-target,
@@ -2709,6 +2733,7 @@ void PauseScreenInit(void)
          * it almost entirely. The real bug this screen had was stereo-3D
          * depth ordering, not 2D occlusion -- see port_gpu_renderer.c's
          * CollectBgLayer depthTier comment. */
+#endif
         PAUSE_SCREEN_DATA.unk_6C = CREATE_BGCNT(2, 28, sPauseScreen_BgCntPriority[BGCNT_HIGH_MID_PRIORITY], BGCNT_SIZE_512x512) | (1 << 6);
         PAUSE_SCREEN_DATA.bg3cnt = PAUSE_SCREEN_DATA.unk_6C;
         PAUSE_SCREEN_DATA.bg2cnt = CREATE_BGCNT(0, 23, sPauseScreen_BgCntPriority[BGCNT_LOW_PRIORITY], BGCNT_SIZE_256x256);
@@ -2970,7 +2995,15 @@ u32 PauseScreenCallStateHandler(void)
     u32 leaving;
 
     leaving = FALSE;
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     CHECK_MAINTAINED_INPUT(MAINTAINED_INPUT_SPEED_FAST);
+#else
+#ifdef REGION_EU
+    CheckForMaintainedInput(MAINTAINED_INPUT_SPEED_FAST);
+#else // !REGION_EU
+    CheckForMaintainedInput();
+#endif // REGION_EU
+#endif
 
     APPLY_DELTA_TIME_INC(PAUSE_SCREEN_DATA.stateInfo.timer);
 

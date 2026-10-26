@@ -3,7 +3,9 @@
 #include "syscalls.h"
 #include "gba.h"
 #include "macros.h"
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 #ifdef __3DS__
 #include "port_sprite_depth_oam.h" /* PORT_SPRITE_DEPTH_* codes */
 #endif
@@ -26,7 +28,9 @@
 #include "data/sprites/message_banner.h"
 #include "data/sprites/zoomer.h"
 #include "data/sprites/zeela.h"
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 #include "data/sprites/ripper.h"
 #include "data/sprites/zeb.h"
 #include "data/sprites/skree.h"
@@ -1853,7 +1857,9 @@ void SpriteDrawAll_HighPriority(void)
         Port_Wide_BeginFrame();
     }
 #endif
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
     if (gSubGameMode1 == SUB_GAME_MODE_PLAYING)
         notPlaying = FALSE;
     else
@@ -2050,7 +2056,9 @@ void SpriteDraw(struct SpriteData* pSprite, s32 slot)
     src = GBA_RESOLVE(src);
 #endif
     partCount = *src++;
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 
     if (partCount + prevSlot >= OAM_BUFFER_DATA_SIZE)
         return;
@@ -2353,7 +2361,9 @@ void SpriteDraw(struct SpriteData* pSprite, s32 slot)
             gOamData[31 * 4 + 3].all.affineParam = dmy;
         }
     }
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 #ifdef __3DS__
     /* Tag the OAM span just emitted [prevSlot, gNextOamSlot) as overlay
      * text so the stereo renderer lifts it to the front depth tier instead
@@ -2459,7 +2469,9 @@ void SpriteCheckOnScreen(struct SpriteData* pSprite)
     spriteLeft = bgXRange - PIXEL_TO_SUB_PIXEL(pSprite->drawDistanceHorizontal);
     drawOffset = PIXEL_TO_SUB_PIXEL(pSprite->drawDistanceHorizontal) + SCREEN_SIZE_X_SUB_PIXEL;
     spriteRight = bgXRange + drawOffset;
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 #if defined(MZM_3DS)
     {
         // WIDE display: the view reaches past the GBA frame, so sprites there

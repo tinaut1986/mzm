@@ -22,6 +22,15 @@ earlier convention. Convert a file's comments/identifiers to English **as you
 touch it** for other reasons, not as a standalone task. User-facing UI strings and
 prose docs can stay as they are until their file is otherwise being reworked.
 
+## The GBA ROM must still build
+
+`src/`, `include/` and `asm/` come from upstream, and the decompilation's own build has to keep
+producing the retail ROM (`make REGION=eu` -> `mzm_eu.sha1`). So a port change to a file that exists
+upstream goes inside `#if defined(MZM_3DS) || defined(PORT_NATIVE)` with upstream's text in `#else`.
+`tools/guard_port.py check` tells whether a change is guarded (CI runs it); `tools/guard_port.py fix`
+adds the guards; `tools/check_gba_rom.sh` builds the ROM and compares it. Read
+`docs/gba-rom-build.md` before touching `src/`, and again after merging upstream.
+
 ## Save states
 
 Before adding, renaming or changing a global in `src/` (or anything the save
@@ -184,9 +193,20 @@ it comes back by itself after a relaunch. Nothing needs FBI or closing the game:
 
 ```sh
 python3 tools/build_3ds.py --install <ip> --no-clean       # build, upload, install over the running game, relaunch
-curl "ftp://<ip>:5000/3ds/Metroid%20Zero%20Mission%203DS/debug/"      # list / fetch the debug files
+curl -u mzm3ds:LdHrf1259oikAkPg "ftp://<ip>:5000/3ds/Metroid%20Zero%20Mission%203DS/debug/"      # list / fetch the debug files
 tools/mzm-link/mzm-link.py wait && tools/mzm-link/mzm-link.py run SCRIPT   # drive the game
 ```
+
+**The FTP login** (debug builds and the install-only server below): user `mzm3ds`, password
+`LdHrf1259oikAkPg`, defined in `platform/3ds/source/ftp_credentials_3ds.h` (the tools read it from there; keep
+both in step). Plain `curl` needs `-u mzm3ds:LdHrf1259oikAkPg`. The password is in the repository and the binary:
+it keeps an accidental client out, it is not a secret.
+
+**Production builds** have no FTP unless `dev-ftp.txt` exists in `/3ds/Metroid Zero Mission 3DS/`
+(the owner creates it once, over FTP, while a debug build is installed): then they start an
+install-only server (only `/3ds/Metroid Zero Mission 3DS/update/`, no remote control, the address
+and a CANCEL button on the bottom screen), enough for `build_3ds.py --install`. See
+`docs/3ds-debug-tools.md`. Players never see it; do not put it in the release notes.
 
 `tools/mzm-link/mzm-link.py` presses buttons, taps, saves and loads states, takes screenshots and
 reads state and memory (`docs/3ds-debug-tools.md`, "FTP server, install and remote control").

@@ -2,7 +2,9 @@
 #include "menus/status_screen.h"
 #include "menus/pause_screen.h"
 #include "dma.h"
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 #if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "port_gba_mem.h"
 #endif
@@ -2720,7 +2722,11 @@ void StatusScreenUpdateRow(AbilityGroup group, u8 row, u8 isActivated, u8 drawUp
 
     if (drawUpdate)
     {
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
         pTilemap = (u16*)GBA_RESOLVE(VRAM_BASE + 0xC002) + position;
+#else
+        pTilemap = (u16*)(VRAM_BASE + 0xC002) + position;
+#endif
 
         for (i = 1; i < size; i++, pTilemap++)
         {
@@ -2760,7 +2766,11 @@ void StatusScreenEnableUnknownItem(AbilityGroup group, u8 row)
     i = (sStatusScreenGroupsPositions[group].top + row) * HALF_BLOCK_SIZE + sStatusScreenGroupsPositions[group].left;
     size = sStatusScreenGroupsPositions[group].right - sStatusScreenGroupsPositions[group].left;
     
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     dst = (u16*)GBA_RESOLVE(VRAM_BASE + 0xC002) + i;
+#else
+    dst = (u16*)(VRAM_BASE + 0xC002) + i;
+#endif
 
     position++;
 
@@ -2768,7 +2778,9 @@ void StatusScreenEnableUnknownItem(AbilityGroup group, u8 row)
     {
         *dst = PAUSE_SCREEN_EWRAM.statusScreenTilemap[position];
     }
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 }
 
 /**

@@ -1,0 +1,164 @@
+#!/usr/bin/env python3
+"""The AI's finished pictures -> platform/3ds/source/port_scene_pictures_data.c.
+
+    to_console.py DUMPS_DIR SCENE=PICTURE.png [SCENE=PICTURE.png ...]
+
+SCENE is a key of make_package.SCENES (its canvas, picture rectangle, BG and final dump);
+PICTURE is the chosen variant, the size of that scene's canvas. The pictures already in the
+data file for other scenes are kept, so only the scenes given need their dumps. Each picture is stored as the
+BG palette entry of every pixel, so the console paints it with the palette the game has on that
+frame (fades, flashes, cycling) instead of fixed colours:
+
+  0          transparent: the game's own picture (never shipped) and the texture's padding
+  N (1-255)  BG palette entry N; entries N % 16 == 0 stand for the backdrop, palette entry 0
+
+Colours are matched in the final dump's BG palette, first among the banks the scene's BG uses.
+A colour the palette does not have is reported and given the nearest entry.
+
+The data is laid out as the GPU texture it becomes (8x8 Morton tiles, power-of-two size) and
+LZ4-compressed, the same way tools/generate_bezel_asset.py packs the bezel. Only the generated
+parts are in it: the game's own area is transparent.
+"""
+import os
+import re
+import struct
+import sys
+
+from PIL import Image
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.abspath(os.path.join(HERE, '..', '..'))
+sys.path.insert(0, HERE)
+sys.path.insert(0, os.path.join(ROOT, 'tools'))
+from gba_dump import Dump  # noqa: E402
+from generate_bezel_asset import lz4_compress  # noqa: E402
+from make_package import SCENES  # noqa: E402
+
+OUTPUT_C = os.path.join(ROOT, 'platform', '3ds', 'source', 'port_scene_pictures_data.c')
+# Game mode (include/constants/game_state.h) and scene key (PortScenePic_SceneKey: the intro's
+# stage, src/intro.c sIntroStageFunctionsPointer) each scene plays in.
+GAME_MODES = {'title': (2, 0), 'file-select': (3, 0), 'intro-space': (1, 1), 'intro-cockpit': (1, 2), 'intro-zebes': (1, 4),
+              'intro-motherbrain': (1, 6)}
+
+
+def pow2(n):
+    p = 8
+    while p < n:
+        p *= 2
+    return p
+
+
+def swizzle(x, y, tex_w):
+    tile = (y >> 3) * (tex_w >> 3) + (x >> 3)
+    return tile * 64 + ((x & 1) | ((y & 1) << 1) | ((x & 2) << 1) | ((y & 2) << 2) |
+                        ((x & 4) << 2) | ((y & 4) << 3))
+
+
+def used_banks(d, bg):
+    cnt = d.bg_cnt(bg)
+    sb = ((cnt >> 8) & 31) * 0x800
+    w, h = d.bg_size(bg)
+    banks = set()
+    for i in range(w * h // 64):
+        banks.add(struct.unpack_from('<H', d.vram, sb + i * 2)[0] >> 12)
+    return banks
+
+
+def palette_codes(d, bg):
+    """colour (r, g, b) -> code, banks the BG uses first."""
+    pal = [struct.unpack_from('<H', d.bgpal, i * 2)[0] for i in range(256)]
+    rgb = [((c & 31) << 3, ((c >> 5) & 31) << 3, ((c >> 10) & 31) << 3) for c in pal]
+    banks = used_banks(d, bg)
+    order = sorted(range(16), key=lambda b: (b not in banks, b))
+    codes = {}
+    for b in order:
+        for i in range(1, 16):
+            codes.setdefault(rgb[b * 16 + i], b * 16 + i)
+    codes.setdefault(rgb[0], 16)  # the backdrop
+    return codes
+
+
+def convert(scene, png, dumps_dir):
+    sc = SCENES[scene]
+    cx0, cy0, cx1, cy1 = sc['canvas']
+    px0, py0, px1, py1 = sc['picture']
+    W, H = cx1 - cx0, cy1 - cy0
+    img = Image.open(png).convert('RGB')
+    if img.size != (W, H):
+        sys.exit(f'{png}: {img.size[0]}x{img.size[1]}, the {scene} canvas is {W}x{H}')
+    d = Dump(os.path.join(dumps_dir, sc['final']))
+    codes = palette_codes(d, sc['bg'])
+    tex_w, tex_h = pow2(W), pow2(H)
+    data = bytearray(tex_w * tex_h)
+    off = 0
+    for y in range(H):
+        for x in range(W):
+            if px0 - cx0 <= x < px1 - cx0 and py0 - cy0 <= y < py1 - cy0:
+                continue  # the game's own picture: never shipped
+            c = img.getpixel((x, y))
+            code = codes.get(c)
+            if code is None:
+                off += 1
+                code = codes[min(codes, key=lambda k: sum((a - b) ** 2 for a, b in zip(k, c)))]
+            data[swizzle(x, y, tex_w)] = code
+    if off:
+        print(f'{scene}: {off} pixels not in the palette, given the nearest colour')
+    packed = lz4_compress(bytes(data))
+    print(f'{scene}: {W}x{H} in a {tex_w}x{tex_h} texture, {len(data)} -> {len(packed)} bytes')
+    mode, key = GAME_MODES[scene]
+    return dict(scene=scene, mode=mode, key=key, bg=sc['bg'], canvas=(cx0, cy0, W, H),
+                picture=(px0, py0, px1, py1), tex=(tex_w, tex_h), packed=packed)
+
+
+def existing():
+    """The pictures already in OUTPUT_C: scene -> (packed array, table row), in file order."""
+    if not os.path.exists(OUTPUT_C):
+        return {}
+    with open(OUTPUT_C) as f:
+        text = f.read()
+    arrays = {m.group(1): m.group(0) for m in
+              re.finditer(r'static const uint8_t kPacked_(\w+)\[\d+\] = \{.*?\n\};\n', text, re.S)}
+    rows = {}
+    for m in re.finditer(r'^    \{ "([^"]+)", .*\},\n', text, re.M):
+        scene = m.group(1)
+        rows[scene] = (arrays[scene.replace('-', '_')], m.group(0))
+    return rows
+
+
+def main():
+    if len(sys.argv) < 3:
+        sys.exit(__doc__)
+    dumps_dir = sys.argv[1]
+    pics = [convert(*arg.split('=', 1), dumps_dir) for arg in sys.argv[2:]]
+    entries = existing()
+    for p in pics:
+        name = p['scene'].replace('-', '_')
+        array = f'static const uint8_t kPacked_{name}[{len(p["packed"])}] = {{\n'
+        for i in range(0, len(p['packed']), 24):
+            array += '    ' + ', '.join(str(b) for b in p['packed'][i:i + 24]) + ',\n'
+        array += '};\n'
+        cx, cy, w, h = p['canvas']
+        x0, y0, x1, y1 = p['picture']
+        tw, th = p['tex']
+        row = (f'    {{ "{p["scene"]}", {p["mode"]}, {p["key"]}, {p["bg"]}, {cx}, {cy}, {w}, {h}, '
+               f'{x0}, {y0}, {x1}, {y1}, {tw}, {th}, kPacked_{name}, sizeof(kPacked_{name}) }},\n')
+        entries[p['scene']] = (array, row)
+    kept = [scene for scene in entries if scene not in {p['scene'] for p in pics}]
+    if kept:
+        print('kept from the data file: ' + ', '.join(kept))
+    with open(OUTPUT_C, 'w') as f:
+        f.write('/* Generated by tools/scene-extend/to_console.py -- do not edit. The generated\n'
+                ' * (AI-drawn) parts of the WIDE scene pictures; the game\'s own art is not in it. */\n')
+        f.write('#include "port_scene_pictures.h"\n\n')
+        for array, _ in entries.values():
+            f.write(array + '\n')
+        f.write('const PortScenePictureDef gPortScenePictures[] = {\n')
+        for _, row in entries.values():
+            f.write(row)
+        f.write('};\n')
+        f.write(f'const int gPortScenePictureCount = {len(entries)};\n')
+    print(f'wrote {OUTPUT_C}')
+
+
+if __name__ == '__main__':
+    main()

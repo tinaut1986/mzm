@@ -3,7 +3,9 @@
 
 #include "gba.h"
 #include "macros.h"
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "port_gba_mem.h"
+#endif
 
 /**
  * @brief 2564 | 294 | Initializes the audio
@@ -118,7 +120,11 @@ void DoSoundAction(u32 action)
     if (action & SOUND_ACTION_MAX_CHANNELS_FLAG)
     {
         gMusicInfo.maxSoundChannels = (action & SOUND_ACTION_MAX_CHANNELS_FLAG) >> SOUND_ACTION_MAX_CHANNELS_SHIFT;
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
         for (i = ARRAY_SIZE(gMusicInfo.soundChannels) - 1; i >= 0 ; i--)
+#else
+        for (i = ARRAY_SIZE(gMusicInfo.soundChannels); i >= 0 ; i--)
+#endif
         {
             gMusicInfo.soundChannels[i].unk_0 = 0;
         }
@@ -676,20 +682,30 @@ void unk_2f00(u16 musicTrack1, u16 musicTrack2, u16 timer)
             {
                 pHeader = sSoundDataEntries[musicTrack1].pHeader;
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
                 // [PORT] pHeader is a raw GBA ROM address, kept raw here
                 // because it's passed to InitTrack() below (which resolves
                 // it internally, see asm/audio_internal.s) -- only the
                 // direct byte reads of the header's own fields need a
                 // resolved pointer.
+#endif
                 // Amount of tracks
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
                 if (GBA_RESOLVE(pHeader)[0] == 0)
+#else
+                if (pHeader[0] == 0)
+#endif
                     ResetTrack(pTrack1);
                 else
                 {
                     if (pTrack1->flags & 2)
                     {
                         // Priority
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
                         if (pTrack1->unk_3 > GBA_RESOLVE(pHeader)[2])
+#else
+                        if (pTrack1->unk_3 > pHeader[2])
+#endif
                         {
                             //pTrack1->occupied = FALSE;
                             //pTrack2->occupied = FALSE;

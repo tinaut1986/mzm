@@ -1,8 +1,43 @@
 # Metroid: Zero Mission — Nintendo 3DS Port
 
+<p align="center">
+  <img src="screenshots/preview.png" alt="Metroid: Zero Mission 3DS Preview" width="400">
+</p>
+
 A native, hardware-accelerated Nintendo 3DS port of **Metroid: Zero Mission**, built from the C decompilation codebase.
 
 One build works with the **EUR, USA or JAP** ROM: the region is detected when the ROM is loaded and the game adapts at runtime.
+
+---
+
+## Screenshots
+
+<p align="center">
+  <b>Top screen: WIDE, and PIXEL PERFECT with the GBA frame</b><br>
+  <img src="screenshots/top_gameplay_wide.png" alt="Top screen, WIDE gameplay" width="380">
+  &nbsp;&nbsp;
+  <img src="screenshots/top_gameplay_bezel.png" alt="Top screen, GBA frame and LCD filters" width="380">
+</p>
+
+<p align="center">
+  <b>Title screen: WIDE, and WIDE + AI (the extra width drawn with generative art)</b><br>
+  <img src="screenshots/title_wide.png" alt="Title screen, WIDE" width="380">
+  &nbsp;&nbsp;
+  <img src="screenshots/title_wide_ai.png" alt="Title screen, WIDE + AI" width="380">
+</p>
+
+<p align="center">
+  <b>Bottom screen: touch tabs</b><br>
+  <img src="screenshots/bottom_map.png" alt="Bottom screen, MAP tab" width="240">
+  &nbsp;
+  <img src="screenshots/bottom_status.png" alt="Bottom screen, STATUS tab" width="240">
+  &nbsp;
+  <img src="screenshots/bottom_states.png" alt="Bottom screen, STATE tab" width="240">
+  <br><br>
+  <img src="screenshots/bottom_achievements.png" alt="Bottom screen, ACHIEVEMENTS tab" width="240">
+  &nbsp;
+  <img src="screenshots/bottom_options.png" alt="Bottom screen, OPTIONS tab" width="240">
+</p>
 
 ---
 
@@ -10,26 +45,39 @@ One build works with the **EUR, USA or JAP** ROM: the region is detected when th
 
 ### Top screen
 
-- 60 FPS gameplay, rendered by a custom PICA200 GPU renderer (`citro3d`/`citro2d`) for background tiles and sprites, with an automatic per-frame CPU fallback when the scene uses GBA PPU effects the GPU path does not cover (affine backgrounds, windows, mosaic).
+- **60 FPS gameplay**, rendered by a custom PICA200 GPU renderer (`citro3d`/`citro2d`) for background tiles and sprites, with an automatic per-frame CPU fallback when the scene uses GBA PPU effects the GPU path does not cover (affine backgrounds, windows, mosaic).
 - **Stereoscopic 3D** driven by the console's 3D slider, with multi-layer depth (HUD, platforms, Samus, background scenery).
-- **Aspect ratio**: `WIDE`, `ORIGINAL` or `STRETCH`.
-- **Display style**: `PIXEL PERFECT`, `SCALED` or `BLUR`.
+- **Aspect ratio**: `WIDE`, `WIDE + AI` or `ORIGINAL`. `WIDE` shows more of what the game
+  itself has around the GBA's frame. `WIDE + AI` also fills, in some scenes (the title screen, the
+  intro), the parts the game never had with art made with a generative image AI; it is off unless
+  chosen. The first time WIDE is on, the bottom screen explains this and asks which of the two to use.
+- **Display style**: `PIXEL PERFECT` (1:1 pixel mapping) or `SCALED` (sharp scaling).
+- **GBA LCD filters**: optional post-processing, each from `OFF` to `HIGH`:
+  - **GBA COLOR**: colour correction that tones down the brightness boost of the original GBA picture.
+  - **GBA GRID**: 1-pixel dark scanlines and a vertical LCD grille.
+  - **VIGNETTE**: smooth darkening of the outer edges.
+- **GBA FRAME**: a Game Boy Advance border around the picture, in `PIXEL PERFECT` and in `SCALED` + `ORIGINAL`. Not available in `WIDE`, which fills that border with the room.
+- **HUD position**: `TOP BORDER` moves the HUD into the border outside the 240x160 picture (`PIXEL PERFECT`, not in `WIDE`), or `DEFAULT`.
+- **Frame pacing**: `ADAPTIVE` (30 to 60 FPS as the console allows) or `LOCK 30`.
 - Optional FPS counter and an auto-hide HUD option.
 
 ### Bottom screen
 
-Three touch tabs (a fourth, `DEBUG`, only exists in debug builds):
+Five touch tabs (a sixth, `DEBUG`, only exists in debug builds):
 
-- **MAP** — the area map in real time, with zoom levels, browsing other areas with the `<` / `>` arrows, a follow-Samus toggle, and item counts for the area being viewed.
-- **STATUS** — beams, bombs, suits and abilities, item total and downloaded maps, localized into the game's seven languages. Tapping the item line opens a collectibles breakdown per area (Energy Tanks, Missiles, Super Missiles, Power Bombs), which can be spoiler-hidden.
-- **OPTIONS** — display settings, button remapping, RetroAchievements settings, the achievement list, and a restart-game button.
+- **MAP** — The area map in real time with zoom levels, browsing other areas with `<` / `>`, a follow-Samus toggle, and collectibles counts for the area being viewed.
+- **STATUS** — Beams, bombs, suits and abilities, total item collection percentage, and downloaded map stations, localized into the game's seven languages. Tapping the item line opens a collectibles breakdown per area (Energy Tanks, Missiles, Super Missiles, Power Bombs), which can be spoiler-hidden.
+- **STATE** — Full-state save management (save states) with an open-ended slot list, room name, in-game stats, timestamp, and visual screenshot thumbnails. Supports instant save, load, overwrite, and delete.
+- **ACHIEVEMENTS** — Dedicated RetroAchievements interface with unlock progress, timestamps, and on-demand badge art cached to the SD card. Account login through the *SETTINGS* modal.
+- **OPTIONS** — Display settings modal (aspect, filters, frame, pacing), button remapping modal, in-app updater (*UPDATES*) with release notes viewer, and soft/hard reset buttons.
 
 ### Other
 
-- **RetroAchievements**: optional login, achievement list with badges, and a hardcore mode, built on [rcheevos](https://github.com/RetroAchievements/rcheevos). The game is identified by the ROM's hash, so each region resolves to its own achievement set. Talks to `retroachievements.org` directly over the console's HTTP service, so it needs a network connection and an account.
+- **In-App Updater**: Check for updates and download/install new CIA releases directly on the console over Wi-Fi. Features a **WHAT'S NEW** release notes viewer to inspect changes before upgrading.
+- **RetroAchievements**: Optional login, achievement list with badges, built on [rcheevos](https://github.com/RetroAchievements/rcheevos). The game is identified by the ROM's hash, so each region resolves to its own achievement set. Talks to `retroachievements.org` directly over the console's HTTP service, so it needs a network connection and an account.
 - **Native audio** through the decompiled MZM sound engine, output on the 3DS DSP (NDSP).
 - **Console optimization**: New 3DS 804 MHz CPU boost and L2 cache when available, plus frame pacing for Old 3DS and 2DS.
-- Settings and the save file live next to the ROM on the SD card, not inside the app.
+- **Settings and save data**: All saves, states, cached badges, and configuration files live next to the ROM on the SD card, not inside the app.
 
 ---
 
@@ -57,8 +105,8 @@ Two extras beyond the original game:
 
 - **Aiming with the mapped Aim button also enables diagonal aim**, which the GBA game cannot do.
 - **On-screen numbers** (OPTIONS → DISPLAY → `SHOW FPS`, a corner of the top screen): five small lines in a dim box. The first is the game's own rate (green from 59, yellow from 50, red below); `L` is the logic's cost per tick in ms, `D` the renderer's CPU time and `G` the GPU's time per frame, and `S` the rate frames actually reach the screen.
-- **Automatic bomb jump** (OPTIONS → CONTROLS → `AUTO BOMB JUMP`, on by default; off in RetroAchievements hardcore): in the Morph Ball, hold the bomb button and the port chains the bombs for you, timed so each one throws Samus higher than the last, to climb a shaft one finger at a time.
-- **Automatic Space Jump** (OPTIONS → CONTROLS → `AUTO SPACE JUMP`, on by default; off in RetroAchievements hardcore): with Space Jump, hold the jump button in a spin and the port lifts and presses it on the frames the game accepts the next jump, so Samus climbs without tapping in rhythm.
+- **Automatic bomb jump** (OPTIONS → CONTROLS → `AUTO BOMB JUMP`, on by default): in the Morph Ball, hold the bomb button and the port chains the bombs for you, timed so each one throws Samus higher than the last, to climb a shaft one finger at a time.
+- **Automatic Space Jump** (OPTIONS → CONTROLS → `AUTO SPACE JUMP`, on by default): with Space Jump, hold the jump button in a spin and the port lifts and presses it on the frames the game accepts the next jump, so Samus climbs without tapping in rhythm.
 - **Soft reset** works with the retail combo `A + B + Start + Select` and also with `L + R + Start + Select`.
 
 ---
@@ -99,7 +147,7 @@ Two extras beyond the original game:
 
 3. **Audio setup**
 
-   Dump your console's DSP firmware, or there will be no sound. On Luma3DS: `L + Down + Select` to open the Rosalina menu → *Miscellaneous options* → *Dump DSP firmware*.
+   The sound needs your console's DSP firmware (`sdmc:/3ds/dspfirm.cdc`). If it is missing or damaged, the game says so on the bottom screen and offers to extract it from the console itself (A / EXTRACT); without it the game runs, silent. It is Nintendo's, so it is never part of a download. You can also dump it yourself: on Luma3DS, `L + Down + Select` → Rosalina menu → *Miscellaneous options* → *Dump DSP firmware*.
 
 ### Files the port creates
 
@@ -107,7 +155,8 @@ Everything lives inside the game folder (`sdmc:/3ds/Metroid Zero Mission 3DS/`);
 
 - `mzm.sav` — the save file. It is shared by every region: if you switch ROMs, a language that the new ROM does not have is clamped to that region's default on load.
 - `mzm3ds.ini` — settings (display, button mapping, C-Stick mode, bottom-screen state, RetroAchievements).
-- `states/` — save states and the saved warp point.
+- `states/` — save states and visual thumbnails.
+- `badges/` — cached achievement badge icons downloaded on-demand from RetroAchievements.
 - `debug/` — logs (debug, RetroAchievements) and debug-menu captures (perf, scene recorder, dumps). Only appears in use with the logging/debug tools.
 - `update/` — the CIA downloaded by the in-app updater (removed after a successful install).
 
@@ -118,6 +167,7 @@ Everything lives inside the game folder (`sdmc:/3ds/Metroid Zero Mission 3DS/`);
 ### Requirements
 
 - [devkitPro](https://devkitpro.org/) with `devkitARM`, `libctru`, `citro2d` and `citro3d`.
+- 3DS portlibs used by the self-updater: `3ds-curl`, `3ds-mbedtls`, `3ds-zlib` (`dkp-pacman -S 3ds-curl 3ds-mbedtls 3ds-zlib`).
 - `makerom` and `bannertool` for `.cia` packaging.
 
 ### Build commands & Helper Scripts
@@ -162,6 +212,16 @@ Runs a local web server at `http://127.0.0.1:8731/` and opens your browser. It i
 
 See [tools/layer-workbench/README.md](tools/layer-workbench/README.md) for full usage instructions and shortcuts.
 
+### Tools: Screenshot Processing
+
+Helper script to convert raw console dumps or Luma3DS screenshots to web-ready PNGs for the repository:
+
+```sh
+python3 tools/process_screenshots.py --import-dir /path/to/dumps_or_screenshots/
+```
+
+See [screenshots/README.md](screenshots/README.md) for full import instructions and expected dimensions.
+
 ### Region
 
 `REGION=any` is the default and produces the single binary described above. The other values pin the decomp's compile-time region choices, which also restricts that build to one region's ROM — useful for bisecting a region-specific problem:
@@ -185,7 +245,7 @@ For renderer selection, diagnostics flags and the rest of the build options, see
 
 ## Known issues
 
-- Sound is silent until the DSP firmware is dumped (see Installation).
+- Sound is silent until the DSP firmware is on the SD card; the game offers to extract it (see Installation).
 - Behavioural differences against the original game are collected in [KNOWN_DIFFERENCES.md](KNOWN_DIFFERENCES.md).
 
 ---

@@ -22,6 +22,8 @@
 #include "port_haze_3ds.h"
 #include "port_gba_bezel.h"
 #include "port_wide_view.h"
+#include "port_scene_pictures.h"
+#include "port_scene_sprites.h"
 #include "platform_gpu_3ds.h"
 #include "port_debug_tools.h" /* PORT_DEBUG_TOOLS_ACTIVE */
 
@@ -1039,7 +1041,8 @@ static void ComputeDepthState(uint16_t dispcnt) {
      * valid while GM_CUTSCENE renders. Declared by hand -- this file keeps out
      * of the game struct headers, same as gMainGameMode above. */
     extern signed char gCurrentCutscene;
-    sDepthState.inGameplay = (gMainGameMode == 4);
+    /* GM_DEMO (11): the title screen's demos run the same in-game frame. */
+    sDepthState.inGameplay = (gMainGameMode == 4 || gMainGameMode == 11);
     sDepthState.samusOnTopOfBackgrounds =
         sDepthState.inGameplay && gSamusOnTopOfBackgrounds != 0;
     /* BG0 is the pop-forward overlay layer for menus / dialogs / the pause
@@ -2195,6 +2198,37 @@ static void CollectAffineBg2(void) {
  * view slides inside the room (WideView), so the range follows it. Both zero unless the frame is widened, in which
  * case every range below collapses back to the original 240x160 one. */
 static bool sWideOn;
+/* The widened frame is a scene's (PortWide_SceneActive), not a room's: the
+ * extent is the scene's background picture (ComputeSceneWideView) and no room
+ * data is involved. */
+static bool sWideScene;
+
+/* Each enabled text BG's picture this frame (ComputeSceneWideView), in its
+ * own BG px with the frame's left / top edge at its scroll (masked to the BG's
+ * size). CollectBgLayer draws a layer only inside its picture, so a logo or a
+ * text layer never shows the junk its BG holds past the frame. */
+typedef struct SceneSpan {
+    bool on;
+    int loX, hiX, loY, hiY;
+} SceneSpan;
+static SceneSpan sSceneSpan[4];
+
+/* Per BG, what its tile lines held last frame (see ComputeSceneWideView). */
+typedef struct SceneTrust {
+    uint32_t frame; /* sSceneFrame it was last updated on; 0 = never */
+    uint16_t cnt;
+    uint32_t colHash[64], rowHash[64];
+    bool colBad[64], rowBad[64];
+} SceneTrust;
+static SceneTrust sSceneTrust[4];
+static uint32_t sSceneFrame;
+
+/* The AI-drawn picture behind the scene's background BG, if the scene has one
+ * (port_scene_pictures.h): set by ComputeSceneWideView, drawn first in each
+ * eye. sScenePicX/Y: its canvas's top-left in GBA frame px. */
+static const PortScenePictureDef* sScenePic;
+static C3D_Tex* sScenePicTex;
+static int sScenePicX, sScenePicY;
 static int sExtL, sExtR, sExtT, sExtB;
 
 /* WIDE view geometry for the frame -- see ComputeWideView. */
@@ -2293,6 +2327,7 @@ static inline uint16_t WideBgEntry(const WideBgSource* src, int tx, int ty) {
 static int WideLayerShift(int bgIndex, int shift, bool vertical) {
     extern int PortPpuMzm_WideLayerDivisor(int bg, int vertical);
     if (shift == 0) return 0;
+    if (sWideScene) return shift; /* no parallax rules outside a room */
     const int div = PortPpuMzm_WideLayerDivisor(bgIndex, vertical ? 1 : 0);
     return div > 0 ? shift / div : 0;
 }
@@ -2440,12 +2475,28 @@ static void CollectBgLayer(int bgIndex) {
      * original ones (-1..31 by 0..20); with it they grow by however many
      * tiles cover the extra area. wideSrc rebuilds the tiles VRAM does not
      * hold out there -- see WideBgSourceFor. */
-    const int txMin = -1 - (eL + 7) / 8, txMax = 31 + (eR + 7) / 8;
-    const int tyMin = -(eT + 7) / 8, tyMax = 20 + (eB + 7) / 8;
+    int txMin = -1 - (eL + 7) / 8, txMax = 31 + (eR + 7) / 8;
+    int tyMin = -(eT + 7) / 8, tyMax = 20 + (eB + 7) / 8;
+    /* A scene: only the layer's own picture, never the frame's own tiles
+     * (they are inside it by construction). See SceneSpan. */
+    if (sWideScene && sSceneSpan[bgIndex].on) {
+        const SceneSpan* sp = &sSceneSpan[bgIndex];
+        const int toScrollX = scrollX - (scrollX & (mapWidthTiles * 8 - 1));
+        const int toScrollY = scrollY - (scrollY & (mapHeightTiles * 8 - 1));
+        const int loX = ((sp->loX + toScrollX) >> 3) - scrollX / 8;
+        const int hiX = ((sp->hiX + toScrollX - 1) >> 3) - scrollX / 8;
+        const int loY = ((sp->loY + toScrollY) >> 3) - scrollY / 8;
+        const int hiY = ((sp->hiY + toScrollY - 1) >> 3) - scrollY / 8;
+        if (txMin < loX) txMin = loX;
+        if (txMax > hiX) txMax = hiX;
+        if (tyMin < loY) tyMin = loY;
+        if (tyMax > hiY) tyMax = hiY;
+    }
     /* `covered` is indexed from the range's own start, so it fits however far
      * the view reaches (at most ~54 tiles across, ~32 down). */
     const int covX = -txMin, covY = -tyMin;
-    const WideBgSource wideSrc = sWideOn ? WideBgSourceFor(bgIndex, scrollX, scrollY) : (WideBgSource){ 0 };
+    const WideBgSource wideSrc = (sWideOn && !sWideScene) ? WideBgSourceFor(bgIndex, scrollX, scrollY)
+                                                          : (WideBgSource){ 0 };
 
     /* A room with a visible item tank forces the per-tile path on BG1 (the
      * clipdata layer): the tank is an animated tile with no block-map entry,
@@ -2756,8 +2807,16 @@ static void CollectBgLayer(int bgIndex) {
          * each side horizontally (the stereo shift reveals that much), its
          * texture coordinates the layer's absolute position -- they run past
          * 1.0 and wrap. Same eighth-texel tie shift as the atlas. */
-        const float x0 = (float)(-eL - 8), x1 = (float)(248 + eR);
-        const float y0 = (float)(-eT), y1 = (float)(160 + eB);
+        float x0 = (float)(-eL - 8), x1 = (float)(248 + eR);
+        float y0 = (float)(-eT), y1 = (float)(160 + eB);
+        /* A scene's layer stops at its own picture (SceneSpan): the map's
+         * cells past it still hold whatever the last room left there. */
+        if (sWideScene && sSceneSpan[bgIndex].on) {
+            if (x0 < (float)(txMin * 8 - fineX)) x0 = (float)(txMin * 8 - fineX);
+            if (x1 > (float)((txMax + 1) * 8 - fineX)) x1 = (float)((txMax + 1) * 8 - fineX);
+            if (y0 < (float)(tyMin * 8 - fineY)) y0 = (float)(tyMin * 8 - fineY);
+            if (y1 > (float)((tyMax + 1) * 8 - fineY)) y1 = (float)((tyMax + 1) * 8 - fineY);
+        }
         const float sh = ATLAS_UV_TIE_SHIFT;
         const float u0 = ((float)scrollX + x0 + sh) / (float)LM_W;
         const float v0 = ((float)scrollY + y0 + sh) / (float)LM_H;
@@ -2858,7 +2917,7 @@ static void CollectBgLayer(int bgIndex) {
              * Confirmed from an on-device IO dump of that room.
              *
              * So: the BG0-is-an-overlay rule now applies only outside real
-             * gameplay (GM_INGAME == 4, include/constants/game_state.h),
+             * gameplay (GM_INGAME == 4, or GM_DEMO == 11: game_state.h),
              * which is where BG0 genuinely is the text/dialog layer. In
              * gameplay every BG, BG0 included, maps by its own priority. */
             int depthTier = PortStereoDepth_BgTier(&sDepthState, bgIndex);
@@ -3347,7 +3406,8 @@ static void CollectSprite(int oamIndex, bool obj1D) {
     int y = attr0 & 0xFFu;
     int x = (int)(attr1 & 0x1FFu);
     int originY, originX;
-    if (sWideOn && PortWide_SlotOrigin(oamIndex, &originY, &originX)) {
+    /* Only rooms tag their sprites; a scene's tags would be left over from play. */
+    if (sWideOn && !sWideScene && PortWide_SlotOrigin(oamIndex, &originY, &originX)) {
         /* The game recorded where this sprite really is, so pick the wrap of
          * y / x that lands nearest it. Exact for any part within 128 px
          * vertically / 256 horizontally of the origin, i.e. all of them. */
@@ -3482,6 +3542,9 @@ static void CollectSprite(int oamIndex, bool obj1D) {
      * so worked out once (it asks four other modules). */
     extern s16 gMainGameMode;
     bool inMapOrPauseScreen = gMainGameMode == 5;
+    /* GM_INGAME, or GM_DEMO: the title screen's demos run the same in-game
+     * frame (HudUpdateOam and the slot tags included). */
+    const bool inPlay = gMainGameMode == 4 || gMainGameMode == 11;
     /* HUD sprites are exactly the OAM slots HudUpdateOam wrote
      * this frame -- it fills OAM from slot 0 and runs before every
      * sprite system in in_game.c's frame (SpriteDrawAll_*,
@@ -3509,7 +3572,7 @@ static void CollectSprite(int oamIndex, bool obj1D) {
      * that never calls HudDraw: the map/pause branch above already
      * handles GM_MAP_SCREEN, and everywhere else these are world
      * sprites. */
-    bool isRealHud = gMainGameMode == 4 && oamIndex < Port_Hud_GetOamCount();
+    bool isRealHud = inPlay && oamIndex < Port_Hud_GetOamCount();
     /* In-game message / area-name banners (and the save cursor) are
      * ordinary sprites, so isRealHud never catches them, yet they
      * are an overlay and draw at OAM priority 0 in 2D. SpriteDraw
@@ -3517,12 +3580,12 @@ static void CollectSprite(int oamIndex, bool obj1D) {
      * the same front tier as the HUD so stereo does not sink the
      * flat text into Samus. */
     extern int Port_OverlayText_IsSlot(int oamIndex);
-    bool isOverlayText = gMainGameMode == 4 && Port_OverlayText_IsSlot(oamIndex);
+    bool isOverlayText = inPlay && Port_OverlayText_IsSlot(oamIndex);
     /* The escape countdown digits (PE_ESCAPE particle, tagged in
      * src/particle.c). Route them exactly like real HUD: HUD depth
      * tier, and off-screen with the HUD when that option is on. */
     extern int Port_OverlayText_IsEscapeSlot(int oamIndex);
-    bool isEscapeHud = gMainGameMode == 4 && Port_OverlayText_IsEscapeSlot(oamIndex);
+    bool isEscapeHud = inPlay && Port_OverlayText_IsEscapeSlot(oamIndex);
     if (isEscapeHud) isRealHud = true;
     /* Per-sprite depth override (port_sprite_depth_oam.c): a few
      * sprite TYPES are authored to composite with a specific BG --
@@ -3530,7 +3593,7 @@ static void CollectSprite(int oamIndex, bool obj1D) {
      * the sprite face blends with the BG that carries the top of
      * the head. SpriteDraw tags their slots; honour that here
      * instead of the one forced world-sprite plane. */
-    int spriteDepthCode = (gMainGameMode == 4) ? Port_SpriteDepth_SlotCode(oamIndex)
+    int spriteDepthCode = inPlay ? Port_SpriteDepth_SlotCode(oamIndex)
                                                : PORT_SPRITE_DEPTH_NONE;
     int depthTier;
     if (inMapOrPauseScreen) {
@@ -3622,6 +3685,57 @@ static void CollectSprite(int oamIndex, bool obj1D) {
                            rectWinVis, bleedEdges);
         }
     }
+}
+
+/* WIDE scene sprite (port_scene_sprites.h): with WIDE + AI, a scene's sprite
+ * that the GBA screen cut off is one texture, the game's pieces plus the
+ * generated rest, drawn where the game put the sprite this frame. Sets hide[]
+ * for the OAM entries it stands for. Pushed before the OAM entries, so it
+ * sits behind every sprite of the same priority, as the trail's pieces do
+ * behind the ship's (they follow it in OAM). */
+static void CollectSceneSprite(bool obj1D, bool hide[128]) {
+    static Tex3DS_SubTexture sSub;
+    extern s16 gMainGameMode;
+    const PortSceneSpriteDef* def = sWideScene && sWideOn ? PortSceneSprite_Find(gMainGameMode) : NULL;
+    const uint16_t* oam = (const uint16_t*)gOamMem;
+    int frame, ax, ay, slot;
+    if (!def || !PortSceneSprite_Match(def, oam, hide, &frame, &ax, &ay, &slot)) {
+        PortSceneSprite_Release();
+        return;
+    }
+    C3D_Tex* tex = PortSceneSprite_Texture(def, frame, (const uint16_t*)gObjPltt, obj1D);
+    if (!tex) {
+        memset(hide, 0, 128 * sizeof(bool));
+        return;
+    }
+    const WindowVis rectWinVis = sWindowActive ? sLayerWinVis[4] : WIN_VIS_ALWAYS;
+    if (rectWinVis == WIN_VIS_NEVER) return;
+    /* The first piece's priority and mode stand for the sprite (the game
+     * gives every piece the same). */
+    const uint16_t attr0 = oam[slot * 4], attr2 = oam[slot * 4 + 2];
+    const int priority = (attr2 >> 10) & 3;
+    const bool blendAlpha = ((attr0 >> 10) & 3u) == 1u || (sBldEffect == 1 && BldIsFirstTarget(sIoBldcnt, 4));
+    sSub = (Tex3DS_SubTexture){
+        .width = (u16)def->width, .height = (u16)def->height,
+        .left = 0.0f, .top = 1.0f,
+        .right = (float)def->width / (float)def->texWidth,
+        .bottom = 1.0f - (float)def->height / (float)def->texHeight,
+    };
+    const int idx = AllocDrawItemSubtex(&sSub, (3 - priority) * 10 + 4);
+    if (idx < 0) return;
+    DrawItem* item = &sDrawItems[idx];
+    item->img.tex = tex;
+    item->x = (float)(ax + def->canvasDX);
+    item->y = (float)(ay + def->canvasDY);
+    item->w = (float)def->width;
+    item->h = (float)def->height;
+    item->angle = 0.0f;
+    item->depthTier = (int8_t)PortStereoDepth_ObjTier(&sDepthState, priority);
+    item->blendAlpha = blendAlpha;
+    item->affine = false;
+    item->winVis = rectWinVis;
+    item->isHud = false;
+    item->plainEnv = false;
 }
 
 /* Frames outside this scope fall back to the CPU renderer (port/ppu) for
@@ -4102,6 +4216,223 @@ static void ComputeWideView(void) {
     sHeldValid = true;
 }
 
+/* WIDE view for a scene (PortWide_SceneActive). There is no room: the extent
+ * is the picture in the scene's background BG. The BG is 256 or 512 px on each
+ * axis while the GBA shows 240x160 of it, but only part of it is picture: the
+ * intro's 256x256 BGs hold a 256x160 or 256x176 picture, and the rest is blank
+ * tiles or, worse, map entries pointing at tiles the scene never loaded (junk
+ * the GBA never shows). So the extent starts as what the GBA shows and grows a
+ * tile line at a time while the next column / row is drawn along (almost) the
+ * whole frame; a blank or ragged line ends the picture on that side.
+ *
+ * VRAM out of the frame is only the picture while it holds still: the title
+ * screen streams its pan, writing the tiles that left the frame over with the
+ * ones about to come in, and loads other graphics there once the pan is over.
+ * So a line out of the frame whose map entries or tile pixels change is left
+ * out until the frame shows it again (SceneTrust). When lines inside the frame
+ * change too, it is a new picture, and every line starts trusted again.
+ *
+ * Inside it the view slides as it does inside a room (WideAxisShift): an axis
+ * where the picture is bigger than the view keeps the game's scroll until the
+ * view reaches the picture's edge. An axis where it fits is centred once and
+ * the shift then held while the picture stays the same, so the game's own
+ * small moves (a shake, a slow pan) still show instead of being cancelled out.
+ * Past the picture DrawWideRoomMasks leaves black, never the BG's repeat.
+ *
+ * The background BG is the biggest enabled text BG; on a tie the one drawn
+ * furthest back (text and overlays sit in front of the picture). With none
+ * (affine modes) the view stays the plain frame. */
+
+enum { SCENE_LINE_FULL_PCT = 75 }; /* share of a line's cells that must be drawn */
+
+/* Grows the frame's span of tile lines [first, last] (BG tile units, may run
+ * past the BG's end: the BG wraps) on one axis while the next line out is
+ * drawn. drawn(line) is how many of the line's cells along the other axis,
+ * within the frame, hold a tile with pixels; cells is how many there are. */
+static void SceneGrowSpan(const uint8_t* drawn, int lines, int cells, int* first, int* last) {
+    const int need = (cells * SCENE_LINE_FULL_PCT + 99) / 100;
+    while (*last - *first + 1 < lines && drawn[((*first - 1) % lines + lines) % lines] >= need) --*first;
+    while (*last - *first + 1 < lines && drawn[(*last + 1) % lines] >= need) ++*last;
+}
+
+/* The picture of one text BG (see above), grown from the frame. */
+static SceneSpan SceneLayerSpan(int bg, uint16_t cnt) {
+    static const int kSizeW[4] = { 256, 512, 256, 512 };
+    static const int kSizeH[4] = { 256, 256, 512, 512 };
+    SceneSpan out = { 0 };
+    const int w = kSizeW[(cnt >> 14) & 3], h = kSizeH[(cnt >> 14) & 3];
+    const int cols = w / 8, rows = h / 8;
+    const int ox = (int)(gIoMem[0x10 + bg * 4] | (gIoMem[0x11 + bg * 4] << 8)) & (w - 1);
+    const int oy = (int)(gIoMem[0x12 + bg * 4] | (gIoMem[0x13 + bg * 4] << 8)) & (h - 1);
+    /* The tile lines the frame shows (the frame's left edge is at ox, so
+     * these run past the BG's end when it wraps). */
+    int fx0 = ox >> 3, fx1 = (ox + 239) >> 3;
+    int fy0 = oy >> 3, fy1 = (oy + 159) >> 3;
+    const int frameCols = fx1 - fx0 + 1, frameRows = fy1 - fy0 + 1;
+
+    /* Per column: how many of the frame's rows hold a drawn tile there; per
+     * row, how many of the frame's columns. Screen blocks are 32x32 entries,
+     * left to right then top to bottom. */
+    const uint32_t charBase = ((cnt >> 2) & 3u) * 0x4000u;
+    const uint32_t screenBase = ((cnt >> 8) & 31u) * 0x800u;
+    const uint32_t tileBytes = (cnt & 0x80) ? 64u : 32u;
+    uint8_t colDrawn[64] = { 0 }, rowDrawn[64] = { 0 };
+    uint32_t colHash[64], rowHash[64];
+    bool colIn[64], rowIn[64];
+    for (int tx = 0; tx < cols; ++tx) {
+        colHash[tx] = 2166136261u;
+        colIn[tx] = ((tx - fx0) % cols + cols) % cols <= fx1 - fx0;
+    }
+    for (int ty = 0; ty < rows; ++ty) {
+        rowHash[ty] = 2166136261u;
+        rowIn[ty] = ((ty - fy0) % rows + rows) % rows <= fy1 - fy0;
+        for (int tx = 0; tx < cols; ++tx) {
+            const uint32_t block = (uint32_t)((tx >> 5) + (ty >> 5) * (w >> 8));
+            const uint32_t at = screenBase + block * 0x800u + (uint32_t)(((ty & 31) * 32 + (tx & 31)) * 2);
+            if (at + 2 > 0x10000u) continue;
+            const uint16_t entry = (uint16_t)(gVram[at] | (gVram[at + 1] << 8));
+            const uint32_t tile = charBase + (entry & 0x3FFu) * tileBytes;
+            if (tile + tileBytes > 0x10000u) continue;
+            const uint32_t* px = (const uint32_t*)(gVram + tile);
+            uint32_t cell = entry, any = 0;
+            for (uint32_t i = 0; i < tileBytes / 4; ++i) {
+                any |= px[i];
+                cell = (cell ^ px[i]) * 16777619u;
+            }
+            rowHash[ty] = (rowHash[ty] ^ cell) * 16777619u;
+            colHash[tx] = (colHash[tx] ^ cell) * 16777619u;
+            if (!any) continue;
+            if (rowIn[ty]) ++colDrawn[tx];
+            if (colIn[tx]) ++rowDrawn[ty];
+        }
+    }
+
+    /* SceneTrust: which lines out of the frame changed while out of it. */
+    SceneTrust* tr = &sSceneTrust[bg];
+    bool fresh = tr->frame == 0 || tr->frame + 1 != sSceneFrame || tr->cnt != cnt;
+    for (int i = 0; i < cols && !fresh; ++i) fresh = colIn[i] && colHash[i] != tr->colHash[i];
+    for (int i = 0; i < rows && !fresh; ++i) fresh = rowIn[i] && rowHash[i] != tr->rowHash[i];
+    for (int i = 0; i < cols; ++i) {
+        tr->colBad[i] = !fresh && !colIn[i] && (tr->colBad[i] || colHash[i] != tr->colHash[i]);
+        tr->colHash[i] = colHash[i];
+    }
+    for (int i = 0; i < rows; ++i) {
+        tr->rowBad[i] = !fresh && !rowIn[i] && (tr->rowBad[i] || rowHash[i] != tr->rowHash[i]);
+        tr->rowHash[i] = rowHash[i];
+    }
+    tr->frame = sSceneFrame;
+    tr->cnt = cnt;
+    for (int i = 0; i < cols; ++i) if (tr->colBad[i]) colDrawn[i] = 0;
+    for (int i = 0; i < rows; ++i) if (tr->rowBad[i]) rowDrawn[i] = 0;
+
+    SceneGrowSpan(colDrawn, cols, frameRows, &fx0, &fx1);
+    SceneGrowSpan(rowDrawn, rows, frameCols, &fy0, &fy1);
+    out.on = true;
+    out.loX = fx0 * 8; out.hiX = (fx1 + 1) * 8;
+    out.loY = fy0 * 8; out.hiY = (fy1 + 1) * 8;
+    /* A picture the whole BG wide has no edge of its own but the BG's: put
+     * the copy of it that holds the frame's centre there. */
+    if (out.hiX - out.loX >= w) { out.loX = (ox + 120) / w * w; out.hiX = out.loX + w; }
+    if (out.hiY - out.loY >= h) { out.loY = (oy + 80) / h * h; out.hiY = out.loY + h; }
+    return out;
+}
+
+static void ComputeSceneWideView(uint16_t dispcnt) {
+    static const int kSizeW[4] = { 256, 512, 256, 512 };
+    static const int kSizeH[4] = { 256, 256, 512, 512 };
+    /* What the held shifts belong to (see above): the picture, by where it
+     * starts in the BG (mod the BG's size) and how big it is. */
+    static int sKeyBg = -1, sKeyCnt, sKeyX, sKeyW, sKeyY, sKeyH, sHeldX, sHeldY;
+    WideView* v = &sWideView;
+    *v = (WideView){ 0 };
+    const unsigned mode = dispcnt & 7u;
+    const int textBgs = mode == 0 ? 4 : mode == 1 ? 2 : 0; /* mode 1: BG2 is affine */
+    int best = -1, bestArea = 0, bestPrio = -1;
+    for (int bg = 0; bg < 4; ++bg) {
+        sSceneSpan[bg].on = false;
+        if (bg >= textBgs || !(dispcnt & (0x100u << bg))) continue;
+        const uint16_t cnt = (uint16_t)(gIoMem[0x08 + bg * 2] | (gIoMem[0x09 + bg * 2] << 8));
+        sSceneSpan[bg] = SceneLayerSpan(bg, cnt);
+        const int size = (cnt >> 14) & 3, prio = cnt & 3;
+        const int area = kSizeW[size] * kSizeH[size];
+        if (area > bestArea || (area == bestArea && prio >= bestPrio)) {
+            best = bg; bestArea = area; bestPrio = prio;
+        }
+    }
+    v->loX = 0; v->hiX = 240;
+    v->loY = 0; v->hiY = 160;
+    v->maskL = 0; v->maskR = 240; v->maskT = 0; v->maskB = 160;
+    sScenePic = NULL;
+    if (best < 0) {
+        sKeyBg = -1;
+        /* The intro's fuzz is sprites only: no BG to extend, a procedural picture around them. */
+        extern s16 gMainGameMode;
+        const PortScenePictureDef* fuzz = (dispcnt & 0x1000u) ? PortScenePic_FindFuzz(gMainGameMode) : NULL;
+        if (fuzz) {
+            sScenePic = fuzz;
+            const int loX = fuzz->canvasX, hiX = loX + fuzz->width, loY = fuzz->canvasY, hiY = loY + fuzz->height;
+            v->originX = 0; v->originY = 0;
+            v->shiftX = WideAxisShift(0, sWideMarginX, 240, loX, hiX);
+            v->shiftY = WideAxisShift(0, sWideMarginY, 160, loY, hiY);
+            v->loX = loX; v->hiX = hiX; v->loY = loY; v->hiY = hiY;
+            v->maskL = loX; v->maskR = hiX; v->maskT = loY; v->maskB = hiY;
+            sScenePicX = loX; sScenePicY = loY;
+        }
+        return;
+    }
+
+    const uint16_t cnt = (uint16_t)(gIoMem[0x08 + best * 2] | (gIoMem[0x09 + best * 2] << 8));
+    const int w = kSizeW[(cnt >> 14) & 3], h = kSizeH[(cnt >> 14) & 3];
+    const int ox = (int)(gIoMem[0x10 + best * 4] | (gIoMem[0x11 + best * 4] << 8)) & (w - 1);
+    const int oy = (int)(gIoMem[0x12 + best * 4] | (gIoMem[0x13 + best * 4] << 8)) & (h - 1);
+    SceneSpan* sp = &sSceneSpan[best];
+    int loX = sp->loX, hiX = sp->hiX, loY = sp->loY, hiY = sp->hiY;
+
+    /* A scene with a generated picture: the view's extent is the picture's
+     * canvas, and the BG itself draws only inside the game's own picture
+     * (past it VRAM holds whatever the scene streamed there). The canvas is
+     * in BG px; the copy of it used is the one nearest the frame (the BG
+     * wraps). */
+    extern s16 gMainGameMode;
+    sScenePic = PortScenePic_Find(gMainGameMode, best);
+    if (sScenePic) {
+        const PortScenePictureDef* pic = sScenePic;
+        const int dx = (int)floorf((float)(ox + 120 - (pic->canvasX + pic->width / 2)) / (float)w + 0.5f) * w;
+        const int dy = (int)floorf((float)(oy + 80 - (pic->canvasY + pic->height / 2)) / (float)h + 0.5f) * h;
+        loX = pic->canvasX + dx; hiX = loX + pic->width;
+        loY = pic->canvasY + dy; hiY = loY + pic->height;
+        if (sp->loX < pic->pictureX0 + dx) sp->loX = pic->pictureX0 + dx;
+        if (sp->hiX > pic->pictureX1 + dx) sp->hiX = pic->pictureX1 + dx;
+        if (sp->loY < pic->pictureY0 + dy) sp->loY = pic->pictureY0 + dy;
+        if (sp->hiY > pic->pictureY1 + dy) sp->hiY = pic->pictureY1 + dy;
+        sScenePicX = loX - ox;
+        sScenePicY = loY - oy;
+    }
+
+    const bool same = best == sKeyBg && cnt == sKeyCnt && (loX & (w - 1)) == sKeyX && hiX - loX == sKeyW &&
+                      (loY & (h - 1)) == sKeyY && hiY - loY == sKeyH;
+    sKeyBg = best; sKeyCnt = cnt;
+    sKeyX = loX & (w - 1); sKeyW = hiX - loX;
+    sKeyY = loY & (h - 1); sKeyH = hiY - loY;
+
+    v->originX = ox; v->originY = oy;
+    v->shiftX = WideAxisShift(ox, sWideMarginX, 240, loX, hiX);
+    v->shiftY = WideAxisShift(oy, sWideMarginY, 160, loY, hiY);
+    const bool fitsX = hiX - loX <= 240 + 2 * sWideMarginX, fitsY = hiY - loY <= 160 + 2 * sWideMarginY;
+    if (same && fitsX) v->shiftX = sHeldX;
+    if (same && fitsY) v->shiftY = sHeldY;
+    if (v->shiftX < -sWideMarginX) v->shiftX = -sWideMarginX;
+    if (v->shiftX > sWideMarginX) v->shiftX = sWideMarginX;
+    if (v->shiftY < -sWideMarginY) v->shiftY = -sWideMarginY;
+    if (v->shiftY > sWideMarginY) v->shiftY = sWideMarginY;
+    v->loX = loX; v->hiX = hiX;
+    v->loY = loY; v->hiY = hiY;
+    v->maskL = loX - ox; v->maskR = hiX - ox;
+    v->maskT = loY - oy; v->maskB = hiY - oy;
+    sHeldX = v->shiftX;
+    sHeldY = v->shiftY;
+}
+
 /* Blacks out whatever lies beyond the room extent (see WideView), which only
  * shows for a room smaller than the view. baseX/Y is where the shifted world
  * starts on screen. Clamped to stay clear of the 240x160 frame itself, so a
@@ -4343,12 +4674,34 @@ void Port_GpuRenderer_CollectFrame(void) {
      * outside visibility is (ItemPassesWindow), and that holds anywhere.
      * Excluding them flashed the plain frame for the one windowed frame at
      * the end of a power bomb. */
-    sWideOn = PortWide_GameActive() && !sAffineBg2Active;
+    sWideScene = PortWide_SceneActive();
+    ++sSceneFrame; /* every frame, so a gap in the scene frames shows (SceneTrust) */
+    sWideOn = (PortWide_GameActive() || sWideScene) && !sAffineBg2Active;
     sWideMarginX = sWideOn ? PortWide_MarginX() : 0;
     sWideMarginY = sWideOn ? PortWide_MarginY() : 0;
     PortWide_SetFrameDrawn(sWideOn);
-    if (sWideOn) ComputeWideView();
-    else sWideView = (WideView){ 0 };
+    sScenePic = NULL;
+    if (!sWideOn) sWideView = (WideView){ 0 };
+    else if (sWideScene) ComputeSceneWideView(dispcnt);
+    else ComputeWideView();
+    /* The scene's picture, painted with this frame's palette (it fades with
+     * the game's); released as soon as no scene shows it. */
+    sScenePicTex = sScenePic ? PortScenePic_Texture(sScenePic, (const uint16_t*)(PortScenePic_UsesObjPalette(sScenePic) ? gObjPltt : gBgPltt))
+                             : NULL;
+    if (!sScenePic) PortScenePic_Release();
+    /* The texture holds the game's own picture too (built from the game's
+     * memory): the BG draws only the tile lines of the GBA frame, the one
+     * part its VRAM is sure to hold while the scene streams the rest. */
+    if (sScenePicTex && PortScenePic_HasGameArt()) {
+        const int bg = sScenePic->bg;
+        const uint16_t cnt = (uint16_t)(gIoMem[0x08 + bg * 2] | (gIoMem[0x09 + bg * 2] << 8));
+        const int w = (cnt & 0x4000) ? 512 : 256, h = (cnt & 0x8000) ? 512 : 256;
+        const int ox = (int)(gIoMem[0x10 + bg * 4] | (gIoMem[0x11 + bg * 4] << 8)) & (w - 1);
+        const int oy = (int)(gIoMem[0x12 + bg * 4] | (gIoMem[0x13 + bg * 4] << 8)) & (h - 1);
+        SceneSpan* sp = &sSceneSpan[bg];
+        sp->loX = (ox >> 3) * 8; sp->hiX = (((ox + 239) >> 3) + 1) * 8;
+        sp->loY = (oy >> 3) * 8; sp->hiY = (((oy + 159) >> 3) + 1) * 8;
+    }
     /* The visible range in frame coordinates is [-margin + shift, 240 + margin
      * + shift] (likewise vertically). */
     sExtL = sWideMarginX - sWideView.shiftX;
@@ -4405,7 +4758,12 @@ void Port_GpuRenderer_CollectFrame(void) {
     }
     sPushFx = 0; /* only BG layers set it */
     if (dispcnt & (1u << 12)) {
-        for (int i = 127; i >= 0; --i) CollectSprite(i, obj1D);
+        bool hide[128] = { false };
+        CollectSceneSprite(obj1D, hide);
+        for (int i = 127; i >= 0; --i)
+            if (!hide[i]) CollectSprite(i, obj1D);
+    } else {
+        PortSceneSprite_Release();
     }
     {
         const u64 now = svcGetSystemTick();
@@ -4634,7 +4992,6 @@ void Port_GpuRenderer_DrawFrame(void) {
 
     float slider3d = PlatformGpu3DS_Get3DSlider();
     int style = Port_Config_Get3DSDisplayStyle();
-    int aspect = Port_Config_Get3DSAspectRatio();
     /* HUD-in-the-border needs the black border, which WIDE fills with world. */
     bool hudOutside = (style == 0 && Port_Config_GetHudOutside() && !PortWide_Selected());
 
@@ -4655,20 +5012,13 @@ void Port_GpuRenderer_DrawFrame(void) {
         screenBaseX = 80.0f; /* (400 - 240) / 2 */
         screenBaseY = 40.0f; /* (240 - 160) / 2 */
     } else {
-        if (aspect == 2) { /* STRETCH (400x240) */
-            scaleX = 400.0f / 240.0f; /* 1.6666667f */
-            scaleY = 1.5f;
-            screenBaseX = 0.0f;
-            screenBaseY = 0.0f;
-        } else { /* ORIGINAL (3:2 / 360x240), and the retired WIDE (0) with it.
-                  * Must stay in lockstep with PlatformGpu3DS_GetTopImageRect:
-                  * the screen-space effects position themselves off that rect,
-                  * so a disagreement here misplaces them. */
-            scaleX = 1.5f;
-            scaleY = 1.5f;
-            screenBaseX = 20.0f;
-            screenBaseY = 0.0f;
-        }
+        /* SCALED: 3:2, 360x240. Must stay in lockstep with
+         * PlatformGpu3DS_GetTopImageRect: the screen-space effects position
+         * themselves off that rect, so a disagreement here misplaces them. */
+        scaleX = 1.5f;
+        scaleY = 1.5f;
+        screenBaseX = 20.0f;
+        screenBaseY = 0.0f;
     }
 
     /* Where things start on screen. The world slides by the WIDE view's shift
@@ -4865,6 +5215,43 @@ void Port_GpuRenderer_DrawFrame(void) {
             } else {
                 HazeBlitStrips(sHazeCur, screenBaseX + eyeOffBg3, screenBaseY, scaleX, scaleY);
             }
+        }
+
+        /* WIDE scene picture: behind everything, on its BG's plane and with
+         * that BG's brighten / darken. The BG's own tiles draw over it. */
+        if (sScenePicTex) {
+            const PortScenePictureDef* pic = sScenePic;
+            const int bg = pic->bg;
+            /* The fuzz is made of the game's own sprites: the copy on the sides has to sit on the
+             * sprites' plane, or the two halves part at the seam in 3D. */
+            const int tier = PortScenePic_UsesObjPalette(pic) ? PortStereoDepth_ObjTier(&sDepthState, 0)
+                                                             : PortStereoDepth_BgTier(&sDepthState, bg);
+            const float eyeOff = (tier >= 0 && tier < BATCH_TIER_NONE) ? tierOffset[tier] : 0.0f;
+            const Tex3DS_SubTexture sub = {
+                .width = (u16)pic->width,
+                .height = (u16)pic->height,
+                .left = 0.0f,
+                .top = 1.0f,
+                .right = (float)pic->width / (float)pic->texWidth,
+                .bottom = 1.0f - (float)pic->height / (float)pic->texHeight,
+            };
+            const C2D_Image img = { .tex = sScenePicTex, .subtex = &sub };
+            const C2D_DrawParams prm = {
+                .pos = { worldBaseX + (float)sScenePicX * scaleX + eyeOff, worldBaseY + (float)sScenePicY * scaleY,
+                         (float)pic->width * scaleX, (float)pic->height * scaleY },
+                .center = { 0.0f, 0.0f },
+                .depth = 0.0f,
+                .angle = 0.0f,
+            };
+            const bool bright = (sBldEffect == 2 || sBldEffect == 3) && BldIsFirstTarget(sIoBldcnt, bg);
+            if (bright) ConfigureFxTextureEnv(ITEM_FX_BRIGHT);
+            C2D_DrawImage(img, &prm, NULL);
+            /* citro2d skips binding a texture it believes is still bound, but
+             * the batch binds the atlas behind its back (BatchQuad): bind it
+             * for real, or the quad samples the atlas. */
+            C3D_TexBind(0, sScenePicTex);
+            C2D_Flush();
+            if (bright) ConfigureAtlasTextureEnv();
         }
 
         /* Single pass over sDrawOrder (true back-to-front GBA priority
@@ -5231,17 +5618,6 @@ void Port_GpuRenderer_DrawFrame(void) {
             C3D_AlphaTest(false, GPU_ALWAYS, 0);
             PlatformGpu3DS_ResetSolidTexEnv();
         }
-
-        /* Shared overlay so a CPU fallback frame draws the exact same box
-         * (see PlatformGpu3DS_DrawFpsOverlay). Parallax past the frontmost
-         * world tier (HUD, +2.0px) and pixel-snapped like the tile layers,
-         * so the counter always reads as being in front of everything. */
-        /* No bare ResetSolidTexEnv() here: it would rewrite TEV 0 while this
-         * eye's tile quads are still sitting unflushed in citro2d's vertex
-         * buffer, and they would then be emitted with the solid-colour env
-         * (untinted vertex colour == nothing) instead of the atlas env.
-         * DrawFpsOverlay flushes first and resets the TEV itself. */
-        PlatformGpu3DS_DrawFpsOverlay(floorf(eyeSign * slider3d * (+2.5f) + 0.5f));
 
         /* RetroAchievements unlock toast, when the player put it on the top
          * screen. Same frontmost parallax as the FPS box so it floats in

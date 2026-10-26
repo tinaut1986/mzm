@@ -136,7 +136,16 @@ static void UpdateFpsWindow(void) {
 #include <stdio.h>
 
 static int sFpsPosition = 1; /* 0 = OFF, 1 = BOTTOM-LEFT, 2 = BOTTOM-RIGHT, 3 = TOP-LEFT, 4 = TOP-RIGHT */
-static int sAspectRatio = 1; /* 1 = ORIGINAL, 2 = STRETCH, 3 = WIDE (0 = the old retired WIDE, clamped to ORIGINAL on load) */
+static int sAspectRatio = 1; /* 1 = ORIGINAL, 3 = WIDE (0 = the old retired WIDE and 2 = the retired STRETCH,
+                              * both read back as ORIGINAL) */
+/* WIDE + AI: WIDE (sAspectRatio 3) that also draws the parts of scene pictures an image AI
+ * generated (port_scene_pictures.h). Off by default: plain WIDE never shows generated art,
+ * for players who do not want it. Kept apart from sAspectRatio so every "is it WIDE" check
+ * (aspect == 3) stays as it is. */
+static bool sWideAi;
+/* The player has answered the one-time question about the generated art (the bottom
+ * screen asks it the first time WIDE is on: Port_Config_WideAiQuestionDue). */
+static bool sWideAiAsked;
 static int sDisplayStyle = 0; /* 0 = PIXEL PERFECT, 1 = SCALED (2 = BLUR retired -- no effect on the GPU path) */
 static const char* const sConfigPath = "mzm3ds.ini";
 
@@ -220,6 +229,8 @@ void Port_Config_Save(void) {
     if (!file) return;
     fprintf(file, "# Metroid Zero Mission 3DS runtime settings\n");
     fprintf(file, "aspect_ratio=%d\n", sAspectRatio);
+    fprintf(file, "wide_ai=%u\n", sWideAi ? 1u : 0u);
+    fprintf(file, "wide_ai_asked=%u\n", sWideAiAsked ? 1u : 0u);
     fprintf(file, "display_style=%d\n", sDisplayStyle);
     fprintf(file, "show_fps=%d\n", sFpsPosition);
     fprintf(file, "auto_hide_hud=%u\n", sAutoHideHud ? 1u : 0u);
@@ -343,7 +354,11 @@ void Port_Config_Load(void) {
             /* 0 was the old WIDE (a stretched 16:9 variant, retired), so an
              * old file holding it falls through to ORIGINAL; the new WIDE --
              * showing extra world around the GBA frame -- is 3. */
-            if (val >= 1 && val <= 3) sAspectRatio = val;
+            if (val == 1 || val == 3) sAspectRatio = val;
+        } else if (strcmp(key, "wide_ai") == 0) {
+            sWideAi = val != 0;
+        } else if (strcmp(key, "wide_ai_asked") == 0) {
+            sWideAiAsked = val != 0;
         } else if (strcmp(key, "display_style") == 0) {
             /* BLUR (2) retired -- clamp any old value into PIXEL PERFECT/SCALED. */
             if (val >= 0 && val <= 1) sDisplayStyle = val;
@@ -414,7 +429,7 @@ void Port_Config_SetDebugFtpOn(bool on) {
 }
 #endif
 
-void Port_Config_SetAspectRatio(int ratio) { if (ratio >= 0 && ratio < 4) { sAspectRatio = ratio; Port_Config_Save(); } }
+void Port_Config_SetAspectRatio(int ratio) { if (ratio == 1 || ratio == 3) { sAspectRatio = ratio; Port_Config_Save(); } }
 
 int Port_Config_GetDisplayStyle(void) { return sDisplayStyle; }
 void Port_Config_SetDisplayStyle(int style) { if (style >= 0 && style < 3) { sDisplayStyle = style; Port_Config_Save(); } }
@@ -640,17 +655,30 @@ void Port_GetAreaItemTypeCounts(int area, int* outEnergy, int* outMissile, int* 
 
 int Port_Config_Get3DSAspectRatio(void) { return sAspectRatio; }
 const char* Port_Config_Get3DSAspectRatioName(void) {
-    static const char* const names[] = { "ORIGINAL", "ORIGINAL", "STRETCH", "WIDE" };
+    static const char* const names[] = { "ORIGINAL", "ORIGINAL", "ORIGINAL", "WIDE" };
+    if (sAspectRatio == 3 && sWideAi) return "WIDE + AI";
     return (sAspectRatio >= 0 && sAspectRatio < 4) ? names[sAspectRatio] : "ORIGINAL";
 }
+bool Port_Config_GetWideAi(void) { return sAspectRatio == 3 && sWideAi; }
+/* WIDE is on and the player was never asked whether to show the generated art. */
+bool Port_Config_WideAiQuestionDue(void) { return sAspectRatio == 3 && !sWideAiAsked; }
+void Port_Config_AnswerWideAi(bool yes) {
+    sWideAi = yes;
+    sWideAiAsked = true;
+    Port_Config_Save();
+}
 void Port_Config_Cycle3DSAspectRatio(void) {
-    if (sDisplayStyle == 0) {
-        /* PIXEL PERFECT is 1:1, so STRETCH has no meaning there: the choice
-         * is the plain frame or the WIDE view around it. */
-        sAspectRatio = (sAspectRatio == 3) ? 1 : 3;
+    /* ORIGINAL -> WIDE -> WIDE + AI (sWideAi) -> ORIGINAL, in both display
+     * styles. STRETCH (the 240x160 picture pulled to 400 px) was dropped on
+     * 2026-10-17: it distorted the pixel art and WIDE fills the screen. */
+    if (sAspectRatio == 3 && !sWideAi) {
+        sWideAi = true;
+    } else if (sAspectRatio == 3) {
+        sAspectRatio = 1;
+        sWideAi = false;
     } else {
-        /* SCALED: ORIGINAL -> STRETCH -> WIDE -> ORIGINAL. */
-        sAspectRatio = (sAspectRatio == 1) ? 2 : ((sAspectRatio == 2) ? 3 : 1);
+        sAspectRatio = 3;
+        sWideAi = false;
     }
     Port_Config_Save();
 }
@@ -1196,10 +1224,12 @@ void PortPpuMzm_GetSamusRecordState(uint32_t* out) {
  * uses for the original game's own room/door debug menu. */
 extern const struct Door* sAreaDoorsPointers[AREA_ENTRY_COUNT];
 
-/* Safety cap for the door-table walk below. No real area comes close, but
- * the table is terminated by a DOOR_TYPE_NONE entry rather than by a count,
- * so an unexpected table must not turn into an unbounded scan. */
-#define PORT_WARP_MAX_DOORS 128
+/* Safety cap for the door-table walk below. The table is terminated by a
+ * DOOR_TYPE_NONE entry rather than by a count, so an unexpected table must not
+ * turn into an unbounded scan. It has to clear the biggest real one: Chozodia
+ * has 246 doors (sChozodiaDoors), and a cap of 128 left the rooms whose doors sit
+ * past it (the ones around Chozodia's map tile 2,13) with no warp target. */
+#define PORT_WARP_MAX_DOORS 512
 
 static bool sWarpPointValid;
 static bool sWarpPending;
@@ -1331,7 +1361,10 @@ bool PortPpuMzm_DebugRequestWarpToSelection(void) {
  * owns gSubGameMode1 at that moment. The request stays pending until
  * gameplay is reached, so triggering it from the pause screen warps as soon
  * as the game resumes instead of being dropped. */
+static void PortPpuMzm_MapWarpQueryService(void);
+
 void PortPpuMzm_DebugApplyPendingWarp(void) {
+    PortPpuMzm_MapWarpQueryService();
     if (!sWarpPending) return;
     if (gMainGameMode != GM_INGAME || gSubGameMode1 != SUB_GAME_MODE_PLAYING) return;
 
@@ -1377,20 +1410,55 @@ static bool PortPpuMzm_DoorMapTile(int area, int door, int* outX, int* outY) {
     return true;
 }
 
-/* Door whose map tile is nearest to (tileX, tileY), or -1 if the area has
- * none within `maxDist` tiles. Nearest-match rather than exact because a
- * room can span several map tiles while its doors only sit on the tiles at
- * its edges -- tapping the middle of a big room should still work. */
+/* The map rectangle a room covers, in map tiles: its map origin plus its size in screens. The
+ * clipdata is whole screens of blocks plus a 4 block border (15 x 10 blocks a screen), so a
+ * 34 x 44 one is 2 x 4 screens. False for a room the ROM does not describe. */
+static bool PortPpuMzm_RoomMapRect(int area, int room, int* x0, int* y0, int* x1, int* y1) {
+    const struct RoomEntryRom* pRoom = &sAreaRoomEntryPointers[area][room];
+    const u8* clip = GBA_RESOLVE(pRoom->pClipData);
+    if (clip == NULL) return false;
+    const int widthBlocks = clip[0], heightBlocks = clip[1];
+    if (widthBlocks == 0 || heightBlocks == 0) return false;
+    *x0 = pRoom->mapX;
+    *y0 = pRoom->mapY;
+    int screensX = (widthBlocks - 4 + SCREEN_SIZE_X_BLOCKS - 1) / SCREEN_SIZE_X_BLOCKS;
+    int screensY = (heightBlocks - 4 + SCREEN_SIZE_Y_BLOCKS - 1) / SCREEN_SIZE_Y_BLOCKS;
+    if (screensX < 1) screensX = 1;
+    if (screensY < 1) screensY = 1;
+    *x1 = *x0 + screensX;
+    *y1 = *y0 + screensY;
+    return true;
+}
+
+/* The door to warp to for a tap on map tile (tileX, tileY): the nearest door of the room that
+ * covers that tile. The nearest door of ANY room, which this used to pick, sends a tap in a
+ * tall or wide room to a neighbour whose door happens to sit closer (a tap in the room above
+ * landed in the room below). Falls back to the nearest door within maxDist when no described
+ * room covers the tile. */
 int PortPpuMzm_DebugFindDoorNearMapTile(int area, int tileX, int tileY, int maxDist) {
-    int best = -1;
-    int bestDist = maxDist * maxDist + 1;
+    int best = -1, bestDist = 0x7FFFFFFF;
     int count = PortPpuMzm_DebugGetDoorCount(area);
+    for (int d = 0; d < count; ++d) {
+        int x0, y0, x1, y1, dx, dy;
+        if (!PortPpuMzm_DoorMapTile(area, d, &dx, &dy)) continue;
+        const int room = PortPpuMzm_DebugGetDoorRoom(area, d);
+        if (!PortPpuMzm_RoomMapRect(area, room, &x0, &y0, &x1, &y1)) continue;
+        if (tileX < x0 || tileX >= x1 || tileY < y0 || tileY >= y1) continue;
+        const int ddx = dx - tileX, ddy = dy - tileY;
+        const int dist = ddx * ddx + ddy * ddy;
+        if (dist < bestDist) {
+            bestDist = dist;
+            best = d;
+        }
+    }
+    if (best >= 0) return best;
+
+    bestDist = maxDist * maxDist + 1;
     for (int d = 0; d < count; ++d) {
         int dx, dy;
         if (!PortPpuMzm_DoorMapTile(area, d, &dx, &dy)) continue;
-        int ddx = dx - tileX;
-        int ddy = dy - tileY;
-        int dist = ddx * ddx + ddy * ddy;
+        const int ddx = dx - tileX, ddy = dy - tileY;
+        const int dist = ddx * ddx + ddy * ddy;
         if (dist < bestDist) {
             bestDist = dist;
             best = d;
@@ -1399,10 +1467,96 @@ int PortPpuMzm_DebugFindDoorNearMapTile(int area, int tileX, int tileY, int maxD
     return best;
 }
 
-/* Warps to whatever door is nearest the given map tile. Returns the door id
- * used, or -1 when the area has nothing close enough. */
+/* The last map tap's lookup, for checking it from the PC: `mzm-link.py peek gMapWarpDiag 22`
+ * (int16 each: area, tile x, tile y, door, room, x0, y0, x1, y1, door tile x, door tile y). */
+int16_t gMapWarpDiag[16];
+
+/* A tap's lookup without the warp, for checking the map from the PC: poke gMapWarpQuery
+ * (int16: area, tile x, tile y, pending = 1), read gMapWarpDiag once pending is 0 again. */
+int16_t gMapWarpQuery[4];
+
+static void PortPpuMzm_MapWarpQueryService(void) {
+    if (gMapWarpQuery[3] == 0) return;
+    if (gMapWarpQuery[3] == 2) {
+        /* Door `gMapWarpQuery[1]` of the area: room, its map origin and clipdata size, door start. */
+        const int a = gMapWarpQuery[0], d = gMapWarpQuery[1];
+        for (int i = 0; i < 11; ++i) gMapWarpDiag[i] = -1;
+        gMapWarpDiag[10] = (int16_t)PortPpuMzm_DebugGetDoorCount(a);
+        if (PortPpuMzm_DebugGetDoorRoom(a, d) >= 0) {
+            const struct Door* pDoor = &sAreaDoorsPointers[a][d];
+            const struct RoomEntryRom* pRoom = &sAreaRoomEntryPointers[a][pDoor->sourceRoom];
+            const u8* clip = GBA_RESOLVE(pRoom->pClipData);
+            gMapWarpDiag[0] = (int16_t)a;
+            gMapWarpDiag[1] = (int16_t)d;
+            gMapWarpDiag[2] = (int16_t)pDoor->sourceRoom;
+            gMapWarpDiag[3] = (int16_t)pDoor->type;
+            gMapWarpDiag[4] = pRoom->mapX;
+            gMapWarpDiag[5] = pRoom->mapY;
+            gMapWarpDiag[6] = clip ? clip[0] : -1;
+            gMapWarpDiag[7] = clip ? clip[1] : -1;
+            gMapWarpDiag[8] = pDoor->xStart;
+            gMapWarpDiag[9] = pDoor->yStart;
+        }
+        gMapWarpQuery[3] = 0;
+        return;
+    }
+    if (gMapWarpQuery[3] == 3) {
+        /* Room `gMapWarpQuery[1]` of the area, doors or not: map origin and clipdata size. */
+        const int a = gMapWarpQuery[0], r = gMapWarpQuery[1];
+        const struct RoomEntryRom* pRoom = &sAreaRoomEntryPointers[a][r];
+        const u8* clip = GBA_RESOLVE(pRoom->pClipData);
+        for (int i = 0; i < 11; ++i) gMapWarpDiag[i] = -1;
+        gMapWarpDiag[0] = (int16_t)a;
+        gMapWarpDiag[1] = (int16_t)r;
+        gMapWarpDiag[4] = pRoom->mapX;
+        gMapWarpDiag[5] = pRoom->mapY;
+        gMapWarpDiag[6] = clip ? clip[0] : -1;
+        gMapWarpDiag[7] = clip ? clip[1] : -1;
+        gMapWarpQuery[3] = 0;
+        return;
+    }
+    const int area = gMapWarpQuery[0], tx = gMapWarpQuery[1], ty = gMapWarpQuery[2];
+    const int door = PortPpuMzm_DebugFindDoorNearMapTile(area, tx, ty, 6);
+    gMapWarpDiag[0] = (int16_t)area;
+    gMapWarpDiag[1] = (int16_t)tx;
+    gMapWarpDiag[2] = (int16_t)ty;
+    gMapWarpDiag[3] = (int16_t)door;
+    for (int i = 4; i < 11; ++i) gMapWarpDiag[i] = -1;
+    if (door >= 0) {
+        int x0 = -1, y0 = -1, x1 = -1, y1 = -1, dx = -1, dy = -1;
+        const int room = PortPpuMzm_DebugGetDoorRoom(area, door);
+        PortPpuMzm_RoomMapRect(area, room, &x0, &y0, &x1, &y1);
+        PortPpuMzm_DoorMapTile(area, door, &dx, &dy);
+        gMapWarpDiag[4] = (int16_t)room;
+        gMapWarpDiag[5] = (int16_t)x0;
+        gMapWarpDiag[6] = (int16_t)y0;
+        gMapWarpDiag[7] = (int16_t)x1;
+        gMapWarpDiag[8] = (int16_t)y1;
+        gMapWarpDiag[9] = (int16_t)dx;
+        gMapWarpDiag[10] = (int16_t)dy;
+    }
+    gMapWarpQuery[3] = 0;
+}
+
 int PortPpuMzm_DebugRequestWarpToMapTile(int area, int tileX, int tileY) {
     int door = PortPpuMzm_DebugFindDoorNearMapTile(area, tileX, tileY, 6);
+    gMapWarpDiag[0] = (int16_t)area;
+    gMapWarpDiag[1] = (int16_t)tileX;
+    gMapWarpDiag[2] = (int16_t)tileY;
+    gMapWarpDiag[3] = (int16_t)door;
+    if (door >= 0) {
+        int x0 = -1, y0 = -1, x1 = -1, y1 = -1, dx = -1, dy = -1;
+        const int room = PortPpuMzm_DebugGetDoorRoom(area, door);
+        PortPpuMzm_RoomMapRect(area, room, &x0, &y0, &x1, &y1);
+        PortPpuMzm_DoorMapTile(area, door, &dx, &dy);
+        gMapWarpDiag[4] = (int16_t)room;
+        gMapWarpDiag[5] = (int16_t)x0;
+        gMapWarpDiag[6] = (int16_t)y0;
+        gMapWarpDiag[7] = (int16_t)x1;
+        gMapWarpDiag[8] = (int16_t)y1;
+        gMapWarpDiag[9] = (int16_t)dx;
+        gMapWarpDiag[10] = (int16_t)dy;
+    }
     if (door < 0) return -1;
     if (!PortPpuMzm_RequestWarpTo((u8)area, (u8)door)) return -1;
     char msg[96];
@@ -2094,7 +2248,7 @@ bool PortPpuMzm_IsDoorDepthBlock(int blockX, int blockY) {
  * (stage 3). Positions are BG3 scroll, in pixels.
  * ------------------------------------------------------------------- */
 int PortPpuMzm_DoorTunnel(int* outX, int* outY, int* outTargetX, int* outTargetY, int* outPause) {
-    if (gMainGameMode != GM_INGAME) return PORT_DOOR_TUNNEL_NONE;
+    if (gMainGameMode != GM_INGAME && gMainGameMode != GM_DEMO) return PORT_DOOR_TUNNEL_NONE;
     if (gColorFading.type != COLOR_FADING_DOOR_TRANSITION && gColorFading.type != COLOR_FADING_WHITE)
         return PORT_DOOR_TUNNEL_NONE;
     int phase = PORT_DOOR_TUNNEL_NONE;

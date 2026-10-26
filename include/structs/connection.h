@@ -21,9 +21,13 @@ struct Door {
     u8 destinationDoor;
     s8 xExit;
     s8 yExit;
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
     u8 _pad[3];
+#endif
 };
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 
 struct EventBasedConnection {
     Area sourceArea;

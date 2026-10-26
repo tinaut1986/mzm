@@ -2,6 +2,7 @@
 #include "color_fading.h"
 #include "macros.h"
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #undef sColorFadingData
 #undef sColorFadingColorInfo
 #undef sDoorTransitionTilemap
@@ -9,6 +10,9 @@
 const struct ColorFadingData sColorFadingData_Compiled[COLOR_FADING_COUNT] = {
 
 
+#else
+const struct ColorFadingData sColorFadingData[COLOR_FADING_COUNT] = {
+#endif
     [COLOR_FADING_NONE] = {
         .isWhite = FALSE,
         .pUpdateFunction = NULL,
@@ -285,7 +289,11 @@ static const u8 sColorFading_345fcc[1] = {
     32
 };
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 const struct ColorFadingColorInfo sColorFadingColorInfo_Compiled[COLOR_FADING_SPEED_COUNT] = {
+#else
+const struct ColorFadingColorInfo sColorFadingColorInfo[COLOR_FADING_SPEED_COUNT] = {
+#endif
     [COLOR_FADING_SPEED_FASTER] = {
         .colorArray = sColorFading_345f58,
         .size = ARRAY_SIZE(sColorFading_345f58)
@@ -308,3 +316,6 @@ const struct ColorFadingColorInfo sColorFadingColorInfo_Compiled[COLOR_FADING_SP
     }
 };
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+
+#endif

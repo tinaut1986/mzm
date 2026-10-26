@@ -1,5 +1,7 @@
 #include "in_game.h"
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "region.h"
+#endif
 #include "dma.h"
 #include "gba.h"
 #include "callbacks.h"
@@ -65,18 +67,30 @@ u32 InGameHandler(void)
             break;
 
         case SUB_GAME_MODE_DOOR_TRANSITION:
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
             if (!REGION_IS_EU())
                 IoWriteRegisters();
 
+#else
+#ifndef REGION_EU
+            IoWriteRegisters();
+#endif // !REGION_EU
+#endif
             if (ColorFadingFinishDoorTransition()) // Undefined
                 gSubGameMode1++;
             break;
 
         case SUB_GAME_MODE_PLAYING:
             DemoHandler();
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
             if (!REGION_IS_EU())
                 IoWriteRegisters();
+#else
+#ifndef REGION_EU
+            IoWriteRegisters();
+#endif // !REGION_EU
+#endif
 
 #ifdef DEBUG
             // Check for no-clip input
@@ -115,9 +129,15 @@ u32 InGameHandler(void)
             break;
 
         case SUB_GAME_MODE_LOADING_ROOM:
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
             if (!REGION_IS_EU())
                 IoWriteRegistersDuringTransition();
 
+#else
+#ifndef REGION_EU
+            IoWriteRegistersDuringTransition();
+#endif // !REGION_EU
+#endif
             if (ColorFadingProcess())
             {
                 gSubGameMode1 = 0;
@@ -127,9 +147,15 @@ u32 InGameHandler(void)
             break;
 
         case SUB_GAME_MODE_DYING:
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
             if (!REGION_IS_EU())
                 IoWriteRegisters();
 
+#else
+#ifndef REGION_EU
+            IoWriteRegisters();
+#endif // !REGION_EU
+#endif
             SamusUpdate();
             RoomUpdateGfxInfo();
             break;
@@ -238,6 +264,7 @@ void SetVBlankCodeInGame(void)
     }
 }
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 /**
  * @brief Calls IoWriteRegisters based on gSubGameMode1
  *
@@ -264,6 +291,32 @@ void InGameIoWriteRegisters(void)
             break;
     }
 }
+#else
+#ifdef REGION_EU
+/**
+ * @brief Calls IoWriteRegisters based on gSubGameMode1
+ * 
+ */
+void InGameIoWriteRegisters(void)
+{
+    switch (gSubGameMode1)
+    {
+        case 0:
+            break;
+        case SUB_GAME_MODE_DOOR_TRANSITION:
+        case SUB_GAME_MODE_PLAYING:
+        case SUB_GAME_MODE_DYING:
+            IoWriteRegisters();
+            break;
+        case SUB_GAME_MODE_LOADING_ROOM:
+            IoWriteRegistersDuringTransition();
+            break;
+        case SUB_GAME_MODE_NO_CLIP:
+            break;
+    }
+}
+#endif // REGION_EU
+#endif
 
 /**
  * @brief c734 | 160 | Transfers Samus's graphics/palette to VRAM
@@ -459,7 +512,9 @@ void InitAndLoadGenerics(void)
 {
     WRITE_16(REG_IME, FALSE);
     WRITE_16(REG_DISPSTAT, READ_16(REG_DISPSTAT) & ~DSTAT_IF_HBLANK);
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
     WRITE_16(REG_IE, READ_16(REG_IE) & ~IF_HBLANK);
     WRITE_16(REG_IF, IF_HBLANK);
     WRITE_16(REG_IME, TRUE);

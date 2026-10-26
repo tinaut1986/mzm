@@ -1,9 +1,13 @@
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "region.h"
+#endif
 #include "in_game_cutscene.h"
 #include "sprites_ai/ruins_test.h"
 #include "dma.h"
 #include "gba.h"
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 
+#endif
 #if defined(MZM_3DS) || defined(PORT_NATIVE)
 #include "port_gba_mem.h"
 #endif
@@ -164,9 +168,15 @@ u32 InGameCutsceneSamusCloseUp(InGameCutsceneScene cutsceneNumber, InGameCutscen
         case 13:
             if (SramProcessIntroSave())
             {
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
                 // EUR does not re-save the language here
                 if (!REGION_IS_EU())
                     SramWrite_Language();
+#else
+#ifndef REGION_EU
+                SramWrite_Language();
+#endif // !REGION_EU
+#endif
                 result = IGC_RESULT_NEXT_STAGE;
             }
             break;
@@ -571,12 +581,22 @@ u32 InGameCutsceneUpgradingSuit(InGameCutsceneScene cutsceneNumber, InGameCutsce
             gDisablePause = FALSE;
             gDefaultTransparency.unk_0 = FALSE;
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
 #ifdef BUGFIX
             result = IGC_RESULT_STOP;
 #else
             // Before EUR this returned IGC_RESULT_NEXT_STAGE, so the function kept
             // being called after the cutscene ended (harmlessly, on stage 20).
             result = REGION_IS_EU() ? IGC_RESULT_STOP : IGC_RESULT_NEXT_STAGE;
+#endif
+#else
+#if defined(REGION_EU) || defined(BUGFIX)
+            result = IGC_RESULT_STOP;
+#else // !(REGION_EU || BUGFIX)
+            // Since this cutscene doesn't return IGC_RESULT_STOP, this function is still called
+            // even after the cutscene ends. It's on stage 20, so technically nothing happens.
+            result = IGC_RESULT_NEXT_STAGE;
+#endif // REGION_EU || BUGFIX
 #endif
             break;
     }

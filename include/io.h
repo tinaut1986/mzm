@@ -82,3 +82,6 @@ static inline u8 port_read8(uintptr_t addr) {
 
 #endif /* IO_H */
 
+#if defined(MZM_3DS) || defined(PORT_NATIVE)
+
+#endif
