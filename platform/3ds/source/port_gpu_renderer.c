@@ -4363,7 +4363,23 @@ static void ComputeSceneWideView(uint16_t dispcnt) {
     v->loY = 0; v->hiY = 160;
     v->maskL = 0; v->maskR = 240; v->maskT = 0; v->maskB = 160;
     sScenePic = NULL;
-    if (best < 0) { sKeyBg = -1; return; }
+    if (best < 0) {
+        sKeyBg = -1;
+        /* The intro's fuzz is sprites only: no BG to extend, a procedural picture around them. */
+        extern s16 gMainGameMode;
+        const PortScenePictureDef* fuzz = (dispcnt & 0x1000u) ? PortScenePic_FindFuzz(gMainGameMode) : NULL;
+        if (fuzz) {
+            sScenePic = fuzz;
+            const int loX = fuzz->canvasX, hiX = loX + fuzz->width, loY = fuzz->canvasY, hiY = loY + fuzz->height;
+            v->originX = 0; v->originY = 0;
+            v->shiftX = WideAxisShift(0, sWideMarginX, 240, loX, hiX);
+            v->shiftY = WideAxisShift(0, sWideMarginY, 160, loY, hiY);
+            v->loX = loX; v->hiX = hiX; v->loY = loY; v->hiY = hiY;
+            v->maskL = loX; v->maskR = hiX; v->maskT = loY; v->maskB = hiY;
+            sScenePicX = loX; sScenePicY = loY;
+        }
+        return;
+    }
 
     const uint16_t cnt = (uint16_t)(gIoMem[0x08 + best * 2] | (gIoMem[0x09 + best * 2] << 8));
     const int w = kSizeW[(cnt >> 14) & 3], h = kSizeH[(cnt >> 14) & 3];
@@ -4670,7 +4686,8 @@ void Port_GpuRenderer_CollectFrame(void) {
     else ComputeWideView();
     /* The scene's picture, painted with this frame's palette (it fades with
      * the game's); released as soon as no scene shows it. */
-    sScenePicTex = sScenePic ? PortScenePic_Texture(sScenePic, (const uint16_t*)gBgPltt) : NULL;
+    sScenePicTex = sScenePic ? PortScenePic_Texture(sScenePic, (const uint16_t*)(PortScenePic_UsesObjPalette(sScenePic) ? gObjPltt : gBgPltt))
+                             : NULL;
     if (!sScenePic) PortScenePic_Release();
     /* The texture holds the game's own picture too (built from the game's
      * memory): the BG draws only the tile lines of the GBA frame, the one
@@ -5205,7 +5222,10 @@ void Port_GpuRenderer_DrawFrame(void) {
         if (sScenePicTex) {
             const PortScenePictureDef* pic = sScenePic;
             const int bg = pic->bg;
-            const int tier = PortStereoDepth_BgTier(&sDepthState, bg);
+            /* The fuzz is made of the game's own sprites: the copy on the sides has to sit on the
+             * sprites' plane, or the two halves part at the seam in 3D. */
+            const int tier = PortScenePic_UsesObjPalette(pic) ? PortStereoDepth_ObjTier(&sDepthState, 0)
+                                                             : PortStereoDepth_BgTier(&sDepthState, bg);
             const float eyeOff = (tier >= 0 && tier < BATCH_TIER_NONE) ? tierOffset[tier] : 0.0f;
             const Tex3DS_SubTexture sub = {
                 .width = (u16)pic->width,

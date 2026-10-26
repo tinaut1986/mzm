@@ -76,12 +76,79 @@ static bool TitleArt(const PortScenePictureDef* def, uint8_t* codes) {
     return true;
 }
 
+/* The intro's fuzz (src/intro.c IntroFuzz, stage 7): 17 OBJ parts that cover the GBA screen,
+ * the noise being their palette changing every few frames. The texture is that picture
+ * (decoded from the game's OAM and OBJ tiles when the stage starts) repeated over a 400x240
+ * canvas; the GBA frame's own 240x160 is left transparent, the game draws it. Codes are OBJ
+ * palette entries (PortScenePic_UsesObjPalette). */
+enum { FUZZ_STAGE = 7 };
+static const PortScenePictureDef sFuzzDef = {
+    "intro-fuzz", GM_INTRO, FUZZ_STAGE, 0, -80, -40, 400, 240, 0, 0, 240, 160, 512, 256, NULL, 0,
+};
+
+extern uint8_t gOamData[];
+extern uint8_t gIoMem[];
+
+const PortScenePictureDef* PortScenePic_FindFuzz(int gameMode) {
+    return gameMode == GM_INTRO && PortScenePic_SceneKey(GM_INTRO) == FUZZ_STAGE ? &sFuzzDef : NULL;
+}
+
+bool PortScenePic_UsesObjPalette(const PortScenePictureDef* def) { return def == &sFuzzDef; }
+
+static bool FuzzArt(const PortScenePictureDef* def, uint8_t* codes) {
+    static const uint8_t kDims[3][4][2] = {
+        { { 8, 8 }, { 16, 16 }, { 32, 32 }, { 64, 64 } },
+        { { 16, 8 }, { 32, 8 }, { 32, 16 }, { 64, 32 } },
+        { { 8, 16 }, { 8, 32 }, { 16, 32 }, { 32, 64 } },
+    };
+    const bool oneD = (gIoMem[0] & 0x40) != 0;
+    /* Static: 38 KB is too much for the present thread's stack. */
+    static uint8_t screen[160][240];
+    memset(screen, 0, sizeof(screen));
+    int parts = 0;
+    for (int i = 0; i < 128; ++i) {
+        const uint16_t* o = (const uint16_t*)(gOamData + i * 8);
+        const unsigned a0 = o[0], a1 = o[1], a2 = o[2];
+        if ((a0 & 0x300) == 0x200 || (a0 & 0x300) == 0x300 || (a0 & 0x2000)) continue; /* hidden, affine, 8bpp */
+        const unsigned shape = a0 >> 14;
+        if (shape > 2) continue;
+        const int w = kDims[shape][a1 >> 14][0], h = kDims[shape][a1 >> 14][1];
+        const int x0 = (int)(a1 & 0x1FF) >= 256 ? (int)(a1 & 0x1FF) - 512 : (int)(a1 & 0x1FF);
+        const int y0 = (int)(a0 & 0xFF) >= 160 ? (int)(a0 & 0xFF) - 256 : (int)(a0 & 0xFF);
+        const unsigned tile = a2 & 0x3FF, bank = a2 >> 12;
+        ++parts;
+        for (int ty = 0; ty < h / 8; ++ty)
+            for (int tx = 0; tx < w / 8; ++tx) {
+                const unsigned t = (tile + (oneD ? (unsigned)(ty * (w / 8) + tx) : (unsigned)(ty * 32 + tx))) & 0x3FF;
+                const uint8_t* data = gVram + 0x10000u + t * 32u;
+                for (int py = 0; py < 8; ++py)
+                    for (int px = 0; px < 8; ++px) {
+                        const int sx = x0 + tx * 8 + px, sy = y0 + ty * 8 + py;
+                        if (sx < 0 || sx >= 240 || sy < 0 || sy >= 160) continue;
+                        const uint8_t b = data[py * 4 + px / 2];
+                        const int v = (px & 1) ? (b >> 4) : (b & 15);
+                        if (v) screen[sy][sx] = (uint8_t)((bank << 4) | v);
+                    }
+            }
+    }
+    if (parts < 8) return false; /* the stage has not drawn its noise yet */
+    const int cx = -def->canvasX, cy = -def->canvasY; /* where the GBA frame sits in the canvas */
+    for (int y = 0; y < def->height; ++y)
+        for (int x = 0; x < def->width; ++x) {
+            if (x >= cx && x < cx + 240 && y >= cy && y < cy + 160) continue;
+            const int sx = ((x - cx) % 240 + 240) % 240, sy = ((y - cy) % 160 + 160) % 160;
+            codes[Swizzle(x, y, def->texWidth)] = screen[sy][sx];
+        }
+    return true;
+}
+
 bool PortScenePic_HasGameArtSource(const PortScenePictureDef* def) {
-    return strcmp(def->name, "title") == 0;
+    return strcmp(def->name, "title") == 0 || def == &sFuzzDef;
 }
 
 bool PortScenePic_FillGameArt(const PortScenePictureDef* def, uint8_t* codes) {
     if (strcmp(def->name, "title") == 0) return TitleArt(def, codes);
+    if (def == &sFuzzDef) return FuzzArt(def, codes);
     return false;
 }
 

@@ -83,7 +83,9 @@ static bool Load(const PortScenePictureDef* def, bool withAi) {
     const size_t n = (size_t)def->texWidth * (size_t)def->texHeight;
     sCodes = (uint8_t*)malloc(n);
     if (!sCodes) return false;
-    if (!PortScenePic_Lz4Decompress(def->packed, def->packedSize, sCodes, n) ||
+    const bool unpacked = def->packed ? PortScenePic_Lz4Decompress(def->packed, def->packedSize, sCodes, n)
+                                      : (memset(sCodes, 0, n), true);
+    if (!unpacked ||
         !C3D_TexInit(&sTex, (u16)def->texWidth, (u16)def->texHeight, GPU_RGBA5551)) {
         free(sCodes);
         sCodes = NULL;
@@ -92,7 +94,7 @@ static bool Load(const PortScenePictureDef* def, bool withAi) {
     /* Plain WIDE: none of the generated parts, only the game's own art below. */
     if (!withAi) memset(sCodes, 0, n);
     sWithAi = withAi;
-    sGameArt = PortScenePic_FillGameArt(def, sCodes);
+    sGameArt = PortScenePic_FillGameArt(def, sCodes) && !PortScenePic_UsesObjPalette(def);
     uint32_t count[256] = { 0 };
     for (size_t i = 0; i < n; ++i) ++count[sCodes[i]];
     sFirst[0] = sFirst[1] = 0;

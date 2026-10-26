@@ -38,6 +38,15 @@ extern const int gPortScenePictureCount;
  * without their generated parts: plain WIDE shows nothing an AI drew. */
 const PortScenePictureDef* PortScenePic_Find(int gameMode, int bg);
 
+/* The intro's fuzz (the TV noise before the title), which is not a picture: the game draws it
+ * with 17 sprites whose palette changes every few frames. For WIDE this is a texture of the
+ * same sprites repeated over the whole canvas (the middle is left to the game's own sprites),
+ * painted with the OBJ palette. NULL when that scene is not showing. */
+const PortScenePictureDef* PortScenePic_FindFuzz(int gameMode);
+
+/* Whether `def` is painted with the OBJ palette (gObjPltt) instead of the BG one. */
+bool PortScenePic_UsesObjPalette(const PortScenePictureDef* def);
+
 /* Which scene of `gameMode` is showing, for modes that play several scenes on the same BG
  * (the intro: its stage); 0 for the others. In port_scene_game_art.c. */
 int PortScenePic_SceneKey(int gameMode);
