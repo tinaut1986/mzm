@@ -216,8 +216,7 @@ static void OverlayAccumulate(void) {
 
 static void DrawStatusTextColor(float x, float y, float scale, const char* text, uint32_t color);
 
-/* The overlay's lines and its box (top-left, size) for FPS position `pos`, one place for what
- * is drawn and what PortGbaScreenFx carves out of its mask. */
+/* The overlay's lines and its box (top-left, size) for FPS position `pos`. */
 static void FpsOverlayLayout(int pos, char line[5][12], float* x, float* y, float* w, float* h) {
     snprintf(line[0], 12, "%.1f", sOverlay.gameFps);
     snprintf(line[1], 12, "L%.1f", sOverlay.logicMs);
@@ -237,17 +236,6 @@ static void FpsOverlayLayout(int pos, char line[5][12], float* x, float* y, floa
     *y = bottom ? 240.0f - FPS_OVERLAY_MARGIN - *h : (float)FPS_OVERLAY_MARGIN;
 }
 
-/* The box the overlay occupies now, in top-screen pixels (x, y, w, h), or false when it is off. */
-bool PlatformGpu3DS_GetFpsOverlayRect(int out[4]) {
-    const int pos = Port_Config_GetFpsPosition();
-    if (pos < 1 || pos > 4) return false;
-    char line[5][12];
-    float x, y, w, h;
-    FpsOverlayLayout(pos, line, &x, &y, &w, &h);
-    out[0] = (int)x; out[1] = (int)y; out[2] = (int)(w + 0.999f); out[3] = (int)(h + 0.999f);
-    return true;
-}
-
 /* The on-screen numbers, drawn identically no matter which path (GPU tile renderer or CPU
  * scanline fallback) produced this frame, so an intermittent fallback doesn't flip their
  * size/position/font. `eyeXOffset` is the per-eye horizontal shift (0 for mono / left, parallax
@@ -256,8 +244,8 @@ bool PlatformGpu3DS_GetFpsOverlayRect(int out[4]) {
  *
  * Five small lines in a dim box, like sm-3ds's: the game's rate (green from 59, yellow from 50,
  * red below), L the logic's ms per tick, D the renderer's CPU ms and G the GPU's ms per frame,
- * S the rate frames reach the screen. The box layout is mirrored by FpsCarveBox in
- * port_gba_screen_fx.c. */
+ * S the rate frames reach the screen. Drawn once per frame by PlatformGpu3DS_EndBottom, after the
+ * GBA effects, so they lie over them. */
 void PlatformGpu3DS_DrawFpsOverlay(float eyeXOffset) {
     int pos = Port_Config_GetFpsPosition();
     if (pos == 0) return;
@@ -674,7 +662,6 @@ static void DrawTopImageStereo(const uint32_t* leftPixels, const uint32_t* right
     if (PortGbaBezel_Active()) {
         PortGbaBezel_Draw(sTopTarget);
     }
-    PlatformGpu3DS_DrawFpsOverlay(0.0f);
 
     if (sTopRightTarget) {
         C2D_TargetClear(sTopRightTarget, C2D_Color32(0, 0, 0, 255));
@@ -685,7 +672,6 @@ static void DrawTopImageStereo(const uint32_t* leftPixels, const uint32_t* right
         if (PortGbaBezel_Active()) {
             PortGbaBezel_Draw(sTopRightTarget);
         }
-        PlatformGpu3DS_DrawFpsOverlay(0.0f);
     }
 }
 
@@ -819,6 +805,19 @@ bool PlatformGpu3DS_EndBottom(const uint32_t* pixels, bool changed) {
         C3D_RenderTarget* fxRight =
             (PlatformGpu3DS_Get3DSlider() > 0.01f) ? sTopRightTarget : NULL;
         PortGbaScreenFx_PostProcessTop(sTopTarget, fxRight);
+    }
+
+    /* The numbers go on last, over the GBA effects, so the effects cover the whole picture and
+     * only the numbers' own box is left out (a hole in the mask cannot follow the parallax of
+     * both eyes). Frontmost parallax, the same on both paths. */
+    if (Port_Config_GetFpsPosition() != 0) {
+        const float slider = PlatformGpu3DS_Get3DSlider();
+        C2D_SceneBegin(sTopTarget);
+        PlatformGpu3DS_DrawFpsOverlay(floorf(slider * 2.5f + 0.5f));
+        if (slider > 0.01f && sTopRightTarget) {
+            C2D_SceneBegin(sTopRightTarget);
+            PlatformGpu3DS_DrawFpsOverlay(floorf(-slider * 2.5f + 0.5f));
+        }
     }
 
     extern void Port_BottomUI_FrameTick(void);

@@ -103,7 +103,6 @@ struct C3D_RenderTarget_tag* PlatformGpu3DS_GetTopRightTarget(void);
 
 /* Rectangle (in 400x240 top-screen pixels) the emulated GBA image occupies
  * for the current display style / aspect. Any output pointer may be NULL. */
-bool PlatformGpu3DS_GetFpsOverlayRect(int out[4]); /* x, y, w, h of the numbers box, false when off */
 void PlatformGpu3DS_GetTopImageRect(int* outX, int* outY, int* outW, int* outH);
 
 /* One-shot diagnostic dump and the start/stop scene recorder, both
