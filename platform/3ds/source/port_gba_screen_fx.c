@@ -49,30 +49,21 @@ static C3D_Tex sFxTex;
 static Tex3DS_SubTexture sFxSub;
 static bool sFxReady;
 static int sBakedGrade = -1, sBakedGrid = -1, sBakedVig = -1, sBakedFps = -1;
+static int sBakedFpsBox[4] = { -1, -1, -1, -1 };
 static int sBakedRect[4] = { -1, -1, -1, -1 };
 
-/* The top-screen numbers box (PlatformGpu3DS_DrawFpsOverlay): five small lines, up to 40 px
- * wide and 52 high, 2 px from the corner, plus a small margin. Carve it out of the mask so the
- * effects never clip across it in SCALED (where it sits inside the picture). These must track
- * DrawFpsOverlay's own box layout (FPS_OVERLAY_* in platform_gpu_3ds.c). */
-enum { FPS_BOX_W = 40, FPS_BOX_H = 52, FPS_BOX_PAD = 3 };
-enum { FPS_LEFT_X = 2, FPS_RIGHT_X = 358, FPS_TOP_Y = 2, FPS_BOTTOM_Y = 186 };
+/* The top-screen numbers box (PlatformGpu3DS_DrawFpsOverlay) is carved out of the mask, so the
+ * effects never clip across it in SCALED (where it sits inside the picture): exactly its own
+ * rectangle, as it is drawn now, and a pixel around it for the two eyes' parallax. */
+enum { FPS_BOX_PAD = 1 };
 
-/* Carve-out box for FPS position `pos`, padded. Returns false for OFF (or an
- * unknown position), leaving the outputs untouched. */
-static bool FpsCarveBox(int pos, int* x0, int* y0, int* x1, int* y1) {
-    int bx, by;
-    switch (pos) {
-        case 1: bx = FPS_LEFT_X;  by = FPS_BOTTOM_Y; break;
-        case 2: bx = FPS_RIGHT_X; by = FPS_BOTTOM_Y; break;
-        case 3: bx = FPS_LEFT_X;  by = FPS_TOP_Y;    break;
-        case 4: bx = FPS_RIGHT_X; by = FPS_TOP_Y;    break;
-        default: return false;
-    }
-    *x0 = bx - FPS_BOX_PAD;
-    *y0 = by - FPS_BOX_PAD;
-    *x1 = bx + FPS_BOX_W + FPS_BOX_PAD;
-    *y1 = by + FPS_BOX_H + FPS_BOX_PAD;
+static bool FpsCarveBox(int* x0, int* y0, int* x1, int* y1) {
+    int r[4];
+    if (!PlatformGpu3DS_GetFpsOverlayRect(r)) return false;
+    *x0 = r[0] - FPS_BOX_PAD;
+    *y0 = r[1] - FPS_BOX_PAD;
+    *x1 = r[0] + r[2] + FPS_BOX_PAD;
+    *y1 = r[1] + r[3] + FPS_BOX_PAD;
     return true;
 }
 
@@ -158,13 +149,13 @@ static u8 VignetteBlackAlphaAt(int level, int lx, int ly, int w, int h) {
  * the summed darkening is capped well short of opaque. */
 #define FX_MAX_ALPHA 165
 
-static void BakeMask(int grade, int grid, int vig, int fpsPos, const int rect[4]) {
+static void BakeMask(int grade, int grid, int vig, int fpsPos, const int rect[4], const int fpsBox[4]) {
     if (!sFxReady) return;
     const int rx = rect[0], ry = rect[1], rw = rect[2], rh = rect[3];
     const int gBase = GradeBaseAlpha(grade);
     u32* data = (u32*)sFxTex.data;
     int fx0 = 0, fy0 = 0, fx1 = 0, fy1 = 0;
-    const bool hasFpsBox = FpsCarveBox(fpsPos, &fx0, &fy0, &fx1, &fy1);
+    const bool hasFpsBox = FpsCarveBox(&fx0, &fy0, &fx1, &fy1);
 
     for (int y = 0; y < FX_H; ++y) {
         for (int x = 0; x < FX_W; ++x) {
@@ -186,6 +177,7 @@ static void BakeMask(int grade, int grid, int vig, int fpsPos, const int rect[4]
     sBakedGrid = grid;
     sBakedVig = vig;
     sBakedFps = fpsPos;
+    memcpy(sBakedFpsBox, fpsBox, sizeof(sBakedFpsBox));
     sBakedRect[0] = rx; sBakedRect[1] = ry; sBakedRect[2] = rw; sBakedRect[3] = rh;
 }
 
@@ -264,11 +256,13 @@ void PortGbaScreenFx_PostProcessTop(C3D_RenderTarget* left, C3D_RenderTarget* ri
     const int fpsPos = Port_Config_GetFpsPosition();
     int rect[4];
     PlatformGpu3DS_GetTopImageRect(&rect[0], &rect[1], &rect[2], &rect[3]);
+    int fpsBox[4] = { 0, 0, 0, 0 };
+    PlatformGpu3DS_GetFpsOverlayRect(fpsBox);   /* its width follows the digits shown */
     if (grade != sBakedGrade || grid != sBakedGrid || vig != sBakedVig
-        || fpsPos != sBakedFps
+        || fpsPos != sBakedFps || memcmp(fpsBox, sBakedFpsBox, sizeof(fpsBox)) != 0
         || rect[0] != sBakedRect[0] || rect[1] != sBakedRect[1]
         || rect[2] != sBakedRect[2] || rect[3] != sBakedRect[3])
-        BakeMask(grade, grid, vig, fpsPos, rect);
+        BakeMask(grade, grid, vig, fpsPos, rect, fpsBox);
 
     /* Commit whatever the present path queued into the top target(s) first,
      * so the overlay composites over a finished image rather than joining

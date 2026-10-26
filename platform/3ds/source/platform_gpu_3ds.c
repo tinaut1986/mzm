@@ -216,6 +216,38 @@ static void OverlayAccumulate(void) {
 
 static void DrawStatusTextColor(float x, float y, float scale, const char* text, uint32_t color);
 
+/* The overlay's lines and its box (top-left, size) for FPS position `pos`, one place for what
+ * is drawn and what PortGbaScreenFx carves out of its mask. */
+static void FpsOverlayLayout(int pos, char line[5][12], float* x, float* y, float* w, float* h) {
+    snprintf(line[0], 12, "%.1f", sOverlay.gameFps);
+    snprintf(line[1], 12, "L%.1f", sOverlay.logicMs);
+    snprintf(line[2], 12, "D%.1f", sOverlay.drawMs);
+    snprintf(line[3], 12, "G%.1f", sOverlay.gpuMs);
+    snprintf(line[4], 12, "S%.1f", Port_PPU_3DS_CurrentFps());
+    int chars = 0;
+    for (int i = 0; i < 5; ++i) {
+        const int n = (int)strlen(line[i]);
+        if (n > chars) chars = n;
+    }
+    *w = (float)(chars * 6 + 3);
+    *h = (float)(FPS_OVERLAY_LINES * FPS_OVERLAY_PITCH + 2);
+    /* 1 = BOTTOM-LEFT, 2 = BOTTOM-RIGHT, 3 = TOP-LEFT, 4 = TOP-RIGHT */
+    const bool right = pos == 2 || pos == 4, bottom = pos == 1 || pos == 2;
+    *x = right ? 400.0f - FPS_OVERLAY_MARGIN - *w : (float)FPS_OVERLAY_MARGIN;
+    *y = bottom ? 240.0f - FPS_OVERLAY_MARGIN - *h : (float)FPS_OVERLAY_MARGIN;
+}
+
+/* The box the overlay occupies now, in top-screen pixels (x, y, w, h), or false when it is off. */
+bool PlatformGpu3DS_GetFpsOverlayRect(int out[4]) {
+    const int pos = Port_Config_GetFpsPosition();
+    if (pos < 1 || pos > 4) return false;
+    char line[5][12];
+    float x, y, w, h;
+    FpsOverlayLayout(pos, line, &x, &y, &w, &h);
+    out[0] = (int)x; out[1] = (int)y; out[2] = (int)(w + 0.999f); out[3] = (int)(h + 0.999f);
+    return true;
+}
+
 /* The on-screen numbers, drawn identically no matter which path (GPU tile renderer or CPU
  * scanline fallback) produced this frame, so an intermittent fallback doesn't flip their
  * size/position/font. `eyeXOffset` is the per-eye horizontal shift (0 for mono / left, parallax
@@ -242,22 +274,9 @@ void PlatformGpu3DS_DrawFpsOverlay(float eyeXOffset) {
     PlatformGpu3DS_ResetSolidTexEnv();
 
     char line[5][12];
-    snprintf(line[0], sizeof(line[0]), "%.1f", sOverlay.gameFps);
-    snprintf(line[1], sizeof(line[1]), "L%.1f", sOverlay.logicMs);
-    snprintf(line[2], sizeof(line[2]), "D%.1f", sOverlay.drawMs);
-    snprintf(line[3], sizeof(line[3]), "G%.1f", sOverlay.gpuMs);
-    snprintf(line[4], sizeof(line[4]), "S%.1f", Port_PPU_3DS_CurrentFps());
-    int chars = 0;
-    for (int i = 0; i < 5; ++i) {
-        const int n = (int)strlen(line[i]);
-        if (n > chars) chars = n;
-    }
-    const float w = (float)(chars * 6 + 3);
-    const float h = (float)(FPS_OVERLAY_LINES * FPS_OVERLAY_PITCH + 2);
-    /* 1 = BOTTOM-LEFT, 2 = BOTTOM-RIGHT, 3 = TOP-LEFT, 4 = TOP-RIGHT */
-    const bool right = pos == 2 || pos == 4, bottom = pos == 1 || pos == 2;
-    const float boxX = (right ? 400.0f - FPS_OVERLAY_MARGIN - w : (float)FPS_OVERLAY_MARGIN) + eyeXOffset;
-    const float boxY = bottom ? 240.0f - FPS_OVERLAY_MARGIN - h : (float)FPS_OVERLAY_MARGIN;
+    float boxX, boxY, w, h;
+    FpsOverlayLayout(pos, line, &boxX, &boxY, &w, &h);
+    boxX += eyeXOffset;
     C2D_DrawRectSolid(boxX, boxY, 0.7f, w, h, C2D_Color32(0, 0, 0, 150));
     const float fps = sOverlay.gameFps;
     const uint32_t colors[5] = {
