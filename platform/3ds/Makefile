@@ -95,6 +95,8 @@ SRCS_ASM := \
 
 SRCS_3DS := \
 	$(CURDIR)/source/main_3ds.c \
+	$(CURDIR)/source/dsp_firm.c \
+	$(CURDIR)/source/port_dsp_firm_prompt_3ds.c \
 	$(CURDIR)/source/platform_3ds_minimal.c \
 	$(CURDIR)/source/port_oam_census.c \
 	$(CURDIR)/source/platform_gpu_3ds.c \

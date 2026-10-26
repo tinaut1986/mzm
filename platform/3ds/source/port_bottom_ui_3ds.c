@@ -12,6 +12,7 @@
 #include "port_save_state.h"
 #include "port_state_thumb.h"
 #include "port_updater_3ds.h"
+#include "port_dsp_firm_prompt_3ds.h"
 
 /* GBA & MZM minimap and state globals */
 extern uint16_t gDecompressedMinimapVisitedTiles[32 * 32];
@@ -345,6 +346,15 @@ void Port_BottomUI_FrameTick(void) {
     ++sFrameCounter;
     Port_RA_Update();
     NoticeTick();
+    Port_DspFirm_Pump();
+    {
+        static int sLastDspState;
+        const int dsp = Port_DspFirm_State();
+        if (dsp != sLastDspState) {
+            sLastDspState = dsp;
+            sBottomUiDirty = true;
+        }
+    }
 
     /* The prompt is raised by the updater's worker thread: redraw when it (or
      * the install progress it shows) changes instead of waiting for a tap. */
@@ -1425,6 +1435,20 @@ void Port_BottomUI_HandleTouchDrag(int x, int y, bool isNewTap) {
     if (FtpServer_InstallOnly() && x >= DEVFTP_X && x < DEVFTP_X + DEVFTP_W && y >= DEVFTP_Y && y < DEVFTP_Y + DEVFTP_H) {
         if (isNewTap) {
             FtpServer_Cancel();
+            Port_BottomUI_MarkDirty();
+        }
+        return;
+    }
+
+    /* The DSP firmware question is modal over everything, like the update prompt below. */
+    if (Port_DspFirm_State() != DSPFIRM_PROMPT_NONE) {
+        if (isNewTap && Port_DspFirm_State() != DSPFIRM_PROMPT_WORKING && y >= WAI_BTN_Y0 && y <= WAI_BTN_Y1) {
+            if (Port_DspFirm_State() == DSPFIRM_PROMPT_ASK) {
+                if (x >= UPD_YES_X0 && x <= UPD_YES_X1) Port_DspFirm_Answer(true);
+                else if (x >= UPD_NO_X0 && x <= UPD_NO_X1) Port_DspFirm_Answer(false);
+            } else if (x >= 116 && x <= 204) {
+                Port_DspFirm_Answer(true);
+            }
             Port_BottomUI_MarkDirty();
         }
         return;
@@ -3837,6 +3861,65 @@ static void RenderWideAiQuestion(int lang) {
                "NO", white, C2D_Color32(64, 22, 22, 255), C2D_Color32(180, 60, 60, 255));
 }
 
+/* A button with the pad key it answers to in a round badge at its left ("A" / "B"), as in the
+ * other ports' dialogs. The label is centred in what is left of the button. */
+static void DrawKeyButton(float x, float y, float w, float h, char key, const char* label,
+                          uint32_t textCol, uint32_t bodyCol, uint32_t borderCol) {
+    const bool pressed = DrawButtonBox(x, y, w, h, bodyCol, borderCol);
+    const float cx = x + 15.0f, cy = y + h * 0.5f + (pressed ? 1.0f : 0.0f);
+    C2D_DrawCircleSolid(cx, cy, 0.93f, 9.0f, textCol);
+    C2D_DrawCircleSolid(cx, cy, 0.94f, 7.5f, bodyCol);
+    const char k[2] = { key, 0 };
+    DrawTextCentered(cx + 0.5f, cy - 3.0f, 1.0f, k, textCol);
+    if (!label || !*label) return;
+    DrawTextCentered(x + 28.0f + (w - 28.0f) * 0.5f, cy - 3.0f, 1.0f, label, textCol);
+}
+
+/* The question about the console's DSP firmware (port_dsp_firm_prompt_3ds.c), over everything.
+ * The UI font has no comma. */
+static void RenderDspFirmQuestion(int lang) {
+    const int state = Port_DspFirm_State();
+    if (state == DSPFIRM_PROMPT_NONE) return;
+    const bool es = (lang == 6);
+    const uint32_t white = C2D_Color32(255, 255, 255, 255);
+    const uint32_t text = C2D_Color32(190, 210, 235, 255);
+    const float z = 0.994f;
+
+    C2D_DrawRectSolid(0.0f, 0.0f, z, 320.0f, 240.0f, C2D_Color32(0, 0, 0, 200));
+    C2D_DrawRectSolid(14.0f, (float)WAI_BOX_Y0, z + 0.001f, 292.0f, (float)WAI_BOX_H, C2D_Color32(40, 70, 120, 255));
+    C2D_DrawRectSolid(16.0f, (float)WAI_BOX_Y0 + 2.0f, z + 0.002f, 288.0f, (float)WAI_BOX_H - 4.0f,
+                      C2D_Color32(10, 14, 24, 255));
+    const float y0 = (float)WAI_BOX_Y0;
+    DrawTextCentered(160.0f, y0 + 10.0f, 1.0f, es ? "FALTA EL FIRMWARE DE SONIDO" : "SOUND FIRMWARE NEEDED",
+                     C2D_Color32(255, 215, 0, 255));
+    if (state == DSPFIRM_PROMPT_ASK) {
+        const bool missing = Port_DspFirm_Missing();
+        DrawTextCentered(160.0f, y0 + 36.0f, 1.0f,
+                         es ? (missing ? "EL FIRMWARE DSP NO ESTA EN LA TARJETA SD." : "EL FIRMWARE DSP DE LA TARJETA SD ESTA DANADO.")
+                            : (missing ? "THE DSP FIRMWARE IS NOT ON THE SD CARD." : "THE DSP FIRMWARE ON THE SD CARD IS DAMAGED."),
+                         text);
+        DrawTextCentered(160.0f, y0 + 62.0f, 1.0f, es ? "SIN ELLO EL JUEGO FUNCIONA SIN SONIDO." : "WITHOUT IT THE GAME RUNS BUT SILENT.",
+                         C2D_Color32(255, 170, 90, 255));
+        DrawTextCentered(160.0f, y0 + 82.0f, 1.0f, es ? "PARA JUGAR CON SONIDO EXTRAELO AHORA." : "TO PLAY WITH SOUND EXTRACT IT NOW.", text);
+        DrawTextCentered(160.0f, y0 + 108.0f, 1.0f, es ? "(SE COPIA DE LA PROPIA CONSOLA)" : "(IT IS COPIED FROM THIS CONSOLE)",
+                         C2D_Color32(130, 140, 160, 255));
+        DrawKeyButton((float)UPD_YES_X0, (float)WAI_BTN_Y0, (float)(UPD_YES_X1 - UPD_YES_X0), 28.0f, 'A',
+                   es ? "EXTRAER" : "EXTRACT", white, C2D_Color32(16, 60, 32, 255), C2D_Color32(55, 150, 95, 255));
+        DrawKeyButton((float)UPD_NO_X0, (float)WAI_BTN_Y0, (float)(UPD_NO_X1 - UPD_NO_X0), 28.0f, 'B',
+                   es ? "SIN SONIDO" : "NO SOUND", white, C2D_Color32(64, 22, 22, 255), C2D_Color32(180, 60, 60, 255));
+    } else if (state == DSPFIRM_PROMPT_WORKING) {
+        DrawTextCentered(160.0f, y0 + 76.0f, 1.0f, es ? "EXTRAYENDO..." : "EXTRACTING...", white);
+    } else {
+        const bool ok = (state == DSPFIRM_PROMPT_DONE);
+        DrawTextCentered(160.0f, y0 + 50.0f, 1.0f,
+                         ok ? (es ? "LISTO. EL SONIDO FUNCIONARA." : "DONE. THE SOUND WILL WORK.")
+                            : (es ? "NO SE PUDO EXTRAER." : "COULD NOT EXTRACT IT."),
+                         ok ? C2D_Color32(120, 255, 160, 255) : C2D_Color32(255, 110, 110, 255));
+        if (!ok) DrawTextCentered(160.0f, y0 + 76.0f, 1.0f, Port_DspFirm_Failure(), C2D_Color32(130, 140, 160, 255));
+        DrawKeyButton(116.0f, (float)WAI_BTN_Y0, 88.0f, 28.0f, 'A', "OK", white, C2D_Color32(24, 40, 70, 255), C2D_Color32(90, 130, 180, 255));
+    }
+}
+
 /* Action picker popup for remapping */
 static void RenderRemapSelectModal(int lang) {
     if (sRemapSelectButtonIdx < 0 || sRemapSelectButtonIdx >= 10) return;
@@ -6199,6 +6282,7 @@ void Port_BottomUI_Render(void) {
     Port_RA_RenderToastOverlay();
     RenderUpdatePrompt(GetLang());
     RenderWideAiQuestion(GetLang());
+    RenderDspFirmQuestion(GetLang());
     RenderBusyOverlay();
     RenderNoticeToast();
     RenderDevFtp();
