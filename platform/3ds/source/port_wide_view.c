@@ -12,7 +12,7 @@ extern short gMainGameMode;
 
 enum { ASPECT_WIDE = 3, STYLE_PIXEL_PERFECT = 0 };
 enum {
-    GM_INTRO = 1, GM_TITLE = 2, GM_INGAME = 4, GM_CHOZODIA_ESCAPE = 7, GM_CREDITS = 8,
+    GM_INTRO = 1, GM_TITLE = 2, GM_FILE_SELECT = 3, GM_INGAME = 4, GM_CHOZODIA_ESCAPE = 7, GM_CREDITS = 8,
     GM_TOURIAN_ESCAPE = 9, GM_CUTSCENE = 10, GM_DEMO = 11,
 };
 
@@ -46,6 +46,7 @@ bool PortWide_SceneActive(void) {
     switch (gMainGameMode) {
         case GM_INTRO:
         case GM_TITLE:
+        case GM_FILE_SELECT:
         case GM_CHOZODIA_ESCAPE:
         case GM_CREDITS:
         case GM_TOURIAN_ESCAPE:

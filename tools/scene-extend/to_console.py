@@ -37,7 +37,7 @@ from make_package import SCENES  # noqa: E402
 OUTPUT_C = os.path.join(ROOT, 'platform', '3ds', 'source', 'port_scene_pictures_data.c')
 # Game mode (include/constants/game_state.h) and scene key (PortScenePic_SceneKey: the intro's
 # stage, src/intro.c sIntroStageFunctionsPointer) each scene plays in.
-GAME_MODES = {'title': (2, 0), 'intro-space': (1, 1), 'intro-cockpit': (1, 2), 'intro-zebes': (1, 4),
+GAME_MODES = {'title': (2, 0), 'file-select': (3, 0), 'intro-space': (1, 1), 'intro-cockpit': (1, 2), 'intro-zebes': (1, 4),
               'intro-motherbrain': (1, 6)}
 
 

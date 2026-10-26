@@ -106,6 +106,27 @@ def main():
     img = np.stack([map_coordinates(uniform_filter(src_rgb[..., c], k), [gy, gx], order=1, mode='nearest')
                     for c in range(3)], -1)
     outside = (gx < 0) | (gx > src.shape[1] - 1) | (gy < 0) | (gy > src.shape[0] - 1)
+    # Majority vote instead of the mean (REFIT_MEAN=1 for the mean): the source is quantised to the game's colours first, then each
+    # game pixel takes the colour most of its centre points (a 3x3 grid inside the cell) have. A
+    # mean mixes the colours on either side of an edge into one that is in neither; the vote keeps
+    # the edge where the AI put it and snaps it to the game's grid.
+    if not os.environ.get('REFIT_MEAN'):
+        palf = np.unique(orig_rgb.reshape(-1, 3), axis=0).astype(np.float64)
+        votes = []
+        for oy in (-1, 0, 1):
+            for ox in (-1, 0, 1):
+                sy_ = np.clip(np.rint(gy + oy * sy * 0.25).astype(int), 0, src.shape[0] - 1)
+                sx_ = np.clip(np.rint(gx + ox * sx * 0.25).astype(int), 0, src.shape[1] - 1)
+                px = src_rgb[sy_, sx_]
+                idx = np.empty(px.shape[:2], int)
+                for y in range(px.shape[0]):
+                    idx[y] = ((px[y, :, None, :] - palf[None]) ** 2).sum(-1).argmin(-1)
+                votes.append(idx)
+        votes = np.stack(votes, -1)
+        counts = np.stack([(votes == k).sum(-1) for k in range(len(palf))], -1)
+        img = palf[counts.argmax(-1)]
+    # What the AI drew at this grid, before the nearest-colour step (fix_scanlines.py reads it).
+    Image.fromarray(np.clip(img, 0, 255).astype(np.uint8)).save(os.path.splitext(out)[0] + '.raw.png')
     pal = np.unique(orig_rgb.reshape(-1, 3), axis=0).astype(np.float64)
     res = np.zeros((H, W, 3), np.uint8)
     for y in range(H):  # row by row: the distance table of the whole canvas is large

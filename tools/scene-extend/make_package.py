@@ -25,6 +25,7 @@ All of it is the game's art: keep OUT_DIR out of the repository.
 import os
 import sys
 
+import numpy as np
 from PIL import Image
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -61,19 +62,48 @@ SCENES = {
         sides=["All around: more of the starfield and nebulae, stars of the same sizes and "
                "colours; the nebulae continue past the edges and fade into black space."],
         over="Samus's gunship (sprites)"),
+    'file-select': dict(
+        name="file select (\"Datos de Samus\")",
+        bg=3, dumps=['file-select/1'], final='file-select/1',
+        picture=(0, 0, 240, 160), canvas=(-80, -40, 320, 200),
+        about="Backdrop of the save-file menu: the face of a Chozo statue, its hand at the brow, "
+              "in dark teal and green, over a wall of carved square spiral glyphs (a circuit-like "
+              "pattern in the same teal); his shoulders and body fill the lower part. The whole picture is shaded with fine horizontal "
+              "scanlines that belong to the art. The canvas is the 400x240 screen with the "
+              "picture in the middle.",
+        sides=[
+            "Left and right: in the top half the wall of carved glyphs goes on (the same square "
+            "spirals and channels, same size and spacing, same dark teal). Lower down, the "
+            "statue's shoulders and rocky body, which the original cuts at its left and right edges "
+            "and at the bottom, continue naturally outwards. Do not add another face.",
+            "Above: more of the glyph wall. Below: the statue's body and the dark rocks under it "
+            "go on down to the bottom edge, darker as they go down.",
+            "Keep the horizontal scanlines of the original, same thickness and spacing, across "
+            "the added areas.",
+        ],
+        over="the menu (DATOS DE SAMUS, the three save files with their times and areas, COPIAR / "
+             "BORRAR / OPCIONES): another layer and sprites the game draws over the background"),
     'intro-cockpit': dict(
         name="intro, Samus in her ship's cockpit",
         bg=0, dumps=['intro-160/1'], final='intro-160/1',
         picture=(0, -8, 256, 168), canvas=(-72, -40, 328, 200),
-        about="Close-up of Samus in her orange Power Suit sitting at the controls of her ship, in "
-              "warm red and orange light, the dark metal hull of the cockpit on the right. The game "
-              "shakes this picture by a pixel, so the canvas keeps its real size (256x176).",
+        about="Samus in her orange Power Suit at the controls of her ship while it flies at great "
+              "speed: the picture is full of long diagonal speed streaks in red, orange and yellow, "
+              "sloping up to the right, with some dark metal hull at the right. The game shakes this "
+              "picture by a pixel, so the canvas keeps its real size (256x176). What matters in the "
+              "new area is the feeling of speed and motion, not the ship.",
         sides=[
-            "Left and right: more of the cockpit interior: the hull plating and panels, the dark "
-            "wall on the right, the controls on the left, in the same red and orange light.",
-            "Above and below: the cockpit goes on (more of Samus's seat and the floor below; the "
-            "ceiling and hull above). Do not add a second Samus or more of her body than what is "
-            "cut at the edge needs to continue naturally.",
+            "Almost everything you add should be speed and motion: long, hard-edged diagonal streaks "
+            "at the same slope, thickness and spacing as the original's, in the same reds, oranges "
+            "and yellows, brighter and sparser away from Samus and darker in the shadows. They run "
+            "off the edges of the canvas in the same direction, as if the whole scene were rushing "
+            "past.",
+            "Do not draw the ship or the cockpit in detail: no panels, controls, windows or seats. "
+            "Where the original shows the dark hull at the right, let it fade into dark streaked "
+            "shadow instead of adding more machinery. Where Samus's body or arm cannon is cut at "
+            "the edge, continue only what is needed so the cut is invisible; no second Samus.",
+            "Same pixel-art look as the original: hard 1-pixel edges, no soft glow, no sparks, "
+            "no smooth gradients.",
         ],
         over="nothing (the whole picture is background)"),
     'intro-zebes': dict(
@@ -112,11 +142,22 @@ picture.
 
 {about}
 
+## Important: continue the picture, do not frame it
+This is outpainting: the result is ONE continuous picture that fills the whole canvas from edge to
+edge, in which the original is just the middle part. Do NOT draw a border, frame, black outline,
+shadow, gap or "picture inside a picture" around the original. Do NOT shrink, copy, tile or mirror
+the original into the new area. Whatever crosses the original's edge (lines, streaks, shapes,
+colours) has to carry on across it with no break, and the area next to the edge must look like
+the same drawing, not like a different one.
+
 ## Files
 - `1-template-{W}x{H}.png`: **the canvas to fill.** The original is at x={X}..{X2}, y={Y}..{Y2};
   everything else is transparent and is what you must draw. `1-template-{W}x{H}-black.png` is the
   same canvas with black instead of transparent, if your tool prefers it: the black is not part of
-  the picture, it is the area to fill.
+  the picture, it is the area to fill (do not keep it as a frame).
+- `1-template-{W}x{H}-extended.png`: **start from this one if the others make you draw a frame.** The
+  new area is only the original's edge pixels stretched outwards, a rough hint of where the lines
+  and colours continue. Repaint all of it as real detail; the original stays as it is.
 - `2-original-picture.png`: the original alone ({w}x{h}), for reference.
 - `3-final-composite.png`: what the player sees (the background plus everything the game draws on
   top), at its place in the canvas. Context only.
@@ -200,6 +241,9 @@ def build(scene, sc, dumps_dir, out_dir):
     template = Image.new('RGBA', (W, H), (0, 0, 0, 0))
     template.alpha_composite(pic, (px0 - cx0, py0 - cy0))
     template.save(os.path.join(folder, f'1-template-{W}x{H}.png'))
+    ext = np.pad(np.array(pic.convert('RGB')), ((Y_ := py0 - cy0, H - (py0 - cy0) - h),
+                                                (px0 - cx0, W - (px0 - cx0) - w), (0, 0)), mode='edge')
+    Image.fromarray(ext).save(os.path.join(folder, f'1-template-{W}x{H}-extended.png'))
     black = Image.new('RGBA', (W, H), (0, 0, 0, 255))
     black.alpha_composite(pic, (px0 - cx0, py0 - cy0))
     black.convert('RGB').save(os.path.join(folder, f'1-template-{W}x{H}-black.png'))
