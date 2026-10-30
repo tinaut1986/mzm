@@ -520,7 +520,12 @@ static void TestNamedParticularScenes(void) {
                     int pb = EffPrioP(sc->samusOnTop, sc->prio[b]);
                     if (pa >= pb) continue; /* a draws over b */
                     float bPx = PortStereoDepth_TierPxFor(spread, PortStereoDepth_BgTier(&st, b));
-                    bool merged = (pa <= 1 && pb <= 1);
+                    /* Priorities 0/1 share the play plane outside cutscene art;
+                     * in cutscene art priorities 2 and 3 share the far plane
+                     * (three planes for four priorities). Coplanar layers are
+                     * ordered by the 2D compositor, so >= is enough there. */
+                    bool merged = (pa <= 1 && pb <= 1) ||
+                                  (sc->cutsceneArt && pa >= 2 && pb >= 2);
                     CHECK(merged ? (aPx >= bPx) : (aPx > bPx),
                           "%s [%s]: BG%d eff-prio %d draws over BG%d eff-prio %d "
                           "but sits farther (%+.2f vs %+.2f)",
